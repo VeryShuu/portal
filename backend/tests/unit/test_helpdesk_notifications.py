@@ -258,20 +258,6 @@ class TestNotifyStatusChanged:
         assert "7" in kwargs["body"]  # HELPDESK_REOPEN_WINDOW_DAYS=7
 
     @pytest.mark.asyncio
-    async def test_resolved_has_null_body(self):
-        """resolved → body=None (нет инфо про reopen-окно)."""
-        requester = uuid.uuid4()
-        ticket = _ticket(requester_user_id=requester)
-
-        with patch.object(notif, "_fan_out", new=AsyncMock(return_value=1)) as fan:
-            await notif.notify_status_changed(
-                MagicMock(), _fake_redis(), ticket=ticket, new_status="resolved"
-            )
-
-        assert fan.await_args.kwargs["body"] is None
-        assert "resolved" in fan.await_args.kwargs["title"]
-
-    @pytest.mark.asyncio
     async def test_no_requester_zero_sent(self):
         ticket = _ticket(requester_user_id=None)
 

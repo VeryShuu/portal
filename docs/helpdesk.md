@@ -14,7 +14,7 @@
 |---|---|
 | Backend | FastAPI (`./backend/app/api/helpdesk/`), SQLAlchemy, PostgreSQL |
 | Frontend | Vue 3 + Pinia + Naive UI (`./frontend/src/pages/helpdesk/`, `./frontend/src/components/helpdesk/`, admin-вкладка `./frontend/src/pages/admin/tabs/HelpdeskTab.vue`) |
-| Воркер | ARQ (`./backend/app/worker/tasks/helpdesk.py`): 6 cron-задач |
+| Воркер | ARQ (`./backend/app/worker/tasks/helpdesk.py`): 5 cron-задач |
 | Хранилище | БД (PostgreSQL) + локальная ФС `/data/helpdesk/TKT-{number}/` (вложения) |
 | Префикс API | `/api/v1/helpdesk` |
 | Email | transactional outbox `kind=helpdesk` (см. `./docs/email.md`) |
@@ -76,8 +76,8 @@
 | Frontend Store | `./frontend/src/stores/auth.ts` | `isHelpdeskAgent` ref (из `bootstrap.is_helpdesk_agent`) — косметический, бэкендом не доверяется. |
 | Frontend Router | `./frontend/src/router.ts` | 4 роута + guard `requiresHelpdeskAgent` + module-route gating. |
 | Frontend Menu | `./frontend/src/composables/useAppMenu.ts` | Пункт «Поддержка» (всем, gated) + «Инбокс поддержки» (агентам). |
-| Frontend Pages | `./frontend/src/pages/helpdesk/` | `HelpdeskMyTicketsPage`, `HelpdeskMyTicketDetailPage`, `HelpdeskAgentInboxPage`, `HelpdeskAgentTicketDetailPage`. |
-| Frontend Components | `./frontend/src/components/helpdesk/` | `TicketStatusBadge`, `TicketMessageList`, `TicketReplyForm`, `TicketCreateModal`. |
+| Frontend Pages | `./frontend/src/pages/helpdesk/` | `HelpdeskMyTicketsPage`, `HelpdeskMyTicketDetailPage`, `HelpdeskAgentInboxPage` (двухблочный вид + переключатель мои/все), `HelpdeskAgentTicketDetailPage`, `HelpdeskArchivePage` (отдельный роут `/helpdesk/archive`). |
+| Frontend Components | `./frontend/src/components/helpdesk/` | `TicketStatusBadge`, `TicketMessageList`, `TicketReplyForm` (rich-редактор TipTap), `TicketCreateModal`, `TicketList`/`TicketListItem` (таблица инбокса/архива), `TicketInfoCard`, `TicketDetailHeader`, `RequesterProfileCard`. |
 | Admin Tab | `./frontend/src/pages/admin/tabs/HelpdeskTab.vue` | Вкладка админки: агенты + mailbox-settings. |
 | Admin Components | `./frontend/src/components/admin/Helpdesk{AgentsManager,MailboxSettings}.vue` | Управление агентами (remote-search), mailbox-форма (write-only пароль, test). |
 
@@ -247,9 +247,8 @@ CHECK: `digest_hour BETWEEN 0 AND 23`, `digest_minute BETWEEN 0 AND 59`, `digest
 | `POST` | `/settings/mailbox/test` | Проверка IMAP-соединения → `{ok, detail}`. |
 | `GET` | `/settings/digest` | Singleton расписания сводки (`enabled`, `digest_hour`, `digest_minute`, `digest_schedule`). |
 | `PUT` | `/settings/digest` | Обновить расписание. Аудит `helpdesk.digest_settings_changed`. |
-| `GET` | `/archive` | Список архивных тикетов (`?q`, пагинация). |
-| `GET` | `/archive/{id}` | Карточка из архива (read-only). |
-| `GET` | `/email-log` | Лог входящих писем (отладка). |
+
+> **Архив в UI** показывается отдельной страницей `/helpdesk/archive` (роут `helpdesk-archive`), которая ходит через общий `GET /tickets?status=closed` (живые закрытые тикеты, не партиционированная таблица). Эндпоинтов `/archive*` и `/email-log` **нет** — service-функции `fetch_archive_list`/`fetch_archive_item` зарезервированы, но не обвязаны роутером (будущее: просмотр тикетов, попавших в `helpdesk_tickets_archive` после `HELPDESK_ARCHIVE_AFTER_DAYS`).
 
 Все мутации агентов/mailbox аудируются (`helpdesk.agent_*`, `helpdesk.mailbox_settings_changed`). Тикетные мутации — `helpdesk.message_added`/`assigned`/`status_changed`.
 
@@ -600,13 +599,14 @@ Cron `send_helpdesk_digest` (см. §10) раз в день шлёт **кажд�
 2. Миграция `076` (расписание сводки, применяется автоматически).
 3. Миграция `077` (колонки `is_inline`/`content_id` на `helpdesk_attachments` — schema-drift фикс; применяется автоматически).
 4. Миграция `078` (полнотекстовый поиск: `search_tsvector`/`body_tsvector` tsvector + GIN — применяется автоматически; zero-downtime, generated STORED колонки заполняются атомарно).
-4. Зависимости `aioimaplib` + `cryptography` — в `pyproject.toml` (требуется пересборка `backend` + `worker`).
-5. Пересобрать `frontend` (новые страницы/роуты/меню/компоненты): `docker compose build frontend`.
-6. **Volume nginx → helpdesk** (для inline-картинок rich-редактора): nginx раздаёт картинки через `X-Accel-Redirect` и должен иметь доступ к `/data/helpdesk/` (`:ro`, как kb/feedback/photos). В `docker-compose.yml` секция `nginx.volumes` должна содержать `- ./upload_data/helpdesk:/data/helpdesk:ro`. Раньше это было не нужно (вложения раздавались `StreamingResponse` из backend), с inline-media — обязательно. После правки: `docker compose up -d nginx`.
-7. Включить модуль: **Admin → Модули → «Техподдержка» → On** (или `PUT /api/v1/admin/modules/helpdesk` `{"enabled": true}`, или правка `/data/settings/modules.json`).
-8. Для email-flow: **Admin → Система → «Техподдержка» → mailbox-форма** с IMAP-настройками и паролем (проверить кнопкой «Проверить соединение»).
-9. Назначить агентов: **Admin → Система → «Техподдержка» → Агенты** (поиск по сотрудникам) или `POST /api/v1/helpdesk/agents`.
-10. Локальная папка `/data/helpdesk/` должна быть доступна на запись (volume) для backend/worker и на чтение для nginx (см. п. 6).
-11. (Опц.) Сводка по умолчанию включена (будни 08:00 UTC). Настроить время/выключить — `PUT /api/v1/helpdesk/settings/digest`.
+5. Миграция `079` (упразднён статус `resolved`: data-mig resolved→closed + CHECK без `resolved`; применяется автоматически).
+6. Зависимости `aioimaplib` + `cryptography` — в `pyproject.toml` (требуется пересборка `backend` + `worker`).
+7. Пересобрать `frontend` (новые страницы/роуты/меню/компоненты): `docker compose build frontend`.
+8. **Volume nginx → helpdesk** (для inline-картинок rich-редактора): nginx раздаёт картинки через `X-Accel-Redirect` и должен иметь доступ к `/data/helpdesk/` (`:ro`, как kb/feedback/photos). В `docker-compose.yml` секция `nginx.volumes` должна содержать `- ./upload_data/helpdesk:/data/helpdesk:ro`. Раньше это было не нужно (вложения раздавались `StreamingResponse` из backend), с inline-media — обязательно. После правки: `docker compose up -d nginx`.
+9. Включить модуль: **Admin → Модули → «Техподдержка» → On** (или `PUT /api/v1/admin/modules/helpdesk` `{"enabled": true}`, или правка `/data/settings/modules.json`).
+10. Для email-flow: **Admin → Система → «Техподдержка» → mailbox-форма** с IMAP-настройками и паролем (проверить кнопкой «Проверить соединение»).
+11. Назначить агентов: **Admin → Система → «Техподдержка» → Агенты** (поиск по сотрудникам) или `POST /api/v1/helpdesk/agents`.
+12. Локальная папка `/data/helpdesk/` должна быть доступна на запись (volume) для backend/worker и на чтение для nginx (см. п. 8).
+13. (Опц.) Сводка по умолчанию включена (будни 08:00 UTC). Настроить время/выключить — `PUT /api/v1/helpdesk/settings/digest` (Admin UI для расписания сводки пока отсутствует — настраивается через API).
 
 > Модуль работоспособен и без IMAP (web-only helpdesk): `helpdesk.enabled=true` без mailbox-настройки — заявки создаются и обрабатываются через портал, исходящие публичные ответы не отправляются на email (создаётся только сообщение).

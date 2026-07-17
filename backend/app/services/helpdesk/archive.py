@@ -15,10 +15,9 @@ cron'ом ``cleanup_helpdesk_attachments``.
 from __future__ import annotations
 
 import json
-import uuid
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.constants import (
@@ -145,50 +144,9 @@ async def cleanup_archived_files(db: AsyncSession) -> int:
     return removed
 
 
-async def fetch_archive_list(
-    db: AsyncSession,
-    *,
-    q: str | None = None,
-    limit: int = 20,
-    offset: int = 0,
-) -> tuple[list[HelpdeskTicketArchive], int]:
-    """Список архивных тикетов (read-only, admin-only на уровне роутера).
-    Простой ILIKE-поиск по subject/requester_email (FTS не нужен в MVP)."""
-    conditions = []
-    if q:
-        like = f"%{q}%"
-        conditions.append(
-            (HelpdeskTicketArchive.subject.ilike(like))
-            | (HelpdeskTicketArchive.requester_email.ilike(like))
-        )
-    total_res = await db.execute(
-        select(func.count()).select_from(HelpdeskTicketArchive).where(*conditions)
-    )
-    total = int(total_res.scalar_one())
-    res = await db.execute(
-        select(HelpdeskTicketArchive)
-        .where(*conditions)
-        .order_by(HelpdeskTicketArchive.closed_at.desc())
-        .limit(limit)
-        .offset(offset)
-    )
-    return list(res.scalars().all()), total
-
-
-async def fetch_archive_item(
-    db: AsyncSession, *, archive_id: uuid.UUID
-) -> HelpdeskTicketArchive | None:
-    res = await db.execute(
-        select(HelpdeskTicketArchive).where(HelpdeskTicketArchive.id == archive_id).limit(1)
-    )
-    return res.scalars().first()
-
-
 # re-export для cron-cleanup (использует raw SQL delete партиций при необходимости)
 __all__ = [
     "ARCHIVE_TABLE",
     "archive_closed_tickets",
     "cleanup_archived_files",
-    "fetch_archive_item",
-    "fetch_archive_list",
 ]
