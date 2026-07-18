@@ -1,4 +1,4 @@
-"""Helpdesk business-logic services (docs/wip/helpdesk.md).
+"""Helpdesk business-logic services (docs/helpdesk.md).
 
 Тонкий слой между API-роутерами и ORM-моделями: создание тикетов с инвариантом
 первого сообщения, добавление ответов с обновлением ``last_activity_at`` и

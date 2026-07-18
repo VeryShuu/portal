@@ -1,4 +1,4 @@
-"""SQLAlchemy models for the Helpdesk module (docs/wip/helpdesk.md).
+"""SQLAlchemy models for the Helpdesk module (docs/helpdesk.md).
 
 Ticket system replacing OTRS: tickets are created from a web form or pulled
 from a support mailbox, processed by support agents, threaded with the

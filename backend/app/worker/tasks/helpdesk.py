@@ -62,6 +62,52 @@ _LOCK_RELEASE_LUA = (
 DIGEST_LOCK_KEY = "helpdesk:digest:lock"
 DIGEST_LOCK_TTL = 300  # 5 минут — рассылка быстрая, но с запасом.
 
+# Lock для archive-семейства (archive/partition/cleanup). Раньше эти cron
+# брали отдельные lock'и: ``archive_closed_tickets`` делал SELECT без
+# ``FOR UPDATE SKIP LOCKED``, и при двух воркерах оба выбирали одни и те же
+# ``closed``-тикеты до commit → двойная архивация / гонка на ``delete_ticket_dir``.
+# Партиционный cron идемпотентен (``CREATE TABLE IF NOT EXISTS``), cleanup
+# best-effort — но lock'и продублированы для единообразия и защиты FS-операций.
+ARCHIVE_LOCK_KEY = "helpdesk:archive:lock"
+ARCHIVE_LOCK_TTL = 600  # 10 минут — архивация может быть долгой при большом backlog.
+PARTITION_LOCK_KEY = "helpdesk:partition:lock"
+PARTITION_LOCK_TTL = 120  # 2 минуты — DDL-операции быстрые.
+CLEANUP_LOCK_KEY = "helpdesk:cleanup:lock"
+CLEANUP_LOCK_TTL = 600  # 10 минут — rmtree по многим папкам может занять время.
+
+
+async def _acquire_lock(redis: Redis, key: str, ttl: int) -> str | None:
+    """Взять distributed lock по образцу poll_lock/digest_lock.
+
+    Возвращает ``lock_token`` при успехе или ``None``, если лок уже занят другим
+    воркером. Release — через ``_release_lock`` (Lua-скрипт с проверкой токена,
+    чтобы не удалить чужой лок)."""
+    token = secrets.token_hex(16)
+    # ``redis.set(..., nx=True)`` возвращает ``True`` при успехе и ``None`` при
+    # занятом локе; проверка ``if not acquired`` используется по всему проекту
+    # (audit/files). Возвращаем только что сгенерированный ``token`` — он же
+    # идёт в Lua-release для атомарной проверки владения.
+    acquired = await redis.set(key, token, nx=True, ex=ttl)
+    if not acquired:
+        return None
+    return token
+
+
+async def _release_lock(redis: Redis, key: str, token: str) -> None:
+    """Освободить distributed lock (атомарная проверка token → delete).
+
+    ``suppress(Exception)`` — release в ``finally``: неудачный release не должен
+    ронять воркер (лок истечёт по TTL сам)."""
+    with suppress(Exception):
+        # ``redis.asyncio.Redis.eval`` асинхронен, но в stub'е redis-py имеет
+        # перегрузку, возвращающую ``Awaitable[str] | str`` → mypy-error на
+        # ``await``. Локальное игнорирование чистее, чем ``cast("Any", ...)``
+        # на каждом вызове (poll_lock/digest_lock в тех же задачах обходят это
+        # тем, что ``redis = ctx.get(...)`` без аннотации = ``Any``).
+        await redis.eval(  # type: ignore[misc]
+            _LOCK_RELEASE_LUA, 1, key, token
+        )
+
 
 async def _module_enabled(redis: Redis) -> bool:
     from app.core.modules_config import load_modules_shared
@@ -112,17 +158,15 @@ async def poll_helpdesk_mailbox(ctx: dict) -> dict:
         settings_row = row
 
     # Distributed lock.
-    lock_token = secrets.token_hex(16)
-    acquired = await redis.set(POLL_LOCK_KEY, lock_token, nx=True, ex=POLL_LOCK_TTL)
-    if not acquired:
+    lock_token = await _acquire_lock(redis, POLL_LOCK_KEY, POLL_LOCK_TTL)
+    if lock_token is None:
         return {"skipped": "lock_held"}
     try:
         await redis.set(LAST_POLL_KEY, datetime.now(UTC).isoformat())
         async with AsyncSessionLocal() as db:
             return await poll_mailbox(db, redis, settings_row=settings_row)
     finally:
-        with suppress(Exception):
-            await redis.eval(_LOCK_RELEASE_LUA, 1, POLL_LOCK_KEY, lock_token)
+        await _release_lock(redis, POLL_LOCK_KEY, lock_token)
 
 
 # ---------------------------------------------------------------------------
@@ -134,28 +178,56 @@ async def archive_closed_tickets_task(ctx: dict) -> int:
     redis = ctx.get("redis")
     if redis is None or not await _module_enabled(redis):
         return 0
-    async with AsyncSessionLocal() as db:
-        return await archive_closed_tickets(db)
+    # Distributed lock: ``archive_closed_tickets`` читает ``closed``-тикеты без
+    # ``FOR UPDATE SKIP LOCKED`` → без лока два воркера продублируют работу.
+    lock_token = await _acquire_lock(redis, ARCHIVE_LOCK_KEY, ARCHIVE_LOCK_TTL)
+    if lock_token is None:
+        return 0
+    try:
+        async with AsyncSessionLocal() as db:
+            return await archive_closed_tickets(db)
+    finally:
+        await _release_lock(redis, ARCHIVE_LOCK_KEY, lock_token)
 
 
 async def create_next_helpdesk_archive_partition(ctx: dict) -> str:
     """Создать месячные партиции архива (run_at_startup + ежемесячно)."""
-    pg_url = get_settings().database_url.replace("postgresql+asyncpg://", "postgresql://")
-    conn = await asyncpg.connect(pg_url, statement_cache_size=0)
+    redis = ctx.get("redis")
+    if redis is None or not await _module_enabled(redis):
+        return ""
+    # Lock дублирован для единообразия; сам ``CREATE TABLE IF NOT EXISTS``
+    # идемпотентен, но параллельный ``conn.execute`` мог бы гоняться на pg_class.
+    lock_token = await _acquire_lock(redis, PARTITION_LOCK_KEY, PARTITION_LOCK_TTL)
+    if lock_token is None:
+        return ""
     try:
-        created = await ensure_helpdesk_archive_partitions(conn, months_ahead=3)
-        logger.info("helpdesk.archive.partitions_created", tables=created)
-        return str(created)
+        pg_url = get_settings().database_url.replace("postgresql+asyncpg://", "postgresql://")
+        conn = await asyncpg.connect(pg_url, statement_cache_size=0)
+        try:
+            created = await ensure_helpdesk_archive_partitions(conn, months_ahead=3)
+            logger.info("helpdesk.archive.partitions_created", tables=created)
+            return str(created)
+        finally:
+            await conn.close()
     finally:
-        await conn.close()
+        await _release_lock(redis, PARTITION_LOCK_KEY, lock_token)
 
 
 async def cleanup_helpdesk_attachments_task(ctx: dict) -> int:
     redis = ctx.get("redis")
     if redis is None or not await _module_enabled(redis):
         return 0
-    async with AsyncSessionLocal() as db:
-        return await cleanup_archived_files(db)
+    # Lock: ``cleanup_archived_files`` делает ``rmtree`` по папкам тикетов —
+    # гонка двух воркеров на одном тикете не страшна (``ignore_errors=True``),
+    # но лишние FS-операции и шум в логах ни к чему.
+    lock_token = await _acquire_lock(redis, CLEANUP_LOCK_KEY, CLEANUP_LOCK_TTL)
+    if lock_token is None:
+        return 0
+    try:
+        async with AsyncSessionLocal() as db:
+            return await cleanup_archived_files(db)
+    finally:
+        await _release_lock(redis, CLEANUP_LOCK_KEY, lock_token)
 
 
 # ---------------------------------------------------------------------------
@@ -205,17 +277,15 @@ async def send_helpdesk_digest(ctx: dict) -> dict:
         return {"skipped": "already_sent_today"}
 
     # Distributed lock (аналог poll_lock).
-    lock_token = secrets.token_hex(16)
-    acquired = await redis.set(DIGEST_LOCK_KEY, lock_token, nx=True, ex=DIGEST_LOCK_TTL)
-    if not acquired:
+    lock_token = await _acquire_lock(redis, DIGEST_LOCK_KEY, DIGEST_LOCK_TTL)
+    if lock_token is None:
         return {"skipped": "lock_held"}
     try:
         portal_base_url = load_system_settings().portal_base_url
         async with AsyncSessionLocal() as db:
             return await send_digests(db, redis, portal_base_url=portal_base_url, now=now)
     finally:
-        with suppress(Exception):
-            await redis.eval(_LOCK_RELEASE_LUA, 1, DIGEST_LOCK_KEY, lock_token)
+        await _release_lock(redis, DIGEST_LOCK_KEY, lock_token)
 
 
 __all__ = [

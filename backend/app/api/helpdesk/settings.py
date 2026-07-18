@@ -136,8 +136,14 @@ async def test_mailbox_connection(_admin: AdminDep, db: DbDep) -> dict:
             use_ssl=row.imap_use_ssl,
             folder=row.imap_folder,
         )
-    except Exception as exc:
-        return {"ok": False, "error": str(exc)}
+    except Exception:
+        # H-9: не отдаём ``str(exc)`` наружу. aioimaplib (и другие IMAP-библиотеки)
+        # в исключения иногда включает выполненную команду, где фигурирует пароль
+        # (``C: A1 LOGIN <user> <password>``). Defense-in-depth: даже AdminDep —
+        # маскируем, чтобы креды не утекли в HTTP-ответ и прокси/access-логи.
+        # Полный traceback остаётся в server-log через ``logger.exception``.
+        logger.exception("helpdesk.mailbox.test_connection_failed")
+        return {"ok": False, "error": "IMAP connection failed (see server logs for details)"}
     return {"ok": ok, "detail": detail}
 
 

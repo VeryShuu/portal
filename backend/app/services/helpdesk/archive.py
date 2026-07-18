@@ -35,8 +35,6 @@ from app.services.helpdesk.attachments import delete_ticket_dir
 
 logger = get_logger(__name__)
 
-ARCHIVE_TABLE = "helpdesk_tickets_archive"
-
 
 async def archive_closed_tickets(db: AsyncSession) -> int:
     """Перенести тикеты со статусом ``closed`` и ``closed_at`` старше
@@ -144,9 +142,9 @@ async def cleanup_archived_files(db: AsyncSession) -> int:
     return removed
 
 
-# re-export для cron-cleanup (использует raw SQL delete партиций при необходимости)
+# ``ARCHIVE_TABLE`` живёт в ``archive_partitions.py`` (используется при
+# ``CREATE TABLE ... PARTITION OF``); здесь не дублируем — импорта ниоткуда нет.
 __all__ = [
-    "ARCHIVE_TABLE",
     "archive_closed_tickets",
     "cleanup_archived_files",
 ]

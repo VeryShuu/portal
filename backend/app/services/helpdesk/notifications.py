@@ -36,8 +36,6 @@ from app.services.notifications import create_notification
 
 logger = get_logger(__name__)
 
-_BATCH_SIZE = 500
-
 
 async def _select_agents_to_notify(
     db: AsyncSession, *, exclude_user_id: uuid.UUID | None = None, require_notify_new: bool = True

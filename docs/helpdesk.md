@@ -48,7 +48,7 @@
 | Router | `./backend/app/api/helpdesk/settings.py` | Admin mailbox-settings (singleton) + `POST /test`. |
 | Router | `./backend/app/api/helpdesk/media.py` | Inline-картинки rich-редактора ответов: `POST /tickets/{id}/inline-media` (upload, streaming) → `{url, filename}`; `GET /tickets/{id}/inline-media/{file}` (serve через nginx `X-Accel-Redirect`). ACL: автор тикета ИЛИ агент/админ (`_is_helpdesk_agent` — мягкая проверка, без 403, т.к. не-агент-автор тоже имеет право). Файлы — `HELPDESK_FILES_DIR / "TKT-{number}" / "inline" / {uuid}_{name}`. |
 | Router | `./backend/app/api/helpdesk/_common.py` | Сериализаторы (`ticket_to_out`/`ticket_to_agent_out`/`ticket_to_list_out`/`message_to_out`), `build_requester_profile`, ACL-фильтр `internal`. |
-| Service | `./backend/app/services/helpdesk/outbound.py` | Исходящие email-продюсеры (outbox, `kind=helpdesk`): `enqueue_reply_outbound` (ответ агента + история), `enqueue_assigned_email` (назначение), `load_mailbox`/`load_user`/`support_domain`/`collect_ticket_references`. Без `db.commit` — outbox-инвариант (AGENTS.md): запись коммитится единым commit'ом с бизнес-операцией в роутере. |
+| Service | `./backend/app/services/helpdesk/outbound.py` | Исходящие email-продюсеры (outbox, `kind=helpdesk`): `enqueue_reply_outbound` (ответ агента + история), `enqueue_assigned_email` (назначение), `enqueue_created_email` (заявка зарегистрирована) + `load_mailbox`/`load_user`/`support_domain`/`reply_to_address` (явный `support_reply_to`, иначе `support_address`)/`collect_ticket_references`/`_sanitize_references` (CRLF-strip в продюсере — defense-in-depth, worker стрипает повторно). Без `db.commit` — outbox-инвариант (AGENTS.md): запись коммитится единым commit'ом с бизнес-операцией в роутере. |
 | Service | `./backend/app/services/helpdesk/tickets.py` | Бизнес-логика тикетов: создание (инвариант первого сообщения), списки, assign/status/reopen, `link_guest_tickets`, `resolve_requester_user`. `assign_ticket` не коммитит (outbox-инвариант — единый commit в роутере). |
 | Service | `./backend/app/services/helpdesk/messages.py` | Добавление ответов (requester/agent), генерация `email_message_id`, `normalize_message_bodies` (sanitize HTML через nh3 + деривация plain для email-треда — для rich-редактора). `add_agent_reply` не коммитит (outbox-инвариант — единый commit в роутере с outbox-записью). |
 | Service | `./backend/app/services/helpdesk/lifecycle.py` | Чистая статус-машина (тестируется без БД). |
@@ -370,7 +370,7 @@ CHECK: `digest_hour BETWEEN 0 AND 23`, `digest_minute BETWEEN 0 AND 59`, `digest
 
 - **Singleton** (`id=1`): миграция **не** засевает строку (`imap_password_enc NOT NULL`). Создаётся первым `PUT /settings/mailbox` с паролем; `GET` до `PUT` → `HelpdeskMailboxSettingsOut(configured=False)`.
 - **Пароль write-only**: в БД `imap_password_enc = encrypt_secret(password)` (Fernet, ключ детерминированно из `Settings.secret_key` через SHA-256 → urlsafe base64 — `./backend/app/core/secret_crypto.py`). В ответах только `imap_password_set: bool`, plaintext никогда не возвращается. При update пароль опционален (`None` = оставить прежний шифр); при create — обязателен (400 иначе).
-- **`POST /settings/mailbox/test`** — `probe_imap_connection` (login + `SELECT folder`) возвращает `{ok, detail}`. Если singleton не настроен → 404.
+- **`POST /settings/mailbox/test`** — `probe_imap_connection` (login + `SELECT folder`) возвращает `{ok, detail}`. При исключении — `{ok: false, error: "IMAP connection failed (see server logs for details)"}`: голый `str(exc)` больше не отдаётся наружу (aioimaplib в traceback иногда включает команду с паролем). Полный traceback остаётся в server-log через `logger.exception`. Если singleton не настроен → 404.
 - Детерминизм ключа важен: любой backend/worker с тем же `SECRET_KEY` расшифровывает секрет (распределённая отправка outbox несколькими воркерами).
 
 ---
@@ -384,7 +384,7 @@ CHECK: `digest_hour BETWEEN 0 AND 23`, `digest_minute BETWEEN 0 AND 59`, `digest
 1. `SEARCH ALL` → для каждого UID `FETCH (RFC822)` → парсинг через `email.message_from_bytes`. **Фильтр по `\Seen` не применяется** — оператор читает ящик вручную (в т.ч. в почтовом клиенте), и `\Seen`-письма иначе выпадали бы из потока; дедупликация — на `helpdesk_email_log`. Заголовки `Subject`/`From` декодируются из RFC 2047 encoded-words (`=?charset?B?...?=` — типично для кириллических тем/имён в KOI8-R/Windows-1251) через `threading.decode_mime_header`; иначе тема тикета сохранялась бы нечитаемой (`=?koi8-r?B?zsUg...?=`).
 2. **Anti-loop** (ТЗ §5.3): `From == support_address` или заголовки `Auto-Submitted: auto-*` / `Precedence: bulk/list/junk` / `X-Auto-Response-Suppress` → `status=skipped`, тикет не создаётся.
 3. **Идемпотентность**: `Message-ID` (или synthetic id для писем без него) проверяется в `helpdesk_email_log`; повтор → `skipped`.
-4. **Matching**: по `In-Reply-To`/`References` → `helpdesk_messages.email_message_id`; fallback по токену `[#TKT-{number}]` в теме; последний (опциональный) fallback — plus-маркер `+TKT-{number}` в адресе получателя (`Delivered-To`/`X-Original-To`/`To`). Нет матча → новый тикет (`source=email`). `[#TKT-N]` найден, но живого тикета нет (в архиве) → новый тикет с `references_archived_ticket_number=N`. **Безопасность:** для fallback'ов по subject/recipient-токену (угадываемый последовательный `number`) отправитель сверяется с `ticket.requester_email` (case-insensitive); при несовпадении создаётся новый тикет (защита от инъекции сообщения в чужой тикет). `References`-матч (секретный `Message-ID` исходящего) — без сверки отправителя.
+4. **Matching**: по `In-Reply-To`/`References` → `helpdesk_messages.email_message_id`; fallback по токену `[#TKT-{number}]` в теме; последний (опциональный) fallback — plus-маркер `+TKT-{number}` в адресе получателя (`Delivered-To`/`X-Original-To`/`To`). Нет матча → новый тикет (`source=email`). `[#TKT-N]` найден, но живого тикета нет (в архиве) → новый тикет с `references_archived_ticket_number=N`. **Безопасность:** для fallback'ов по subject/recipient-токену (угадываемый последовательный `number`) отправитель сверяется с `ticket.requester_email` (case-insensitive); при несовпадении создаётся новый тикет (защита от инъекции сообщения в чужой тикет). `References`-матч (секретный `Message-ID` исходящего) — без сверки отправителя. **PII в логах:** при несовпадении отправителя логируется маскированный email (``u***@domain``, `_email_domain`) — полное значение хранится в БД/почте, но не в info-логах (защита от попадания адресов в access-логи/Sentry).
 5. **Инициатор**: `From` → нормализованный email → `LOWER(users.email)`; найден → `requester_user_id`, иначе гостевая заявка.
 6. Тело: `text/plain` предпочитается, иначе деривация из sanitized `text/html` (`nh3`). **Отсечение цитаты** предыдущего письма — маркер-разделитель `REPLY_MARKER_TOKEN` + эвристика quoted-reply (см. ниже «Отсечение цитат во входящих ответах»). **Локализация картинок + обычные вложения** (`_localize_attachments_and_images`, см. §6): inline `cid:` (`multipart/related`/`Content-ID`) и внешние `http(s)://` сохраняются в локальный FS, `src` переписывается на `/api/v1/helpdesk/attachments/{id}`; `Content-Disposition: attachment`-части — через `save_image_bytes` (MIME/лимиты/path-traversal guard). Снимает CSP-блок http-картинок и битые `cid:` (раньше — MVP-заглушка без сохранения).
 7. Статус: `pending` → `open` (без окна); `closed` → `open` в окне reopen (иначе без изменений); `new`/`open` — без изменений.
@@ -406,9 +406,9 @@ CHECK: `digest_hour BETWEEN 0 AND 23`, `digest_minute BETWEEN 0 AND 59`, `digest
 - **Dispatcher** `_build_helpdesk_mime` (`./backend/app/worker/tasks/email_outbox.py`) — async-ветка (читает вложения с диска через `aiofiles`, поэтому не влезает в синхронный `_build_mime`). Заголовки:
   - `Message-ID: <tkn-{ticket_number}-{message_uuid}@{support_domain}>` (из `payload.message_id_header`)
   - `In-Reply-To` / `References` (цепочка `email_message_id` предшествующих сообщений)
-  - `Reply-To: {support_address}` — чистый настроенный адрес ящика (без plus-addressing). Матчинг входящих ответов идёт по `In-Reply-To`/`References`, токену `[#TKT-{number}]` в теме и опционально по plus-маркеру в адресе получателя — plus-маркер в `Reply-To` для этого не нужен и ранее ломал доставку на ящиках, где local-part ≠ `support` (например `portal@domain` → ответ на несуществующий `support+TKT-N@domain`).
+  - `Reply-To: {reply_to_address}` — **явный `support_reply_to` (если задан админом в mailbox-настройках), иначе `support_address`** (базовый ящик поддержки). Раньше `support_reply_to` сохранялся в БД, но игнорировался во всех продюсерах — поле было мёртвым, введённое админом значение терялось. Матчинг входящих ответов идёт по `In-Reply-To`/`References`, токену `[#TKT-{number}]` в теме и опционально по plus-маркеру в адресе получателя — plus-маркер в `Reply-To` для этого не нужен и ранее ломал доставку на ящиках, где local-part ≠ `support` (например `portal@domain` → ответ на несуществующий `support+TKT-N@domain`).
   - `Subject: "[#TKT-{number}] {subject_original}"`
-  - Все значения — через `_sanitize_header` (защита от header-injection).
+  - Все значения — через `_sanitize_header` (защита от header-injection). Продюсер (`outbound.py`) тоже санирует `references`/`in_reply_to`/`subject`/`to_email`/`reply_to` через `_sanitize_header_field`/`_sanitize_references` (defense-in-depth — на случай нового продюсера или изменения worker'а).
   - Вложения: `multipart/mixed`, файлы с локального диска; содержимое **не** в JSONB payload (только метаданные).
   - **Inline-картинки rich-ответов** (`_embed_helpdesk_inline_images`): `<img src="/api/v1/.../inline-media/...">` в `body_html` встраиваются как `cid:`-attach (`multipart/related`, `Content-ID`) — заявитель видит картинки в почтовом клиенте. См. блок ниже.
   - При пустом/невалидном `support_domain` → `ValueError` → outbox mark_failed (RFC 5322 требует валидный домен).
@@ -481,15 +481,17 @@ Cron `send_helpdesk_digest` (см. §10) раз в день шлёт **кажд�
 
 ## 10. Архив и cron
 
-Все cron гейтируются модулем (`modules.helpdesk.enabled`); при выключенном — выходят без работы.
+Все cron гейтируются модулем (`modules.helpdesk.enabled`); при выключенном — выходят без работы. **Все cron берут distributed lock** (Redis `SET NX EX`, release через Lua с проверкой токена): защита от двойного запуска при нескольких воркерах.
 
-| FQN | Расписание | run_at_startup | Назначение |
-|---|---|---|---|
-| `poll_helpdesk_mailbox` | `second={0,30}` | нет | IMAP-фетч (реальный интервал из БД, см. §8) |
-| `archive_closed_tickets_task` | `hour=3, minute=20` | нет | `closed` старше `HELPDESK_ARCHIVE_AFTER_DAYS` (14) → архив (jsonb + CASCADE) |
-| `create_next_helpdesk_archive_partition` | `month=*, day=1, hour=2` | **да** | Помесячные партиции архива на 3 мес вперёд |
-| `cleanup_helpdesk_attachments_task` | `hour=4, minute=0` | нет | Удаление папок тикетов, архивированных > `HELPDESK_ARCHIVE_FILES_TTL_DAYS` (180) назад |
-| `send_helpdesk_digest` | `minute=0` (ежечасно) | нет | Ежедневная email-сводка агентам (реальное время — из `helpdesk_digest_settings`, см. §9.1) |
+| FQN | Расписание | run_at_startup | Lock (key / TTL) | Назначение |
+|---|---|---|---|---|
+| `poll_helpdesk_mailbox` | `second={0,30}` | нет | `helpdesk:imap:poll_lock` / 5 мин | IMAP-фетч (реальный интервал из БД, см. §8) |
+| `archive_closed_tickets_task` | `hour=3, minute=20` | нет | `helpdesk:archive:lock` / 10 мин | `closed` старше `HELPDESK_ARCHIVE_AFTER_DAYS` (14) → архив (jsonb + CASCADE) |
+| `create_next_helpdesk_archive_partition` | `month=*, day=1, hour=2` | **да** | `helpdesk:partition:lock` / 2 мин | Помесячные партиции архива на 3 мес вперёд |
+| `cleanup_helpdesk_attachments_task` | `hour=4, minute=0` | нет | `helpdesk:cleanup:lock` / 10 мин | Удаление папок тикетов, архивированных > `HELPDESK_ARCHIVE_FILES_TTL_DAYS` (180) назад |
+| `send_helpdesk_digest` | `minute=0` (ежечасно) | нет | `helpdesk:digest:lock` / 5 мин | Ежедневная email-сводка агентам (реальное время — из `helpdesk_digest_settings`, см. §9.1) |
+
+> Раньше только `poll_helpdesk_mailbox` и `send_helpdesk_digest` брали локи; archive/partition/cleanup были без защиты → при двух воркерах `archive_closed_tickets` дублировал работу (`SELECT` без `FOR UPDATE SKIP LOCKED`, оба выбирали одни и те же `closed`-тикеты до commit). Теперь локи продублированы на всё archive-семейство через общий хелпер `_acquire_lock`/`_release_lock` в `worker/tasks/helpdesk.py`.
 
 **Транзакции (cron):** воркеры открывают `async with AsyncSessionLocal() as db:` (`autocommit=False`) и **обязаны явно `db.commit()`** после изменений. `archive_closed_tickets` коммитит в сервисе при наличии изменений; `poll_mailbox` делает `db.rollback()` в except-цикла UID (защита от session-poisoning: один битый UID не роняет батч), а успешный ingest коммитит сообщение + `helpdesk_email_log` единым commit (идемпотентность).
 

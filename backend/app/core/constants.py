@@ -13,7 +13,7 @@ ALLOWED_NEWS_COVER_IMG_TYPES: frozenset[str] = frozenset(
     {"image/jpeg", "image/png", "image/webp", "image/gif"}
 )
 
-# ── Helpdesk runtime parameters (docs/wip/helpdesk.md §9.3) ─────────────────
+# ── Helpdesk runtime parameters (docs/helpdesk.md §11) ──────────────────────
 # Константы, а не SystemSettings: операционные окна меняются редко, а перенос в
 # system_config требует правок 3-4 Pydantic-классов + Admin UI + фронта.
 HELPDESK_MAX_ATTACHMENT_MB = 25

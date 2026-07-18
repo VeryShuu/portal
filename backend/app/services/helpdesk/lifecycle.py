@@ -22,9 +22,6 @@ AGENT_SETTABLE_STATUSES = frozenset({"open", "pending", "closed"})
 # ``closed``), миграция 079.
 REQUESTER_REOPEN_STATUSES = frozenset({"pending"})
 
-#: Все допустимые значения статуса (ТЗ §3.1).
-ALL_STATUSES = frozenset({"new", "open", "pending", "closed"})
-
 
 class IllegalTransitionError(Exception):
     """Невозможный переход статус-машины. ``current``/``allowed`` содержат

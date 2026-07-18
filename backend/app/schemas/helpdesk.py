@@ -1,6 +1,6 @@
 """Pydantic-схемы для модуля техподдержки (Helpdesk).
 
-Контракты соответствуют ТЗ ``docs/wip/helpdesk.md`` (§4.3). Пароль IMAP —
+Контракты соответствуют ``docs/helpdesk.md`` (§4.3). Пароль IMAP —
 write-only: в ответах возвращается только ``imap_password_set`` и
 ``configured`` (последнее — ``False``, пока singleton-строка настроек ещё не
 создана первым ``PUT /settings/mailbox``).
@@ -40,13 +40,6 @@ class HelpdeskDirection(StrEnum):
 class HelpdeskVisibility(StrEnum):
     public = "public"
     internal = "internal"
-
-
-class HelpdeskEmailLogStatus(StrEnum):
-    created = "created"
-    appended = "appended"
-    skipped = "skipped"
-    error = "error"
 
 
 # ---------------------------------------------------------------------------

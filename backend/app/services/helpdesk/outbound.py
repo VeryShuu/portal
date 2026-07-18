@@ -61,6 +61,31 @@ def support_domain(mailbox: HelpdeskMailboxSettings | None) -> str | None:
     return domain or None
 
 
+def reply_to_address(mailbox: HelpdeskMailboxSettings) -> str:
+    """Адрес для заголовка ``Reply-To`` исходящих писем тикета.
+
+    Приоритет: явный ``support_reply_to`` (если задан админом в mailbox-настройках),
+    иначе ``support_address`` (базовый ящик поддержки). Раньше ``support_reply_to``
+    сохранялся в БД, но игнорировался во всех продюсерах — поле было мёртвым, и
+    введённое админом значение молча терялось (H-4).
+
+    ``getattr`` c дефолтом — обратная совместимость со старыми тестами, где
+    mailbox-заглушка (``SimpleNamespace``) не содержит атрибута ``support_reply_to``
+    (до правки это поле не использовалось продюсерами → тесты его не задавали)."""
+    explicit = (getattr(mailbox, "support_reply_to", None) or "").strip()
+    return explicit or (mailbox.support_address or "").strip()
+
+
+def _sanitize_references(refs: list[str]) -> list[str]:
+    """Прогнать ``references``/``in_reply_to`` через ``_sanitize_header_field``.
+
+    Defense-in-depth (C-3): эти значения attacker-controlled (входящий email
+    несёт произвольные ``Message-ID``/``In-Reply-To``/``References``), они
+    попадают в исходящие заголовки. Outbox worker стрипает CRLF повторно, но
+    продюсер тоже санирует — на случай нового продюсера или изменения worker'а."""
+    return [_sanitize_header_field(r) for r in refs if r]
+
+
 async def load_mailbox(db: AsyncSession) -> HelpdeskMailboxSettings | None:
     """Singleton ``helpdesk_mailbox_settings`` (id=1) или None, если не настроен."""
     res = await db.execute(select(HelpdeskMailboxSettings).where(HelpdeskMailboxSettings.id == 1))
@@ -107,8 +132,8 @@ async def enqueue_reply_outbound(
     Без ``commit`` — outbox-запись коммитится единым commit'ом вместе с ответом
     агента в роутере (outbox-инвариант AGENTS.md).
     """
-    references = await collect_ticket_references(
-        db, ticket_id=ticket.id, exclude_message_id=message.id
+    references = _sanitize_references(
+        await collect_ticket_references(db, ticket_id=ticket.id, exclude_message_id=message.id)
     )
 
     atts_res = await db.execute(
@@ -173,9 +198,9 @@ async def enqueue_reply_outbound(
             "ticket_id": str(ticket.id),
             "ticket_number": ticket.number,
             "message_id_header": message.email_message_id,
-            "in_reply_to": references[-1] if references else None,
+            "in_reply_to": _sanitize_header_field(references[-1]) if references else None,
             "references": references,
-            "reply_to": mailbox.support_address,
+            "reply_to": _sanitize_header_field(reply_to_address(mailbox)),
             "subject_original": _sanitize_header_field(ticket.subject),
             "support_domain": domain,
             "support_address": mailbox.support_address,
@@ -208,7 +233,7 @@ async def enqueue_assigned_email(
     (outbox-инвариант AGENTS.md).
     """
     domain = support_domain(mailbox)
-    references = await collect_ticket_references(db, ticket_id=ticket.id)
+    references = _sanitize_references(await collect_ticket_references(db, ticket_id=ticket.id))
 
     # Генерируем Message-ID в каноническом формате треда тикета. Используется
     # свежий uuid (это уведомление, не HelpdeskMessage), но он валиден как
@@ -228,9 +253,9 @@ async def enqueue_assigned_email(
             "ticket_id": str(ticket.id),
             "ticket_number": ticket.number,
             "message_id_header": message_id_header,
-            "in_reply_to": references[-1] if references else None,
+            "in_reply_to": _sanitize_header_field(references[-1]) if references else None,
             "references": references,
-            "reply_to": mailbox.support_address,
+            "reply_to": _sanitize_header_field(reply_to_address(mailbox)),
             "subject_original": _sanitize_header_field(ticket.subject),
             "support_domain": domain,
             "support_address": mailbox.support_address,
@@ -286,7 +311,7 @@ async def enqueue_created_email(
             # Первый тикет треда — ``references`` пуст, ``in_reply_to`` нет.
             "in_reply_to": None,
             "references": [],
-            "reply_to": mailbox.support_address,
+            "reply_to": _sanitize_header_field(reply_to_address(mailbox)),
             "subject_original": _sanitize_header_field(ticket.subject),
             "support_domain": domain,
             "support_address": mailbox.support_address,

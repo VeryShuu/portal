@@ -684,14 +684,31 @@ async def _match_ticket(
         # Отправитель не совпадает с заявителем → не подмешиваем в чужой тикет,
         # создаём новый (со ссылкой references_archived_ticket_number, если
         # исходный тикет архивный — обрабатывается в _ingest_message).
+        #
+        # H-11: не логируем PII (адреса) в открытом виде — маскируем по образцу
+        # AGENTS.md (email-хеш для rate-limit). Диагностики «токен + домены + факт
+        # расхождения» достаточно для разбора; полный адрес — только в БД/почте.
         logger.info(
             "helpdesk.ingress.token_sender_mismatch",
             ticket_number=ticket.number,
-            sender=sender_email,
-            requester=ticket.requester_email,
+            sender_domain=_email_domain(sender_email),
+            requester_domain=_email_domain(ticket.requester_email),
         )
         return None
     return ticket
+
+
+def _email_domain(email: str) -> str:
+    """Маскированный email для логов: ``user@company.local`` → ``u***@company.local``.
+
+    Часть до ``@`` никогда не возвращается полностью (PII). Домен оставляем —
+    он нужен для диагностики («письмо пришло снаружи организации»)."""
+    if "@" not in email:
+        return "(invalid)"
+    local, _, domain = email.partition("@")
+    if not local:
+        return f"@{domain or '(empty)'}"
+    return f"{local[0]}***@{domain or '(empty)'}"
 
 
 async def _find_user_by_email(db: AsyncSession, email: str) -> User | None:
