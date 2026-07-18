@@ -1,14 +1,22 @@
 <template>
   <div
     class="ticket-row"
-    :class="{ 'ticket-row--agent': agentMode }"
+    :class="{ 'ticket-row--agent': agentMode, 'ticket-row--unread': ticket.unread }"
+    :title="ticket.unread ? t('helpdesk.hasUnread') : undefined"
     role="button"
     tabindex="0"
     @click="$emit('open', ticket.id)"
     @keydown.enter="$emit('open', ticket.id)"
     @keydown.space.prevent="$emit('open', ticket.id)"
   >
-    <span class="ticket-row__cell ticket-row__num">#{{ ticket.number }}</span>
+    <span class="ticket-row__cell ticket-row__num">
+      <span
+        v-if="ticket.unread"
+        class="ticket-row__unread-dot"
+        :aria-label="t('helpdesk.hasUnread')"
+      />
+      #{{ ticket.number }}
+    </span>
     <span class="ticket-row__cell ticket-row__status">
       <TicketStatusBadge :status="ticket.status" />
     </span>
@@ -96,6 +104,40 @@ function formatDate(iso: string): string {
 .ticket-row:hover,
 .ticket-row:focus-visible {
   background: var(--color-bg-muted);
+}
+/* Непрочитанная заявка (есть новые ответы заявителя, которые агент ещё не
+   открывал — миграция 080). Единый визуальный язык с NotificationsDropdown:
+   полупрозрачный фон + красная точка перед номером. Hover сохраняет акцент,
+   но чуть сильнее — иначе unread-строка теряет подсветку при наведении. */
+.ticket-row--unread {
+  background: rgba(20, 58, 102, 0.05);
+}
+.ticket-row--unread:hover,
+.ticket-row--unread:focus-visible {
+  background: rgba(20, 58, 102, 0.1);
+}
+[data-theme='dark'] .ticket-row--unread {
+  background: rgba(255, 255, 255, 0.05);
+}
+[data-theme='dark'] .ticket-row--unread:hover,
+[data-theme='dark'] .ticket-row--unread:focus-visible {
+  background: rgba(255, 255, 255, 0.1);
+}
+.ticket-row__unread-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--color-brand-red, #d8262c);
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+.ticket-row--unread .ticket-row__subject {
+  font-weight: 700;
+}
+.ticket-row--unread .ticket-row__num {
+  color: var(--color-text);
 }
 .ticket-row__cell {
   min-width: 0;

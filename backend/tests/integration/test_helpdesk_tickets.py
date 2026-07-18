@@ -17,9 +17,11 @@
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime
 
 import pytest
 import pytest_asyncio
+from sqlalchemy import select
 
 from app.models.helpdesk import HelpdeskTicket
 from app.schemas.helpdesk import MessageCreateIn, TicketCreateIn
@@ -265,3 +267,208 @@ class TestResolveRequesterUser:
         await real_db_session.flush()
         requester = await tickets_service.resolve_requester_user(real_db_session, ticket=guest)
         assert requester is None
+
+
+# ---------------------------------------------------------------------------
+# Agent read-state: подсветка непрочитанных заявок (миграция 080)
+# ---------------------------------------------------------------------------
+
+
+class TestAgentReadState:
+    """Контракт «непрочитанности» для агента.
+
+    Непрочитанное = публичное входящее сообщение (``direction='inbound'``,
+    ``visibility='public'`` — ответ заявителя) новее ``last_seen_at`` агента.
+    Ответы других агентов и свои собственные, а также internal-заметки, НЕ
+    считаются (агент их видел/писал).
+
+    Эти тесты требуют реальной БД (SQLAlchemy EXISTS/UPSERT на живом PostgreSQL)
+    — unit-моки не доказали бы корректность SQL-конструкции.
+    """
+
+    async def test_new_ticket_unread_for_agent(self, real_db_session, ticket, real_admin):
+        """Новый тикет с первым inbound-сообщением → непрочитан для агента,
+        который его ни разу не открывал (нет строки в helpdesk_ticket_reads)."""
+        from app.services.helpdesk import reads as reads_svc
+
+        unread = await reads_svc.has_unread_requester_messages(
+            real_db_session, ticket_id=ticket.id, user_id=real_admin.id
+        )
+        assert unread is True
+
+    async def test_mark_seen_clears_unread(self, real_db_session, ticket, real_admin):
+        """После ``mark_ticket_seen`` (агент открыл карточку) — тикет прочитан."""
+        from app.services.helpdesk import reads as reads_svc
+
+        await reads_svc.mark_ticket_seen(
+            real_db_session, ticket_id=ticket.id, user_id=real_admin.id
+        )
+        await real_db_session.commit()
+
+        unread = await reads_svc.has_unread_requester_messages(
+            real_db_session, ticket_id=ticket.id, user_id=real_admin.id
+        )
+        assert unread is False
+
+    async def test_new_requester_reply_makes_unread_again(
+        self, real_db_session, ticket, real_admin, real_user
+    ):
+        """Агент прочитал → заявитель добавил ответ → снова непрочитан."""
+        from app.services.helpdesk import reads as reads_svc
+
+        # Прочитал.
+        await reads_svc.mark_ticket_seen(
+            real_db_session, ticket_id=ticket.id, user_id=real_admin.id
+        )
+        await real_db_session.commit()
+        # Новый ответ заявителя.
+        await messages_service.add_requester_reply(
+            real_db_session,
+            ticket=ticket,
+            user=real_user,
+            payload=MessageCreateIn(body_text="дополнительный вопрос"),
+            files=[],
+        )
+        await real_db_session.commit()
+
+        unread = await reads_svc.has_unread_requester_messages(
+            real_db_session, ticket_id=ticket.id, user_id=real_admin.id
+        )
+        assert unread is True
+
+    async def test_outbound_agent_reply_does_not_make_unread(
+        self, real_db_session, ticket, real_admin, real_editor
+    ):
+        """Ответ другого агента НЕ делает тикет непрочитанным (агент и так
+        видел бы свой ответ; контракт «только ответы заявителя»)."""
+        from app.models.helpdesk import HelpdeskAgent, HelpdeskMessage
+        from app.services.helpdesk import reads as reads_svc
+
+        # Сделаем real_editor агентом (нужен для add_agent_reply ACL).
+        real_db_session.add(HelpdeskAgent(user_id=real_editor.id, added_by=real_admin.id))
+        await real_db_session.flush()
+        # Агент читает тикет (становится прочитанным).
+        await reads_svc.mark_ticket_seen(
+            real_db_session, ticket_id=ticket.id, user_id=real_admin.id
+        )
+        await real_db_session.commit()
+        # Ответ агента (через прямой INSERT — add_agent_reply тащит много
+        # зависимостей outbox/notify, нам нужен только сам факт нового сообщения).
+        real_db_session.add(
+            HelpdeskMessage(
+                ticket_id=ticket.id,
+                author_user_id=real_editor.id,
+                author_email=real_editor.email,
+                author_name=real_editor.full_name,
+                direction="outbound",
+                visibility="public",
+                body_text="ответ агента",
+                source="web",
+            )
+        )
+        await real_db_session.commit()
+
+        unread = await reads_svc.has_unread_requester_messages(
+            real_db_session, ticket_id=ticket.id, user_id=real_admin.id
+        )
+        assert unread is False, "ответ агента не должен делать тикет непрочитанным"
+
+    async def test_internal_note_does_not_make_unread(
+        self, real_db_session, ticket, real_admin
+    ):
+        """Internal-заметка (``visibility='internal'``) НЕ делает тикет
+        непрочитанным — это служебная активность, не требующая «прочтения»."""
+        from app.models.helpdesk import HelpdeskMessage
+        from app.services.helpdesk import reads as reads_svc
+
+        await reads_svc.mark_ticket_seen(
+            real_db_session, ticket_id=ticket.id, user_id=real_admin.id
+        )
+        await real_db_session.commit()
+        # Internal-заметка (direction=inbound — формально «входящее», но
+        # visibility=internal — служебное; контракт учитывает обе оси).
+        real_db_session.add(
+            HelpdeskMessage(
+                ticket_id=ticket.id,
+                author_user_id=real_admin.id,
+                author_email=real_admin.email,
+                author_name=real_admin.full_name,
+                direction="inbound",
+                visibility="internal",
+                body_text="внутренняя заметка",
+                source="web",
+            )
+        )
+        await real_db_session.commit()
+
+        unread = await reads_svc.has_unread_requester_messages(
+            real_db_session, ticket_id=ticket.id, user_id=real_admin.id
+        )
+        assert unread is False, "internal-заметка не должна делать тикет непрочитанным"
+
+    async def test_read_state_is_per_agent(
+        self, real_db_session, ticket, real_admin, real_editor
+    ):
+        """Read-state per-user: один агент прочитал — для другого тикет всё
+        ещё непрочитан (каждый видит свой «last seen»)."""
+        from app.services.helpdesk import reads as reads_svc
+
+        # real_admin прочитал.
+        await reads_svc.mark_ticket_seen(
+            real_db_session, ticket_id=ticket.id, user_id=real_admin.id
+        )
+        await real_db_session.commit()
+
+        admin_unread = await reads_svc.has_unread_requester_messages(
+            real_db_session, ticket_id=ticket.id, user_id=real_admin.id
+        )
+        editor_unread = await reads_svc.has_unread_requester_messages(
+            real_db_session, ticket_id=ticket.id, user_id=real_editor.id
+        )
+        assert admin_unread is False
+        assert editor_unread is True, "для другого агента тикет всё ещё непрочитан"
+
+    async def test_enrich_returns_map_for_inbox(
+        self, real_db_session, ticket, real_admin
+    ):
+        """``enrich_with_unread`` одним запросом возвращает map для списка
+        тикетов инбокса — без N+1 на каждый тикет."""
+        from app.services.helpdesk import reads as reads_svc
+
+        unread_map = await reads_svc.enrich_with_unread(
+            real_db_session, tickets=[ticket], user_id=real_admin.id
+        )
+        assert set(unread_map.keys()) == {ticket.id}
+        assert unread_map[ticket.id] is True
+
+    async def test_mark_seen_upsert_is_idempotent(
+        self, real_db_session, ticket, real_admin
+    ):
+        """Повторное открытие карточки = UPSERT (не падает на UNIQUE) и
+        обновляет ``last_seen_at`` на более свежий."""
+        from app.models.helpdesk import HelpdeskTicketRead
+        from app.services.helpdesk import reads as reads_svc
+
+        first_at = datetime(2026, 1, 1, tzinfo=UTC)
+        await reads_svc.mark_ticket_seen(
+            real_db_session, ticket_id=ticket.id, user_id=real_admin.id, now=first_at
+        )
+        await real_db_session.commit()
+
+        second_at = datetime(2026, 7, 18, tzinfo=UTC)
+        await reads_svc.mark_ticket_seen(
+            real_db_session, ticket_id=ticket.id, user_id=real_admin.id, now=second_at
+        )
+        await real_db_session.commit()
+
+        # Одна строка (UPSERT не создал дубль).
+        res = await real_db_session.execute(
+            select(HelpdeskTicketRead).where(
+                HelpdeskTicketRead.ticket_id == ticket.id,
+                HelpdeskTicketRead.user_id == real_admin.id,
+            )
+        )
+        rows = res.scalars().all()
+        assert len(rows) == 1
+        # ``last_seen_at`` обновлён до более свежего значения.
+        assert rows[0].last_seen_at == second_at

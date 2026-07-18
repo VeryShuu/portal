@@ -97,6 +97,7 @@ import {
   changeTicketStatus,
   reopenTicket,
   replyAgentTicket,
+  markTicketRead,
   type HelpdeskTicketDetail,
   type HelpdeskStatus,
 } from '../../api/helpdesk'
@@ -132,6 +133,13 @@ async function load() {
   try {
     ticket.value = await fetchAgentTicket(ticketId)
     selectedStatus.value = ticket.value.status
+    // Best-efford: отметить тикет прочитанным для агента (снять подсветку в
+    // инбоксе — миграция 080). Не блокирует UI и не валит карточку при ошибке
+    // (read-state — косметика, как notifications.read). Повторное открытие
+    // карточки = UPSERT, идемпотентно.
+    void markTicketRead(ticketId).catch(() => {
+      /* silent: read-state не критичен для просмотра переписки */
+    })
   } catch (e) {
     message.error(parseApiError(e, t))
   } finally {

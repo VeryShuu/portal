@@ -105,8 +105,21 @@ class TicketListItemOut(BaseModel):
     assignee_name: str | None = None
     last_activity_at: datetime
     created_at: datetime
+    # Подсветка непрочитанных ответов заявителя для агента в инбоксе (миграция
+    # 080). ``None`` (по умолчанию) — состояние неизвестно (не агентский путь,
+    # например ``/tickets/my`` у заявителя, где unread-семантика другая).
+    # ``True`` — есть публичные входящие сообщения новее ``last_seen_at`` агента.
+    unread: bool | None = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class MarkTicketReadOut(BaseModel):
+    """Ответ ``POST /tickets/{id}/read`` — подтверждение отметки «просмотрено»."""
+
+    ok: bool = True
+    ticket_id: uuid.UUID
+    last_seen_at: datetime
 
 
 class TicketOut(BaseModel):
@@ -149,6 +162,16 @@ class TicketListOut(BaseModel):
     offset: int
 
 
+class TicketCountsOut(BaseModel):
+    """Лёгкий ответ для счётчиков в меню. ``active`` — тикеты в статусах
+    ``new``/``open``/``pending`` (закрытые исключены). Используется бейджем
+    пункта меню: у заявителя — «мои открытые», у агента — «назначенные мне».
+    Какие именно считать — определяется endpoint'ом (requester vs agent), здесь
+    только форма ответа."""
+
+    active: int
+
+
 # ---------------------------------------------------------------------------
 # Messages
 # ---------------------------------------------------------------------------
@@ -157,9 +180,16 @@ class TicketListOut(BaseModel):
 class MessageCreateIn(BaseModel):
     """Тело ответа. ``visibility`` по умолчанию ``public`` (для инициатора
     доступен только этот путь); ``internal`` — заметка агента (не уходит на
-    email, не видна инициатору)."""
+    email, не видна инициатору).
 
-    body_text: str = Field(min_length=1, max_length=20000)
+    ``body_text`` допускает пустую строку — rich-редактор может прислать
+    сообщение, состоящее только из картинки (``<img>`` без текста), и
+    ``html_to_plain`` вернёт пустую строку. Валидация «хотя бы что-то есть»
+    делается в роутере (plain ИЛИ html), а не на уровне схемы — иначе
+    валидный image-only ответ получит 422.
+    """
+
+    body_text: str = Field(min_length=0, max_length=20000)
     body_html: str | None = Field(default=None, max_length=50000)
     visibility: HelpdeskVisibility = HelpdeskVisibility.public
 

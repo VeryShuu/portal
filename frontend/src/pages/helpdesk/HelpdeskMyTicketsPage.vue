@@ -4,84 +4,131 @@
       <h1 class="u-page-head__title">
         {{ t('helpdesk.myTitle') }}
       </h1>
-      <n-button
-        type="primary"
-        @click="showCreate = true"
-      >
-        <template #icon>
-          <n-icon><component :is="AddOutline" /></n-icon>
-        </template>
-        {{ t('helpdesk.createButton') }}
-      </n-button>
+      <div class="page-head__actions">
+        <n-button
+          quaternary
+          tag="a"
+          href="/helpdesk/my/archive"
+        >
+          {{ t('helpdesk.archive') }}
+        </n-button>
+        <n-button
+          type="primary"
+          @click="showCreate = true"
+        >
+          <template #icon>
+            <n-icon><component :is="AddOutline" /></n-icon>
+          </template>
+          {{ t('helpdesk.createButton') }}
+        </n-button>
+      </div>
     </header>
 
-    <div class="helpdesk-filters">
-      <n-radio-group
-        v-model:value="statusFilter"
-        size="small"
-        @update:value="reload"
-      >
-        <n-radio-button value="">
-          {{ t('helpdesk.statuses.all') }}
-        </n-radio-button>
-        <n-radio-button value="new">
-          {{ t('helpdesk.statuses.new') }}
-        </n-radio-button>
-        <n-radio-button value="open">
-          {{ t('helpdesk.statuses.open') }}
-        </n-radio-button>
-        <n-radio-button value="pending">
-          {{ t('helpdesk.statuses.pending') }}
-        </n-radio-button>
-        <n-radio-button value="closed">
-          {{ t('helpdesk.statuses.closed') }}
-        </n-radio-button>
-      </n-radio-group>
-    </div>
-
-    <n-spin :show="loading">
-      <n-empty
-        v-if="!loading && items.length === 0"
-        :description="t('helpdesk.noTickets')"
-        style="margin: 48px 0"
-      />
+    <!-- Блок «Ожидают принятия» — неназначенные (без агента) -->
+    <section class="inbox-section">
+      <header class="inbox-section__head">
+        <h2 class="inbox-section__title">
+          {{ t('helpdesk.sectionWaiting') }}
+          <span
+            v-if="waitingTotal"
+            class="inbox-section__count"
+          >{{ waitingTotal }}</span>
+        </h2>
+      </header>
+      <n-spin :show="waitingLoading">
+        <n-empty
+          v-if="!waitingLoading && waitingItems.length === 0"
+          :description="t('helpdesk.noTickets')"
+          style="margin: 24px 0"
+        />
+        <div
+          v-else
+          class="ticket-table"
+        >
+          <div class="ticket-table__head">
+            <span>{{ t('helpdesk.columnNumber') }}</span>
+            <span>{{ t('helpdesk.columnState') }}</span>
+            <span>{{ t('helpdesk.columnSubject') }}</span>
+            <span>{{ t('helpdesk.columnAssignee') }}</span>
+            <span>{{ t('helpdesk.columnUpdated') }}</span>
+          </div>
+          <div class="ticket-table__body">
+            <TicketListItem
+              v-for="ticket in waitingItems"
+              :key="ticket.id"
+              :ticket="ticket"
+              @open="goToTicket"
+            />
+          </div>
+        </div>
+      </n-spin>
       <div
-        v-else
-        class="ticket-table"
+        v-if="waitingTotal > waitingLimit"
+        class="helpdesk-pagination"
       >
-        <div class="ticket-table__head">
-          <span>{{ t('helpdesk.columnNumber') }}</span>
-          <span>{{ t('helpdesk.columnState') }}</span>
-          <span>{{ t('helpdesk.columnSubject') }}</span>
-          <span>{{ t('helpdesk.columnAssignee') }}</span>
-          <span>{{ t('helpdesk.columnUpdated') }}</span>
-        </div>
-        <div class="ticket-table__body">
-          <TicketListItem
-            v-for="ticket in items"
-            :key="ticket.id"
-            :ticket="ticket"
-            @open="goToTicket"
-          />
-        </div>
+        <n-pagination
+          :page="waitingPage"
+          :page-size="waitingLimit"
+          :item-count="waitingTotal"
+          @update:page="changeWaitingPage"
+        />
       </div>
-    </n-spin>
+    </section>
 
-    <div
-      v-if="total > limit"
-      class="helpdesk-pagination"
-    >
-      <n-pagination
-        :page="page"
-        :page-size="limit"
-        :item-count="total"
-        @update:page="changePage"
-      />
-    </div>
+    <!-- Блок «В работе у специалиста» — назначенные (с агентом) -->
+    <section class="inbox-section">
+      <header class="inbox-section__head">
+        <h2 class="inbox-section__title">
+          {{ t('helpdesk.sectionMyInWork') }}
+          <span
+            v-if="inWorkTotal"
+            class="inbox-section__count"
+          >{{ inWorkTotal }}</span>
+        </h2>
+      </header>
+      <n-spin :show="inWorkLoading">
+        <n-empty
+          v-if="!inWorkLoading && inWorkItems.length === 0"
+          :description="t('helpdesk.noTickets')"
+          style="margin: 24px 0"
+        />
+        <div
+          v-else
+          class="ticket-table"
+        >
+          <div class="ticket-table__head">
+            <span>{{ t('helpdesk.columnNumber') }}</span>
+            <span>{{ t('helpdesk.columnState') }}</span>
+            <span>{{ t('helpdesk.columnSubject') }}</span>
+            <span>{{ t('helpdesk.columnAssignee') }}</span>
+            <span>{{ t('helpdesk.columnUpdated') }}</span>
+          </div>
+          <div class="ticket-table__body">
+            <TicketListItem
+              v-for="ticket in inWorkItems"
+              :key="ticket.id"
+              :ticket="ticket"
+              @open="goToTicket"
+            />
+          </div>
+        </div>
+      </n-spin>
+      <div
+        v-if="inWorkTotal > inWorkLimit"
+        class="helpdesk-pagination"
+      >
+        <n-pagination
+          :page="inWorkPage"
+          :page-size="inWorkLimit"
+          :item-count="inWorkTotal"
+          @update:page="changeInWorkPage"
+        />
+      </div>
+    </section>
 
     <TicketCreateModal
       v-model:show="showCreate"
-      @created="reload"
+      @created="loadAll"
     />
   </div>
 </template>
@@ -90,55 +137,88 @@
 import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
-import { NSpin, NEmpty, NPagination, NButton, NIcon, NRadioGroup, NRadioButton, useMessage } from 'naive-ui'
+import { NSpin, NEmpty, NPagination, NButton, NIcon, useMessage } from 'naive-ui'
 import { AddOutline } from '@vicons/ionicons5'
 import TicketListItem from '../../components/helpdesk/TicketListItem.vue'
 import TicketCreateModal from '../../components/helpdesk/TicketCreateModal.vue'
-import { fetchMyTickets, type HelpdeskTicketListItem, type HelpdeskStatus } from '../../api/helpdesk'
+import { fetchMyTickets, type HelpdeskTicketListItem } from '../../api/helpdesk'
 import { parseApiError } from '../../utils/parseApiError'
 
 const { t } = useI18n()
 const router = useRouter()
 const message = useMessage()
 
-const items = ref<HelpdeskTicketListItem[]>([])
-const total = ref(0)
-const page = ref(1)
-const limit = 20
-const statusFilter = ref('')
-const loading = ref(false)
+// Двухблочный вид по образцу HelpdeskAgentInboxPage. Деление по assignee
+// (не по status): пользователь видит «ожидают принятия» (без агента) и
+// «в работе у специалиста» (с назначенным). Отвечает на вопрос «когда мной
+// займутся» лучше, чем деление по статусу тикета.
+const waitingItems = ref<HelpdeskTicketListItem[]>([])
+const waitingTotal = ref(0)
+const waitingPage = ref(1)
+const waitingLimit = 20
+const waitingLoading = ref(false)
+
+const inWorkItems = ref<HelpdeskTicketListItem[]>([])
+const inWorkTotal = ref(0)
+const inWorkPage = ref(1)
+const inWorkLimit = 20
+const inWorkLoading = ref(false)
+
 const showCreate = ref(false)
 
-async function load() {
-  loading.value = true
+async function loadWaiting() {
+  waitingLoading.value = true
   try {
     const res = await fetchMyTickets({
-      status: (statusFilter.value || undefined) as HelpdeskStatus | undefined,
-      limit,
-      offset: (page.value - 1) * limit,
+      unassigned: true,
+      limit: waitingLimit,
+      offset: (waitingPage.value - 1) * waitingLimit,
     })
-    items.value = res.items
-    total.value = res.total
+    waitingItems.value = res.items
+    waitingTotal.value = res.total
   } catch (e) {
     message.error(parseApiError(e, t))
   } finally {
-    loading.value = false
+    waitingLoading.value = false
   }
 }
 
-function reload() {
-  page.value = 1
-  load()
+async function loadInWork() {
+  inWorkLoading.value = true
+  try {
+    const res = await fetchMyTickets({
+      assigned: true,
+      limit: inWorkLimit,
+      offset: (inWorkPage.value - 1) * inWorkLimit,
+    })
+    inWorkItems.value = res.items
+    inWorkTotal.value = res.total
+  } catch (e) {
+    message.error(parseApiError(e, t))
+  } finally {
+    inWorkLoading.value = false
+  }
 }
-function changePage(p: number) {
-  page.value = p
-  load()
+
+async function loadAll() {
+  await Promise.all([loadWaiting(), loadInWork()])
 }
+
+function changeWaitingPage(p: number) {
+  waitingPage.value = p
+  loadWaiting()
+}
+
+function changeInWorkPage(p: number) {
+  inWorkPage.value = p
+  loadInWork()
+}
+
 function goToTicket(id: string) {
   router.push({ name: 'helpdesk-my-ticket', params: { id } })
 }
 
-load()
+loadAll()
 </script>
 
 <style scoped>
@@ -148,8 +228,44 @@ load()
   align-items: center;
   margin-bottom: 16px;
 }
-.helpdesk-filters {
-  margin-bottom: 16px;
+.page-head__actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.inbox-section {
+  margin-bottom: 32px;
+}
+.inbox-section__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+.inbox-section__title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--color-text);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.inbox-section__count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  padding: 0 6px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 16px;
+  color: var(--color-text-muted);
+  background: rgba(0, 0, 0, 0.06);
+  border-radius: 999px;
+}
+[data-theme='dark'] .inbox-section__count {
+  background: rgba(255, 255, 255, 0.1);
 }
 .ticket-table {
   border: 1px solid var(--color-border);
@@ -177,7 +293,7 @@ load()
   border-bottom: none;
 }
 .helpdesk-pagination {
-  margin-top: 24px;
+  margin-top: 16px;
   display: flex;
   justify-content: center;
 }

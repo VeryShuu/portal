@@ -100,3 +100,33 @@ img {
 html {
   scroll-behavior: smooth;
 }
+
+/* ─────────────────────────────────────────────────────────────────────
+   Menu count-badge — серая компактная цифра справа от лейбла пункта
+   главного меню (sidebar + mobile drawer). Используется для счётчиков:
+   «открытые заявки» (заявитель) и «в работе» (агент) в helpdesk. Скрытие
+   при count=0 — на уровне render-функции (useAppMenu.renderNavLabelWithCount).
+   Единый визуальный язык с StaffTableView/DepartmentColleagues pill'ами.
+   ───────────────────────────────────────────────────────────────────── */
+.menu-count-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  padding: 0 6px;
+  margin-left: 2px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 16px;
+  color: var(--color-text-muted);
+  background: rgba(0, 0, 0, 0.06);
+  border-radius: var(--radius-pill, 999px);
+  flex-shrink: 0;
+}
+[data-theme='dark'] .menu-count-badge {
+  background: rgba(255, 255, 255, 0.1);
+}
+/* В свёрнутом сайдбаре бейдж не помещается — скрываем, иконка остаётся. */
+.app-sider--collapsed .menu-count-badge {
+  display: none;
+}

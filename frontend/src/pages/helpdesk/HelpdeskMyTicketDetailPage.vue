@@ -66,7 +66,7 @@ import TicketInfoCard from '../../components/helpdesk/TicketInfoCard.vue'
 import TicketMessageList from '../../components/helpdesk/TicketMessageList.vue'
 import TicketReplyForm from '../../components/helpdesk/TicketReplyForm.vue'
 import RequesterProfileCard from '../../components/helpdesk/RequesterProfileCard.vue'
-import { fetchMyTicket, replyMyTicket, type HelpdeskTicketDetail } from '../../api/helpdesk'
+import { fetchMyTicket, replyMyTicket, markMyTicketRead, type HelpdeskTicketDetail } from '../../api/helpdesk'
 import { parseApiError } from '../../utils/parseApiError'
 import { ROUTES } from '../../router'
 
@@ -86,6 +86,13 @@ async function load() {
   loading.value = true
   try {
     ticket.value = await fetchMyTicket(ticketId)
+    // Best-efford: отметить тикет прочитанным для заявителя (снять подсветку
+    // ответов агентов в «Мои заявки» — direction='outbound' в reads.py).
+    // Не блокирует UI и не валит карточку при ошибке (read-state — косметика).
+    // Зеркало агентского markTicketRead в HelpdeskAgentTicketDetailPage.
+    void markMyTicketRead(ticketId).catch(() => {
+      /* silent: read-state не критичен для просмотра переписки */
+    })
   } catch (e) {
     message.error(parseApiError(e, t))
   } finally {

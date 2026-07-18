@@ -33,11 +33,13 @@ from app.core.logging import get_logger
 from app.models.helpdesk import HelpdeskTicket
 from app.schemas.helpdesk import (
     HelpdeskVisibility,
+    MarkTicketReadOut,
     MessageCreateIn,
     MessageOut,
     RequesterProfileOut,
     TicketAgentOut,
     TicketAssignIn,
+    TicketCountsOut,
     TicketCreateIn,
     TicketListOut,
     TicketOut,
@@ -48,6 +50,7 @@ from app.services.helpdesk import attachments as attachments_service
 from app.services.helpdesk import messages as messages_service
 from app.services.helpdesk import notifications as notifications_service
 from app.services.helpdesk import outbound as outbound_service
+from app.services.helpdesk import reads as reads_service
 from app.services.helpdesk import tickets as tickets_service
 from app.services.helpdesk.lifecycle import IllegalTransitionError
 
@@ -75,6 +78,24 @@ def _validate_status_filter(value: str | None) -> str | None:
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Invalid status"
         )
     return value
+
+
+def _validate_message_body(norm_text: str, norm_html: str | None) -> None:
+    """Проверить, что сообщение содержит хоть какой-то контент.
+
+    Валидно: есть plain-текст ИЛИ html-контент. Последнее нужно для rich-редактора:
+    агент может отправить ответ, состоящий только из картинки (``<img>`` без
+    пояснительного текста) — это нормальный кейс (скриншот ошибки без подписи).
+    ``html_to_plain`` в таком случае возвращает пустую строку (тегов-то нет), и
+    старая проверка ``if not norm_text`` отбрасывала валидный image-only ответ
+    с 422. Теперь: если есть html (после sanitize) — сообщение принято, даже
+    когда plain пустой.
+    """
+    if not norm_text and not norm_html:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Message body is empty",
+        )
 
 
 @router.post(
@@ -123,24 +144,93 @@ async def list_my_tickets(
     user: CurrentUser,
     db: DbDep,
     status_filter: str | None = Query(default=None, alias="status"),
+    unassigned: bool = Query(default=False),
+    assigned: bool = Query(default=False),
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
 ) -> TicketListOut:
     status_filter = _validate_status_filter(status_filter)
-    total = await tickets_service.count_my_tickets(db, user_id=user.id, status_filter=status_filter)
+    total = await tickets_service.count_my_tickets(
+        db,
+        user_id=user.id,
+        status_filter=status_filter,
+        unassigned=unassigned,
+        assigned=assigned,
+    )
     items = await tickets_service.list_my_tickets(
         db,
         user_id=user.id,
         status_filter=status_filter,
         limit=limit,
         offset=offset,
+        unassigned=unassigned,
+        assigned=assigned,
+    )
+    # Unread для заявителя: «есть ли публичные ответы агентов новее last_seen_at».
+    # Контракт зеркален агентскому (там — ответы заявителя, direction='inbound'),
+    # здесь — direction='outbound'. Один запрос на весь список (защита от N+1).
+    unread_map = await reads_service.enrich_with_unread(
+        db, tickets=items, user_id=user.id, direction=reads_service.OUTBOUND_DIRECTION
     )
     return TicketListOut(
-        items=[ticket_to_list_out(i) for i in items],
+        items=[ticket_to_list_out(i, unread=unread_map.get(i.id)) for i in items],
         total=total,
         limit=limit,
         offset=offset,
     )
+
+
+@router.get(
+    "/tickets/my/counts",
+    response_model=TicketCountsOut,
+    summary="Счётчик своих открытых заявок (для бейджа в меню)",
+)
+async def get_my_ticket_counts(
+    user: CurrentUser,
+    db: DbDep,
+) -> TicketCountsOut:
+    """Лёгкий count-endpoint для бейджа в меню пункта «Поддержка».
+
+    ``active`` — свои тикеты в статусах new/open/pending (closed исключён как
+    архивная история). Один ``count(*)`` без join'ов и пагинации — дешевле
+    list-endpoint'а с ``limit=1``, особенно при polling'е раз в 60 c.
+    """
+    active = await tickets_service.count_my_active_tickets(db, user_id=user.id)
+    return TicketCountsOut(active=active)
+
+
+@router.post(
+    "/tickets/my/{ticket_id}/read",
+    response_model=MarkTicketReadOut,
+    summary="Отметить свой тикет прочитанным (снять подсветку ответов агентов)",
+)
+async def mark_my_ticket_read(
+    ticket_id: uuid.UUID,
+    user: CurrentUser,
+    db: DbDep,
+) -> MarkTicketReadOut:
+    """Заявительский аналог ``POST /tickets/{id}/read`` (агентского).
+
+    Записывает ``last_seen_at = NOW()`` для пары ``(ticket, user)`` — UPSERT по
+    ``uq_helpdesk_ticket_reads_ticket_user``. Снимает подсветку в списке своих
+    заявок: после открытия карточки заявителем ответы агентов больше не
+    подсвечиваются как непрочитанные (контракт ``direction='outbound'`` в
+    ``enrich_with_unread``, см. ``GET /tickets/my``).
+
+    ACL: только свои тикеты (``fetch_ticket_for_user`` → 404 для чужих, не
+    раскрываем существование). Не требует audit/rate-limit (read-state —
+    бизнес-состояние, как ``notifications.read``). Идемпотентно.
+    """
+    ticket = await tickets_service.fetch_ticket_for_user(
+        db, ticket_id=ticket_id, user_id=user.id
+    )
+    if ticket is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+    seen_at = await reads_service.mark_ticket_seen(
+        db, ticket_id=ticket_id, user_id=user.id
+    )
+    await db.commit()
+    return MarkTicketReadOut(ticket_id=ticket_id, last_seen_at=seen_at)
 
 
 @router.get(
@@ -185,11 +275,7 @@ async def add_my_message(
     norm_text: str
     norm_html: str | None
     norm_text, norm_html = messages_service.normalize_message_bodies(body_text, body_html)
-    if not norm_text:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail="Message body is empty",
-        )
+    _validate_message_body(norm_text, norm_html)
     payload = MessageCreateIn(body_text=norm_text, body_html=norm_html)
     message = await messages_service.add_requester_reply(
         db, ticket=ticket, user=user, payload=payload, files=files
@@ -289,12 +375,40 @@ async def list_all_tickets(
         active_only=active_only,
         assigned=assigned,
     )
+    # Enrich одним запросом: какие тикеты имеют непрочитанные ответы заявителя
+    # для этого агента (миграция 080). Без этого был бы N+1 — на каждый тикет
+    # отдельный EXISTS-запрос. Map → O(1)-lookup в сериализаторе.
+    unread_map = await reads_service.enrich_with_unread(
+        db, tickets=items, user_id=agent.id
+    )
     return TicketListOut(
-        items=[ticket_to_list_out(i) for i in items],
+        items=[ticket_to_list_out(i, unread=unread_map.get(i.id)) for i in items],
         total=total,
         limit=limit,
         offset=offset,
     )
+
+
+@router.get(
+    "/tickets/counts",
+    response_model=TicketCountsOut,
+    summary="Счётчик назначенных агенту тикетов в работе (для бейджа в меню)",
+)
+async def get_agent_ticket_counts(
+    agent: HelpdeskAgentDep,
+    db: DbDep,
+) -> TicketCountsOut:
+    """Лёгкий count-endpoint для бейджа в меню пункта «Инбокс поддержки».
+
+    ``active`` — тикеты, назначенные лично этому агенту (``assignee = agent``),
+    в статусах new/open/pending. «Моя нагрузка», а не «объём очереди»:
+    неназначенные тикеты здесь не считаются (для них есть отдельный блок в
+    инбоксе). ``closed`` исключён. Один ``count(*)`` без join'ов.
+    """
+    active = await tickets_service.count_assigned_active_tickets(
+        db, user_id=agent.id
+    )
+    return TicketCountsOut(active=active)
 
 
 @router.get(
@@ -310,6 +424,33 @@ async def get_ticket(
     ticket = await _load_agent_ticket(db, ticket_id)
     profile = await _ticket_requester_profile(db, ticket=ticket)
     return ticket_to_agent_out(ticket, requester_profile=profile)
+
+
+@router.post(
+    "/tickets/{ticket_id}/read",
+    response_model=MarkTicketReadOut,
+    summary="Отметить тикет прочитанным (снять подсветку в инбоксе агента)",
+)
+async def mark_ticket_read(
+    ticket_id: uuid.UUID,
+    agent: HelpdeskAgentDep,
+    db: DbDep,
+) -> MarkTicketReadOut:
+    """Записать ``last_seen_at = NOW()`` для пары ``(ticket, agent)`` — UPSERT
+    по ``uq_helpdesk_ticket_reads_ticket_user``. Вызывается фронтендом при
+    открытии карточки тикета (точка «прочитано» в инбоксе агента).
+
+    Не требует audit (read-state — бизнес-состояние, не мутация, как
+    ``notifications.read``) и rate-limit (доступ только HelpdeskAgentDep).
+    Идемпотентно: повторное открытие карточки = более свежий ``last_seen_at``.
+    """
+    # Проверка существования тикета + агентский ACL (404 если нет/нет доступа).
+    await _load_agent_ticket(db, ticket_id)
+    seen_at = await reads_service.mark_ticket_seen(
+        db, ticket_id=ticket_id, user_id=agent.id
+    )
+    await db.commit()
+    return MarkTicketReadOut(ticket_id=ticket_id, last_seen_at=seen_at)
 
 
 @router.post(
@@ -334,11 +475,7 @@ async def add_agent_message(
     norm_text: str
     norm_html: str | None
     norm_text, norm_html = messages_service.normalize_message_bodies(body_text, body_html)
-    if not norm_text:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail="Message body is empty",
-        )
+    _validate_message_body(norm_text, norm_html)
     payload = MessageCreateIn(
         body_text=norm_text,
         body_html=norm_html,

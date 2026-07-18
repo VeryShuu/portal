@@ -25,6 +25,7 @@ export const ROUTES = {
   SIGNATURE: '/signature',
   HELPDESK_MY: '/helpdesk/my',
   HELPDESK_MY_TICKET: '/helpdesk/my/:id',
+  HELPDESK_MY_ARCHIVE: '/helpdesk/my/archive',
   HELPDESK_INBOX: '/helpdesk',
   HELPDESK_TICKET: '/helpdesk/tickets/:id',
   HELPDESK_ARCHIVE: '/helpdesk/archive',
@@ -227,6 +228,14 @@ export const router = createRouter({
           path: ROUTES.HELPDESK_MY,
           name: 'helpdesk-my',
           component: () => import('./pages/helpdesk/HelpdeskMyTicketsPage.vue'),
+          meta: { requiresAuth: true },
+        },
+        {
+          // Важен порядок: /helpdesk/my/archive ДО /helpdesk/my/:id, иначе
+          // Vue Router свяжет 'archive' как path-param :id.
+          path: ROUTES.HELPDESK_MY_ARCHIVE,
+          name: 'helpdesk-my-archive',
+          component: () => import('./pages/helpdesk/HelpdeskMyArchivePage.vue'),
           meta: { requiresAuth: true },
         },
         {

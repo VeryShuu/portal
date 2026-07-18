@@ -11,6 +11,7 @@ import {
 } from '@vicons/ionicons5'
 import { useAuthStore } from '../stores/auth'
 import { useModulesStore } from '../stores/modules'
+import { useMyTicketCountsQuery, useAgentTicketCountsQuery } from '../queries/helpdesk'
 import { ROUTES } from '../router'
 
 export function useAppMenu() {
@@ -19,6 +20,17 @@ export function useAppMenu() {
   const { t } = useI18n()
   const auth = useAuthStore()
   const modulesStore = useModulesStore()
+
+  // Счётчики для бейджей в меню. ``enabled`` кондиционально по роли/модулю —
+  // не-агент не дёргает agent-counts (фильтр на бэке вернёт 403), и при
+  // выключенном helpdesk оба запроса спят. Polling 60s + авто-invalidation
+  // после мутаций (см. queries/helpdesk.ts).
+  const helpdeskOn = computed(() => modulesStore.isEnabled('helpdesk'))
+  const myCountsQuery = useMyTicketCountsQuery({ enabled: helpdeskOn.value })
+  const isAgent = computed(() => auth.isHelpdeskAgent || auth.isAdmin)
+  const agentCountsQuery = useAgentTicketCountsQuery({
+    enabled: helpdeskOn.value && isAgent.value,
+  })
 
   const photoGalleryUrl = computed(() => modulesStore.galleryLinks.photo_gallery_url)
   const photoGalleryMode = computed(() => modulesStore.galleryLinks.photo_gallery_mode)
@@ -81,6 +93,28 @@ export function useAppMenu() {
     }, label)
   }
 
+  /**
+   * Render-функция для пункта меню с серой цифрой-счётчиком справа от лейбла.
+   * Цифра скрывается при ``count = 0`` (нет смысла показывать «0»), иначе
+   * рендерится как ``<span class="menu-count-badge">N</span>`` — компактный
+   * серый pill в едином визуальном языке с StaffTableView/DepartmentColleagues.
+   * ``title`` — tooltip на всю строку (что значит цифра).
+   */
+  function renderNavLabelWithCount(label: string, key: string, count: number, title?: string) {
+    return () => h('span', {
+      'aria-current': activeKey.value === key ? 'page' : undefined,
+      'data-tour-id': key,
+      title,
+      style: 'display: inline-flex; align-items: center; gap: 6px;',
+    }, [
+      label,
+      // Скрытие при 0 — иначе «0» выглядит как баг. >0 — рисуем pill.
+      count > 0
+        ? h('span', { class: 'menu-count-badge' }, String(count))
+        : null,
+    ])
+  }
+
   const menuOptions = computed<MenuOption[]>(() => {
     const items: MenuOption[] = [
       {
@@ -120,7 +154,16 @@ export function useAppMenu() {
             ? [{ label: renderNavLabel(t('nav.videoGallery'), 'video-gallery'), key: 'video-gallery', icon: renderIcon(VideocamOutline) }]
             : []),
           ...(modulesStore.isEnabled('helpdesk')
-            ? [{ label: renderNavLabel(t('nav.helpdesk'), 'helpdesk-my'), key: 'helpdesk-my', icon: renderIcon(HeadsetOutline) }]
+            ? [{
+                label: renderNavLabelWithCount(
+                  t('nav.helpdesk'),
+                  'helpdesk-my',
+                  myCountsQuery.data.value?.active ?? 0,
+                  t('helpdesk.myOpenCount'),
+                ),
+                key: 'helpdesk-my',
+                icon: renderIcon(HeadsetOutline),
+              }]
             : []),
         ],
       },
@@ -132,7 +175,16 @@ export function useAppMenu() {
           { label: renderNavLabel(t('nav.profile'), 'profile'), key: 'profile', icon: renderIcon(PersonOutline) },
           { label: renderNavLabel(t('feedback.myTickets'), 'my-feedback'), key: 'my-feedback', icon: renderIcon(ChatbubbleEllipsesOutline) },
           ...((auth.isHelpdeskAgent || auth.isAdmin) && modulesStore.isEnabled('helpdesk')
-            ? [{ label: renderNavLabel(t('nav.helpdeskInbox'), 'helpdesk-inbox'), key: 'helpdesk-inbox', icon: renderIcon(FileTrayOutline) }]
+            ? [{
+                label: renderNavLabelWithCount(
+                  t('nav.helpdeskInbox'),
+                  'helpdesk-inbox',
+                  agentCountsQuery.data.value?.active ?? 0,
+                  t('helpdesk.assignedInWorkCount'),
+                ),
+                key: 'helpdesk-inbox',
+                icon: renderIcon(FileTrayOutline),
+              }]
             : []),
           ...(auth.isAdmin
             ? [{ label: renderNavLabel(t('nav.admin'), 'admin'), key: 'admin', icon: renderIcon(BuildOutline) }]

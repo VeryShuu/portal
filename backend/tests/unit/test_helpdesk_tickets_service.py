@@ -418,6 +418,65 @@ class TestMyTickets:
         assert list(out) == [t1, t2]
 
     @pytest.mark.asyncio
+    async def test_count_with_unassigned_filter(self):
+        """``unassigned=True`` — только тикеты без агента (для блока «ожидают принятия»)."""
+        db = _db_returning_scalar(2)
+        n = await svc.count_my_tickets(
+            db, user_id=uuid.uuid4(), status_filter=None, unassigned=True
+        )
+        assert n == 2
+
+    @pytest.mark.asyncio
+    async def test_count_with_assigned_filter(self):
+        """``assigned=True`` — только тикеты с назначенным специалистом."""
+        db = _db_returning_scalar(5)
+        n = await svc.count_my_tickets(
+            db, user_id=uuid.uuid4(), status_filter=None, assigned=True
+        )
+        assert n == 5
+
+    @pytest.mark.asyncio
+    async def test_list_with_unassigned_filter(self):
+        """``unassigned=True`` передаётся в list_my_tickets — фильтр срабатывает."""
+        t1 = _ticket()
+        db = _db_returning_scalars_all([t1])
+        out = await svc.list_my_tickets(
+            db,
+            user_id=uuid.uuid4(),
+            status_filter=None,
+            limit=20,
+            offset=0,
+            unassigned=True,
+        )
+        assert list(out) == [t1]
+
+    @pytest.mark.asyncio
+    async def test_list_with_assigned_filter(self):
+        """``assigned=True`` — список назначенных тикетов (блок «в работе у специалиста»)."""
+        t1, t2 = _ticket(), _ticket()
+        db = _db_returning_scalars_all([t1, t2])
+        out = await svc.list_my_tickets(
+            db,
+            user_id=uuid.uuid4(),
+            status_filter=None,
+            limit=20,
+            offset=0,
+            assigned=True,
+        )
+        assert list(out) == [t1, t2]
+
+    @pytest.mark.asyncio
+    async def test_list_filters_default_no_assignee_filter(self):
+        """Без unassigned/assigned — фильтр по assignee не накладывается (все тикеты)."""
+        t1 = _ticket()
+        db = _db_returning_scalars_all([t1])
+        await svc.list_my_tickets(
+            db, user_id=uuid.uuid4(), status_filter=None, limit=20, offset=0
+        )
+        # Запрос выполнен (функция вызвана без исключения) — структурная проверка.
+        db.execute.assert_awaited_once()
+
+    @pytest.mark.asyncio
     async def test_fetch_ticket_for_user_found(self):
         ticket = _ticket()
         db = _db_returning_one_or_none(ticket)
@@ -429,6 +488,43 @@ class TestMyTickets:
         db = _db_returning_one_or_none(None)
         got = await svc.fetch_ticket_for_user(db, ticket_id=uuid.uuid4(), user_id=uuid.uuid4())
         assert got is None
+
+
+class TestMenuBadgeCounts:
+    """Счётчики для бейджей в меню (миграция функций count_*_active).
+
+    ``count_my_active_tickets`` — свои тикеты в new/open/pending (для пункта
+    «Поддержка» у заявителя). ``count_assigned_active_tickets`` — назначенные
+    агенту (для пункта «Инбокс поддержки»). Оба — один ``count(*)`` без join'ов.
+    """
+
+    @pytest.mark.asyncio
+    async def test_count_my_active_returns_int(self):
+        db = _db_returning_scalar(5)
+        n = await svc.count_my_active_tickets(db, user_id=uuid.uuid4())
+        assert n == 5
+        db.execute.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_count_my_active_zero(self):
+        """Нет открытых тикетов → 0 (бейдж скроется)."""
+        db = _db_returning_scalar(0)
+        n = await svc.count_my_active_tickets(db, user_id=uuid.uuid4())
+        assert n == 0
+
+    @pytest.mark.asyncio
+    async def test_count_assigned_active_returns_int(self):
+        db = _db_returning_scalar(3)
+        n = await svc.count_assigned_active_tickets(db, user_id=uuid.uuid4())
+        assert n == 3
+        db.execute.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_count_assigned_active_zero(self):
+        """Нет назначенных → 0 (бейдж скроется)."""
+        db = _db_returning_scalar(0)
+        n = await svc.count_assigned_active_tickets(db, user_id=uuid.uuid4())
+        assert n == 0
 
 
 # ── count_agent_tickets / list_agent_tickets / fetch_ticket_for_agent ───────

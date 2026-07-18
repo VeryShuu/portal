@@ -118,11 +118,62 @@ async def count_my_tickets(
     *,
     user_id: uuid.UUID,
     status_filter: str | None,
+    unassigned: bool = False,
+    assigned: bool = False,
 ) -> int:
     conditions = [HelpdeskTicket.requester_user_id == user_id]
     if status_filter:
         conditions.append(HelpdeskTicket.status == status_filter)
+    # Деление на «неназначенные» / «назначенные» для двухблочного вида my-tickets
+    # (по образцу _agent_filter_conditions). Взаимоисключающие через elif —
+    # как у агентов (нельзя одновременно unassigned+assigned).
+    if unassigned:
+        conditions.append(HelpdeskTicket.assignee_user_id.is_(None))
+    elif assigned:
+        conditions.append(HelpdeskTicket.assignee_user_id.is_not(None))
     res = await db.execute(select(func.count()).select_from(HelpdeskTicket).where(*conditions))
+    return int(res.scalar_one())
+
+
+# Активные статусы (new/open/pending) — «открытые» тикеты, не закрытые и не в
+# архиве. Используется для счётчиков в меню (заявитель видит «мои открытые»,
+# агент — «мои назначенные в работе»). ``closed`` исключается.
+_ACTIVE_STATUSES = ("new", "open", "pending")
+
+
+async def count_my_active_tickets(db: AsyncSession, *, user_id: uuid.UUID) -> int:
+    """Сколько тикетов у пользователя в активных статусах (new/open/pending).
+
+    Для бейджа в меню пункта «Поддержка» — быстрый сигнал «у вас N открытых
+    заявок». ``closed`` исключён (закрытые — архивная история). Один запрос
+    ``count(*)``, без join'ов, без пагинации.
+    """
+    res = await db.execute(
+        select(func.count())
+        .select_from(HelpdeskTicket)
+        .where(
+            HelpdeskTicket.requester_user_id == user_id,
+            HelpdeskTicket.status.in_(_ACTIVE_STATUSES),
+        )
+    )
+    return int(res.scalar_one())
+
+
+async def count_assigned_active_tickets(db: AsyncSession, *, user_id: uuid.UUID) -> int:
+    """Сколько активных тикетов назначено на агента (assignee = user_id).
+
+    Для бейджа в меню пункта «Инбокс поддержки» — «в работе у меня N заявок».
+    Не включает неназначенные (это отдельная метрика инбокса). Активные
+    статусы (new/open/pending), ``closed`` исключён.
+    """
+    res = await db.execute(
+        select(func.count())
+        .select_from(HelpdeskTicket)
+        .where(
+            HelpdeskTicket.assignee_user_id == user_id,
+            HelpdeskTicket.status.in_(_ACTIVE_STATUSES),
+        )
+    )
     return int(res.scalar_one())
 
 
@@ -133,12 +184,23 @@ async def list_my_tickets(
     status_filter: str | None,
     limit: int,
     offset: int,
+    unassigned: bool = False,
+    assigned: bool = False,
 ) -> Sequence[HelpdeskTicket]:
     """Список тикетов инициатора. ``assignee_name`` подтягивается через
-    relationship; для списков достаточно не загружать сообщения."""
+    relationship; для списков достаточно не загружать сообщения.
+
+    ``unassigned``/``assigned`` — деление на «ожидают принятия» (без агента) и
+    «в работе у специалиста» (с назначенным агентом) для двухблочного вида
+    my-tickets. Взаимоисключающие через ``elif`` (как у агентов).
+    """
     conditions = [HelpdeskTicket.requester_user_id == user_id]
     if status_filter:
         conditions.append(HelpdeskTicket.status == status_filter)
+    if unassigned:
+        conditions.append(HelpdeskTicket.assignee_user_id.is_(None))
+    elif assigned:
+        conditions.append(HelpdeskTicket.assignee_user_id.is_not(None))
     res = await db.execute(
         select(HelpdeskTicket)
         .where(*conditions)

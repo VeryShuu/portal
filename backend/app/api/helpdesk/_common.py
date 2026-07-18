@@ -122,7 +122,9 @@ def build_requester_profile(user: User | None) -> RequesterProfileOut | None:
     )
 
 
-def ticket_to_list_out(ticket: HelpdeskTicket) -> TicketListItemOut:
+def ticket_to_list_out(
+    ticket: HelpdeskTicket, *, unread: bool | None = None
+) -> TicketListItemOut:
     return TicketListItemOut(
         id=ticket.id,
         number=ticket.number,
@@ -138,6 +140,11 @@ def ticket_to_list_out(ticket: HelpdeskTicket) -> TicketListItemOut:
         assignee_name=_assignee_name(ticket),
         last_activity_at=ticket.last_activity_at,
         created_at=ticket.created_at,
+        # Unread-state: ``None`` по умолчанию (для списков, где он не считается
+        # — например ``/tickets/my`` у заявителя). Сериализатор только передаёт
+        # то, что посчитал роутер через ``enrich_with_unread`` — сама логика
+        # «новее last_seen_at» живёт в сервисе.
+        unread=unread,
     )
 
 

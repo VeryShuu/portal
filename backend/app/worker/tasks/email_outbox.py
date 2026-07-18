@@ -207,6 +207,16 @@ _INLINE_IMG_SRC_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Regex для картинок из истории переписки — локализованные email-attachments
+# (картинки, сохранённые из входящих писем заявителя через email_images.py).
+# URL тот же префикс, но путь ``/api/v1/helpdesk/attachments/{uuid}``. Группа 1 =
+# полный path (для замены), группа 2 = attachment UUID (для DB-lookup).
+# ``\b`` перед UUID — защита от частичных матчей в более длинных строках.
+_ATTACHMENT_IMG_SRC_RE = re.compile(
+    r'src="(?:https?://[^/"]+)?(/api/v1/helpdesk/attachments/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}))"',
+    re.IGNORECASE,
+)
+
 # Поддерживаемые inline-форматы → MIME-подтип для MIMEImage.
 _INLINE_MIME_BY_EXT = {
     ".jpg": "jpeg",
@@ -294,6 +304,128 @@ async def _embed_helpdesk_inline_images(
     return html_with_cid, inline_images
 
 
+async def _embed_helpdesk_attachment_images(
+    body_html: str, ticket_number: int
+) -> tuple[str, list[dict]]:
+    """Встроить картинки из истории переписки как ``cid:``-attach.
+
+    Картинки в истории (блок ``build_thread_history``) бывают двух видов:
+    * rich-редактор агента — обрабатываются :func:`_embed_helpdesk_inline_images`
+      (``/api/v1/helpdesk/tickets/{id}/inline-media/{file}``).
+    * локализованные email-attachments — **вот они**: входящие письма заявителя
+      с inline ``cid:`` (или внешними http) картинками, сохранённые в
+      ``helpdesk_attachments`` через ``email_images.py`` при ingress. В
+      ``body_html`` их ``src`` указывает на ``/api/v1/helpdesk/attachments/{id}``
+      (требует session-cookie на чтение — почтовый клиент НЕ передаёт cookie).
+
+    Эта функция находит все такие ссылки, одним DB-запросом подтягивает метаданные
+    (``filename``, ``content_type``), фильтрует по ``image/*`` (не-картинки —
+    пропускаем: PDF-вложение в ``<img>`` всё равно не отрендерится), читает
+    файлы с диска (``/data/helpdesk/TKT-{n}/{filename}``) и возвращает
+    ``(html, inline_images)`` в том же формате, что и
+    :func:`_embed_helpdesk_inline_images` — для совместимости с
+    :func:`_attach_inline_image`.
+
+    Best-effort: отсутствующие в БД attachment-ids / не-читаемые файлы /
+    не-поддерживаемые форматы → ``src`` остаётся (веб-лента портала картинку
+    видит, письмо роняться не должно).
+    """
+    import aiofiles
+    from sqlalchemy import select
+
+    from app.core.constants import HELPDESK_FILES_DIR
+    from app.models.helpdesk import HelpdeskAttachment
+
+    if not body_html:
+        return body_html, []
+
+    # 1-й проход: собираем уникальные attachment-ids из HTML.
+    # Группа 1 = полный path (для замены), группа 2 = UUID.
+    found_src_by_id: dict[str, str] = {}  # uuid_str → original_src_path
+    for match in _ATTACHMENT_IMG_SRC_RE.finditer(body_html):
+        att_id_str = match.group(2)
+        if att_id_str not in found_src_by_id:
+            found_src_by_id[att_id_str] = match.group(1)
+
+    if not found_src_by_id:
+        return body_html, []
+
+    # 2-й проход: один DB-запрос по всем id (защита от N+1). Фильтруем по
+    # ``image/*`` (остальные — PDF/DOCX — не ``<img>``-встраиваемые).
+    att_ids: list[uuid.UUID] = []
+    for aid in found_src_by_id:
+        try:
+            att_ids.append(uuid.UUID(aid))
+        except ValueError:
+            continue  # битый UUID в URL — пропускаем (regex уже фильтрует, но defence-in-depth)
+
+    if not att_ids:
+        return body_html, []
+
+    async with AsyncSessionLocal() as db:
+        res = await db.execute(
+            select(
+                HelpdeskAttachment.id,
+                HelpdeskAttachment.filename,
+                HelpdeskAttachment.content_type,
+            )
+            .where(HelpdeskAttachment.id.in_(att_ids))
+        )
+        rows = res.all()
+
+    # Поддерживаемые форматы (те же, что у inline-media — mime-маппинг одинаковый).
+    # Используем content_type из БД (он определяется через python-magic, точнее,
+    # чем расширение имени — attachments из email могут прийти без расширения).
+    supported_mime_suffixes = {"jpeg", "png", "gif", "webp"}
+    src_to_cid: dict[str, str] = {}
+    inline_images: list[dict] = []
+    ticket_dir = HELPDESK_FILES_DIR / f"TKT-{ticket_number}"
+    for att_id, filename, content_type in rows:
+        ct = (content_type or "").lower()
+        # ``image/png`` → ``png``, ``image/jpeg`` → ``jpeg`` и т.д.
+        mime_suffix = ct.split("/", 1)[1] if "/" in ct else ""
+        if mime_suffix not in supported_mime_suffixes:
+            # PDF/DOCX/нестандартные — пропускаем (в письмо пойдут как обычные
+            # attachment, не cid — в ``<img>`` они всё равно не отрендерятся).
+            continue
+        src_path = found_src_by_id.get(str(att_id))
+        if not src_path:
+            continue
+        disk_path = ticket_dir / (filename or "")
+        try:
+            async with aiofiles.open(disk_path, "rb") as f:
+                data = await f.read()
+        except (FileNotFoundError, OSError) as exc:
+            logger.warning(
+                "helpdesk.attachment_image.missing_for_email",
+                attachment_id=str(att_id),
+                filename=filename,
+                ticket_number=ticket_number,
+                error=str(exc),
+            )
+            continue
+        cid = f"img-{uuid.uuid4().hex[:12]}"
+        src_to_cid[src_path] = cid
+        inline_images.append(
+            {
+                "cid": cid,
+                "b64": base64.b64encode(data).decode("ascii"),
+                "mime": f"image/{mime_suffix}",
+            }
+        )
+
+    if not src_to_cid:
+        return body_html, []
+
+    # 3-й проход: заменяем src на cid для найденных (читаемых) картинок.
+    def _replace_src(match: re.Match[str]) -> str:
+        cid = src_to_cid.get(match.group(1))
+        return f'src="cid:{cid}"' if cid else match.group(0)
+
+    html_with_cid = _ATTACHMENT_IMG_SRC_RE.sub(_replace_src, body_html)
+    return html_with_cid, inline_images
+
+
 async def _build_helpdesk_mime(row: dict, cfg: dict) -> MIMEMultipart:
     """Сборка MIME для исходящего helpdesk-письма (ТЗ §5.2).
 
@@ -343,6 +475,15 @@ async def _build_helpdesk_mime(row: dict, cfg: dict) -> MIMEMultipart:
     # из HELPDESK_FILES_DIR / TKT-{n} / inline / {file} (см. media.py).
     if ticket_number:
         body_html, inline_images = await _embed_helpdesk_inline_images(body_html, ticket_number)
+        # Картинки из истории переписки — локализованные email-attachments (входящие
+        # письма заявителя с inline cid:/внешними http, сохранённые в БД через
+        # email_images.py). Без этой ветки их ``src=/api/v1/.../attachments/{id}``
+        # остаётся URL — почтовый клиент cookie не передаёт, картинка не грузится.
+        # Здесь — встраиваем как cid: (как rich-картинки), один DB-запрос на все.
+        body_html, att_inline_images = await _embed_helpdesk_attachment_images(
+            body_html, ticket_number
+        )
+        inline_images.extend(att_inline_images)
     else:
         inline_images = []
     support_domain = (payload.get("support_domain") or "").strip()

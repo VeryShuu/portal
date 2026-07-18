@@ -127,7 +127,11 @@ export const queryKeys = {
     mailbox: () => ['helpdesk', 'mailbox'] as const,
     myTickets: (params?: Record<string, unknown>) => ['helpdesk', 'my-tickets', params ?? {}] as const,
     myTicket: (id: string) => ['helpdesk', 'my-ticket', id] as const,
+    // Счётчики для бейджей в меню — отдельный стабильный ключ (без params),
+    // чтобы polling и инвалидация после мутаций шли в одну кеш-запись.
+    myTicketCounts: () => ['helpdesk', 'my-ticket-counts'] as const,
     inbox: (params?: Record<string, unknown>) => ['helpdesk', 'inbox', params ?? {}] as const,
     agentTicket: (id: string) => ['helpdesk', 'agent-ticket', id] as const,
+    agentTicketCounts: () => ['helpdesk', 'agent-ticket-counts'] as const,
   },
 } as const

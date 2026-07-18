@@ -63,7 +63,8 @@
 | Service | `./backend/app/services/helpdesk/archive_partitions.py` | Помесячные партиции `helpdesk_tickets_archive` (raw asyncpg, аналог `audit_partitions`). |
 | Service | `./backend/app/services/helpdesk/notifications.py` | In-app уведомления по событиям (через `create_notification` + Redis SSE) + email-уведомление агентам о новой заявке (`notify_ticket_created_email`, через outbox `kind=generic`) + тела письма о назначении (`build_assigned_email_*`). |
 | Service | `./backend/app/services/helpdesk/digest.py` | Ежедневная email-сводка агентам: расписание (`should_send_today`), сбор данных, построение тел, оркестрация отправки через outbox `kind=generic`. |
-| Model | `./backend/app/models/helpdesk.py` | 8 моделей: `HelpdeskTicket`, `HelpdeskMessage`, `HelpdeskAttachment`, `HelpdeskAgent`, `HelpdeskEmailLog`, `HelpdeskMailboxSettings`, `HelpdeskDigestSettings`, `HelpdeskTicketArchive`. |
+| Service | `./backend/app/services/helpdesk/reads.py` | Per-agent read-state (миграция 080): `mark_ticket_seen` (UPSERT `last_seen_at`, без commit), `has_unread_requester_messages` (EXISTS публичного inbound-сообщения новее `last_seen_at`), `enrich_with_unread` (один запрос для всего списка инбокса → map `{ticket_id: bool}`, защита от N+1). |
+| Model | `./backend/app/models/helpdesk.py` | 9 моделей: `HelpdeskTicket`, `HelpdeskMessage`, `HelpdeskAttachment`, `HelpdeskAgent`, `HelpdeskEmailLog`, `HelpdeskMailboxSettings`, `HelpdeskDigestSettings`, `HelpdeskTicketArchive`, `HelpdeskTicketRead`. |
 | Schema | `./backend/app/schemas/helpdesk.py` | Pydantic-схемы + StrEnum-наборы (`HelpdeskStatus`/`Source`/`Direction`/`Visibility`). |
 | Worker | `./backend/app/worker/tasks/helpdesk.py` | 5 cron: poll, archive, partition, cleanup, daily-digest. |
 | Crypto | `./backend/app/core/secret_crypto.py` | `encrypt_secret`/`decrypt_secret` (Fernet, ключ из `SECRET_KEY`). |
@@ -71,12 +72,14 @@
 | Migration | `./backend/migrations/versions/076_add_helpdesk_digest_settings.py` | Singleton `helpdesk_digest_settings` (расписание сводки) + seed. |
 | Migration | `./backend/migrations/versions/077_add_helpdesk_attachments_inline_columns.py` | Колонки `is_inline`/`content_id` на `helpdesk_attachments` (schema-drift фикс: были в ORM-модели с 24a15bd, но БД-миграции не было → 500 на `selectinload(HelpdeskMessage.attachments)`). |
 | Migration | `./backend/migrations/versions/078_add_helpdesk_fts.py` | Полнотекстовый поиск: `search_tsvector` (tickets, over subject+description) + `body_tsvector` (messages, over body_text) — generated STORED tsvector + GIN-индексы. Заменяет `ilike` в агентском инбоксе на `websearch_to_tsquery('russian_hunspell')`, см. §4. |
+| Migration | `./backend/migrations/versions/079_drop_helpdesk_resolved.py` | Упразднён статус `resolved`: data-mig `resolved → closed` + CHECK без `resolved` (единый финал — `closed`). |
+| Migration | `./backend/migrations/versions/080_add_helpdesk_ticket_reads.py` | Marker-таблица `helpdesk_ticket_reads(ticket_id, user_id, last_seen_at)` для подсветки непрочитанных заявок в инбоксе агента. UNIQUE `(ticket_id, user_id)` для UPSERT, CASCADE на обеих FK — cleanup-cron не нужен. |
 | Frontend API | `./frontend/src/api/helpdesk.ts` | Типы + вызовы (tickets/messages/inbox/attachments, agents, mailbox) с multipart-загрузкой через `apiUpload`. |
 | Frontend Queries | `./frontend/src/queries/helpdesk.ts` | TanStack Query hooks + mutations (с инвалидацией ключей `helpdesk.*`). |
 | Frontend Store | `./frontend/src/stores/auth.ts` | `isHelpdeskAgent` ref (из `bootstrap.is_helpdesk_agent`) — косметический, бэкендом не доверяется. |
 | Frontend Router | `./frontend/src/router.ts` | 4 роута + guard `requiresHelpdeskAgent` + module-route gating. |
 | Frontend Menu | `./frontend/src/composables/useAppMenu.ts` | Пункт «Поддержка» (всем, gated) + «Инбокс поддержки» (агентам). |
-| Frontend Pages | `./frontend/src/pages/helpdesk/` | `HelpdeskMyTicketsPage`, `HelpdeskMyTicketDetailPage`, `HelpdeskAgentInboxPage` (двухблочный вид + переключатель мои/все), `HelpdeskAgentTicketDetailPage`, `HelpdeskArchivePage` (отдельный роут `/helpdesk/archive`). |
+| Frontend Pages | `./frontend/src/pages/helpdesk/` | `HelpdeskMyTicketsPage` (двухблочный вид: ожидают / в работе), `HelpdeskMyArchivePage` (отдельный роут `/helpdesk/my/archive`), `HelpdeskMyTicketDetailPage`, `HelpdeskAgentInboxPage` (двухблочный вид + переключатель мои/все), `HelpdeskAgentTicketDetailPage`, `HelpdeskArchivePage` (отдельный роут `/helpdesk/archive`). |
 | Frontend Components | `./frontend/src/components/helpdesk/` | `TicketStatusBadge`, `TicketMessageList`, `TicketReplyForm` (rich-редактор TipTap), `TicketCreateModal`, `TicketList`/`TicketListItem` (таблица инбокса/архива), `TicketInfoCard`, `TicketDetailHeader`, `RequesterProfileCard`. |
 | Admin Tab | `./frontend/src/pages/admin/tabs/HelpdeskTab.vue` | Вкладка админки: агенты + mailbox-settings. |
 | Admin Components | `./frontend/src/components/admin/Helpdesk{AgentsManager,MailboxSettings}.vue` | Управление агентами (remote-search), mailbox-форма (write-only пароль, test). |
@@ -206,6 +209,24 @@ CHECK: `digest_hour BETWEEN 0 AND 23`, `digest_minute BETWEEN 0 AND 59`, `digest
 
 `PARTITION BY RANGE (closed_at)`, composite PK `(id, closed_at)`, партиции помесячно (`helpdesk_tickets_archive_YYYY_mm`, создаёт `ensure_helpdesk_archive_partitions`). Хранит jsonb-снимок (`payload`: ticket + messages + attachments_meta). Read-only, без FK. Просмотр — только админам.
 
+### `helpdesk_ticket_reads` — marker «непрочитано» в инбоксе агента (миграция 080)
+
+Per-agent read-state: одна строка на пару `(ticket_id, user_id)` с `last_seen_at` (timestamp последнего открытия карточки тикета агентом). Marker-таблица по образцу `news_likes`/`kb_article_feedback` (композитный UNIQUE), архитектурно ближе к Zammad/FreeScout (`conversation_user` pivot), чем к OTRS (per-article `ticket_flag` — избыточно для наших объёмов).
+
+| Колонка | Тип | Примечание |
+|---|---|---|
+| `id` | UUID PK | `gen_random_uuid()` |
+| `ticket_id` | UUID NOT NULL → `helpdesk_tickets.id` `CASCADE` | |
+| `user_id` | UUID NOT NULL → `users.id` `CASCADE` | |
+| `last_seen_at` | `TIMESTAMPTZ` NOT NULL default `NOW()` | Когда агент последний раз открывал карточку |
+| `created_at` | `TIMESTAMPTZ` | Первое открытие |
+
+Индексы: `uq_helpdesk_ticket_reads_ticket_user` (UNIQUE на `(ticket_id, user_id)` — UPSERT-цель), `ix_helpdesk_ticket_reads_user` (lookup «все мои read-states» для обогащения инбокса). `ON DELETE CASCADE` на обеих FK → cleanup-cron не нужен (архивация/удаление тикета или аккаунта чистит автоматически).
+
+**Контракт «непрочитанности»** (`services/helpdesk/reads.py`): тикет непрочитан для агента, если существует публичное входящее сообщение (`direction='inbound'`, `visibility='public'` — ответ заявителя) с `created_at > COALESCE(last_seen_at, '-infinity')`. Если строки read нет → `-infinity` (т.е. **любой** ответ заявителя делает тикет непрочитанным, даже месячной давности — агент его действительно не открывал в этом UI). Ответы других агентов (`direction='outbound'`) и internal-заметки (`visibility='internal'`) НЕ считаются.
+
+**Точка «прочитано»** — открытие карточки тикета агентом: `POST /tickets/{id}/read` → `mark_ticket_seen` (UPSERT `last_seen_at = NOW()`). Не требует audit (read-state — бизнес-состояние, не мутация, как `notifications.read`) и rate-limit (доступ только `HelpdeskAgentDep`).
+
 ---
 
 ## 4. API
@@ -217,8 +238,10 @@ CHECK: `digest_hour BETWEEN 0 AND 23`, `digest_minute BETWEEN 0 AND 59`, `digest
 | Метод | Путь | Назначение |
 |---|---|---|
 | `POST` | `/tickets` | Создать заявку (`multipart/form-data`: `subject`, `description`, `files[]`). Rate-limit 5/мин. 201. |
-| `GET` | `/tickets/my` | Свои заявки (`?status`, `?limit`, `?offset`). |
+| `GET` | `/tickets/my` | Свои заявки (`?status`, `?unassigned`, `?assigned`, `?limit`, `?offset`). Каждая строка содержит `unread: bool` — есть ли публичные ответы агентов новее `last_seen_at` (заявительский контракт, `direction='outbound'` в `enrich_with_unread`). `unassigned=true` — только тикеты без агента (блок «ожидают принятия»); `assigned=true` — только назначенные (блок «в работе у специалиста»). Взаимоисключающие. |
+| `GET` | `/tickets/my/counts` | Лёгкий count: `{active: N}` — свои тикеты в статусах new/open/pending (для бейджа в меню «Поддержка»). Один `count(*)`, без join'ов. Дешевле list-endpoint'а при polling 60 c. |
 | `GET` | `/tickets/my/{id}` | Своя заявка с **публичными** сообщениями. |
+| `POST` | `/tickets/my/{id}/read` | Отметить свой тикет прочитанным (снять подсветку ответов агентов) — UPSERT `last_seen_at=NOW()`. ACL: только свои (404 для чужих). Без audit/rate-limit. Зеркало агентского `POST /tickets/{id}/read`. |
 | `POST` | `/tickets/my/{id}/messages` | Ответ (`Form`: `body_text`, `files[]`). Всегда `inbound`/`public`. Rate-limit 20/мин. 201. |
 | `GET` | `/attachments/{id}` | Скачать вложение (`StreamingResponse`). ACL: автор/агент/админ. |
 
@@ -226,13 +249,15 @@ CHECK: `digest_hour BETWEEN 0 AND 23`, `digest_minute BETWEEN 0 AND 59`, `digest
 
 | Метод | Путь | Назначение |
 |---|---|---|
-| `GET` | `/tickets` | Инбокс: фильтры `status`, `assignee`, `unassigned`, `source`, `active_only` (new/open/pending — для двухблочного вида), `q` (полнотекстовый — см. ниже), пагинация. |
+| `GET` | `/tickets` | Инбокс: фильтры `status`, `assignee`, `unassigned`, `source`, `active_only` (new/open/pending — для двухблочного вида), `q` (полнотекстовый — см. ниже), пагинация. Каждая строка содержит `unread: bool` (есть ли непрочитанные ответы заявителя для этого агента — см. §3 `helpdesk_ticket_reads`); считается одним запросом на весь список (`enrich_with_unread`). |
+| `GET` | `/tickets/counts` | Лёгкий count: `{active: N}` — тикеты, назначенные этому агенту, в статусах new/open/pending (для бейджа в меню «Инбокс поддержки»). «Моя нагрузка», не объём очереди: неназначенные не считаются. Один `count(*)`. |
 | `GET` | `/tickets/{id}` | Карточка (`TicketAgentOut`, **все** сообщения + служебные поля). |
 | `POST` | `/tickets/{id}/messages` | Ответ (`Form`: `body_text`, `body_html?`, `visibility`, `files[]`). `public` → `pending` + outbound email. 201. |
 | `POST` | `/tickets/{id}/assign` | Назначить (`assignee_user_id`). |
 | `POST` | `/tickets/{id}/take` | Взять на себя (409 если уже назначен). |
 | `PATCH` | `/tickets/{id}/status` | Сменить статус (409 на запрещённый переход). |
 | `POST` | `/tickets/{id}/reopen` | Reopen закрытой (409 из не-`closed`). |
+| `POST` | `/tickets/{id}/read` | Отметить тикет прочитанным — UPSERT `last_seen_at=NOW()` для пары `(ticket, agent)`, снимает подсветку в инбоксе. Вызывается карточкой тикета при открытии. Идемпотентно (повторное открытие = no-op). Без audit/rate-limit (read-state — бизнес-состояние). 200 `{ok, ticket_id, last_seen_at}`. |
 
 ### Админ (`AdminDep`)
 
@@ -411,9 +436,12 @@ CHECK: `digest_hour BETWEEN 0 AND 23`, `digest_minute BETWEEN 0 AND 59`, `digest
   - Все значения — через `_sanitize_header` (защита от header-injection). Продюсер (`outbound.py`) тоже санирует `references`/`in_reply_to`/`subject`/`to_email`/`reply_to` через `_sanitize_header_field`/`_sanitize_references` (defense-in-depth — на случай нового продюсера или изменения worker'а).
   - Вложения: `multipart/mixed`, файлы с локального диска; содержимое **не** в JSONB payload (только метаданные).
   - **Inline-картинки rich-ответов** (`_embed_helpdesk_inline_images`): `<img src="/api/v1/.../inline-media/...">` в `body_html` встраиваются как `cid:`-attach (`multipart/related`, `Content-ID`) — заявитель видит картинки в почтовом клиенте. См. блок ниже.
+  - **Картинки из истории переписки** (`_embed_helpdesk_attachment_images`): локализованные email-attachments (входящие письма заявителя с inline `cid:`/внешними `http(s)://` картинками, сохранённые через `email_images.py` при ingress) ссылаются в `body_html` на `/api/v1/helpdesk/attachments/{id}` — этот endpoint **требует session-cookie**, а почтовый клиент его не передаёт. Функция одним DB-запросом подтягивает метаданные (`SELECT id, filename, content_type WHERE id IN (...)`), фильтрует по `image/*` (PDF/DOCX пропускаются — они пойдут как обычные attachment), читает файлы с диска и переписывает `src` на `cid:` — заявитель видит картинки в почтовом клиенте. Поддерживаемые форматы те же: jpeg/png/gif/webp. Best-effort: отсутствующие в БД id / нечитаемые файлы → `src` остаётся (веб-лента портала картинку видит).
   - При пустом/невалидном `support_domain` → `ValueError` → outbox mark_failed (RFC 5322 требует валидный домен).
 
 > **Inline-картинки rich-ответов в исходящем email (`cid:`-attach).** Rich-ответ агента (через TipTap) может содержать картинки (`<img src="/api/v1/helpdesk/.../inline-media/...">`). При сборке MIME (`_embed_helpdesk_inline_images` в `email_outbox.py`) такие картинки **встраиваются в письмо** как `cid:`-attach (`multipart/related`, `Content-ID`): файлы читаются с диска (`HELPDESK_FILES_DIR / TKT-{n} / inline / {file}`), `src` в HTML переписывается на `cid:{token}`, тело оборачивается в `multipart/related` (или `multipart/mixed > related`, если есть обычные вложения). Заявитель видит картинки **прямо в почтовом клиенте** — без доступа к порталу, как в OTRS/Zammad. Поддерживаемые форматы: jpeg/png/gif/webp. Best-effort: если файл не найден/не читается (например, удалён к моменту отправки) — `src` остаётся относительным (в веб-ленте портала картинка всё равно видна), письмо не роняется. Колонки `is_inline`/`content_id` на `helpdesk_attachments` (миграция `077`) зарезервированы для будущей привязки картинок к сообщению (сейчас inline-media — отдельное хранилище без записи в `helpdesk_attachments`).
+
+> **Картинки из истории переписки в исходящем email (`cid:`-attach).** Письмо-ответ агента несёт не только сам ответ, но и историю (`build_thread_history` — публичные сообщения тикета). Картинки в истории бывают двух видов: (a) rich-картинки агента — обрабатываются `_embed_helpdesk_inline_images`; (b) локализованные email-attachments от заявителя — `_embed_helpdesk_attachment_images`. Второй случай: входящее письмо заявителя с inline `cid:`-картинкой (Outlook) или внешней `http(s)://` (Gmail) при ingress локализуется через `email_images.py` → сохраняется в `helpdesk_attachments` → `src` переписывается на `/api/v1/helpdesk/attachments/{id}`. Этот URL в веб-ленте портала работает (session-cookie есть), но **в почтовом клиенте — нет**: `/attachments/{id}` требует аутентификации, почтовик cookie не передаёт → картинка не грузится. Фикс: при сборке MIME `_embed_helpdesk_attachment_images` одним DB-запросом подтягивает метаданные по всем найденным id, фильтрует по `image/*` (PDF/DOCX пропускаются — они в `<img>` всё равно не отрендерятся), читает файлы с диска и встраивает как `cid:`-attach (как rich-картинки). Best-effort: отсутствующий в БД id / нечитаемый файл / неподдерживаемый формат (svg) → `src` остаётся URL (веб-лента видит картинку, письмо не роняется).
 
 Полный разбор outbox — см. `./docs/email.md`.
 
@@ -536,10 +564,13 @@ Cron `send_helpdesk_digest` (см. §10) раз в день шлёт **кажд�
 
 | Path | Guard (`meta`) | Страница |
 |---|---|---|
-| `/helpdesk/my` | `requiresAuth` | `HelpdeskMyTicketsPage` — список своих заявок |
+| `/helpdesk/my` | `requiresAuth` | `HelpdeskMyTicketsPage` — список своих заявок (двухблочный вид) |
+| `/helpdesk/my/archive` | `requiresAuth` | `HelpdeskMyArchivePage` — архив закрытых заявок пользователя |
 | `/helpdesk/my/:id` | `requiresAuth` | `HelpdeskMyTicketDetailPage` — карточка своей заявки |
 | `/helpdesk` | `requiresHelpdeskAgent` | `HelpdeskAgentInboxPage` — агентский инбокс |
 | `/helpdesk/tickets/:id` | `requiresHelpdeskAgent` | `HelpdeskAgentTicketDetailPage` — карточка агента |
+
+> **Порядок объявления важен:** `/helpdesk/my/archive` идёт **до** `/helpdesk/my/:id` — иначе Vue Router свяжет `archive` как path-param `:id`.
 
 - `requiresHelpdeskAgent` (в `requireRole`): пропускает `auth.isHelpdeskAgent || auth.isAdmin`, иначе редирект на `/helpdesk/my`. `isHelpdeskAgent` — ref из `bootstrap.is_helpdesk_agent` (косметический; бэкенд перепроверяет по БД).
 - Module-gate: все `/helpdesk*` зарегистрированы в `MODULE_ROUTES` → при выключенном `helpdesk.enabled` редирект на home.
@@ -549,11 +580,17 @@ Cron `send_helpdesk_digest` (см. §10) раз в день шлёт **кажд�
 - «Поддержка» (`/helpdesk/my`) — всем авторизованным, виден только при `modules.helpdesk.enabled`.
 - «Инбокс поддержки» (`/helpdesk`) — агентам/админам (при включённом модуле).
 - Подсветка активного пункта: `/helpdesk/tickets/*` и `/helpdesk` → `helpdesk-inbox`; `/helpdesk/my*` → `helpdesk-my`.
+- **Серый счётчик-бейдж** рядом с лейблом (через `renderNavLabelWithCount`): у «Поддержки» — число своих открытых заявок (new/open/pending, `GET /tickets/my/counts`), у «Инбокса» — число назначенных агенту (`GET /tickets/counts`). Polling 60 c + автообновление после мутаций (create/reply/assign/take/status/reopen инвалидируют query-ключ). При `count=0` бейдж скрывается. Стиль — `.menu-count-badge` в `global.css`: серый pill 11px, в свёрнутом сайдбаре скрыт. Запросы кондиционально отключаются при выключенном модуле/не-агенте (`enabled`).
 
 ### Страницы инициатора (FE-2)
 
-- **`HelpdeskMyTicketsPage`**: список карточек, фильтр статусов, пагинация, кнопка «Создать заявку» → `TicketCreateModal` (subject + description + вложения, `multipart/form-data`). Загрузка через `fetchMyTickets`.
-- **`HelpdeskMyTicketDetailPage`**: шапка (номер, тема, статус-бейдж), timeline сообщений (`TicketMessageList`), форма ответа (`TicketReplyForm`). Служебные поля (статус, ответственный, создана, обновление) и профиль заявителя — в правом сайдбаре (`TicketInfoCard` + `RequesterProfileCard`). Для закрытых — no-reply.
+- **`HelpdeskMyTicketsPage`**: **двухблочный вид** (по образцу `HelpdeskAgentInboxPage`):
+  - **Верхний блок «Ожидают принятия»** — свои тикеты без назначенного агента (`fetchMyTickets({unassigned: true})`). Помогает ответить на «когда мной займутся».
+  - **Нижний блок «В работе у специалиста»** — тикеты с назначенным агентом (`fetchMyTickets({assigned: true})`).
+  - Отдельная пагинация по блокам. Шапка страницы: кнопка «Архив» (на `/helpdesk/my/archive`) + «Создать заявку» (`TicketCreateModal`).
+  - **Подсветка непрочитанного**: каждая строка с `unread=true` (есть публичные ответы агентов новее `last_seen_at`) подсвечивается красной точкой + фоном (единый язык с агентским инбоксом, `TicketListItem`).
+- **`HelpdeskMyArchivePage`** (`/helpdesk/my/archive`, `requiresAuth`): архив закрытых тикетов пользователя — `fetchMyTickets({status: 'closed'})`. Без переключателя mine/all (все тикеты свои). Кнопка «К моим заявкам» — возврат на `/helpdesk/my`.
+- **`HelpdeskMyTicketDetailPage`**: шапка (номер, тема, статус-бейдж), timeline сообщений (`TicketMessageList`), форма ответа (`TicketReplyForm`). Служебные поля (статус, ответственный, создана, обновление) и профиль заявителя — в правом сайдбаре (`TicketInfoCard` + `RequesterProfileCard`). Для закрытых — no-reply. При открытии — `markMyTicketRead` (снять подсветку ответов агентов в «Мои заявки», best-effort).
 
 ### Страницы агента (FE-3)
 
@@ -564,7 +601,8 @@ Cron `send_helpdesk_digest` (см. §10) раз в день шлёт **кажд�
   - **Архив** — отдельная страница `/helpdesk/archive` (роут `helpdesk-archive`, guard `requiresHelpdeskAgent`), кнопка «Архив» в шапке инбокса. Показывает только `status=closed` (один запрос), переключатель мои/все, поиск (FTS), пагинация.
   - Удалены: radio «Все»/«Новые», чекбокс «Только неназначенные» (стали самостоятельными блоками).
   - Список вынесен в компонент `TicketList.vue` (шапка таблицы + `TicketListItem`), переиспользуется всеми тремя блоками.
-- **`HelpdeskAgentTicketDetailPage`**: действия `take` / смена статуса (через select) / `reopen`; переключатель public/internal в форме ответа; email-метаданные сообщений (agent-mode в `TicketMessageList`).
+  - **Подсветка непрочитанных** (миграция 080): каждая строка инбокса приходит с бэка с полем `unread: bool` (один запрос `enrich_with_unread` на весь список — без N+1). `unread=true` для тикетов, у которых есть публичные входящие сообщения (ответы заявителя) новее, чем `last_seen_at` агента — то, что пришло за ночь и ещё не открывалось. Визуально: красная точка `--color-brand-red` перед `#номером` + полупрозрачный фон строки + жирный subject (единый язык с `NotificationsDropdown`). `unread=undefined` (для не-агентских списков, например `/tickets/my` у заявителя) — рендерится как прочитанное. Снятие подсветки — при открытии карточки: `HelpdeskAgentTicketDetailPage.load()` вызывает `markTicketRead(ticketId)` (best-effort, не блокирует UI).
+- **`HelpdeskAgentTicketDetailPage`**: действия `take` / смена статуса (через select) / `reopen`; переключатель public/internal в форме ответа; email-метаданные сообщений (agent-mode в `TicketMessageList`). При открытии — `markTicketRead` (снять подсветку в инбоксе, см. выше).
 
 ### Общие компоненты (`./frontend/src/components/helpdesk/`)
 
@@ -602,13 +640,14 @@ Cron `send_helpdesk_digest` (см. §10) раз в день шлёт **кажд�
 3. Миграция `077` (колонки `is_inline`/`content_id` на `helpdesk_attachments` — schema-drift фикс; применяется автоматически).
 4. Миграция `078` (полнотекстовый поиск: `search_tsvector`/`body_tsvector` tsvector + GIN — применяется автоматически; zero-downtime, generated STORED колонки заполняются атомарно).
 5. Миграция `079` (упразднён статус `resolved`: data-mig resolved→closed + CHECK без `resolved`; применяется автоматически).
-6. Зависимости `aioimaplib` + `cryptography` — в `pyproject.toml` (требуется пересборка `backend` + `worker`).
-7. Пересобрать `frontend` (новые страницы/роуты/меню/компоненты): `docker compose build frontend`.
-8. **Volume nginx → helpdesk** (для inline-картинок rich-редактора): nginx раздаёт картинки через `X-Accel-Redirect` и должен иметь доступ к `/data/helpdesk/` (`:ro`, как kb/feedback/photos). В `docker-compose.yml` секция `nginx.volumes` должна содержать `- ./upload_data/helpdesk:/data/helpdesk:ro`. Раньше это было не нужно (вложения раздавались `StreamingResponse` из backend), с inline-media — обязательно. После правки: `docker compose up -d nginx`.
-9. Включить модуль: **Admin → Модули → «Техподдержка» → On** (или `PUT /api/v1/admin/modules/helpdesk` `{"enabled": true}`, или правка `/data/settings/modules.json`).
-10. Для email-flow: **Admin → Система → «Техподдержка» → mailbox-форма** с IMAP-настройками и паролем (проверить кнопкой «Проверить соединение»).
-11. Назначить агентов: **Admin → Система → «Техподдержка» → Агенты** (поиск по сотрудникам) или `POST /api/v1/helpdesk/agents`.
-12. Локальная папка `/data/helpdesk/` должна быть доступна на запись (volume) для backend/worker и на чтение для nginx (см. п. 8).
-13. (Опц.) Сводка по умолчанию включена (будни 08:00 UTC). Настроить время/выключить — `PUT /api/v1/helpdesk/settings/digest` (Admin UI для расписания сводки пока отсутствует — настраивается через API).
+6. Миграция `080` (marker-таблица `helpdesk_ticket_reads` для подсветки непрочитанных заявок в инбоксе агента; zero-downtime — новая таблица, без блокировок; backfill не нужен — отсутствие строки = «никогда не видел» = логичный дефолт).
+7. Зависимости `aioimaplib` + `cryptography` — в `pyproject.toml` (требуется пересборка `backend` + `worker`).
+8. Пересобрать `frontend` (новые страницы/роуты/меню/компоненты): `docker compose build frontend`.
+9. **Volume nginx → helpdesk** (для inline-картинок rich-редактора): nginx раздаёт картинки через `X-Accel-Redirect` и должен иметь доступ к `/data/helpdesk/` (`:ro`, как kb/feedback/photos). В `docker-compose.yml` секция `nginx.volumes` должна содержать `- ./upload_data/helpdesk:/data/helpdesk:ro`. Раньше это было не нужно (вложения раздавались `StreamingResponse` из backend), с inline-media — обязательно. После правки: `docker compose up -d nginx`.
+10. Включить модуль: **Admin → Модули → «Техподдержка» → On** (или `PUT /api/v1/admin/modules/helpdesk` `{"enabled": true}`, или правка `/data/settings/modules.json`).
+11. Для email-flow: **Admin → Система → «Техподдержка» → mailbox-форма** с IMAP-настройками и паролем (проверить кнопкой «Проверить соединение»).
+12. Назначить агентов: **Admin → Система → «Техподдержка» → Агенты** (поиск по сотрудникам) или `POST /api/v1/helpdesk/agents`.
+13. Локальная папка `/data/helpdesk/` должна быть доступна на запись (volume) для backend/worker и на чтение для nginx (см. п. 9).
+14. (Опц.) Сводка по умолчанию включена (будни 08:00 UTC). Настроить время/выключить — `PUT /api/v1/helpdesk/settings/digest` (Admin UI для расписания сводки пока отсутствует — настраивается через API).
 
 > Модуль работоспособен и без IMAP (web-only helpdesk): `helpdesk.enabled=true` без mailbox-настройки — заявки создаются и обрабатываются через портал, исходящие публичные ответы не отправляются на email (создаётся только сообщение).

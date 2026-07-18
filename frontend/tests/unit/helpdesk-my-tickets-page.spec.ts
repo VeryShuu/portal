@@ -6,15 +6,10 @@ const ru = {
   helpdesk: {
     myTitle: 'Мои заявки',
     createButton: 'Создать заявку',
+    archive: 'Архив',
+    sectionWaiting: 'Ожидают принятия',
+    sectionMyInWork: 'В работе у специалиста',
     noTickets: 'Заявок нет',
-    statuses: {
-      all: 'Все',
-      new: 'Новые',
-      open: 'В работе',
-      pending: 'Ожидание',
-      resolved: 'Решено',
-      closed: 'Закрыто',
-    },
     columnNumber: '№',
     columnState: 'Статус',
     columnSubject: 'Тема',
@@ -46,8 +41,10 @@ vi.mock('@vicons/ionicons5', () => ({
 const messageError = vi.fn()
 vi.mock('naive-ui', () => ({
   NButton: {
+    // ``tag="a"`` рендерит ``<a>``, иначе ``<button>``. Для теста — единый
+    // ``<button>``, но с ``data-href`` чтобы различать «Архив» (link) и обычные.
     template: '<button class="n-button" @click="$emit(\'click\')"><slot /><slot name="icon" /></button>',
-    props: ['type', 'size'],
+    props: ['type', 'size', 'tag', 'href'],
     emits: ['click'],
   },
   NIcon: { template: '<span class="n-icon"><slot /></span>' },
@@ -63,15 +60,6 @@ vi.mock('naive-ui', () => ({
     template: '<div class="n-pagination" />',
     props: ['page', 'pageSize', 'itemCount'],
     emits: ['update:page'],
-  },
-  NRadioGroup: {
-    template: '<div class="n-radio-group"><slot /></div>',
-    props: ['value'],
-    emits: ['update:value'],
-  },
-  NRadioButton: {
-    template: '<label class="n-radio-button"><slot /></label>',
-    props: ['value'],
   },
   useMessage: () => ({ error: messageError }),
 }))
@@ -109,40 +97,71 @@ function mountPage() {
   })
 }
 
-describe('HelpdeskMyTicketsPage', () => {
+describe('HelpdeskMyTicketsPage (двухблочный вид)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    // Дефолтный мок: оба блока пусты.
     fetchMyTicketsMock.mockResolvedValue({ items: [], total: 0 })
   })
 
-  it('рендерит заголовок и кнопку создания', async () => {
+  it('рендерит заголовок, кнопку создания и кнопку Архив', async () => {
     const wrapper = mountPage()
     await flushPromises()
     expect(wrapper.text()).toContain('Мои заявки')
     expect(wrapper.text()).toContain('Создать заявку')
+    expect(wrapper.text()).toContain('Архив')
+  })
+
+  it('рендерит оба заголовка секций (Ожидают / В работе)', async () => {
+    const wrapper = mountPage()
+    await flushPromises()
+    expect(wrapper.text()).toContain('Ожидают принятия')
+    expect(wrapper.text()).toContain('В работе у специалиста')
   })
 
   it('показывает пустое состояние при отсутствии заявок', async () => {
     const wrapper = mountPage()
     await flushPromises()
-    expect(wrapper.find('.n-empty').exists()).toBe(true)
+    // Оба блока пустые → 2 n-empty.
+    expect(wrapper.findAll('.n-empty')).toHaveLength(2)
     expect(wrapper.text()).toContain('Заявок нет')
   })
 
-  it('рендерит список заявок после загрузки', async () => {
-    fetchMyTicketsMock.mockResolvedValue({
-      items: [makeTicket({ id: 't1', subject: 'VPN' }), makeTicket({ id: 't2', subject: 'Принтер' })],
-      total: 2,
-    })
+  it('запрашивает два блока с правильными фильтрами (unassigned/assigned)', async () => {
+    mountPage()
+    await flushPromises()
+    // Два вызова: один для блока «ожидают» (unassigned), второй для «в работе» (assigned).
+    expect(fetchMyTicketsMock).toHaveBeenCalledTimes(2)
+    const calls = fetchMyTicketsMock.mock.calls.map((c: unknown[]) => c[0])
+    const waitingCall = calls.find((c: Record<string, unknown>) => c.unassigned === true)
+    const inWorkCall = calls.find((c: Record<string, unknown>) => c.assigned === true)
+    expect(waitingCall).toBeDefined()
+    expect(waitingCall).toMatchObject({ unassigned: true, limit: 20, offset: 0 })
+    expect(inWorkCall).toBeDefined()
+    expect(inWorkCall).toMatchObject({ assigned: true, limit: 20, offset: 0 })
+  })
+
+  it('рендерит тикеты в обоих блоках после загрузки', async () => {
+    // 1-й вызов (unassigned) → 1 тикет, 2-й (assigned) → 2 тикета.
+    fetchMyTicketsMock
+      .mockResolvedValueOnce({ items: [makeTicket({ id: 'w1', subject: 'Ждёт агента' })], total: 1 })
+      .mockResolvedValueOnce({
+        items: [
+          makeTicket({ id: 'a1', subject: 'В работе 1' }),
+          makeTicket({ id: 'a2', subject: 'В работе 2' }),
+        ],
+        total: 2,
+      })
     const wrapper = mountPage()
     await flushPromises()
     const rows = wrapper.findAll('.ticket-row')
-    expect(rows).toHaveLength(2)
-    expect(rows[0].text()).toContain('VPN')
+    expect(rows).toHaveLength(3)
+    expect(wrapper.text()).toContain('Ждёт агента')
+    expect(wrapper.text()).toContain('В работе 1')
   })
 
   it('goToTicket пушит роут helpdesk-my-ticket с id', async () => {
-    fetchMyTicketsMock.mockResolvedValue({
+    fetchMyTicketsMock.mockResolvedValueOnce({
       items: [makeTicket({ id: 'abc-123' })],
       total: 1,
     })
@@ -166,16 +185,11 @@ describe('HelpdeskMyTicketsPage', () => {
     const wrapper = mountPage()
     await flushPromises()
     expect(wrapper.find('.ticket-create-modal').exists()).toBe(false)
-    await wrapper.find('.n-button').trigger('click')
+    // На странице 2 кнопки (Архив-link + Создать). Создать — type=primary.
+    const buttons = wrapper.findAll('.n-button')
+    const createBtn = buttons.find((b) => b.text().includes('Создать заявку'))
+    expect(createBtn).toBeDefined()
+    await createBtn!.trigger('click')
     expect(wrapper.find('.ticket-create-modal').exists()).toBe(true)
-  })
-
-  it('передаёт status и pagination в fetchMyTickets', async () => {
-    fetchMyTicketsMock.mockResolvedValue({ items: [], total: 0 })
-    mountPage()
-    await flushPromises()
-    expect(fetchMyTicketsMock).toHaveBeenCalledTimes(1)
-    const arg = fetchMyTicketsMock.mock.calls[0][0]
-    expect(arg).toMatchObject({ limit: 20, offset: 0 })
   })
 })

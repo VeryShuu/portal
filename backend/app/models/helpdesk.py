@@ -26,6 +26,7 @@ from sqlalchemy import (
     SmallInteger,
     String,
     Text,
+    UniqueConstraint,
     text,
 )
 from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR, UUID
@@ -431,4 +432,52 @@ class HelpdeskDigestSettings(Base):
 
     updated_by: Mapped[User | None] = relationship(
         "User", foreign_keys=[updated_by_user_id], lazy="select"
+    )
+
+
+class HelpdeskTicketRead(Base):
+    """Per-agent read-state marker: «когда этот агент последний раз видел тикет».
+
+    Подсветка непрочитанных заявок в инбоксе агента (миграция 080). Тикет
+    «непрочитан» для агента, если существует публичное входящее сообщение
+    (``direction='inbound'``, ``visibility='public'`` — ответ заявителя) с
+    ``created_at > COALESCE(last_seen_at, '-infinity')``. Ответы других агентов
+    и свои собственные НЕ считаются (агент и так их видел — он их писал);
+    internal-заметки НЕ считаются (это служебная активность).
+
+    Одна строка на пару ``ticket_id`` × ``user_id`` (UNIQUE-индекс), UPSERT
+    через ``ON CONFLICT`` при открытии карточки агента. ``ON DELETE CASCADE``
+    на обеих FK → чистится автоматически при архивации/удалении тикета или
+    аккаунта, cleanup-cron не нужен.
+
+    По образцу ``news_likes`` / ``kb_article_feedback`` (marker-таблица с
+    композитным UNIQUE); архитектурно ближе к Zammad/FreeScout
+    (``conversation_user`` pivot с ``last_seen_at``), чем к OTRS (per-article
+    ``ticket_flag`` — избыточно для наших объёмов).
+    """
+
+    __tablename__ = "helpdesk_ticket_reads"
+    __table_args__ = (
+        UniqueConstraint(
+            "ticket_id", "user_id", name="uq_helpdesk_ticket_reads_ticket_user"
+        ),
+        Index("ix_helpdesk_ticket_reads_user", "user_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    ticket_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("helpdesk_tickets.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    last_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("NOW()")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("NOW()")
     )

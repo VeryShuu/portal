@@ -43,6 +43,13 @@ export interface HelpdeskTicketListItem {
   assignee_name: string | null
   last_activity_at: string
   created_at: string
+  /**
+   * Подсветка непрочитанных ответов заявителя для агента (миграция 080).
+   * ``undefined`` — состояние неизвестно (requester-view ``/tickets/my`` и
+   * прочие не-агентские списки, где unread-семантика другая). ``true`` — у
+   * тикета есть публичные входящие сообщения новее ``last_seen_at`` агента.
+   */
+  unread?: boolean
 }
 
 export interface HelpdeskRequesterProfile {
@@ -89,12 +96,28 @@ export interface HelpdeskInboxParams {
 
 export interface HelpdeskMyListParams {
   status?: HelpdeskStatus
+  /** Только неназначенные (без агента) — блок «ожидают принятия». */
+  unassigned?: boolean
+  /** Только назначенные (с агентом) — блок «в работе у специалиста». */
+  assigned?: boolean
   limit?: number
   offset?: number
 }
 
+/** Лёгкий ответ ``GET /tickets/my/counts`` и ``GET /tickets/counts`` — для бейджей в меню. */
+export interface HelpdeskTicketCounts {
+  /** Активные тикеты (new/open/pending, без closed). У заявителя — свои;
+   *  у агента — назначенные ему. */
+  active: number
+}
+
 export function fetchMyTickets(params: HelpdeskMyListParams = {}): Promise<HelpdeskTicketList> {
   return api<HelpdeskTicketList>('/helpdesk/tickets/my', { params })
+}
+
+/** Счётчик своих открытых тикетов (new/open/pending) — для бейджа в меню. */
+export function fetchMyTicketCounts(): Promise<HelpdeskTicketCounts> {
+  return api<HelpdeskTicketCounts>('/helpdesk/tickets/my/counts')
 }
 
 export function fetchMyTicket(id: string): Promise<HelpdeskTicketDetail> {
@@ -107,6 +130,11 @@ export function fetchAgentTickets(params: HelpdeskInboxParams = {}): Promise<Hel
   const query: Record<string, unknown> = { ...rest }
   if (activeOnly) query.active_only = true
   return api<HelpdeskTicketList>('/helpdesk/tickets', { params: query })
+}
+
+/** Счётчик тикетов, назначенных агенту (new/open/pending) — для бейджа в меню. */
+export function fetchAgentTicketCounts(): Promise<HelpdeskTicketCounts> {
+  return api<HelpdeskTicketCounts>('/helpdesk/tickets/counts')
 }
 
 export function fetchAgentTicket(id: string): Promise<HelpdeskTicketDetail> {
@@ -185,6 +213,25 @@ export function changeTicketStatus(
 
 export function reopenTicket(id: string): Promise<HelpdeskTicketDetail> {
   return api<HelpdeskTicketDetail>(`/helpdesk/tickets/${id}/reopen`, { method: 'POST' })
+}
+
+/**
+ * Отметить тикет прочитанным (снять подсветку в инбоксе агента).
+ * Вызывается карточкой тикета при открытии — UPSERT ``last_seen_at = NOW()``
+ * для пары ``(ticket, agent)``. Идемпотентно: повторное открытие = no-op.
+ */
+export function markTicketRead(id: string): Promise<void> {
+  return api<void>(`/helpdesk/tickets/${id}/read`, { method: 'POST' })
+}
+
+/**
+ * Заявительский аналог ``markTicketRead`` — отметить свой тикет прочитанным.
+ * Снимает подсветку в «Мои заявки»: после открытия карточки заявителем ответы
+ * агентов больше не подсвечиваются как непрочитанные. Вызывается карточкой
+ * ``HelpdeskMyTicketDetailPage`` при открытии (best-effort).
+ */
+export function markMyTicketRead(id: string): Promise<void> {
+  return api<void>(`/helpdesk/tickets/my/${id}/read`, { method: 'POST' })
 }
 
 /** URL скачивания вложения (anchor с target=_blank, как в feedback). */
