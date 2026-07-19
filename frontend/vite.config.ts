@@ -30,7 +30,14 @@ export default defineConfig({
   },
   server: {
     port: 5173,
-    allowedHosts: ['localhost.me', 'localhost.local', 'portal.local'],
+    // Vite блокирует запросы с Host, отсутствующего в белом списке
+    // («Blocked request»). В dev хост задаётся через Admin UI (system.json →
+    // portal_base_url) и может быть любым, поэтому по умолчанию разрешаем все
+    // хосты — это безопасно: dev-сервер сидит за nginx (CIDR + TLS).
+    // При желании ограничить — задать VITE_ALLOWED_HOSTS=host1,host2,...
+    allowedHosts: process.env.VITE_ALLOWED_HOSTS
+      ? process.env.VITE_ALLOWED_HOSTS.split(',').map((h) => h.trim()).filter(Boolean)
+      : true,
     proxy: {
       '/api': {
         target: process.env.VITE_API_TARGET || 'http://localhost:8000',

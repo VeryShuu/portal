@@ -43,6 +43,12 @@
   заявки и dispatch) — все записи возвращаются в очередь (transient). Не DLQ:
   фичу могут включить, и backlog отправится. Это отличается от «токена нет при
   enabled=True» (permanent — конфиг сломан).
+- **2026-07-20:** MAX валидирует домен URL в inline-кнопках строже, чем в
+  markdown-тексте (отклоняет special-use/non-ICANN TLD). Решение: inline-кнопка
+  используется только когда URL проходит `_is_max_link_safe_url` (публичный TLD
+  или IP); иначе — fallback на markdown-ссылку в теле сообщения. Сохраняет
+  кнопку для большинства окружений, не падает в DLQ для интранет-порталов на
+  `.local` (значение `portal_base_url` по умолчанию). См. граблю ниже.
 
 ## Чеклист (DoD)
 
@@ -60,7 +66,9 @@
 - [x] Backend unit-тесты (3563 passed, +93 новых)
 - [x] Frontend queries-helpdesk (20 tests passed) + typecheck + lint + i18n green
 - [x] docs/helpdesk.md (§8 расширение, §1.3 модели) + docs/wip/
-- [ ] `docker compose build backend worker` + ручная проверка с реальным ботом MAX
+- [x] `docker compose build backend worker` + ручная проверка с реальным ботом MAX
+  (20.07.2026: найден и пофиксен третий баг — см. граблю «MAX валидирует домен
+  в inline-кнопках» ниже; после фикса — живой тикет #TKT-5 ушёл в SENT за 1 попытку)
 
 ## Грабли / контекст
 
@@ -137,6 +145,46 @@
   `load_system_settings()`. Если пусто (edge-case в тестах) — fallback на
   относительный `/helpdesk/tickets/{id}` (MAX покажет как текст, но отправка
   не упадёт).
+- **MAX валидирует домен URL в inline-кнопках строже, чем в markdown-тексте**
+  (20.07.2026, найдено в проде). Симптом: при включённом MAX-канале все новые
+  тикеты падают в `messenger_outbox` со статусом `DLQ` и ошибкой
+  `MAX API returned HTTP 400: Must have only http/https links format in buttons`.
+  400 → `classify_http_error` → `permanent` → DLQ без ретраев. Тестовое
+  сообщение при этом проходит (у него нет inline-кнопки), что маскирует баг.
+
+  **Причина:** в коде `_build_ticket_url()` собирал `https://portal.local/...`
+  (значение `portal_base_url` в `system.json` по умолчанию для интранет-портала),
+  а MAX Bot API **отклоняет special-use/non-ICANN TLD** в URL inline-кнопок.
+  Эмпирически (проверено запросами к живому MAX API 20.07.2026):
+
+  | URL | inline-кнопка | markdown-ссылка в теле |
+  |---|---|---|
+  | `https://example.com/x` (публичный TLD) | ✅ | ✅ |
+  | `https://portal.company.ru/x` (публичный TLD) | ✅ | ✅ |
+  | `https://10.0.0.5/x` (private RFC1918 IP) | ✅ | ✅ |
+  | `https://127.0.0.1/x` / `https://[::1]/x` (IP) | ✅ | ✅ |
+  | `https://portal.local/x` (special-use TLD) | **❌ 400** | ✅ |
+  | `http://localhost:8080/x` (hostname-only) | **❌ 400** | ✅ |
+  | `https://portal.internal/x` / `.lan` / `.home` / `.test` / `.invalid` | **❌ 400** | ✅ |
+
+  Правило: домен в кнопке должен быть **публичным ICANN TLD** или **IP-адресом**
+  (включая приватные/loopback). Markdown-ссылки и голые URL в тексте MAX
+  **не** валидирует — любой домен работает.
+
+  **Решение** (`app/services/helpdesk/notifications.py`):
+  - `_is_max_link_safe_url(url)` — предикат, проверяет scheme (`http`/`https`),
+    что host — IP (`ipaddress.ip_address`) или имеет TLD не из чёрного списка
+    (`local`/`localhost`/`internal`/`lan`/`home`/`test`/`example`/`invalid`/
+    `onion`/`arpa` — RFC 6761/6762 + ICANN-private-network registry).
+  - `_build_max_message_with_link(lines, url)` — если URL «safe» → inline-кнопка
+    (лучший UX); иначе → markdown-ссылка `🔗 Открыть на портале` в теле.
+    Это сохраняет inline-кнопку для подавляющего большинства окружений
+    (публичный домен или IP), но не падает в DLQ для интранет-порталов на
+    `.local` — типичный кейс по умолчанию.
+
+  Тесты: `test_payload_has_inline_keyboard_with_portal_url` (safe → кнопка),
+  `test_fallback_to_markdown_for_local_url` (`.local` → markdown),
+  `TestIsMaxLinkSafeUrl` (parametrize на ~20 кейсов из таблицы выше).
 - **13 frontend-тестов `use-app-menu.spec.ts` падают** — это пред-существующая
   регрессия (проверено через `git stash`), не связана с MAX-интеграцией.
 

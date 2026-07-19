@@ -340,9 +340,14 @@ def _requester_user(
     email: str = "ivan@company.local",
     phone: str | None = "12-34",
     mobile: str | None = "+7 999 111-22-33",
+    city: str | None = "Мурманск",
 ) -> SimpleNamespace:
     """Модель User-заявителя (контакты берутся из неё, как в карточке тикета)."""
-    attrs = {"mobile": mobile} if mobile else {}
+    attrs: dict[str, Any] = {}
+    if mobile:
+        attrs["mobile"] = mobile
+    if city:
+        attrs["city"] = city
     return SimpleNamespace(full_name=full_name, email=email, phone=phone, attributes=attrs)
 
 
@@ -639,14 +644,17 @@ class TestNotifyTicketCreatedMax:
         with (
             _patch_resolve_requester(_requester_user()),
             patch.object(notif, "enqueue_messenger_message", new=AsyncMock()) as enqueue,
+            # URL проходит валидацию MAX → № тикета уходит в inline-кнопку, а не в текст.
+            patch.object(notif, "_build_ticket_url", return_value="https://portal.example.com/x"),
         ):
             await notif.notify_ticket_created_max(
                 db, ticket=ticket, first_message=_first_message(text="Подключиться не могу")
             )
         text = enqueue.await_args.kwargs["text"]
-        assert "#TKT-88" in text
+        # № тикета НЕ в тексте — он переехал в inline-кнопку.
+        assert "#TKT-88" not in text
+        # Но тема и превью остаются.
         assert "Не работает VPN" in text
-        # Превью первого сообщения тоже попадает в текст.
         assert "Подключиться не могу" in text
 
     @pytest.mark.asyncio
@@ -661,29 +669,130 @@ class TestNotifyTicketCreatedMax:
                 db, ticket=ticket, first_message=_first_message()
             )
         text = enqueue.await_args.kwargs["text"]
+        # ФИО заявителя ушёл в заголовок «Заявка от ...».
         assert "Пётр Сидоров" in text
-        assert "email" in text  # source label
+        # Поля «Источник» больше нет в шаблоне (убрано по ТЗ от 20.07.2026).
+        assert "Источник" not in text
+
+    @pytest.mark.asyncio
+    async def test_text_has_requester_city_from_profile(self):
+        """Город заявителя берётся из ``users.attributes['city']`` и попадает
+        в отдельную строку с жирным лейблом «Город:»."""
+        db = _db_with_max_settings(_max_settings())
+        ticket = _ticket(number=1)
+        with (
+            _patch_resolve_requester(_requester_user(city="Мурманск")),
+            patch.object(notif, "enqueue_messenger_message", new=AsyncMock()) as enqueue,
+        ):
+            await notif.notify_ticket_created_max(
+                db, ticket=ticket, first_message=_first_message()
+            )
+        text = enqueue.await_args.kwargs["text"]
+        assert "**Город:** Мурманск" in text
+
+    @pytest.mark.asyncio
+    async def test_text_shows_dash_when_city_missing(self):
+        """Если у заявителя нет города (атрибут отсутствует) — показываем
+        прочерк «Город: —», не пропускаем поле."""
+        db = _db_with_max_settings(_max_settings())
+        ticket = _ticket(number=1)
+        with (
+            _patch_resolve_requester(_requester_user(city=None)),
+            patch.object(notif, "enqueue_messenger_message", new=AsyncMock()) as enqueue,
+        ):
+            await notif.notify_ticket_created_max(
+                db, ticket=ticket, first_message=_first_message()
+            )
+        text = enqueue.await_args.kwargs["text"]
+        assert "**Город:** —" in text
+
+    @pytest.mark.asyncio
+    async def test_text_shows_dash_when_guest_no_account(self):
+        """Гость без аккаунта (requester=None) → нет attributes → «Город: —»."""
+        db = _db_with_max_settings(_max_settings())
+        ticket = _ticket(number=1, requester_email="guest@external.com")
+        with (
+            _patch_resolve_requester(None),
+            patch.object(notif, "enqueue_messenger_message", new=AsyncMock()) as enqueue,
+        ):
+            await notif.notify_ticket_created_max(
+                db, ticket=ticket, first_message=_first_message()
+            )
+        text = enqueue.await_args.kwargs["text"]
+        assert "**Город:** —" in text
+
+    @pytest.mark.asyncio
+    async def test_template_uses_bold_labels_and_requester_in_header(self):
+        """Шаблон MAX-уведомления (ТЗ от 20.07.2026):
+
+            **Заявка от <ФИО>**
+            **Город:** ...
+
+            **Тема:** ...
+            **Текст заявки:**
+            <превью>
+
+        Поля «Источник» больше нет (убрано по ТЗ). Между «Город» и «Тема» —
+        пустая строка-разделитель. Лейблы и заголовок выделены ``**bold**``
+        (markdown). № тикета в тексте НЕ присутствует — он переезжает в
+        inline-кнопку «Открыть заявку #TKT-N».
+        """
+        db = _db_with_max_settings(_max_settings())
+        ticket = _ticket(number=42, subject="Сломалась почта")
+        with (
+            _patch_resolve_requester(_requester_user(full_name="Иван Петров", city="Москва")),
+            patch.object(notif, "enqueue_messenger_message", new=AsyncMock()) as enqueue,
+            # URL проходит валидацию MAX → № тикета уходит в inline-кнопку, а не в текст.
+            patch.object(notif, "_build_ticket_url", return_value="https://portal.example.com/x"),
+        ):
+            await notif.notify_ticket_created_max(
+                db, ticket=ticket, first_message=_first_message(text="Не приходит почта")
+            )
+        text = enqueue.await_args.kwargs["text"]
+        # Заголовок: «Заявка от ФИО» — bold. БЕЗ эмодзи 🆕, БЕЗ № тикета, БЕЗ «Новая».
+        assert "**Заявка от Иван Петров**" in text
+        assert "🆕" not in text
+        assert "#TKT-42" not in text
+        # Лейблы — bold (markdown **).
+        assert "**Город:** Москва" in text
+        assert "**Тема:** Сломалась почта" in text
+        assert "**Текст заявки:**" in text
+        # Поля «Источник» больше нет в шаблоне.
+        assert "Источник" not in text
+        # Между «Город» и «Тема» — пустая строка (визуальный разделитель).
+        assert "**Город:** Москва\n\n**Тема:**" in text
+        # Старый формат «Заявитель:» больше не используется (ФИО ушёл в заголовок).
+        assert "Заявитель:" not in text
+        # Превью тела — на отдельной строке после «**Текст заявки:**».
+        assert "Не приходит почта" in text
 
     @pytest.mark.asyncio
     async def test_payload_has_inline_keyboard_with_portal_url(self):
-        """Payload включает attachments с inline_keyboard — кнопка-ссылка «Открыть
-        на портале» ведёт на карточку тикета.
+        """Payload включает attachments с inline_keyboard — кнопка-ссылка ведёт
+        на карточку тикета (когда URL проходит валидацию MAX).
 
         Формат MAX (см. ``max-bot-api-client-ts/src/.../attachment.ts``):
         ``payload.buttons`` (НЕ ``rows``) — массив строк, каждая строка — массив
         кнопок. Кнопка-ссылка: ``{"type": "link", "text", "url"}``.
+
+        MAX валидирует домен URL в кнопках строже, чем в markdown-тексте
+        (отклоняет ``.local``/``localhost``/special-use TLD с 400 permanent).
+        Поэтому для public-URL используется inline-кнопка, для приватного домена
+        — markdown-ссылка в теле (см. ``test_fallback_to_markdown_for_local_url``).
         """
         db = _db_with_max_settings(_max_settings())
         ticket = _ticket(number=99)
         with (
             _patch_resolve_requester(_requester_user()),
             patch.object(notif, "enqueue_messenger_message", new=AsyncMock()) as enqueue,
+            patch.object(notif, "_build_ticket_url", return_value="https://portal.example.com/helpdesk/tickets/x"),
         ):
             await notif.notify_ticket_created_max(
                 db, ticket=ticket, first_message=_first_message()
             )
         payload = enqueue.await_args.kwargs["payload"]
         assert "attachments" in payload
+        assert len(payload["attachments"]) == 1
         kb = payload["attachments"][0]
         assert kb["type"] == "inline_keyboard"
         # Ключевое поле MAX — ``buttons``, не ``rows``.
@@ -691,9 +800,37 @@ class TestNotifyTicketCreatedMax:
         assert "rows" not in kb["payload"]
         button = kb["payload"]["buttons"][0][0]
         assert button["type"] == "link"
-        assert button["text"] == "Открыть на портале"
-        assert "/helpdesk/tickets/" in button["url"]
-        assert str(ticket.id) in button["url"]
+        # Текст кнопки включает № тикета («Открыть заявку #TKT-99»).
+        assert button["text"] == "Открыть заявку #TKT-99"
+        assert button["url"] == "https://portal.example.com/helpdesk/tickets/x"
+        # Markdown-ссылка НЕ дублируется в тексте — только кнопка.
+        assert "🔗" not in enqueue.await_args.kwargs["text"]
+
+    @pytest.mark.asyncio
+    async def test_fallback_to_markdown_for_local_url(self):
+        """Если URL не проходит валидацию MAX (``.local`` / ``localhost`` /
+        special-use TLD) — ссылка вставляется в тело как markdown, а inline-
+        кнопка не передаётся.
+
+        Это корень проблемы интранет-порталов: ``portal_base_url=https://portal.local``
+        отклоняется MAX-кнопкой с 400 permanent (DLQ без ретраев). Markdown-ссылка
+        в теле работает с любым доменом.
+        """
+        db = _db_with_max_settings(_max_settings())
+        ticket = _ticket(number=99)
+        with (
+            _patch_resolve_requester(_requester_user()),
+            patch.object(notif, "enqueue_messenger_message", new=AsyncMock()) as enqueue,
+            patch.object(notif, "_build_ticket_url", return_value="https://portal.local/helpdesk/tickets/x"),
+        ):
+            await notif.notify_ticket_created_max(
+                db, ticket=ticket, first_message=_first_message()
+            )
+        kwargs = enqueue.await_args.kwargs
+        # Нет inline_keyboard-attachments — иначе MAX упадёт с 400 permanent.
+        assert kwargs["payload"]["attachments"] == []
+        # Ссылка вставлена в текст как markdown, с № тикета.
+        assert "[🔗 Открыть заявку #TKT-99](https://portal.local/helpdesk/tickets/x)" in kwargs["text"]
 
     @pytest.mark.asyncio
     async def test_related_resource_is_ticket(self):
@@ -744,7 +881,73 @@ class TestNotifyTicketCreatedMax:
                 db, ticket=ticket, first_message=_first_message(text=long_text)
             )
         text = enqueue.await_args.kwargs["text"]
-        # Превью не длиннее 501 символа (500 + многоточие).
-        preview_line = text.split("\n")[-1]
+        # Превью — это строка из «а» (возможно с «…»), длина ≤ 501 (500 + «…»).
+        # Не используем ``split("\n")[-1]``: при fallback на markdown-ссылку
+        # последняя строка может быть ссылкой, а не превью.
+        preview_line = next(
+            (line for line in text.split("\n") if line and line[0] == "а"),
+            None,
+        )
+        assert preview_line is not None
         assert len(preview_line) <= 501
         assert preview_line.endswith("…")
+
+
+class TestIsMaxLinkSafeUrl:
+    """``_is_max_link_safe_url`` — предикат «пройдёт ли URL валидацию MAX Bot API
+    для inline-кнопки». Защита от 400 permanent ``Must have only http/https
+    links format in buttons`` (см. WIP-план helpdesk-max-messenger от 20.07.2026).
+
+    Эмпирическая карта (проверено запросами к живому MAX API 20.07.2026):
+
+        ✅ https://example.com/x              (публичный TLD)
+        ✅ https://portal.company.ru/x        (публичный TLD)
+        ✅ https://10.0.0.5/x                 (private RFC1918 IP)
+        ✅ https://172.16.0.1/x               (private RFC1918 IP)
+        ✅ https://127.0.0.1/x                (loopback IP)
+        ✅ https://[::1]/x                    (IPv6 loopback)
+        ❌ https://portal.local/x             (special-use TLD — частый кейс интранета)
+        ❌ http://localhost:8080/x            (hostname-only)
+        ❌ https://portal.internal/x          (non-ICANN TLD)
+        ❌ https://portal.lan/x               (non-ICANN TLD)
+        ❌ https://portal.test/x              (RFC 6761 reserved)
+        ❌ https://portal.home/x              (reserved)
+        ❌ ftp://example.com/x                (не http/https)
+    """
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "https://example.com/x",
+            "https://portal.company.ru/x",
+            "http://example.com:8080/path?q=1",
+            "https://10.0.0.5/x",       # private RFC1918
+            "https://172.16.0.1/x",
+            "https://192.168.1.10/x",
+            "https://127.0.0.1/x",      # loopback IP — MAX принимает
+            "https://[::1]/x",          # IPv6 loopback
+        ],
+    )
+    def test_safe_urls_pass(self, url):
+        assert notif._is_max_link_safe_url(url) is True
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "https://portal.local/x",       # типичный интранет-домен портала
+            "http://localhost:8080/x",
+            "https://portal.internal/x",
+            "https://portal.lan/x",
+            "https://portal.home/x",
+            "https://portal.test/x",
+            "https://portal.invalid/x",
+            "https://portal.onion/x",
+            "https://portal.arpa/x",
+            "ftp://example.com/x",          # не http/https scheme
+            "/helpdesk/tickets/abc",        # относительный путь (нет scheme)
+            "not-a-url",
+            "",
+        ],
+    )
+    def test_unsafe_urls_rejected(self, url):
+        assert notif._is_max_link_safe_url(url) is False

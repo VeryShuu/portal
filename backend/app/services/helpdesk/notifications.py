@@ -15,9 +15,11 @@ In-app уведомления через единый паттерн ``create_no
 from __future__ import annotations
 
 import html
+import ipaddress
 import uuid
 from collections.abc import Callable, Coroutine
 from typing import Any
+from urllib.parse import urlparse
 
 from redis.asyncio import Redis
 from sqlalchemy import select
@@ -431,8 +433,9 @@ def _build_ticket_url(ticket: HelpdeskTicket) -> str:
 
     Берёт ``portal_base_url`` из SystemSettings (обязан включать scheme — см.
     AGENTS.md gotcha). Если настройка пустая, fallback на относительный путь
-    ``/helpdesk/tickets/{id}`` (MAX в этом случае не сделает ссылку кликабельной,
-    но отправка не упадёт).
+    ``/helpdesk/tickets/{id}`` — в этом случае используется markdown-ссылка
+    в теле сообщения (см. :func:`_build_max_message_with_link`), потому что
+    относительный URL нельзя передать ни в кнопку, ни в markdown.
     """
     ticket_path = f"/helpdesk/tickets/{ticket.id}"
     try:
@@ -446,7 +449,70 @@ def _build_ticket_url(ticket: HelpdeskTicket) -> str:
     return ticket_path
 
 
-def _build_max_inline_keyboard(url: str) -> list[dict]:
+# Special-use / non-ICANN TLD, которые MAX Bot API отклоняет в inline-кнопках
+# с ``Must have only http/https links format in buttons`` (см. WIP-план: грабли
+# от 20.07.2026). Эмпирически выявлено тестами против живого MAX API: публичные
+# TLD и любые IP (включая приватные/loopback) проходят; эти TLD — нет. Список
+# совпадает с RFC 6761/6762 (special-use) + ICANN-private-network registry.
+_MAX_LINK_BLOCKED_TLDS = frozenset(
+    {
+        "local",       # mDNS / корпоративный интранет-домен портала по умолчанию
+        "localhost",   # hostname-only (даже без точки)
+        "internal",    # частый внутренний домен
+        "lan",
+        "home",
+        "test",        # RFC 6761 reserved
+        "example",     # RFC 6761 reserved
+        "invalid",     # RFC 6761 reserved
+        "onion",       # RFC 7686
+        "arpa",
+    }
+)
+
+
+def _is_max_link_safe_url(url: str) -> bool:
+    """Пройдёт ли URL валидацию MAX Bot API для inline-кнопки-ссылки.
+
+    MAX (эмпирически, тестами от 20.07.2026 против живого API) принимает в
+    ``inline_keyboard`` link-кнопках только http(s) URL с **публичным ICANN TLD**
+    или **IP-адресом** (включая приватные RFC1918 и loopback). Отклоняет с
+    ``Must have only http/https links format in buttons``:
+
+    * hostname-only без точки (``localhost``, ``intranet``);
+    * special-use / reserved TLD (``.local``, ``.internal``, ``.lan``,
+      ``.home``, ``.test``, ``.example``, ``.invalid``, ``.onion``, ``.arpa``).
+
+    Markdown-ссылки в теле сообщения и голые URL в тексте **не** валидируются
+    MAX (любой домен работает) — поэтому fallback на markdown работает для
+    корпоративных интранет-порталов на ``.local``.
+
+    Возвращает ``True`` → можно использовать inline-кнопку (красивее UX);
+    ``False`` → нужен fallback на markdown-ссылку в теле (см.
+    :func:`_build_max_message_with_link`).
+    """
+    try:
+        parsed = urlparse(url)
+    except (ValueError, TypeError):
+        return False
+    if parsed.scheme not in ("http", "https"):
+        return False
+    host = (parsed.hostname or "").lower()
+    if not host:
+        return False
+    # IP (v4/v6, включая приватные и loopback) — MAX принимает.
+    try:
+        ipaddress.ip_address(host)
+        return True
+    except ValueError:
+        pass
+    # Bare hostname без точки (``localhost``, ``intranet``) — MAX отклоняет.
+    if "." not in host:
+        return False
+    tld = host.rsplit(".", 1)[-1]
+    return tld not in _MAX_LINK_BLOCKED_TLDS
+
+
+def _build_max_inline_keyboard(url: str, *, button_text: str = "Открыть на портале") -> list[dict]:
     """Собрать MAX ``inline_keyboard``-attachment с одной кнопкой-ссылкой.
 
     Формат (согласно официальному TypeScript-клиенту ``max-bot-api-client-ts``,
@@ -466,6 +532,9 @@ def _build_max_inline_keyboard(url: str) -> list[dict]:
     ``type: "link"`` (а не ``style``/``url`` на верхнем уровне). Другие типы
     кнопок: ``callback`` (с ``payload`` и опциональным ``intent``),
     ``request_contact``, ``request_geo_location``, ``chat``.
+
+    Caller обязан убедиться через :func:`_is_max_link_safe_url`, что URL пройдёт
+    валидацию MAX — иначе весь запрос упадёт с 400 permanent (DLQ).
     """
     return [
         {
@@ -475,7 +544,7 @@ def _build_max_inline_keyboard(url: str) -> list[dict]:
                     [
                         {
                             "type": "link",
-                            "text": "Открыть на портале",
+                            "text": button_text,
                             "url": url,
                         }
                     ]
@@ -483,6 +552,39 @@ def _build_max_inline_keyboard(url: str) -> list[dict]:
             },
         }
     ]
+
+
+def _build_max_message_with_link(
+    lines: list[str],
+    url: str,
+    *,
+    ticket_number: str | None = None,
+) -> tuple[str, list[dict]]:
+    """Собрать текст и attachments MAX-уведомления со ссылкой на тикет.
+
+    Пытаемся использовать inline-кнопку (лучший UX). Если URL не пройдёт
+    валидацию MAX (``.local``/``localhost``/special-use TLD — частый кейс для
+    корпоративного интранет-портала) — переключаемся на markdown-ссылку в теле
+    сообщения: MAX рендерит её кликабельной и **не** валидирует домен, поэтому
+    работает с любым внутренним доменом.
+
+    Текст ссылки включает № тикета, когда он передан (``ticket_number``):
+    «Открыть заявку #TKT-123». Если ``ticket_number=None`` — текст «Открыть
+    на портале» (обратная совместимость со старыми вызовами).
+
+    Возвращает ``(text, attachments)`` для ``enqueue_messenger_message``.
+    """
+    button_text = f"Открыть заявку #{ticket_number}" if ticket_number else "Открыть на портале"
+
+    if _is_max_link_safe_url(url):
+        text = "\n".join(lines)
+        attachments = _build_max_inline_keyboard(url, button_text=button_text)
+        return text, attachments
+
+    # Fallback: markdown-ссылка в теле. MAX парсит ``[text](url)`` в markdown
+    # без валидации TLD — работает для ``.local``/``localhost``/приватных доменов.
+    lines = [*lines, "", f"[🔗 {button_text}]({url})"]
+    return "\n".join(lines), []
 
 
 async def _load_max_bot_settings(db: AsyncSession) -> HelpdeskMaxBotSettings | None:
@@ -507,17 +609,20 @@ async def notify_ticket_created_max(
     1, если сообщение поставлено в ``messenger_outbox``, иначе 0 (graceful no-op:
     MAX выключен, не настроен или нет первого сообщения).
 
-    Формат сообщения (markdown):
-        🆕 Новая заявка #TKT-123
+    Формат сообщения (markdown, **bold**-лейблы):
+        **Заявка от <ФИО>**
+        **Город:** <город из профиля или «—»>
 
-        Тема: <subject>
-        Заявитель: <ФИО или email>
-        Источник: веб / email
-
+        **Тема:** <subject>
+        **Текст заявки:**
         <превью тела первого сообщения, обрезанное до 500 символов>
 
-    Inline-кнопка «Открыть на портале» → абсолютный URL тикета. Контакты
-    заявителя берутся через ``resolve_requester_user`` (как в email-аналоге).
+    Ссылка на тикет: inline-кнопка «Открыть заявку #TKT-N» (если URL проходит
+    валидацию MAX), иначе — markdown-ссылка с тем же текстом в теле сообщения.
+    пройдёт валидацию MAX (публичный TLD или IP); иначе — markdown-ссылка в теле
+    сообщения (MAX принимает любой домен в тексте, но валидирует TLD в кнопках).
+    См. :func:`_build_max_message_with_link` и WIP-план «грабли от 20.07.2026».
+    Контакты заявителя берутся через ``resolve_requester_user`` (как в email-аналоге).
     """
     settings_row = await _load_max_bot_settings(db)
     if settings_row is None or not settings_row.enabled:
@@ -550,26 +655,46 @@ async def notify_ticket_created_max(
             ticket.requester_name or "—"
         )
 
-    source_label = "веб" if ticket.source == "web" else "email"
+    # Город заявителя из профиля Keycloak-attributes (``users.attributes['city']``).
+    # Гость без аккаунта → нет attributes → прочерк (поле выводится всегда —
+    # оператору важно видеть что заявка без города, а не гадать пропущено ли поле).
+    requester_city = "—"
+    if requester is not None:
+        attrs = getattr(requester, "attributes", None) or {}
+        city_val = attrs.get("city") if isinstance(attrs, dict) else None
+        if isinstance(city_val, list) and city_val:
+            # Keycloak иногда отдаёт multi-valued attributes как list[str].
+            requester_city = str(city_val[0]) or "—"
+        elif isinstance(city_val, str) and city_val.strip():
+            requester_city = city_val.strip()
 
     # ``first_message`` — ORM HelpdeskMessage с body_text (plain). Через getattr
     # для устойчивости к SimpleNamespace в тестах.
     body_text = getattr(first_message, "body_text", None) or ""
-    preview = _truncate_preview(body_text)
+    body_preview = _truncate_preview(body_text)
 
+    # Шаблон MAX-уведомления (markdown, **bold**-лейблы):
+    #   **Заявка от <ФИО>**
+    #   **Город:** Мурманск
+    #
+    #   **Тема:** ...
+    #   **Текст заявки:**
+    #   <превью тела>
+    #
+    # № тикета не в заголовке — он переезжает в inline-кнопку «Открыть заявку
+    # #TKT-N», чтобы оператор сразу видел куда кликать.
     lines = [
-        f"🆕 Новая заявка #{ticket.ticket_number}",
+        f"**Заявка от {requester_label}**",
+        f"**Город:** {requester_city}",
         "",
-        f"Тема: {ticket.subject}",
-        f"Заявитель: {requester_label}",
-        f"Источник: {source_label}",
+        f"**Тема:** {ticket.subject}",
+        "**Текст заявки:**",
     ]
-    if preview:
-        lines += ["", preview]
-    text = "\n".join(lines)
+    if body_preview:
+        lines.append(body_preview)
 
     url = _build_ticket_url(ticket)
-    attachments = _build_max_inline_keyboard(url)
+    text, attachments = _build_max_message_with_link(lines, url, ticket_number=ticket.ticket_number)
 
     await enqueue_messenger_message(
         db,

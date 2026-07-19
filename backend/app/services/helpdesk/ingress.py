@@ -41,6 +41,7 @@ from app.models.user import User
 from app.services.helpdesk import threading as threading_utils
 from app.services.helpdesk.attachments import cleanup_recorded_files
 from app.services.helpdesk.email_quote import html_to_plain, strip_quoted_html, strip_quoted_reply
+from app.services.helpdesk.email_signature import strip_email_signature
 from app.services.helpdesk.lifecycle import (
     REQUESTER_REOPEN_STATUSES,
     requester_reply,
@@ -764,12 +765,24 @@ def _extract_bodies(msg: Message) -> tuple[str, str | None]:
             plain = _decode_payload(msg)
 
     # Отсечение цитаты предыдущего письма (маркер-разделитель + эвристика).
-    # До санитизации HTML — чтобы поймать quote-контейнеры по классам до того,
+    # До санитации HTML — чтобы поймать quote-контейнеры по классам до того,
     # как nh3 их переформатирует. См. ``email_quote``.
     if plain is not None:
         plain = strip_quoted_reply(plain)
     if html is not None:
         html = strip_quoted_html(html)
+
+    # Отсечение корпоративной подписи (логотип Mage_Ru.png + фирменные цвета).
+    # После снятия цитаты (цитата может содержать подпись отправителя — её
+    # снимет ``strip_quoted_html``, оставив только «живой» хвост с актуальной
+    # подписью автора ответа). См. ``email_signature``.
+    if html is not None:
+        html = strip_email_signature(html)
+    # Plain-вариант тоже чистим — подпись в text/plain это просто строки
+    # «Вячеслав Борзихин / +7 ... / borzihin.vs@mage.ru», но без уникальных
+    # маркеров. Применяем strip_email_signature к HTML-деривации ниже, если
+    # plain пустой. Если plain уже есть — оставляем как есть (редкий кейс
+    # для multipart/alternative, где подпись сложно отличить от текста).
 
     if plain is None and html:
         # Деривация plain из HTML: тривиально — sanitized HTML без тегов.
