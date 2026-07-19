@@ -424,20 +424,14 @@
       "Body_add_agent_message_api_v1_helpdesk_tickets__ticket_id__messages_post": {
         "properties": {
           "body_html": {
-            "anyOf": [
-              {
-                "maxLength": 50000,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Body Html"
+            "default": "",
+            "maxLength": 50000,
+            "title": "Body Html",
+            "type": "string"
           },
           "body_text": {
+            "default": "",
             "maxLength": 20000,
-            "minLength": 1,
             "title": "Body Text",
             "type": "string"
           },
@@ -456,17 +450,20 @@
             "type": "string"
           }
         },
-        "required": [
-          "body_text"
-        ],
         "title": "Body_add_agent_message_api_v1_helpdesk_tickets__ticket_id__messages_post",
         "type": "object"
       },
       "Body_add_my_message_api_v1_helpdesk_tickets_my__ticket_id__messages_post": {
         "properties": {
+          "body_html": {
+            "default": "",
+            "maxLength": 50000,
+            "title": "Body Html",
+            "type": "string"
+          },
           "body_text": {
+            "default": "",
             "maxLength": 20000,
-            "minLength": 1,
             "title": "Body Text",
             "type": "string"
           },
@@ -480,9 +477,6 @@
             "type": "array"
           }
         },
-        "required": [
-          "body_text"
-        ],
         "title": "Body_add_my_message_api_v1_helpdesk_tickets_my__ticket_id__messages_post",
         "type": "object"
       },
@@ -770,6 +764,20 @@
           "files"
         ],
         "title": "Body_upload_photos_api_v1_photos_folders__folder_id__upload_post",
+        "type": "object"
+      },
+      "Body_upload_ticket_inline_media_api_v1_helpdesk_tickets__ticket_id__inline_media_post": {
+        "properties": {
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_upload_ticket_inline_media_api_v1_helpdesk_tickets__ticket_id__inline_media_post",
         "type": "object"
       },
       "Body_upload_tls_cert_api_v1_admin_system_tls_cert_post": {
@@ -4993,6 +5001,125 @@
         "title": "HelpdeskMailboxSettingsOut",
         "type": "object"
       },
+      "HelpdeskMaxBotSettingsIn": {
+        "description": "Конфигурация MAX-бота для оповещений о новых заявках в чат поддержки.\n\n``bot_token`` — write-only (как ``imap_password``): при обновлении ``None``\n= «оставить прежний шифр». Валидатор гарантирует, что при ``enabled=True``\nоба поля (токен на момент сохранения или уже сохранённый, и ``chat_id``)\nзаполнены — иначе ``PUT`` вернёт 400.",
+        "properties": {
+          "bot_token": {
+            "anyOf": [
+              {
+                "maxLength": 512,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bot Token"
+          },
+          "chat_id": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chat Id"
+          },
+          "enabled": {
+            "default": false,
+            "title": "Enabled",
+            "type": "boolean"
+          }
+        },
+        "title": "HelpdeskMaxBotSettingsIn",
+        "type": "object"
+      },
+      "HelpdeskMaxBotSettingsOut": {
+        "description": "Текущие настройки MAX-бота. ``bot_token_set`` — признак, что токен задан\n(сам токен не возвращается). ``configured`` = ``enabled AND bot_token_set\nAND chat_id is not None`` — канал готов отправлять сообщения.",
+        "properties": {
+          "bot_token_set": {
+            "default": false,
+            "title": "Bot Token Set",
+            "type": "boolean"
+          },
+          "chat_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chat Id"
+          },
+          "configured": {
+            "default": false,
+            "title": "Configured",
+            "type": "boolean"
+          },
+          "enabled": {
+            "default": false,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "title": "HelpdeskMaxBotSettingsOut",
+        "type": "object"
+      },
+      "HelpdeskMaxBotTestResult": {
+        "description": "Результат ``POST /max-bot/test``: дёргает MAX ``GET /me`` с текущим\nтокеном, чтобы проверить, что бот валиден. ``detail`` на успехе — имя бота;\n``error`` на неудаче замаскирован (defence-in-depth против утечки токена\nв HTTP-ответ/логи — полный traceback только в server-log через\n``logger.exception``).",
+        "properties": {
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "HelpdeskMaxBotTestResult",
+        "type": "object"
+      },
       "HelpdeskModuleIn": {
         "properties": {
           "enabled": {
@@ -5030,7 +5157,6 @@
           "new",
           "open",
           "pending",
-          "resolved",
           "closed"
         ],
         "title": "HelpdeskStatus",
@@ -6264,6 +6390,32 @@
           "updated_at"
         ],
         "title": "MailingRecipientPublic",
+        "type": "object"
+      },
+      "MarkTicketReadOut": {
+        "description": "Ответ ``POST /tickets/{id}/read`` — подтверждение отметки «просмотрено».",
+        "properties": {
+          "last_seen_at": {
+            "format": "date-time",
+            "title": "Last Seen At",
+            "type": "string"
+          },
+          "ok": {
+            "default": true,
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "ticket_id": {
+            "format": "uuid",
+            "title": "Ticket Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ticket_id",
+          "last_seen_at"
+        ],
+        "title": "MarkTicketReadOut",
         "type": "object"
       },
       "MediaUploadResponse": {
@@ -11506,6 +11658,20 @@
         "title": "TicketAssignIn",
         "type": "object"
       },
+      "TicketCountsOut": {
+        "description": "Лёгкий ответ для счётчиков в меню. ``active`` — тикеты в статусах\n``new``/``open``/``pending`` (закрытые исключены). Используется бейджем\nпункта меню: у заявителя — «мои открытые», у агента — «назначенные мне».\nКакие именно считать — определяется endpoint'ом (requester vs agent), здесь\nтолько форма ответа.",
+        "properties": {
+          "active": {
+            "title": "Active",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "active"
+        ],
+        "title": "TicketCountsOut",
+        "type": "object"
+      },
       "TicketListItemOut": {
         "description": "Компактная карточка для списков (свои заявки / агентский инбокс).",
         "properties": {
@@ -11587,6 +11753,17 @@
           "subject": {
             "title": "Subject",
             "type": "string"
+          },
+          "unread": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unread"
           }
         },
         "required": [
@@ -11730,7 +11907,6 @@
             "enum": [
               "open",
               "pending",
-              "resolved",
               "closed"
             ],
             "title": "Status",
@@ -22098,6 +22274,163 @@
         ]
       }
     },
+    "/api/v1/helpdesk/settings/max-bot": {
+      "get": {
+        "operationId": "get_max_bot_settings_api_v1_helpdesk_settings_max_bot_get",
+        "parameters": [
+          {
+            "in": "cookie",
+            "name": "portal_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Portal Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HelpdeskMaxBotSettingsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Max Bot Settings",
+        "tags": [
+          "helpdesk"
+        ]
+      },
+      "put": {
+        "description": "Сохранить конфигурацию MAX-бота (токен write-only, как IMAP-пароль).\n\nВалидация: при ``enabled=True`` обязательно наличие токена (либо в текущем\npayload, либо уже сохранённого) и ``chat_id`` — иначе 400 (нельзя включить\nканал без валидных кредов).",
+        "operationId": "put_max_bot_settings_api_v1_helpdesk_settings_max_bot_put",
+        "parameters": [
+          {
+            "in": "cookie",
+            "name": "portal_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Portal Session"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HelpdeskMaxBotSettingsIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HelpdeskMaxBotSettingsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Max Bot Settings",
+        "tags": [
+          "helpdesk"
+        ]
+      }
+    },
+    "/api/v1/helpdesk/settings/max-bot/test": {
+      "post": {
+        "description": "Отправить тестовое сообщение в чат поддержки через MAX Bot API.\n\nВ отличие от ``POST /mailbox/test`` (который проверяет только IMAP-логин),\nздесь мы делаем **полный end-to-end тест**: отправляем реальное сообщение\nв настроенный ``chat_id``. Это проверяет:\n* токен бота валиден (401 от MAX иначе);\n* бот добавлен в чат и имеет права писать (403/400 иначе);\n* ``chat_id`` корректный (400 «chat not found» иначе);\n* TLS к MAX работает (Russian Trusted CA в trust store).\n\nПользователь видит сообщение в MAX — это и есть подтверждение «всё работает».\n\nDefense-in-depth: на ошибку маскируем ``str(exc)`` (MAX в JSON-ошибках\nиногда отражает часть токена или чувствительные детали). Полный traceback\nостаётся в server-log через ``logger.exception``.",
+        "operationId": "test_max_bot_connection_api_v1_helpdesk_settings_max_bot_test_post",
+        "parameters": [
+          {
+            "in": "cookie",
+            "name": "portal_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Portal Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HelpdeskMaxBotTestResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Test Max Bot Connection",
+        "tags": [
+          "helpdesk"
+        ]
+      }
+    },
     "/api/v1/helpdesk/tickets": {
       "get": {
         "operationId": "list_all_tickets_api_v1_helpdesk_tickets_get",
@@ -22159,6 +22492,26 @@
                 }
               ],
               "title": "Source"
+            }
+          },
+          {
+            "in": "query",
+            "name": "active_only",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Active Only",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "assigned",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Assigned",
+              "type": "boolean"
             }
           },
           {
@@ -22304,6 +22657,56 @@
         ]
       }
     },
+    "/api/v1/helpdesk/tickets/counts": {
+      "get": {
+        "description": "Лёгкий count-endpoint для бейджа в меню пункта «Инбокс поддержки».\n\n``active`` — тикеты, назначенные лично этому агенту (``assignee = agent``),\nв статусах new/open/pending. «Моя нагрузка», а не «объём очереди»:\nненазначенные тикеты здесь не считаются (для них есть отдельный блок в\nинбоксе). ``closed`` исключён. Один ``count(*)`` без join'ов.",
+        "operationId": "get_agent_ticket_counts_api_v1_helpdesk_tickets_counts_get",
+        "parameters": [
+          {
+            "in": "cookie",
+            "name": "portal_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Portal Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TicketCountsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Счётчик назначенных агенту тикетов в работе (для бейджа в меню)",
+        "tags": [
+          "helpdesk"
+        ]
+      }
+    },
     "/api/v1/helpdesk/tickets/my": {
       "get": {
         "operationId": "list_my_tickets_api_v1_helpdesk_tickets_my_get",
@@ -22322,6 +22725,26 @@
                 }
               ],
               "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "unassigned",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Unassigned",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "assigned",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Assigned",
+              "type": "boolean"
             }
           },
           {
@@ -22387,6 +22810,56 @@
           }
         },
         "summary": "Список своих заявок",
+        "tags": [
+          "helpdesk"
+        ]
+      }
+    },
+    "/api/v1/helpdesk/tickets/my/counts": {
+      "get": {
+        "description": "Лёгкий count-endpoint для бейджа в меню пункта «Поддержка».\n\n``active`` — свои тикеты в статусах new/open/pending (closed исключён как\nархивная история). Один ``count(*)`` без join'ов и пагинации — дешевле\nlist-endpoint'а с ``limit=1``, особенно при polling'е раз в 60 c.",
+        "operationId": "get_my_ticket_counts_api_v1_helpdesk_tickets_my_counts_get",
+        "parameters": [
+          {
+            "in": "cookie",
+            "name": "portal_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Portal Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TicketCountsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Счётчик своих открытых заявок (для бейджа в меню)",
         "tags": [
           "helpdesk"
         ]
@@ -22489,8 +22962,7 @@
                 "$ref": "#/components/schemas/Body_add_my_message_api_v1_helpdesk_tickets_my__ticket_id__messages_post"
               }
             }
-          },
-          "required": true
+          }
         },
         "responses": {
           "201": {
@@ -22515,6 +22987,66 @@
           }
         },
         "summary": "Ответ по своей заявке",
+        "tags": [
+          "helpdesk"
+        ]
+      }
+    },
+    "/api/v1/helpdesk/tickets/my/{ticket_id}/read": {
+      "post": {
+        "description": "Заявительский аналог ``POST /tickets/{id}/read`` (агентского).\n\nЗаписывает ``last_seen_at = NOW()`` для пары ``(ticket, user)`` — UPSERT по\n``uq_helpdesk_ticket_reads_ticket_user``. Снимает подсветку в списке своих\nзаявок: после открытия карточки заявителем ответы агентов больше не\nподсвечиваются как непрочитанные (контракт ``direction='outbound'`` в\n``enrich_with_unread``, см. ``GET /tickets/my``).\n\nACL: только свои тикеты (``fetch_ticket_for_user`` → 404 для чужих, не\nраскрываем существование). Не требует audit/rate-limit (read-state —\nбизнес-состояние, как ``notifications.read``). Идемпотентно.",
+        "operationId": "mark_my_ticket_read_api_v1_helpdesk_tickets_my__ticket_id__read_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ticket_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Ticket Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "portal_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Portal Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarkTicketReadOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Отметить свой тикет прочитанным (снять подсветку ответов агентов)",
         "tags": [
           "helpdesk"
         ]
@@ -22648,6 +23180,141 @@
         ]
       }
     },
+    "/api/v1/helpdesk/tickets/{ticket_id}/inline-media": {
+      "post": {
+        "operationId": "upload_ticket_inline_media_api_v1_helpdesk_tickets__ticket_id__inline_media_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ticket_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Ticket Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "portal_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Portal Session"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_ticket_inline_media_api_v1_helpdesk_tickets__ticket_id__inline_media_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaUploadResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Загрузить inline-картинку для rich-редактора ответа",
+        "tags": [
+          "helpdesk"
+        ]
+      }
+    },
+    "/api/v1/helpdesk/tickets/{ticket_id}/inline-media/{filename}": {
+      "get": {
+        "operationId": "serve_ticket_inline_media_api_v1_helpdesk_tickets__ticket_id__inline_media__filename__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ticket_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Ticket Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "filename",
+            "required": true,
+            "schema": {
+              "title": "Filename",
+              "type": "string"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "portal_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Portal Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Раздать inline-картинку (через nginx X-Accel-Redirect)",
+        "tags": [
+          "helpdesk"
+        ]
+      }
+    },
     "/api/v1/helpdesk/tickets/{ticket_id}/messages": {
       "post": {
         "operationId": "add_agent_message_api_v1_helpdesk_tickets__ticket_id__messages_post",
@@ -22686,8 +23353,7 @@
                 "$ref": "#/components/schemas/Body_add_agent_message_api_v1_helpdesk_tickets__ticket_id__messages_post"
               }
             }
-          },
-          "required": true
+          }
         },
         "responses": {
           "201": {
@@ -22712,6 +23378,66 @@
           }
         },
         "summary": "Ответ агента (public/internal)",
+        "tags": [
+          "helpdesk"
+        ]
+      }
+    },
+    "/api/v1/helpdesk/tickets/{ticket_id}/read": {
+      "post": {
+        "description": "Записать ``last_seen_at = NOW()`` для пары ``(ticket, agent)`` — UPSERT\nпо ``uq_helpdesk_ticket_reads_ticket_user``. Вызывается фронтендом при\nоткрытии карточки тикета (точка «прочитано» в инбоксе агента).\n\nНе требует audit (read-state — бизнес-состояние, не мутация, как\n``notifications.read``) и rate-limit (доступ только HelpdeskAgentDep).\nИдемпотентно: повторное открытие карточки = более свежий ``last_seen_at``.",
+        "operationId": "mark_ticket_read_api_v1_helpdesk_tickets__ticket_id__read_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ticket_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Ticket Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "portal_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Portal Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarkTicketReadOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Отметить тикет прочитанным (снять подсветку в инбоксе агента)",
         "tags": [
           "helpdesk"
         ]

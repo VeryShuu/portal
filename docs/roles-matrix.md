@@ -5,7 +5,11 @@
 > **Роли:** reader / editor / admin + per-module ACL.
 
 > Корпоративный интранет-портал
-> Последнее обновление: апрель 2026 (v1.5) — финальный срез v1.x. Все модули: новости, KB, файлы, фотогалерея, брендинг, система, аудит, аналитика.
+> Последнее обновление: июль 2026 (v1.13) — к v1.5 добавлены **Helpdesk**
+> (отдельная сущность агентов `helpdesk_agents`, module-gate, mailbox/digest/MAX-bot
+> settings — см. отдельную матрицу ниже и [`./helpdesk.md`](./helpdesk.md) §5),
+> `mailing_recipients` + `POST /news/{id}/share-email`, лайки/комментарии
+> новостей, справочники объектов, пофайловый шеринг файлов.
 
 ## Роли
 
@@ -468,6 +472,76 @@ def require_role(*roles: str):
 | `POST /directories/{slug}/entries/{id}/avatar` | ❌ | ✅ | ✅ | Загрузить фото (streaming + python-magic, `/data`) |
 | `DELETE /directories/{slug}/entries/{id}/avatar` | ❌ | ✅ | ✅ | Удалить фото |
 | `GET /directories/{slug}/export` | ✅ | ✅ | ✅ | Экспорт `?format=csv\|xlsx\|pdf` |
+
+---
+
+## Матрица: Техподдержка (Helpdesk)
+
+> **Полное описание прав/ACL — в [`./helpdesk.md`](./helpdesk.md) §5.** Здесь —
+> сводная матрица. Префикс `/api/v1/helpdesk`. Весь роутер обёрнут в
+> `require_helpdesk_module` → 404 при `modules.json → helpdesk.enabled=false`.
+>
+> **Auth-deps** (поверх роли):
+> - `CurrentUser` — любой авторизованный (создание/чтение своих заявок).
+> - `HelpdeskAgentDep` (`require_helpdesk_agent`) — проверка в `helpdesk_agents`
+>   на каждый запрос; **admin всегда проходит как суперсет**. Источник прав —
+>   только БД, косметический флаг `is_helpdesk_agent` из bootstrap не доверяется.
+> - `AdminDep` — только admin (settings, agents CRUD).
+>
+> Запросы инициатора к чужим тикетам — 404 (не раскрывает существование).
+> `internal`-сообщения отсекаются в mapper'е для requester-view.
+
+Обозначения: `👤` — инициатор (свой тикет), `🛠` — helpdesk-агент (или admin),
+`⚙` — admin-only, `🌐` — module-gate (404 при выключенном модуле).
+
+### Заявки (инициатор — `CurrentUser`)
+
+| Endpoint | reader | editor | admin | Примечание |
+|---------|:------:|:------:|:-----:|-----------|
+| `POST /tickets` | ✅ | ✅ | ✅ | Создать заявку (rate-limit 5/мин); мутация пишется в audit только при назначении/смене статуса |
+| `GET /tickets/my` | ✅ | ✅ | ✅ | Свои заявки (фильтры `status`/`unassigned`/`assigned`, пагинация) |
+| `GET /tickets/my/counts` | ✅ | ✅ | ✅ | Лёгкий `{active: N}` для бейджа «Поддержка» |
+| `GET /tickets/my/{id}` | ✅ (свои) | ✅ (свои) | ✅ | Свой тикет с публичными сообщениями + `requester_profile`; чужой → 404 |
+| `POST /tickets/my/{id}/read` | ✅ (свои) | ✅ (свои) | ✅ | Снять подсветку ответов агентов (UPSERT read-state); без audit/rate-limit |
+| `POST /tickets/my/{id}/messages` | ✅ (свои) | ✅ (свои) | ✅ | Ответ инициатора (rate-limit 20/мин); `inbound`/`public` |
+| `GET /attachments/{id}` | ✅ (свои) | ✅ (свои) | ✅ | Скачать вложение; автор/агент/админ, иначе 404 |
+
+### Инбокс и операции агента (`HelpdeskAgentDep` — агент или admin)
+
+| Endpoint | reader | editor | admin | Примечание |
+|---------|:------:|:------:|:-----:|-----------|
+| `GET /tickets` | 🛠 | 🛠 | ✅ | Инбокс: фильтры + FTS `q` (миграция 078) + `unread: bool` per row |
+| `GET /tickets/counts` | 🛠 | 🛠 | ✅ | `{active: N}` — тикеты, назначенные агенту, в new/open/pending |
+| `GET /tickets/{id}` | 🛠 | 🛠 | ✅ | Карточка (`TicketAgentOut`): все сообщения + служебные поля |
+| `POST /tickets/{id}/messages` | 🛠 | 🛠 | ✅ | Ответ (`visibility` public/internal); public → `pending` + outbound email |
+| `POST /tickets/{id}/inline-media` | 🛠\|👤 | 🛠\|👤 | ✅ | Загрузка inline-картинки TipTap (автор тикета ИЛИ агент/админ) |
+| `GET /tickets/{id}/inline-media/{file}` | 🛠\|👤 | 🛠\|👤 | ✅ | Отдача inline-картинки (ACL тот же); no-store+nosniff |
+| `POST /tickets/{id}/assign` | 🛠 | 🛠 | ✅ | Назначить `assignee_user_id` + email инициатору |
+| `POST /tickets/{id}/take` | 🛠 | 🛠 | ✅ | Взять на себя (409 если уже назначен) |
+| `PATCH /tickets/{id}/status` | 🛠 | 🛠 | ✅ | Сменить статус (409 на запрещённый переход) |
+| `POST /tickets/{id}/reopen` | 🛠 | 🛠 | ✅ | Reopen из `closed` (409 иначе) |
+| `POST /tickets/{id}/read` | 🛠 | 🛠 | ✅ | UPSERT read-state для пары `(ticket, agent)` |
+
+### Управление (`AdminDep` — только admin)
+
+| Endpoint | reader | editor | admin | Примечание |
+|---------|:------:|:------:|:-----:|-----------|
+| `GET /agents` | ❌ | ❌ | ✅ | Список агентов поддержки |
+| `POST /agents` | ❌ | ❌ | ✅ | Добавить агента (`user_id`, `notify_new`); 409 если уже агент |
+| `PATCH /agents/{user_id}` | ❌ | ❌ | ✅ | Изменить `notify_new` |
+| `DELETE /agents/{user_id}` | ❌ | ❌ | ✅ | Удалить агента |
+| `GET /settings/mailbox` | ❌ | ❌ | ✅ | Singleton IMAP-настроек support-ящика |
+| `PUT /settings/mailbox` | ❌ | ❌ | ✅ | Создать/обновить; `imap_password_enc` Fernet (write-only) |
+| `POST /settings/mailbox/test` | ❌ | ❌ | ✅ | Проверка IMAP-соединения; маскированная ошибка |
+| `GET /settings/digest` | ❌ | ❌ | ✅ | Singleton расписания сводки |
+| `PUT /settings/digest` | ❌ | ❌ | ✅ | Обновить расписание (аудит `helpdesk.digest_settings_changed`) |
+| `GET /settings/max-bot` | ❌ | ❌ | ✅ | Singleton MAX-бота (`enabled`, `bot_token_set`, `chat_id`, `configured`) |
+| `PUT /settings/max-bot` | ❌ | ❌ | ✅ | Обновить; токен write-only. При `enabled=True` требует токен+chat_id (400 иначе). |
+| `POST /settings/max-bot/test` | ❌ | ❌ | ✅ | End-to-end: реальное сообщение в чат через MAX Bot API |
+
+> Module-gate (`require_helpdesk_module`): всё, что не 404 при выключенном
+> `helpdesk.enabled`. Настройки MAX-бота (`/settings/max-bot*`) доступны только
+> при включённом модуле (входят в общий helpdesk-роутер).
 
 ---
 

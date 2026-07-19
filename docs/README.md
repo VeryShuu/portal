@@ -81,7 +81,8 @@
   профиля, admin-настройки городов/телефонов)
 - [`feedback.md`](./feedback.md) — модуль обратной связи
 - [`helpdesk.md`](./helpdesk.md) — модуль техподдержки (замена OTRS): тикеты,
-  переписка, IMAP-ingress, статус-машина, локальные вложения, архив, mailbox-settings
+  переписка, IMAP-ingress, статус-машина, локальные вложения, архив, mailbox-settings,
+  оповещения о новых заявках в MAX-messenger (`messenger_outbox`, миграция 081)
 - [`integration-keycloak-nextcloud.md`](./integration-keycloak-nextcloud.md) —
   настройка Keycloak realm и Nextcloud service account
 - [`email.md`](./email.md) — общая для портала email-инфраструктура

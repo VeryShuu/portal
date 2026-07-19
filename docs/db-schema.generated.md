@@ -1,5 +1,5 @@
 <!-- AUTO-GENERATED — do not edit manually. Run: cd backend && python -m scripts.generate_db_schema_doc --output ../docs/db-schema.generated.md -->
-<!-- Generated: 2026-06-08 10:03 UTC -->
+<!-- Generated: 2026-07-19 20:38 UTC -->
 
 # Database Schema (auto-generated)
 
@@ -19,6 +19,16 @@
 - [`file_folders`](#file-folders)
 - [`file_items`](#file-items)
 - [`file_shares`](#file-shares)
+- [`helpdesk_agents`](#helpdesk-agents)
+- [`helpdesk_attachments`](#helpdesk-attachments)
+- [`helpdesk_digest_settings`](#helpdesk-digest-settings)
+- [`helpdesk_email_log`](#helpdesk-email-log)
+- [`helpdesk_mailbox_settings`](#helpdesk-mailbox-settings)
+- [`helpdesk_max_bot_settings`](#helpdesk-max-bot-settings)
+- [`helpdesk_messages`](#helpdesk-messages)
+- [`helpdesk_ticket_reads`](#helpdesk-ticket-reads)
+- [`helpdesk_tickets`](#helpdesk-tickets)
+- [`helpdesk_tickets_archive`](#helpdesk-tickets-archive)
 - [`kb_article_comments`](#kb-article-comments)
 - [`kb_article_feedback`](#kb-article-feedback)
 - [`kb_article_files`](#kb-article-files)
@@ -30,9 +40,11 @@
 - [`kb_sections`](#kb-sections)
 - [`kb_suggestions`](#kb-suggestions)
 - [`kb_tags`](#kb-tags)
+- [`mailing_recipients`](#mailing-recipients)
 - [`meeting_booking_rooms`](#meeting-booking-rooms)
 - [`meeting_bookings`](#meeting-bookings)
 - [`meeting_rooms`](#meeting-rooms)
+- [`messenger_outbox`](#messenger-outbox)
 - [`news`](#news)
 - [`news_attachments`](#news-attachments)
 - [`news_comments`](#news-comments)
@@ -81,6 +93,20 @@ erDiagram
     file_items ||--o{ users : "FK uploaded_by"
     file_shares ||--o{ file_folders : "FK folder_id"
     file_shares ||--o{ users : "FK shared_by"
+    helpdesk_agents ||--o{ users : "FK user_id"
+    helpdesk_attachments ||--o{ helpdesk_tickets : "FK ticket_id"
+    helpdesk_attachments ||--o{ helpdesk_messages : "FK message_id"
+    helpdesk_attachments ||--o{ users : "FK uploaded_by_user_id"
+    helpdesk_digest_settings ||--o{ users : "FK updated_by_user_id"
+    helpdesk_email_log ||--o{ helpdesk_tickets : "FK ticket_id"
+    helpdesk_email_log ||--o{ helpdesk_messages : "FK message_db_id"
+    helpdesk_mailbox_settings ||--o{ users : "FK updated_by_user_id"
+    helpdesk_max_bot_settings ||--o{ users : "FK updated_by_user_id"
+    helpdesk_messages ||--o{ helpdesk_tickets : "FK ticket_id"
+    helpdesk_messages ||--o{ users : "FK author_user_id"
+    helpdesk_ticket_reads ||--o{ helpdesk_tickets : "FK ticket_id"
+    helpdesk_ticket_reads ||--o{ users : "FK user_id"
+    helpdesk_tickets ||--o{ users : "FK requester_user_id"
     kb_article_comments ||--o{ kb_articles : "FK article_id"
     kb_article_comments ||--o{ users : "FK author_id"
     kb_article_feedback ||--o{ kb_articles : "FK article_id"
@@ -101,6 +127,7 @@ erDiagram
     kb_sections ||--o{ users : "FK created_by"
     kb_suggestions ||--o{ kb_articles : "FK article_id"
     kb_suggestions ||--o{ users : "FK author_id"
+    mailing_recipients ||--o{ users : "FK created_by_user_id"
     meeting_booking_rooms ||--o{ meeting_bookings : "FK booking_id"
     meeting_booking_rooms ||--o{ meeting_rooms : "FK room_id"
     meeting_bookings ||--o{ users : "FK creator_id"
@@ -233,8 +260,8 @@ erDiagram
 
 | Name | Type | Definition |
 |------|------|------------|
-| `ck_feedback_status` | CHECK | `status IN ('open','in_progress','closed')` |
 | `ck_feedback_category` | CHECK | `category IN ('bug','suggestion','other')` |
+| `ck_feedback_status` | CHECK | `status IN ('open','in_progress','closed')` |
 
 ### Indexes
 
@@ -327,9 +354,9 @@ erDiagram
 
 | Name | Type | Definition |
 |------|------|------------|
+| `uq_file_folder_perm_folder_subject` | UNIQUE | `folder_id`, `subject_id` |
 | `ck_file_folder_perm_permission` | CHECK | `permission IN ('viewer', 'editor', 'manager')` |
 | `ck_file_folder_perm_subject_type` | CHECK | `subject_type IN ('user', 'group')` |
-| `uq_file_folder_perm_folder_subject` | UNIQUE | `folder_id`, `subject_id` |
 
 ### Indexes
 
@@ -442,15 +469,378 @@ Per-file share (ADR-032 / sharing.md).
 
 | Name | Type | Definition |
 |------|------|------------|
-| `ck_file_share_permission` | CHECK | `permission IN ('viewer', 'editor')` |
-| `uq_file_share_folder_file_subject` | UNIQUE | `folder_id`, `filename`, `subject_id` |
 | `ck_file_share_subject_type` | CHECK | `subject_type IN ('user', 'group')` |
+| `uq_file_share_folder_file_subject` | UNIQUE | `folder_id`, `filename`, `subject_id` |
+| `ck_file_share_permission` | CHECK | `permission IN ('viewer', 'editor')` |
 
 ### Indexes
 
 | Name | Columns | Unique |
 |------|---------|--------|
 | `ix_file_shares_subject_id` | `subject_id` |  |
+
+---
+
+## `helpdesk_agents`
+
+A support agent — an operational unit, distinct from portal roles
+    (``users.role``). Membership in this table is the single source of truth for
+    agent privileges (checked per-request by ``require_helpdesk_agent``).
+
+### Columns
+
+| Column | Type | Nullable | PK | FK | Unique | Default | Comment |
+|--------|------|----------|----|----|--------|---------|---------|
+| `user_id` | `UUID` |  | ✓ | `users.id` |  |  |  |
+| `added_by` | `UUID` | ✓ |  | `users.id` |  |  |  |
+| `added_at` | `TIMESTAMP WITH TIME ZONE` |  |  |  |  | `NOW()` |  |
+| `notify_new` | `BOOLEAN` |  |  |  |  | `TRUE` |  |
+
+### Relationships
+
+| Attribute | Target | Type | Back-populates |
+|-----------|--------|------|----------------|
+| `user` | `User` | many-to-one | `` |
+| `adder` | `User` | many-to-one | `` |
+
+---
+
+## `helpdesk_attachments`
+
+File attached to a ticket message. Stored **locally** in
+    ``/data/helpdesk/TKT-{number}/{filename}`` (по образцу feedback); only
+    metadata lives in the DB. Nextcloud is NOT used for helpdesk attachments.
+
+### Columns
+
+| Column | Type | Nullable | PK | FK | Unique | Default | Comment |
+|--------|------|----------|----|----|--------|---------|---------|
+| `id` | `UUID` |  | ✓ |  |  | `gen_random_uuid()` |  |
+| `ticket_id` | `UUID` |  |  | `helpdesk_tickets.id` |  |  |  |
+| `message_id` | `UUID` | ✓ |  | `helpdesk_messages.id` |  |  |  |
+| `filename` | `VARCHAR(500)` |  |  |  |  |  |  |
+| `original_name` | `VARCHAR(500)` |  |  |  |  |  |  |
+| `content_type` | `VARCHAR(255)` |  |  |  |  |  |  |
+| `size_bytes` | `BIGINT` |  |  |  |  |  |  |
+| `is_inline` | `BOOLEAN` |  |  |  |  | `false` |  |
+| `content_id` | `VARCHAR(320)` | ✓ |  |  |  |  |  |
+| `uploaded_by_user_id` | `UUID` | ✓ |  | `users.id` |  |  |  |
+| `created_at` | `TIMESTAMP WITH TIME ZONE` |  |  |  |  | `NOW()` |  |
+
+### Indexes
+
+| Name | Columns | Unique |
+|------|---------|--------|
+| `ix_helpdesk_attachments_message` | `message_id` |  |
+| `ix_helpdesk_attachments_ticket` | `ticket_id` |  |
+
+### Relationships
+
+| Attribute | Target | Type | Back-populates |
+|-----------|--------|------|----------------|
+| `message` | `HelpdeskMessage` | many-to-one | `attachments` |
+| `uploaded_by` | `User` | many-to-one | `` |
+
+---
+
+## `helpdesk_digest_settings`
+
+Singleton row (``id = 1``) holding the daily digest email schedule.
+
+    The digest is sent once per day (cron-driven worker
+    ``send_helpdesk_digest``) to every active helpdesk agent: their assigned
+    ``open``/``pending`` tickets plus all ``unassigned`` tickets. Unlike
+    :class:`HelpdeskMailboxSettings`, the row is seeded by the migration (no
+    NOT NULL column without a DEFAULT), so it always exists and ``enabled``
+    can be toggled without a separate "configured" state.
+
+### Columns
+
+| Column | Type | Nullable | PK | FK | Unique | Default | Comment |
+|--------|------|----------|----|----|--------|---------|---------|
+| `id` | `SMALLINT` |  | ✓ |  |  | `1` |  |
+| `enabled` | `BOOLEAN` |  |  |  |  | `TRUE` |  |
+| `digest_hour` | `SMALLINT` |  |  |  |  | `8` |  |
+| `digest_minute` | `SMALLINT` |  |  |  |  | `0` |  |
+| `digest_schedule` | `VARCHAR(16)` |  |  |  |  | `'weekdays'` |  |
+| `updated_by_user_id` | `UUID` | ✓ |  | `users.id` |  |  |  |
+| `created_at` | `TIMESTAMP WITH TIME ZONE` |  |  |  |  | `NOW()` |  |
+| `updated_at` | `TIMESTAMP WITH TIME ZONE` |  |  |  |  | `NOW()` |  |
+
+### Relationships
+
+| Attribute | Target | Type | Back-populates |
+|-----------|--------|------|----------------|
+| `updated_by` | `User` | many-to-one | `` |
+
+---
+
+## `helpdesk_email_log`
+
+Idempotency log for IMAP ingress — keyed by the incoming ``Message-ID``
+    (or synthetic id) so that re-downloading the same message never creates a
+    duplicate ticket/message.
+
+### Columns
+
+| Column | Type | Nullable | PK | FK | Unique | Default | Comment |
+|--------|------|----------|----|----|--------|---------|---------|
+| `message_id` | `VARCHAR(998)` |  | ✓ |  |  |  |  |
+| `ticket_id` | `UUID` | ✓ |  | `helpdesk_tickets.id` |  |  |  |
+| `message_db_id` | `UUID` | ✓ |  | `helpdesk_messages.id` |  |  |  |
+| `received_at` | `TIMESTAMP WITH TIME ZONE` |  |  |  |  | `NOW()` |  |
+| `status` | `VARCHAR(20)` |  |  |  |  |  |  |
+| `error` | `TEXT` | ✓ |  |  |  |  |  |
+
+### Indexes
+
+| Name | Columns | Unique |
+|------|---------|--------|
+| `ix_helpdesk_email_log_received` | `received_at` |  |
+
+---
+
+## `helpdesk_mailbox_settings`
+
+Singleton row (``id = 1``) holding the IMAP/SMTP configuration of the
+    support mailbox. The IMAP password is stored encrypted at rest
+    (``imap_password_enc``); the plaintext is never returned by the API.
+
+### Columns
+
+| Column | Type | Nullable | PK | FK | Unique | Default | Comment |
+|--------|------|----------|----|----|--------|---------|---------|
+| `id` | `SMALLINT` |  | ✓ |  |  | `1` |  |
+| `imap_host` | `VARCHAR(255)` |  |  |  |  |  |  |
+| `imap_port` | `INTEGER` |  |  |  |  | `993` |  |
+| `imap_username` | `VARCHAR(255)` |  |  |  |  |  |  |
+| `imap_password_enc` | `TEXT` |  |  |  |  |  |  |
+| `imap_use_ssl` | `BOOLEAN` |  |  |  |  | `TRUE` |  |
+| `imap_folder` | `VARCHAR(255)` |  |  |  |  | `'INBOX'` |  |
+| `poll_interval_seconds` | `INTEGER` |  |  |  |  | `60` |  |
+| `delete_after_fetch` | `BOOLEAN` |  |  |  |  | `FALSE` |  |
+| `support_address` | `VARCHAR(320)` |  |  |  |  |  |  |
+| `support_reply_to` | `VARCHAR(320)` | ✓ |  |  |  |  |  |
+| `updated_by_user_id` | `UUID` | ✓ |  | `users.id` |  |  |  |
+| `created_at` | `TIMESTAMP WITH TIME ZONE` |  |  |  |  | `NOW()` |  |
+| `updated_at` | `TIMESTAMP WITH TIME ZONE` |  |  |  |  | `NOW()` |  |
+
+### Relationships
+
+| Attribute | Target | Type | Back-populates |
+|-----------|--------|------|----------------|
+| `updated_by` | `User` | many-to-one | `` |
+
+---
+
+## `helpdesk_max_bot_settings`
+
+Singleton row (``id = 1``) holding the MAX-messenger bot configuration
+    for helpdesk notifications (new tickets → common support chat).
+
+    ``bot_token_enc`` is encrypted at rest through ``app.core.secret_crypto``
+    (Fernet derived from ``SECRET_KEY``); the plaintext is never returned by
+    the API (write-only, like ``HelpdeskMailboxSettings.imap_password_enc``).
+
+    By design (mirrors :class:`HelpdeskDigestSettings`, migration 076): every
+    column is either nullable or has a DEFAULT, the row is seeded by migration
+    081 with ``enabled=False``, and the admin flips the switch in the Helpdesk
+    tab after entering the token and chat_id. No separate ``configured`` state
+    is tracked — ``enabled=False`` until both token and chat_id are provided.
+
+### Columns
+
+| Column | Type | Nullable | PK | FK | Unique | Default | Comment |
+|--------|------|----------|----|----|--------|---------|---------|
+| `id` | `SMALLINT` |  | ✓ |  |  | `1` |  |
+| `enabled` | `BOOLEAN` |  |  |  |  | `FALSE` |  |
+| `bot_token_enc` | `TEXT` | ✓ |  |  |  |  |  |
+| `chat_id` | `VARCHAR(64)` | ✓ |  |  |  |  |  |
+| `updated_by_user_id` | `UUID` | ✓ |  | `users.id` |  |  |  |
+| `created_at` | `TIMESTAMP WITH TIME ZONE` |  |  |  |  | `NOW()` |  |
+| `updated_at` | `TIMESTAMP WITH TIME ZONE` |  |  |  |  | `NOW()` |  |
+
+### Relationships
+
+| Attribute | Target | Type | Back-populates |
+|-----------|--------|------|----------------|
+| `updated_by` | `User` | many-to-one | `` |
+
+---
+
+## `helpdesk_messages`
+
+A single message in a ticket thread — public (visible to the requester)
+    or internal (agent-only note), inbound (from the requester) or outbound
+    (from an agent).
+
+### Columns
+
+| Column | Type | Nullable | PK | FK | Unique | Default | Comment |
+|--------|------|----------|----|----|--------|---------|---------|
+| `id` | `UUID` |  | ✓ |  |  | `gen_random_uuid()` |  |
+| `ticket_id` | `UUID` |  |  | `helpdesk_tickets.id` |  |  |  |
+| `author_user_id` | `UUID` | ✓ |  | `users.id` |  |  |  |
+| `author_email` | `VARCHAR(320)` |  |  |  |  |  |  |
+| `author_name` | `VARCHAR(255)` | ✓ |  |  |  |  |  |
+| `direction` | `VARCHAR(10)` |  |  |  |  |  |  |
+| `visibility` | `VARCHAR(10)` |  |  |  |  | `'public'` |  |
+| `body_text` | `TEXT` |  |  |  |  |  |  |
+| `body_html` | `TEXT` | ✓ |  |  |  |  |  |
+| `body_tsvector` | `TSVECTOR` | ✓ |  |  |  | Computed(<sqlalchemy.sql.elements.TextClause object at 0x7902a2d6be60>, persisted=True) |  |
+| `source` | `VARCHAR(20)` |  |  |  |  |  |  |
+| `email_message_id` | `VARCHAR(998)` | ✓ |  |  |  |  |  |
+| `in_reply_to` | `VARCHAR(998)` | ✓ |  |  |  |  |  |
+| `created_at` | `TIMESTAMP WITH TIME ZONE` |  |  |  |  | `NOW()` |  |
+
+### Indexes
+
+| Name | Columns | Unique |
+|------|---------|--------|
+| `idx_helpdesk_messages_fts` | `body_tsvector` |  |
+| `ix_helpdesk_messages_ticket` | `ticket_id`, `created_at` |  |
+| `uq_helpdesk_messages_email_msg_id` | `email_message_id` | ✓ |
+
+### Relationships
+
+| Attribute | Target | Type | Back-populates |
+|-----------|--------|------|----------------|
+| `ticket` | `HelpdeskTicket` | many-to-one | `messages` |
+| `author` | `User` | many-to-one | `` |
+| `attachments` | `HelpdeskAttachment` | one-to-many | `message` |
+
+---
+
+## `helpdesk_ticket_reads`
+
+Per-agent read-state marker: «когда этот агент последний раз видел тикет».
+
+    Подсветка непрочитанных заявок в инбоксе агента (миграция 080). Тикет
+    «непрочитан» для агента, если существует публичное входящее сообщение
+    (``direction='inbound'``, ``visibility='public'`` — ответ заявителя) с
+    ``created_at > COALESCE(last_seen_at, '-infinity')``. Ответы других агентов
+    и свои собственные НЕ считаются (агент и так их видел — он их писал);
+    internal-заметки НЕ считаются (это служебная активность).
+
+    Одна строка на пару ``ticket_id`` × ``user_id`` (UNIQUE-индекс), UPSERT
+    через ``ON CONFLICT`` при открытии карточки агента. ``ON DELETE CASCADE``
+    на обеих FK → чистится автоматически при архивации/удалении тикета или
+    аккаунта, cleanup-cron не нужен.
+
+    По образцу ``news_likes`` / ``kb_article_feedback`` (marker-таблица с
+    композитным UNIQUE); архитектурно ближе к Zammad/FreeScout
+    (``conversation_user`` pivot с ``last_seen_at``), чем к OTRS (per-article
+    ``ticket_flag`` — избыточно для наших объёмов).
+
+### Columns
+
+| Column | Type | Nullable | PK | FK | Unique | Default | Comment |
+|--------|------|----------|----|----|--------|---------|---------|
+| `id` | `UUID` |  | ✓ |  |  | `gen_random_uuid()` |  |
+| `ticket_id` | `UUID` |  |  | `helpdesk_tickets.id` |  |  |  |
+| `user_id` | `UUID` |  |  | `users.id` |  |  |  |
+| `last_seen_at` | `TIMESTAMP WITH TIME ZONE` |  |  |  |  | `NOW()` |  |
+| `created_at` | `TIMESTAMP WITH TIME ZONE` |  |  |  |  | `NOW()` |  |
+
+### Constraints
+
+| Name | Type | Definition |
+|------|------|------------|
+| `uq_helpdesk_ticket_reads_ticket_user` | UNIQUE | `ticket_id`, `user_id` |
+
+### Indexes
+
+| Name | Columns | Unique |
+|------|---------|--------|
+| `ix_helpdesk_ticket_reads_user` | `user_id` |  |
+
+---
+
+## `helpdesk_tickets`
+
+A support request: ``new → open → pending → closed``.
+
+    ``number`` is the human-readable ``TKT-{number}`` identifier, generated by
+    PostgreSQL as an IDENTITY column (not a regular SERIAL) so it cannot be
+    overwritten by INSERTs.
+
+### Columns
+
+| Column | Type | Nullable | PK | FK | Unique | Default | Comment |
+|--------|------|----------|----|----|--------|---------|---------|
+| `id` | `UUID` |  | ✓ |  |  | `gen_random_uuid()` |  |
+| `number` | `BIGINT` |  |  |  | ✓ | Identity(always=True) |  |
+| `subject` | `VARCHAR(500)` |  |  |  |  |  |  |
+| `description` | `TEXT` |  |  |  |  |  |  |
+| `description_html` | `TEXT` | ✓ |  |  |  |  |  |
+| `status` | `VARCHAR(20)` |  |  |  |  | `'new'` |  |
+| `source` | `VARCHAR(20)` |  |  |  |  |  |  |
+| `requester_user_id` | `UUID` | ✓ |  | `users.id` |  |  |  |
+| `requester_email` | `VARCHAR(320)` |  |  |  |  |  |  |
+| `requester_name` | `VARCHAR(255)` | ✓ |  |  |  |  |  |
+| `assignee_user_id` | `UUID` | ✓ |  | `users.id` |  |  |  |
+| `assigned_at` | `TIMESTAMP WITH TIME ZONE` | ✓ |  |  |  |  |  |
+| `closed_at` | `TIMESTAMP WITH TIME ZONE` | ✓ |  |  |  |  |  |
+| `closed_by_user_id` | `UUID` | ✓ |  | `users.id` |  |  |  |
+| `last_activity_at` | `TIMESTAMP WITH TIME ZONE` |  |  |  |  | `NOW()` |  |
+| `references_archived_ticket_number` | `BIGINT` | ✓ |  |  |  |  |  |
+| `created_at` | `TIMESTAMP WITH TIME ZONE` |  |  |  |  | `NOW()` |  |
+| `updated_at` | `TIMESTAMP WITH TIME ZONE` |  |  |  |  | `NOW()` |  |
+| `search_tsvector` | `TSVECTOR` | ✓ |  |  |  | Computed(<sqlalchemy.sql.elements.TextClause object at 0x7902a2d6a090>, persisted=True) |  |
+
+### Constraints
+
+| Name | Type | Definition |
+|------|------|------------|
+| `` | UNIQUE | `number` |
+
+### Indexes
+
+| Name | Columns | Unique |
+|------|---------|--------|
+| `idx_helpdesk_tickets_fts` | `search_tsvector` |  |
+| `ix_helpdesk_tickets_assignee` | `assignee_user_id` |  |
+| `ix_helpdesk_tickets_email` | `None` |  |
+| `ix_helpdesk_tickets_last_activity` | `last_activity_at` |  |
+| `ix_helpdesk_tickets_open_list` | `status`, `last_activity_at` |  |
+| `ix_helpdesk_tickets_ref_archive` | `references_archived_ticket_number` |  |
+| `ix_helpdesk_tickets_requester` | `requester_user_id` |  |
+| `ix_helpdesk_tickets_status` | `status` |  |
+
+### Relationships
+
+| Attribute | Target | Type | Back-populates |
+|-----------|--------|------|----------------|
+| `requester_user` | `User` | many-to-one | `` |
+| `assignee` | `User` | many-to-one | `` |
+| `closed_by` | `User` | many-to-one | `` |
+| `messages` | `HelpdeskMessage` | one-to-many | `ticket` |
+
+---
+
+## `helpdesk_tickets_archive`
+
+Read-only archive of closed tickets (partitioned by ``closed_at``).
+    The full ticket with its messages and attachment metadata is captured in
+    ``payload`` as JSONB; the live row is removed from :class:`HelpdeskTicket`
+    after archival. Accessed in practice through raw SQL in the archive
+    service; the model exists for metadata introspection and consistent typing.
+
+### Columns
+
+| Column | Type | Nullable | PK | FK | Unique | Default | Comment |
+|--------|------|----------|----|----|--------|---------|---------|
+| `id` | `UUID` |  | ✓ |  |  |  |  |
+| `number` | `BIGINT` |  |  |  |  |  |  |
+| `subject` | `VARCHAR(500)` |  |  |  |  |  |  |
+| `requester_email` | `VARCHAR(320)` |  |  |  |  |  |  |
+| `requester_user_id` | `UUID` | ✓ |  |  |  |  |  |
+| `assignee_user_id` | `UUID` | ✓ |  |  |  |  |  |
+| `opened_at` | `TIMESTAMP WITH TIME ZONE` |  |  |  |  |  |  |
+| `closed_at` | `TIMESTAMP WITH TIME ZONE` |  | ✓ |  |  |  |  |
+| `closed_by_user_id` | `UUID` | ✓ |  |  |  |  |  |
+| `payload` | `JSONB` |  |  |  |  |  |  |
+| `archived_at` | `TIMESTAMP WITH TIME ZONE` |  |  |  |  | `NOW()` |  |
 
 ---
 
@@ -627,7 +1017,7 @@ Per-file share (ADR-032 / sharing.md).
 | `title` | `VARCHAR(500)` |  |  |  |  |  |  |
 | `body` | `TEXT` |  |  |  |  | `` |  |
 | `inherit_permissions` | `BOOLEAN` |  |  |  |  | `True` |  |
-| `body_tsvector` | `TSVECTOR` | ✓ |  |  |  | Computed(<sqlalchemy.sql.elements.TextClause object at 0x7c492d0cba10>, persisted=True) |  |
+| `body_tsvector` | `TSVECTOR` | ✓ |  |  |  | Computed(<sqlalchemy.sql.elements.TextClause object at 0x7902a2a6a9f0>, persisted=True) |  |
 | `status` | `VARCHAR(20)` |  |  |  |  | `draft` |  |
 | `version` | `INTEGER` |  |  |  |  | `1` |  |
 | `view_count` | `INTEGER` |  |  |  |  | `0` |  |
@@ -779,14 +1169,38 @@ Per-file share (ADR-032 / sharing.md).
 
 | Name | Type | Definition |
 |------|------|------------|
-| `uq_kb_tags_slug` | UNIQUE | `slug` |
 | `uq_kb_tags_name` | UNIQUE | `name` |
+| `uq_kb_tags_slug` | UNIQUE | `slug` |
 
 ### Relationships
 
 | Attribute | Target | Type | Back-populates |
 |-----------|--------|------|----------------|
 | `articles` | `KbArticle` | one-to-many | `tags` |
+
+---
+
+## `mailing_recipients`
+
+### Columns
+
+| Column | Type | Nullable | PK | FK | Unique | Default | Comment |
+|--------|------|----------|----|----|--------|---------|---------|
+| `id` | `UUID` |  | ✓ |  |  | `gen_random_uuid()` |  |
+| `name` | `VARCHAR(255)` |  |  |  |  |  |  |
+| `email` | `VARCHAR(320)` |  |  |  |  |  |  |
+| `label` | `VARCHAR(100)` | ✓ |  |  |  |  |  |
+| `created_by_user_id` | `UUID` | ✓ |  | `users.id` |  |  |  |
+| `created_at` | `TIMESTAMP WITH TIME ZONE` |  |  |  |  | `NOW()` |  |
+| `updated_at` | `TIMESTAMP WITH TIME ZONE` |  |  |  |  | `NOW()` |  |
+| `deleted_at` | `TIMESTAMP WITH TIME ZONE` | ✓ |  |  |  |  |  |
+
+### Indexes
+
+| Name | Columns | Unique |
+|------|---------|--------|
+| `idx_mailing_recipients_active` | `deleted_at` |  |
+| `idx_mailing_recipients_email_ci_active` | `None` | ✓ |
 
 ---
 
@@ -898,6 +1312,52 @@ Per-file share (ADR-032 / sharing.md).
 
 ---
 
+## `messenger_outbox`
+
+Transactional outbox for outbound messenger notifications (mirror of
+    :class:`email_outbox` for non-email channels).
+
+    ``provider`` reserves room for future channels (Telegram/Slack); only
+    ``'max'`` is implemented. CRUD is done through raw SQL in
+    :mod:`app.services.messenger_outbox` (FOR UPDATE SKIP LOCKED, retry/backoff);
+    this ORM mapping exists only for metadata introspection and typing.
+
+    ``payload`` (JSONB) stores provider-specific content: for MAX it carries
+    ``attachments`` (inline-keyboard with a "open on portal" URL button) and
+    any extra metadata. ``text`` is the message body itself.
+
+### Columns
+
+| Column | Type | Nullable | PK | FK | Unique | Default | Comment |
+|--------|------|----------|----|----|--------|---------|---------|
+| `id` | `UUID` |  | ✓ |  |  | `gen_random_uuid()` |  |
+| `provider` | `VARCHAR(32)` |  |  |  |  |  |  |
+| `chat_id` | `VARCHAR(64)` |  |  |  |  |  |  |
+| `text` | `TEXT` |  |  |  |  |  |  |
+| `payload` | `JSONB` |  |  |  |  | `'{}'::jsonb` |  |
+| `status` | `VARCHAR(16)` |  |  |  |  | `'PENDING'` |  |
+| `attempts` | `INTEGER` |  |  |  |  | `0` |  |
+| `max_attempts` | `INTEGER` |  |  |  |  | `6` |  |
+| `next_attempt_at` | `TIMESTAMP WITH TIME ZONE` |  |  |  |  | `NOW()` |  |
+| `last_error_type` | `VARCHAR(128)` | ✓ |  |  |  |  |  |
+| `last_error_class` | `VARCHAR(16)` | ✓ |  |  |  |  |  |
+| `last_error` | `TEXT` | ✓ |  |  |  |  |  |
+| `sent_at` | `TIMESTAMP WITH TIME ZONE` | ✓ |  |  |  |  |  |
+| `related_resource_type` | `VARCHAR(64)` | ✓ |  |  |  |  |  |
+| `related_resource_id` | `UUID` | ✓ |  |  |  |  |  |
+| `created_by_user_id` | `UUID` | ✓ |  |  |  |  |  |
+| `created_at` | `TIMESTAMP WITH TIME ZONE` |  |  |  |  | `NOW()` |  |
+| `updated_at` | `TIMESTAMP WITH TIME ZONE` |  |  |  |  | `NOW()` |  |
+
+### Indexes
+
+| Name | Columns | Unique |
+|------|---------|--------|
+| `ix_messenger_outbox_pending` | `next_attempt_at` |  |
+| `ix_messenger_outbox_stale` | `updated_at` |  |
+
+---
+
 ## `news`
 
 ### Columns
@@ -907,7 +1367,7 @@ Per-file share (ADR-032 / sharing.md).
 | `id` | `UUID` |  | ✓ |  |  | `gen_random_uuid()` |  |
 | `title` | `VARCHAR(500)` |  |  |  |  |  |  |
 | `body` | `TEXT` |  |  |  |  | `` |  |
-| `body_tsvector` | `TSVECTOR` | ✓ |  |  |  | Computed(<sqlalchemy.sql.elements.TextClause object at 0x7c492cfc9100>, persisted=True) |  |
+| `body_tsvector` | `TSVECTOR` | ✓ |  |  |  | Computed(<sqlalchemy.sql.elements.TextClause object at 0x7902a295d550>, persisted=True) |  |
 | `status` | `VARCHAR(20)` |  |  |  |  | `draft` |  |
 | `is_pinned` | `BOOLEAN` |  |  |  |  | `False` |  |
 | `categories` | `VARCHAR(100)[]` |  |  |  |  | `{}` |  |
@@ -918,7 +1378,9 @@ Per-file share (ADR-032 / sharing.md).
 | `archive_at` | `TIMESTAMP WITH TIME ZONE` | ✓ |  |  |  |  |  |
 | `published_at` | `TIMESTAMP WITH TIME ZONE` | ✓ |  |  |  |  |  |
 | `cover_image` | `VARCHAR(500)` | ✓ |  |  |  |  |  |
-| `cover_focal_point` | `VARCHAR(16)` | ✓ |  |  |  |  |  |
+| `cover_focal_x` | `SMALLINT` | ✓ |  |  |  |  |  |
+| `cover_focal_y` | `SMALLINT` | ✓ |  |  |  |  |  |
+| `cover_focal_zoom` | `SMALLINT` | ✓ |  |  |  |  |  |
 | `cover_dominant_color` | `VARCHAR(7)` | ✓ |  |  |  |  |  |
 | `cover_variants` | `INTEGER[]` | ✓ |  |  |  |  |  |
 | `view_count` | `INTEGER` |  |  |  |  | `0` |  |
@@ -934,7 +1396,10 @@ Per-file share (ADR-032 / sharing.md).
 
 | Name | Type | Definition |
 |------|------|------------|
+| `ck_news_cover_focal_y_range` | CHECK | `cover_focal_y IS NULL OR (cover_focal_y BETWEEN 0 AND 100)` |
+| `ck_news_cover_focal_zoom_range` | CHECK | `cover_focal_zoom IS NULL OR (cover_focal_zoom BETWEEN 100 AND 300)` |
 | `ck_news_status` | CHECK | `status IN ('draft', 'published', 'archived')` |
+| `ck_news_cover_focal_x_range` | CHECK | `cover_focal_x IS NULL OR (cover_focal_x BETWEEN 0 AND 100)` |
 
 ### Indexes
 
@@ -1399,9 +1864,9 @@ Per-file share (ADR-032 / sharing.md).
 
 | Name | Type | Definition |
 |------|------|------------|
-| `ck_photo_folder_perm_subject_type` | CHECK | `subject_type IN ('user', 'group')` |
 | `ck_photo_folder_perm_permission` | CHECK | `permission IN ('viewer', 'uploader', 'manager')` |
 | `uq_photo_folder_perm_folder_subject` | UNIQUE | `folder_id`, `subject_type`, `subject_id` |
+| `ck_photo_folder_perm_subject_type` | CHECK | `subject_type IN ('user', 'group')` |
 
 ### Indexes
 
@@ -1540,8 +2005,8 @@ Per-file share (ADR-032 / sharing.md).
 
 | Name | Type | Definition |
 |------|------|------------|
-| `uq_photo_tags_slug` | UNIQUE | `slug` |
 | `uq_photo_tags_name` | UNIQUE | `name` |
+| `uq_photo_tags_slug` | UNIQUE | `slug` |
 
 ---
 
@@ -1618,6 +2083,8 @@ Per-file share (ADR-032 / sharing.md).
 | `sort_order` | `INTEGER` |  |  |  |  | `0` |  |
 | `supports_sso` | `BOOLEAN` |  |  |  |  | `False` |  |
 | `is_active` | `BOOLEAN` |  |  |  |  | `True` |  |
+| `show_on_home` | `BOOLEAN` |  |  |  |  | `false` |  |
+| `kb_url` | `VARCHAR(2048)` | ✓ |  |  |  |  |  |
 | `created_by` | `UUID` | ✓ |  | `users.id` |  |  |  |
 | `created_at` | `TIMESTAMP WITH TIME ZONE` |  |  |  |  | `NOW()` |  |
 | `updated_at` | `TIMESTAMP WITH TIME ZONE` |  |  |  |  | `NOW()` |  |
@@ -1708,11 +2175,11 @@ Per-file share (ADR-032 / sharing.md).
 
 | Name | Type | Definition |
 |------|------|------------|
+| `ck_users_auth_source` | CHECK | `auth_source IN ('keycloak', 'local')` |
+| `uq_users_keycloak_id` | UNIQUE | `keycloak_id` |
+| `ck_users_role` | CHECK | `role IN ('reader', 'editor', 'admin')` |
 | `ck_users_presence_status` | CHECK | `presence_status IN ('office', 'remote', 'vacation')` |
 | `ck_users_lang` | CHECK | `lang IN ('ru', 'en')` |
-| `ck_users_auth_source` | CHECK | `auth_source IN ('keycloak', 'local')` |
-| `ck_users_role` | CHECK | `role IN ('reader', 'editor', 'admin')` |
-| `uq_users_keycloak_id` | UNIQUE | `keycloak_id` |
 
 ### Indexes
 

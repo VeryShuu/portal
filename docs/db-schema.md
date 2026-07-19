@@ -22,21 +22,33 @@
 - [Уведомления](#уведомления)
 - [Audit Log (партиционированная)](#audit-log-партиционированная)
 - [Idempotency Keys](#idempotency-keys)
+- [Email outbox](#email-outbox-миграция-051)
 - [Схема связей (ERD)](#схема-связей-erd)
 - [Файловое хранилище оформления (Branding — вне БД)](#файловое-хранилище-оформления-branding--вне-бд)
 - [Фотогалерея (миграция 014_photos)](#фотогалерея-миграция-014_photos)
 - [Справочники объектов (миграция 064_object_directories)](#справочники-объектов-миграция-064_object_directories)
+- [Справочник получателей рассылки (миграция 071)](#справочник-получателей-рассылки-миграция-071_mailing_recipients)
+- [Helpdesk (миграции 075–080)](#helpdesk-миграции-075080)
+- [MAX-messenger / messenger_outbox (миграция 081)](#max-messenger--messenger_outbox-миграция-081)
 - [Миграции (Alembic) — zero-downtime правила](#миграции-alembic--zero-downtime-правила)
 - [§3.6 Файловый модуль (Phase 5 — миграция 020)](#36-файловый-модуль-phase-5--миграция-020)
 - [Индексные миграции (021–024)](#индексные-миграции-021024)
 - [Миграции 025–038 (май 2026)](#миграции-025038-май-2026)
+- [Миграции 039–081 (июнь–июль 2026)](#миграции-039081-июньиюль-2026)
 
 ---
 
 > Корпоративный интранет-портал
 > PostgreSQL 16
-> Последнее обновление: июнь 2026 (v1.12 — миграции 001..069: добавлены news_cover_meta, feedback + attachments, file folder inherit_permissions, news previous_status, staff_directory order, soft-delete partial indexes, kb/users partial indexes, user_attribute_mapping full_name_source, meetings + email/kind, drop meetings_audit_log, email_outbox, kb_section_inherit_permissions, news_polls + multi_questions, photo_folder_perm UNIQUE по subject_type, photo_folder storage_kind, kb_article_version body NOT NULL, kb_sections parent+slug UNIQUE, photos blurhash, kb_articles list index, file_shares, object_directories, directory_entry folder_id, file_items unique active name, backfill folder creator manager perm, **news_likes (♥) + news_comments**)
-> Соответствие миграциям: `001_initial_users` → `002_news` → `003_links_bookmarks` → `004_local_auth` → `005_news_cover_image` → `006_news_gallery_attachments` → `007_news_fts_consolidate` → `008_kb` → `009_kb_acl` → `010_kb_markdown` → `011_news_fts_hunspell` → `012_notifications` → `013_audit_log` → `014_photos` → `015_photo_share_tokens` → `016_photo_folders_fs_path` → `017_photo_zip_jobs` → `018_photo_tags` → `019_photo_folder_share_tokens` → `020_files` → `021_news_title_trgm` → `022_fk_indexes` → `023_keycloak_groups` → `024_trgm_indexes` → `025_user_attributes` → `026_user_attribute_mappings` → `027_news_cover_focal_point` → `028_users_soft_delete` → `029_news_categories_array` → `030_email_unique_lower` → `031_photo_folders_fk_restrict` → `032_fk_set_null_notifications_bookmarks` → `033_audit_log_metadata_gin_index` → `034_kb_articles_section_restrict` → `035_photo_folders_path_unique` → `036_kb_sections_soft_delete` → `037_users_email_partial_unique` → `038_file_items` → `039_news_cover_meta` → `040_add_feedback` → `041_add_feedback_attachments` → `042_file_folder_inherit_permissions` → `043_news_previous_status` → `044_staff_directory_order` → `045_soft_delete_partial_indexes` → `046_kb_users_partial_indexes` → `047_user_attribute_mapping_full_name_source` → `048_meetings` → `049_meeting_rooms_add_email` → `050_drop_meetings_audit_log` → `051_email_outbox` → `052_kb_section_inherit_permissions` → `053_add_news_polls` → `054_news_poll_multi_questions` → `055_meeting_rooms_add_kind` → `056_photo_folder_perm_unique_subject_type` → `057_photo_folder_storage_kind` → `058_kb_article_version_body_required` → `059_kb_sections_parent_slug_unique` → `060_photos_blurhash` → `061_kb_articles_list_index` → `062_backfill_users_directory_active_index` → `063_file_shares` → `064_object_directories` → `065_directory_entry_folder` → `066_file_items_unique_active_name` → `067_backfill_folder_creator_manager_perm` → `068_news_likes` → `069_news_comments`
+> Последнее обновление: июль 2026 (v1.13 — миграции 001..081: к v1.12 добавлены
+> **helpdesk** (075–080: тикеты, сообщения, вложения, агенты, mailbox/digest-settings,
+> FTS tsvector+GIN, marker-таблица `helpdesk_ticket_reads`), **messenger_outbox +
+> helpdesk_max_bot_settings** (081, оповещения о заявках в MAX-messenger),
+> **mailing_recipients** (071), service_links.show_on_home/kb_url (070/074),
+> news cover_focal_x/y/zoom (072/073). Helpdesk/MAX-таблицы детально описаны в
+> [`./helpdesk.md`](./helpdesk.md) §3 — здесь только краткая выжимка + перекрёстные
+> ссылки, чтобы не дублировать источник истины.)
+> Соответствие миграциям: `001_initial_users` → `002_news` → `003_links_bookmarks` → `004_local_auth` → `005_news_cover_image` → `006_news_gallery_attachments` → `007_news_fts_consolidate` → `008_kb` → `009_kb_acl` → `010_kb_markdown` → `011_news_fts_hunspell` → `012_notifications` → `013_audit_log` → `014_photos` → `015_photo_share_tokens` → `016_photo_folders_fs_path` → `017_photo_zip_jobs` → `018_photo_tags` → `019_photo_folder_share_tokens` → `020_files` → `021_news_title_trgm` → `022_fk_indexes` → `023_keycloak_groups` → `024_trgm_indexes` → `025_user_attributes` → `026_user_attribute_mappings` → `027_news_cover_focal_point` → `028_users_soft_delete` → `029_news_categories_array` → `030_email_unique_lower` → `031_photo_folders_fk_restrict` → `032_fk_set_null_notifications_bookmarks` → `033_audit_log_metadata_gin_index` → `034_kb_articles_section_restrict` → `035_photo_folders_path_unique` → `036_kb_sections_soft_delete` → `037_users_email_partial_unique` → `038_file_items` → `039_news_cover_meta` → `040_add_feedback` → `041_add_feedback_attachments` → `042_file_folder_inherit_permissions` → `043_news_previous_status` → `044_staff_directory_order` → `045_soft_delete_partial_indexes` → `046_kb_users_partial_indexes` → `047_user_attribute_mapping_full_name_source` → `048_meetings` → `049_meeting_rooms_add_email` → `050_drop_meetings_audit_log` → `051_email_outbox` → `052_kb_section_inherit_permissions` → `053_add_news_polls` → `054_news_poll_multi_questions` → `055_meeting_rooms_add_kind` → `056_photo_folder_perm_unique_subject_type` → `057_photo_folder_storage_kind` → `058_kb_article_version_body_required` → `059_kb_sections_parent_slug_unique` → `060_photos_blurhash` → `061_kb_articles_list_index` → `062_backfill_users_directory_active_index` → `063_file_shares` → `064_object_directories` → `065_directory_entry_folder` → `066_file_items_unique_active_name` → `067_backfill_folder_creator_manager_perm` → `068_news_likes` → `069_news_comments` → `070_service_links_show_on_home` → `071_mailing_recipients` → `072_news_cover_focal_xy` → `073_news_cover_focal_zoom` → `074_add_kb_url_to_service_links` → `075_add_helpdesk` → `076_add_helpdesk_digest_settings` → `077_add_helpdesk_attachments_inline_columns` → `078_add_helpdesk_fts` → `079_drop_helpdesk_resolved` → `080_add_helpdesk_ticket_reads` → `081_add_messenger_outbox_and_max_bot_settings`
 
 Все таблицы с полными определениями, индексами и комментариями.
 
@@ -626,6 +638,7 @@ CREATE TABLE service_links (
     supports_sso BOOLEAN      NOT NULL DEFAULT FALSE,  -- пробрасывать ли id_token_hint
     is_active    BOOLEAN      NOT NULL DEFAULT TRUE,
     show_on_home BOOLEAN      NOT NULL DEFAULT FALSE,  -- 070: показывать в виджете «Сервисы» на главной
+    kb_url       VARCHAR(2048),                        -- 074: опциональная ссылка на KB-статью с инструкцией к сервису
     created_by   UUID         REFERENCES users(id) ON DELETE SET NULL,  -- кто создал ссылку
     created_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     updated_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW()  -- P2-37
@@ -764,6 +777,49 @@ CREATE TABLE idempotency_keys (
 -- TTL: ARQ-задача cleanup_idempotency_keys удаляет записи старше 24 часов
 CREATE INDEX idx_idempotency_created ON idempotency_keys(created_at);
 ```
+
+---
+
+## Email outbox (миграция 051)
+
+> Полное описание инфраструктуры — в [`./email.md`](./email.md). Здесь — только
+> схема таблицы. Producer'ы — meetings/news/kb/helpdesk (через `enqueue_outbox_email(...)`).
+
+Transactional outbox для всех исходящих писем. Все producer'ы пишут в эту
+таблицу **в той же транзакции**, что и бизнес-операция (AGENTS.md инвариант).
+Отправка — cron `process_email_outbox` (claim `FOR UPDATE SKIP LOCKED`, retry/backoff/DLQ).
+
+```sql
+CREATE TABLE email_outbox (
+    id                    UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+    kind                  VARCHAR(64)  NOT NULL,         -- 'generic' | 'news' | 'meeting' | 'kb' | 'helpdesk' | …
+    to_email              VARCHAR(320) NOT NULL,
+    subject               VARCHAR(998) NOT NULL,
+    body_html             TEXT         NOT NULL DEFAULT '',
+    body_text             TEXT,                          -- опциональный plain-text
+    payload               JSONB        NOT NULL DEFAULT '{}',  -- структурированные доп-данные
+    status                VARCHAR(16)  NOT NULL DEFAULT 'PENDING'
+                              CHECK (status IN ('PENDING','SENDING','SENT','FAILED','DLQ','CANCELLED')),
+    attempts              INTEGER      NOT NULL DEFAULT 0,
+    max_attempts          INTEGER      NOT NULL DEFAULT 6,
+    next_attempt_at       TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    last_error            TEXT,
+    last_error_type       VARCHAR(128),
+    last_error_class      VARCHAR(16),                   -- 'transient' | 'permanent'
+    related_resource_type VARCHAR(64),                   -- бизнес-сущность ('news', 'helpdesk_ticket', …)
+    related_resource_id   UUID,
+    created_by_user_id    UUID,
+    created_at            TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    updated_at            TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    sent_at               TIMESTAMPTZ
+);
+
+CREATE INDEX ix_email_outbox_pending ON email_outbox (next_attempt_at) WHERE status = 'PENDING';
+CREATE INDEX ix_email_outbox_stale   ON email_outbox (updated_at)      WHERE status = 'SENDING';
+```
+
+`process_email_outbox` классифицирует SMTP-ошибки: 5xx → `permanent` (DLQ сразу),
+4xx/transient → `transient` (retry с экспоненциальным backoff до `max_attempts`).
 
 ---
 
@@ -1289,6 +1345,56 @@ CREATE INDEX idx_mailing_recipients_active ON mailing_recipients (deleted_at);
 
 ---
 
+## Helpdesk (миграции 075–080)
+
+> **Полное описание — в [`./helpdesk.md`](./helpdesk.md) §3.** Здесь — только
+> краткая выжимка таблиц; подробные колонки/индексы/CHECK/поведение смотрите
+> в модульной документации (единый источник истины).
+
+Миграции `075_add_helpdesk` (всё ядро, hand-written DDL), `076` (digest-settings
+singleton), `077` (`is_inline`/`content_id` на attachments), `078` (FTS
+tsvector + GIN на tickets/messages), `079` (упразднён статус `resolved`),
+`080` (`helpdesk_ticket_reads`).
+
+| Таблица | Назначение |
+|---|---|
+| `helpdesk_tickets` | Заявка: `number` (BIGINT IDENTITY), subject/description, status (`new`/`open`/`pending`/`closed`), source (`email`/`web`), requester (user_id NULL для гостя + email/name-снимок), assignee, `search_tsvector` (FTS 078). Партиционированный архив — `helpdesk_tickets_archive` (jsonb-снимок). |
+| `helpdesk_messages` | Сообщения переписки: `direction` (`inbound`/`outbound`), `visibility` (`public`/`internal`), `body_text` + `body_html`, `email_message_id` (для threading), `body_tsvector` (FTS 078). |
+| `helpdesk_attachments` | Вложения: путь на FS, MIME, `is_inline`/`content_id` (077, для inline `cid:` картинок). ФС — `/data/helpdesk/TKT-{number}/`. |
+| `helpdesk_agents` | Справочник агентов поддержки (`user_id` UNIQUE) — **отдельная** сущность от `users.role`, проверяется через `require_helpdesk_agent` (admin — суперсет). |
+| `helpdesk_email_log` | Идемпотентность IMAP-фетчера (Message-ID → processed_at), anti-loop. |
+| `helpdesk_mailbox_settings` | Singleton (id=1) с IMAP-настройками support-ящика; `imap_password_enc` Fernet-шифрован (write-only). |
+| `helpdesk_digest_settings` | Singleton (id=1) расписания ежедневной email-сводки агентам (`enabled`, `digest_hour`/`digest_minute`, `digest_schedule`). |
+| `helpdesk_ticket_reads` | Marker-таблица per-agent read-state (`ticket_id`, `user_id`, `last_seen_at`) — миграция 080, UNIQUE для UPSERT, CASCADE на обеих FK. Контракт «непрочитанности» — см. `helpdesk.md` §3. |
+| `helpdesk_tickets_archive` | Партиционированная (по месяцам) таблица архива closed-тикетов (jsonb-снимок); партиции создаёт ARQ-задача. |
+
+Все мутации аудируются (`helpdesk.*`). Module-gate `modules.json → helpdesk.enabled`
+вешает 404 на весь `/api/v1/helpdesk/*` при выключенном модуле. Двусторонний
+email-thread — через существующий `email_outbox` (`kind=helpdesk`).
+
+---
+
+## MAX-messenger / messenger_outbox (миграция 081)
+
+> **Полное описание — в [`./helpdesk.md`](./helpdesk.md) §3 (`helpdesk_max_bot_settings`,
+> `messenger_outbox`).** Здесь — только выжимка.
+
+Миграция `081_add_messenger_outbox_and_max_bot_settings` добавляет две таблицы:
+
+| Таблица | Назначение |
+|---|---|
+| `helpdesk_max_bot_settings` | Singleton (id=1, `CHECK (id=1)`) конфигурации MAX-бота для оповещений о новых заявках в общий чат поддержки. `enabled=False` по умолчанию; `bot_token_enc` Fernet-шифрован (write-only, как `imap_password_enc`); `chat_id` вводит админ. Канал готов при `enabled=True AND bot_token_enc IS NOT NULL AND chat_id IS NOT NULL` (флаг `configured` в API). |
+| `messenger_outbox` | Transactional outbox для не-email каналов — полный аналог `email_outbox`: `provider` (`'max'`, зарезервировано для Telegram/Slack), `chat_id`, `text`, `payload` JSONB (attachments + format), `status` (`PENDING/SENDING/SENT/FAILED/DLQ/CANCELLED`), retry/backoff/DLQ. Воркер `process_messenger_outbox` (cron 15с, distributed lock + `FOR UPDATE SKIP LOCKED`), cleanup — nightly. Retry-классификация: 429/5xx/timeout → transient, 4xx → permanent (DLQ). |
+
+TLS-особенность: сертификат `*.max.ru` подписан Russian Trusted Root CA
+(Минцифры), который отсутствует в Mozilla CA Bundle / `certifi`. Корневой
+сертификат лежит в `backend/certs/russian_trusted_root_ca.crt` и
+устанавливается в Docker-образ через `update-ca-certificates` (см. `Dockerfile`);
+httpx-клиент использует `ssl.create_default_context()` для системного trust
+store. Это общий фикс для любых российских TLS-endpoint'ов.
+
+---
+
 ## Индексные миграции (021–024)
 
 Миграции только для индексов — не создают новых таблиц.
@@ -1458,4 +1564,58 @@ CREATE UNIQUE INDEX idx_users_email_ci_active ON users (LOWER(email)) WHERE dele
 ```
 
 Переименование индекса из `idx_users_email_ci` в `idx_users_email_ci_active` с сохранением partial-условия. Позволяет повторно использовать email после soft-delete пользователя.
+
+---
+
+## Миграции 039–081 (июнь–июль 2026)
+
+> Подробности таблиц — в соответствующих секциях выше или в модульных доках
+> (`./helpdesk.md`, `./email.md`, `./news.md`, `./directories.md`). Здесь —
+> краткий обзор каждой миграции как дополнение к разделу «Миграции 025–038».
+
+| № | Имя | Что делает | Где подробно |
+|---|---|---|---|
+| 039 | `news_cover_meta` | `news.cover_dominant_color` (hex) + `cover_variants` (массив пикс.) — для CSS-палитры обложки | `./news.md` |
+| 040 | `add_feedback` | Модуль обратной связи: `feedback_messages` + вложения в `/data/feedback/files/` | `./feedback.md` |
+| 041 | `add_feedback_attachments` | Вложения к сообщениям обратной связи | `./feedback.md` |
+| 042 | `file_folder_inherit_permissions` | `file_folders.inherit_permissions` — наследование прав папок файлового модуля | `./files.md` |
+| 043 | `news_previous_status` | `news.previous_status` — статус до последней смены (для восстановления из архива/черновика) | `./news.md` |
+| 044 | `staff_directory_order` | `staff_directory_order` — порядок отделов и скрытые сотрудники в `/staff` (admin-managed) | `./staff-directory-spec.md` |
+| 045 | `soft_delete_partial_indexes` | Частичные индексы `WHERE deleted_at IS NULL` на ключевых таблицах (kb/news/links) | эта же дока |
+| 046 | `kb_users_partial_indexes` | Доп. partial-индексы для KB и users | — |
+| 047 | `user_attribute_mapping_full_name_source` | `user_attribute_mappings.is_full_name_source` — выбор атрибута-источника `users.full_name` | §«Таблица: user_attribute_mappings» |
+| 048 | `meetings` | Модуль «Переговорные»: `meeting_rooms`, `meeting_bookings`, серии, iCal | `./meetings.md` |
+| 049 | `meeting_rooms_add_email` | `meeting_rooms.email` — почта комнаты для iCal | `./meetings.md` |
+| 050 | `drop_meetings_audit_log` | Удалена устаревшая `meetings_audit_log` (вся телеметрия — в общем `audit_log`) | — |
+| 051 | `email_outbox` | Transactional outbox — см. [§«Email outbox»](#email-outbox-миграция-051) | `./email.md` |
+| 052 | `kb_section_inherit_permissions` | `kb_sections.inherit_permissions` — наследование прав KB-раздела | §«kb_sections» |
+| 053 | `add_news_polls` | Опросы в новостях (`news_polls`, single-question) | `./polls.md` |
+| 054 | `news_poll_multi_questions` | Multi-question polls (`news_poll_questions`) | `./polls.md` |
+| 055 | `meeting_rooms_add_kind` | `meeting_rooms.kind` — тип комнаты | `./meetings.md` |
+| 056 | `photo_folder_perm_unique_subject_type` | UNIQUE `(folder_id, subject_type, subject_id)` — раздельные права user/group | §«photo_folder_permissions» |
+| 057 | `photo_folder_storage_kind` | `photo_folders.storage_kind` (`originals`/`import`) | §«photo_folders» |
+| 058 | `kb_article_version_body_required` | `kb_article_versions.body NOT NULL` (защита отката к версии с пустым телом) | §«kb_article_versions» |
+| 059 | `kb_sections_parent_slug_unique` | `uq_kb_sections_parent_slug (parent_id, slug)` | §«kb_sections» |
+| 060 | `photos_blurhash` | `photos.blurhash` — skeleton-preview до загрузки полного изображения | §«photos» |
+| 061 | `kb_articles_list_index` | Индекс для списочного endpoint'а KB | — |
+| 062 | `backfill_users_directory_active_index` | Backfill для `idx_users_directory_active` | — |
+| 063 | `file_shares` | Пофайловый шеринг — см. §«file_shares» | `./sharing.md` |
+| 064 | `object_directories` | Справочники объектов — 3 таблицы (тип/объект/контакты) | §«Справочники объектов», `./directories.md` |
+| 065 | `directory_entry_folder` | `object_directory_entries.folder_id` — привязка к папке `/files` | `./directories.md` |
+| 066 | `file_items_unique_active_name` | UNIQUE partial `file_items.nc_path WHERE deleted_at IS NULL` | §«file_items» |
+| 067 | `backfill_folder_creator_manager_perm` | Backfill: создатель папки → manager на ней | `./files.md` |
+| 068 | `news_likes` | Реакция «лайк» (♥) — см. §«news_likes» | `./news.md` |
+| 069 | `news_comments` | Плоские комментарии к новостям — см. §«news_comments» | `./news.md` |
+| 070 | `service_links_show_on_home` | `service_links.show_on_home` — виджет «Сервисы» на главной | §«service_links» |
+| 071 | `mailing_recipients` | Справочник получателей рассылки — см. §«mailing_recipients» | эта же дока |
+| 072 | `news_cover_focal_xy` | `news.cover_focal_x`/`cover_focal_y` (заменено enum 027) — точка фокуса для CSS `object-position` | §«Миграции 025–038» → 072 |
+| 073 | `news_cover_focal_zoom` | `news.cover_focal_zoom` — приближение обложки (`transform: scale`) | §«Миграции 025–038» → 073 |
+| 074 | `add_kb_url_to_service_links` | `service_links.kb_url` — опциональная ссылка на инструкцию | §«service_links» |
+| 075 | `add_helpdesk` | 7 таблиц helpdesk + первая партиция архива — см. [§«Helpdesk»](#helpdesk-миграции-075080) | `./helpdesk.md` §3 |
+| 076 | `add_helpdesk_digest_settings` | Singleton `helpdesk_digest_settings` (расписание сводки) | `./helpdesk.md` §3 |
+| 077 | `add_helpdesk_attachments_inline_columns` | `helpdesk_attachments.is_inline`/`content_id` (schema-drift фикс) | `./helpdesk.md` §3 |
+| 078 | `add_helpdesk_fts` | `helpdesk_tickets.search_tsvector` + `helpdesk_messages.body_tsvector` (GIN) | `./helpdesk.md` §3, §4 (поиск) |
+| 079 | `drop_helpdesk_resolved` | Упразднён статус `resolved` (data-mig → `closed`) | `./helpdesk.md` §5 |
+| 080 | `add_helpdesk_ticket_reads` | `helpdesk_ticket_reads` — per-agent read-state | `./helpdesk.md` §3 |
+| 081 | `add_messenger_outbox_and_max_bot_settings` | `messenger_outbox` + `helpdesk_max_bot_settings` (MAX-бот) — см. [§«MAX-messenger»](#max-messenger--messenger_outbox-миграция-081) | `./helpdesk.md` §3, `./wip/helpdesk-max-messenger.md` |
 

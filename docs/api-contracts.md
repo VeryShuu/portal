@@ -12,7 +12,13 @@
 > Base URL: `/api/v1/`
 > Auth: HTTPOnly cookie `portal_session` (server-side session в Redis; см. раздел «Аутентификация»)
 > Format: JSON, UTF-8
-> Последнее обновление: апрель 2026 (v1.5) — финальный срез v1.x. Фотогалерея (Steps 10.9–10.11: теги, ZIP, bulk, публичные папки, корзина, шаринг), Files (Phase 5), Admin Modules, Аналитика/Аудит, Брендинг. Все фазы 0–5 реализованы.
+> Последнее обновление: июль 2026 (v1.13) — к v1.5 добавлены **Helpdesk**
+> (заявки/IMAP/тикеты/агенты/settings — см. отдельный раздел ниже и
+> [`./helpdesk.md`](./helpdesk.md) §4), **MAX-messenger оповещения** о новых
+> заявках, `mailing_recipients` + `POST /news/{id}/share-email`, лайки/комментарии
+> новостей (068/069), справочники объектов (`/directories`), пофайловый шеринг
+> (`/files/.../shares`), `last_auth_method` в `/auth/config` (ADR-036 п.7),
+> `kb_url` на service_links. Все фазы 0–5 + Helpdesk/MAX реализованы.
 
 ## Оглавление
 
@@ -41,6 +47,8 @@
 - [Модули (Admin UI)](#модули-admin-ui)
 - [Файлы (Phase 5)](#36-файлы-phase-5--nextcloud-service-account-adr-032)
 - [Справочники объектов](#справочники-объектов-apiv1directories)
+- [Техподдержка (Helpdesk)](#техподдержка-helpdesk)
+- [Email-outbox (admin)](#email-outbox-admin)
 - [Шаблоны документов (v2)](#шаблоны-документов-v2--не-реализуется-в-v1)
 - [Коды ошибок](#коды-ошибок)
 
@@ -135,13 +143,22 @@ Static files served by Nginx with proxy_pass to backend FastAPI StaticFiles moun
 ## Аутентификация
 
 ### GET /api/v1/auth/config `[public]`
-Возвращает фичефлаги для страницы логина (нужен фронтенду, чтобы понять, показывать ли форму local-входа).
+Возвращает фичефлаги для страницы логина (нужен фронтенду, чтобы понять, показывать ли форму local-входа) и маркер последнего способа входа для UX-корректного re-login на холодном старте (ADR-036 п.7).
 ```json
 → 200 {
   "local_auth_enabled": true,
-  "keycloak_enabled": true
+  "keycloak_enabled": true,
+  "last_auth_method": "local"   // "local" | "keycloak" | null (cookie portal_auth_method)
 }
 ```
+
+Поле `last_auth_method` читается из долгоживущей (30 дней, `HttpOnly=False`) cookie
+`portal_auth_method`, которую бэкенд ставит/обновляет при каждом успешном login
+(`local.local_login` → `"local"`, OIDC callback → `"keycloak"`) и намеренно не
+удаляет при logout. Фронт инициализирует из неё внутренний `_sessionAuthSource`
+на холодном старте, чтобы при истечении Redis-сессии local-юзер ушёл на форму
+`/auth/local`, а не на Keycloak SSO. Если cookie нет (новое устройство) → `null`
+→ дефолт `'keycloak'`. Содержимое — только маркер, без PII.
 
 ### GET /api/v1/auth/login
 Редирект на Keycloak (Authorization Code + PKCE). Query: `?redirect=/path` — куда вернуться после логина.
@@ -1411,9 +1428,13 @@ Playwright/Chromium `page.pdf()`. Rate limit: 5/мин/user (запланиро�
 
 ### POST /api/v1/links `[admin]`
 ```json
-← { "title": "Jira", "url": "https://jira.company.local", "category": "dev", "supports_sso": true, "icon_url": "...", "order_index": 1 }
+← { "title": "Jira", "url": "https://jira.company.local", "category": "dev", "supports_sso": true, "icon_url": "...", "order_index": 1, "kb_url": "https://portal.company.local/kb/articles/uuid" }
 → 201 { "id": "uuid", ... }
 ```
+
+`kb_url` (опц., миграция 074) — ссылка на KB-статью с инструкцией к сервису;
+показывается в карточке ярлыка. `show_on_home` (070) — показывать ли ярлык в
+виджете «Сервисы» на главной.
 
 ### PUT /api/v1/links/{id} `[admin]`
 ```json
@@ -3128,6 +3149,79 @@ Soft-delete объекта.
 → 200  (text/csv | xlsx | application/pdf)
 → 422  format не из csv|xlsx|pdf
 ```
+
+---
+
+## Техподдержка (Helpdesk)
+
+> **Полное описание API — в [`./helpdesk.md`](./helpdesk.md) §4** (все эндпоинты,
+> параметры, статусы, форматы). Здесь — только краткий список. Префикс
+> `/api/v1/helpdesk`. Авторизация обязательна; весь роутер обёрнут в
+> `require_helpdesk_module` (404, если мастер-флаг `helpdesk.enabled=false`).
+> Auth-deps: `CurrentUser` (свой), `HelpdeskAgentDep` (агент/админ), `AdminDep`
+> (админ). Все мутации пишут `audit_log` (`helpdesk.*`).
+
+### Инициатор (`CurrentUser`)
+
+| Метод | Путь | Назначение |
+|---|---|---|
+| `POST` | `/tickets` | Создать заявку (`multipart/form-data`: `subject`, `description`, `files[]`). Rate-limit 5/мин. |
+| `GET` | `/tickets/my` | Свои заявки (`?status`, `?unassigned`, `?assigned`, пагинация); `unread: bool` в каждой строке |
+| `GET` | `/tickets/my/counts` | `{active: N}` — свои тикеты в new/open/pending (для бейджа меню) |
+| `GET` | `/tickets/my/{id}` | Своя заявка с публичными сообщениями + `requester_profile` |
+| `POST` | `/tickets/my/{id}/read` | Отметить прочитанным (снять подсветку ответов агентов) |
+| `POST` | `/tickets/my/{id}/messages` | Ответ (`Form`: `body_text`, `files[]`). Rate-limit 20/мин. |
+| `GET` | `/attachments/{id}` | Скачать вложение (`StreamingResponse`); автор/агент/админ |
+
+### Агент (`HelpdeskAgentDep`)
+
+| Метод | Путь | Назначение |
+|---|---|---|
+| `GET` | `/tickets` | Инбокс: фильтры `status`/`assignee`/`unassigned`/`source`/`active_only`/`q` (FTS — миграция 078), пагинация, `unread: bool` |
+| `GET` | `/tickets/counts` | `{active: N}` — тикеты, назначенные агенту, в new/open/pending (для бейджа «Инбокс поддержки») |
+| `GET` | `/tickets/{id}` | Карточка (`TicketAgentOut`, все сообщения + служебные поля + `requester_profile`) |
+| `POST` | `/tickets/{id}/messages` | Ответ (`Form`: `body_text`, `body_html?`, `visibility`, `files[]`). `public` → `pending` + outbound email через outbox. |
+| `POST` | `/tickets/{id}/inline-media` | Загрузка inline-картинки для TipTap-редактора ответа (`multipart`, поле `file`) → `{url, filename}` |
+| `GET` | `/tickets/{id}/inline-media/{filename}` | Отдача inline-картинки (nginx `X-Accel-Redirect`, `no-store`+`nosniff`) |
+| `POST` | `/tickets/{id}/assign` | Назначить (`assignee_user_id`) |
+| `POST` | `/tickets/{id}/take` | Взять на себя (409 если уже назначен) |
+| `PATCH` | `/tickets/{id}/status` | Сменить статус (409 на запрещённый переход) |
+| `POST` | `/tickets/{id}/reopen` | Reopen закрытой (409 из не-`closed`) |
+| `POST` | `/tickets/{id}/read` | Отметить прочитанным для пары `(ticket, agent)` (UPSERT `last_seen_at`) |
+
+### Админ (`AdminDep`)
+
+| Метод | Путь | Назначение |
+|---|---|---|
+| `GET/POST/PATCH/DELETE` | `/agents[/{user_id}]` | CRUD агентов поддержки (аудит `helpdesk.agent_*`) |
+| `GET/PUT` | `/settings/mailbox` | Singleton IMAP-настроек support-ящика; `imap_password_enc` Fernet (write-only) |
+| `POST` | `/settings/mailbox/test` | Проверка IMAP-соединения → `{ok, detail}` (маскированная ошибка) |
+| `GET/PUT` | `/settings/digest` | Singleton расписания сводки (`enabled`, `digest_hour`/`digest_minute`/`digest_schedule`) |
+| `GET/PUT` | `/settings/max-bot` | Singleton MAX-бота (`enabled`, `bot_token_set`, `chat_id`, `configured`). Токен write-only. При `enabled=True` требует токен+chat_id (400 иначе). |
+| `POST` | `/settings/max-bot/test` | End-to-end: отправляет реальное сообщение в чат через MAX Bot API. На неудачу — маскированная ошибка с подсказкой по HTTP-коду (404→бот не участник чата, 401→токен, 403→права). |
+
+> **MAX-messenger** (миграция 081): при `enabled=True` и новой заявке
+> (web или email-ingress) в общий чат поддержки уходит оповещение
+> (№+тема+заявитель+источник+превью тела 500 символов + inline-кнопка
+> «Открыть на портале» → абсолютный URL из `SystemSettings.portal_base_url`).
+> Доставка — через отдельный transactional outbox `messenger_outbox`
+> (retry/backoff/DLQ, mirror `email_outbox`). Подробнее —
+> [`./wip/helpdesk-max-messenger.md`](./wip/helpdesk-max-messenger.md).
+
+---
+
+## Email-outbox (admin)
+
+> Инфраструктура — в [`./email.md`](./email.md). Admin-endpoint'ы для наблюдения
+> за очередью исходящих писем и ручного retry/cancel (всё `[admin]`).
+
+| Метод | Путь | Назначение |
+|---|---|---|
+| `GET` | `/admin/email-outbox` | Список писем (`?status`, `?kind`, пагинация) |
+| `GET` | `/admin/email-outbox/_/stats` | Сводка: счётчики по статусам |
+| `GET` | `/admin/email-outbox/{id}` | Карточка письма (тело, ошибки, попытки) |
+| `POST` | `/admin/email-outbox/{id}/retry` | Принудительный retry (сбрасывает `status=PENDING`) |
+| `POST` | `/admin/email-outbox/{id}/cancel` | Отмена (`status=CANCELLED`) |
 
 ---
 

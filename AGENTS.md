@@ -242,7 +242,7 @@
 ### Email (outbox-pattern)
 > Полный разбор: `./docs/email.md`.
 
-- **Gotcha (поведенческое):** все исходящие письма пишутся в `email_outbox` **в той же транзакции**, что и бизнес-операция (`enqueue_outbox_email(...)`), — не вызывать SMTP напрямую. Отправляет cron `process_email_outbox` (claim `FOR UPDATE SKIP LOCKED`, backoff+DLQ). Producer’ы — meetings/news/kb/helpdesk.
+- **Gotcha (поведенческое):** все исходящие письма пишутся в `email_outbox` **в той же транзакции**, что и бизнес-операция (`enqueue_outbox_email(...)`), — не вызывать SMTP напрямую. Отправляет cron `process_email_outbox` (claim `FOR UPDATE SKIP LOCKED`, backoff+DLQ). Producer’ы — meetings/news/kb/helpdesk. Для мессенджеров (MAX) — отдельная таблица `messenger_outbox` (mirror `email_outbox`), cron `process_messenger_outbox`.
 
 ### Справочники объектов
 > Полный разбор: `./docs/directories.md`.
@@ -250,12 +250,14 @@
 - Универсальный движок (Флот/Склады/…), встраивается вкладками в `/staff` (`?tab=<slug>`). Двухуровневый гейтинг: мастер `modules.json` (`directories.enabled`) → per-type `enabled`. Мутации — `editor`/`admin`.
 
 ### Техподдержка (Helpdesk)
-> Полный разбор: `./docs/helpdesk.md`. Миграция `075`.
+> Полный разбор: `./docs/helpdesk.md`. Миграции `075`–`081`.
 
-- Замена OTRS: заявки из веб-формы **или** email (IMAP-polling), статус-машина `new→open→pending→resolved→closed` (запрещённый переход → 409), двусторонний email-thread (`[#TKT-{number}]`, outbox `kind=helpdesk`).
+- Замена OTRS: заявки из веб-формы **или** email (IMAP-polling), статус-машина `new→open→pending→closed` (запрещённый переход → 409; статус `resolved` упразднён миграцией 079 — единый финал `closed`), двусторонний email-thread (`[#TKT-{number}]`, outbox `kind=helpdesk`).
 - **Gotcha:** агенты — отдельная сущность `helpdesk_agents` (не роль `users.role`); права через `require_helpdesk_agent` (admin — суперсет).
 - **Gotcha:** вложения локально `/data/helpdesk/TKT-{number}/` (не NC), download — `StreamingResponse` (не `FileResponse`/`X-Accel-Redirect`).
 - Mailbox-settings singleton, пароль write-only (Fernet из `SECRET_KEY`). Гостевые заявители линкуются к аккаунту в OIDC-callback.
+- **MAX-messenger оповещения** (миграция 081): при включённой настройке `helpdesk_max_bot_settings` новые заявки дублируются в общий чат MAX (max.ru) через отдельный outbox `messenger_outbox` (mirror `email_outbox`). См. `docs/wip/helpdesk-max-messenger.md`.
+- **Gotcha (TLS):** сертификат `*.max.ru` подписан Russian Trusted Root CA (Минцифры), не входит в Mozilla CA Bundle / `certifi`. Корневой сертификат лежит в `backend/certs/russian_trusted_root_ca.crt` и устанавливается в Docker-образ через `update-ca-certificates`. httpx-клиент использует `ssl.create_default_context()` (системный trust store). Общий фикс для всех российских TLS-endpoint'ов.
 
 ### Брендинг и системные настройки
 - Runtime config: `/data/settings/system.json` (SMTP, Nextcloud, CIDR, nginx), `/data/secrets/keycloak-settings.json` (только Admin UI). Запись atomically через `os.replace()`.
@@ -304,15 +306,17 @@ portal/
 │   ├── i18n/                  ← ru.json (мастер), en.json
 │   └── api/types.gen.d.ts     ← auto-gen из openapi.json (в .gitignore)
 ├── backend/app/
-│   ├── api/                   ← роутеры (files/, kb/, photos/ — подпакеты; auth, news, users, ...)
-│   ├── core/                  ← config, database, security, limiter, logging, metrics, sentry, system_config, ...
+│   ├── api/                   ← роутеры (files/, kb/, photos/, helpdesk/, auth/ — подпакеты; news, users, ...)
+│   ├── core/                  ← config, database, security, limiter, logging, metrics, sentry, system_config, secret_crypto, ...
 │   ├── middleware/            ← csrf, idempotency, session, security_headers, ...
-│   ├── models/                ← SQLAlchemy models (files, kb, links, news, notification, photos, user, ...)
+│   ├── models/                ← SQLAlchemy models (files, kb, links, news, notification, photos, helpdesk, email_outbox, user, ...)
 │   ├── schemas/               ← Pydantic schemas
-│   ├── services/              ← бизнес-логика (nextcloud/, files_acl, kb_acl, photos_acl, photos_storage, ...)
-│   └── worker/                ← ARQ tasks (audit, notifications, news, photos, files, metrics)
+│   ├── services/              ← бизнес-логика (nextcloud/, files_acl, kb_acl/, photos_acl, photos_storage,
+│   │                          │   helpdesk/, max_messenger/, email_outbox, messenger_outbox, ...)
+│   └── worker/                ← ARQ tasks (audit, notifications, news, photos, files, helpdesk, messenger_outbox, metrics)
+├── backend/certs/             ← russian_trusted_root_ca.crt (Минцифры — для TLS к российским endpoint'ам; вкомпилируется в образ)
 ├── backend/scripts/           ← export_openapi.py, generate_db_schema_doc.py, generate_api_contracts_doc.py, create_audit_partitions.py
-├── backend/migrations/        ← init.sql (hunspell + FTS) + versions/ (001..063)
+├── backend/migrations/        ← init.sql (hunspell + FTS) + versions/ (001..081)
 ├── screenshot-service/        ← aiohttp + Playwright/Chromium (PDF/screenshot; отдельный контейнер)
 ├── nginx/                     ← Dockerfile, Dockerfile.config (sidecar), templates/, render-config.sh
 ├── postgres/                  ← Dockerfile с hunspell-ru словарями
@@ -339,8 +343,9 @@ Chromium вынесен из бэкенда в `screenshot-service/` (aiohttp + 
 - **Pydantic EmailStr:** не работает с `.local`-доменами (DNS-проверка). Для корпоративного email использовать `email: str = Field(min_length=1, max_length=255)`.
 - **TLS:** `portal-nginx` не стартует без `system_data/certs/portal.crt` + `portal.key`. Dev — self-signed (см. `docs/deploy.md`).
 - **fastapi-limiter + starlette 1.x:** `app/core/limiter.py` содержит monkey-patch совместимости (ADR-043). **НЕ добавлять** `from __future__ import annotations` в этот файл — ломает FastAPI-интроспекцию `Request`/`Response` после патча → 422 на rate-limited endpoints.
-- **Образ backend вкомпилирован** (target `production`): volume-mount только для `/data/*`. После правок backend-кода — `docker compose build backend`, иначе `restart` не подхватит изменения.
+- **Образ backend вкомпилирован** (target `production`): volume-mount только для `/data/*`. После правок backend-кода — `docker compose build backend`, иначе `restart` не подхватит изменения. Это же касается сертификатов в `backend/certs/` — добавление/обновление `russian_trusted_root_ca.crt` требует пересборки.
 - **`portal_base_url`** в `system.json` обязан включать scheme (`https://...`) — иначе CSRF Origin-проверка ломается → 403 на local login. Валидатор `_schemas.py` добавляет scheme автоматически, но при ручном редактировании — указывать явно.
+- **Russian Trusted Root CA (Минцифры):** не входит в Mozilla CA Bundle / `certifi`. Для TLS к российским endpoint'ам (MAX `*.max.ru`, Госуслуги, Сбер и т.д.) сертификат `backend/certs/russian_trusted_root_ca.crt` ставится в образ через `update-ca-certificates` (расширение обязано быть `.crt`). httpx-клиенты должны использовать `ssl.create_default_context()`, чтобы читать **системный** trust store, а не `certifi.where()` — иначе сертификат-фикс не сработает.
 
 ### Конфигурация: bootstrap (env) vs runtime (JSON) — ADR-037
 - **Bootstrap** (`app/core/config.py::Settings`): `DATABASE_URL`, `REDIS_URL`, `SECRET_KEY`, `POSTGRES_PASSWORD`, `REDIS_PASSWORD`, `ADMIN_EMAIL/PASSWORD`, `LOCAL_AUTH_ENABLED`, `SCREENSHOT_SERVICE_SECRET`, DB pool tunables. Полный список — `.env.example`.

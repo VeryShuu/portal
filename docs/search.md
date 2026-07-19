@@ -74,7 +74,7 @@
 Доступ к результатам поиска строго разграничен в зависимости от роли пользователя. Сводная матрица прав зафиксирована в `./docs/roles-matrix.md`.
 
 - **База знаний (`article`)**: 
-  - Проверка прав выполняется на уровне базы данных с помощью функции `apply_article_visibility(stmt, user, session)` из `./backend/app/services/kb_acl.py`.
+  - Проверка прав выполняется на уровне базы данных с помощью функции `apply_article_visibility(stmt, user, session)` из пакета `./backend/app/services/kb_acl/`.
   - Фильтрация выполняется с помощью рекурсивного CTE по правам разделов (`kb_section_permissions`) и статей (`kb_article_permissions`).
   - Для эндпойнта `/search/suggest` применяется облегченный фильтр на Python `filter_accessible_articles(user, articles, db, redis)`.
 - **Новости (`news`)**:

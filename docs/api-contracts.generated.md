@@ -1,5 +1,5 @@
 <!-- AUTO-GENERATED — do not edit manually. Run: cd backend && python -m scripts.generate_api_contracts_doc --output ../docs/api-contracts.generated.md -->
-<!-- Generated: 2026-06-18 21:04 UTC -->
+<!-- Generated: 2026-07-19 20:39 UTC -->
 
 # API Contracts (auto-generated)
 
@@ -23,6 +23,7 @@
 - [feedback](#feedback)
 - [files](#files)
 - [health](#health)
+- [helpdesk](#helpdesk)
 - [keycloak-admin](#keycloak-admin)
 - [knowledge-base](#knowledge-base)
 - [links](#links)
@@ -2199,6 +2200,718 @@ Permissions are restored from files-acl.json backup if available.
 
 ---
 
+## helpdesk
+
+### `GET /api/v1/helpdesk/agents`
+
+**Список агентов поддержки**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | `AgentListOut` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `POST /api/v1/helpdesk/agents`
+
+**Добавить агента поддержки**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `portal_session` | cookie | `any` |  |  |
+
+**Request Body**
+
+Content-Type: `application/json` — schema: `AgentIn`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `user_id` | string | ✓ |  |
+| `notify_new` | boolean |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 201 | Successful Response | `AgentOut` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `PATCH /api/v1/helpdesk/agents/{user_id}`
+
+**Изменить флаг notify_new агента**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `user_id` | path | `string` | ✓ |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Request Body**
+
+Content-Type: `application/json` — schema: `AgentIn`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `user_id` | string | ✓ |  |
+| `notify_new` | boolean |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | `AgentOut` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `DELETE /api/v1/helpdesk/agents/{user_id}`
+
+**Удалить агента поддержки**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `user_id` | path | `string` | ✓ |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 204 | Successful Response |  |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `GET /api/v1/helpdesk/attachments/{attachment_id}`
+
+**Скачать вложение (StreamingResponse из локального файла)**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `attachment_id` | path | `string` | ✓ |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response |  |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `GET /api/v1/helpdesk/settings/digest`
+
+**Get Digest Settings**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | `HelpdeskDigestSettingsOut` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `PUT /api/v1/helpdesk/settings/digest`
+
+**Put Digest Settings**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `portal_session` | cookie | `any` |  |  |
+
+**Request Body**
+
+Content-Type: `application/json` — schema: `HelpdeskDigestSettingsIn`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `enabled` | boolean |  |  |
+| `digest_hour` | integer |  |  |
+| `digest_minute` | integer |  |  |
+| `digest_schedule` | string |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | `HelpdeskDigestSettingsOut` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `GET /api/v1/helpdesk/settings/mailbox`
+
+**Get Mailbox Settings**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | `HelpdeskMailboxSettingsOut` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `PUT /api/v1/helpdesk/settings/mailbox`
+
+**Put Mailbox Settings**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `portal_session` | cookie | `any` |  |  |
+
+**Request Body**
+
+Content-Type: `application/json` — schema: `HelpdeskMailboxSettingsIn`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `imap_host` | string | ✓ |  |
+| `imap_port` | integer |  |  |
+| `imap_username` | string | ✓ |  |
+| `imap_password` | any |  |  |
+| `imap_use_ssl` | boolean |  |  |
+| `imap_folder` | string |  |  |
+| `poll_interval_seconds` | integer |  |  |
+| `delete_after_fetch` | boolean |  |  |
+| `support_address` | `app__schemas__helpdesk__Email__1` | ✓ |  |
+| `support_reply_to` | any |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | `HelpdeskMailboxSettingsOut` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `POST /api/v1/helpdesk/settings/mailbox/test`
+
+**Test Mailbox Connection**
+
+Проверка IMAP-соединения с текущими настройками. Возвращает OK/детали.
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | object |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `GET /api/v1/helpdesk/settings/max-bot`
+
+**Get Max Bot Settings**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | `HelpdeskMaxBotSettingsOut` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `PUT /api/v1/helpdesk/settings/max-bot`
+
+**Put Max Bot Settings**
+
+Сохранить конфигурацию MAX-бота (токен write-only, как IMAP-пароль).
+
+Валидация: при ``enabled=True`` обязательно наличие токена (либо в текущем
+payload, либо уже сохранённого) и ``chat_id`` — иначе 400 (нельзя включить
+канал без валидных кредов).
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `portal_session` | cookie | `any` |  |  |
+
+**Request Body**
+
+Content-Type: `application/json` — schema: `HelpdeskMaxBotSettingsIn`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `enabled` | boolean |  |  |
+| `bot_token` | any |  |  |
+| `chat_id` | any |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | `HelpdeskMaxBotSettingsOut` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `POST /api/v1/helpdesk/settings/max-bot/test`
+
+**Test Max Bot Connection**
+
+Отправить тестовое сообщение в чат поддержки через MAX Bot API.
+
+В отличие от ``POST /mailbox/test`` (который проверяет только IMAP-логин),
+здесь мы делаем **полный end-to-end тест**: отправляем реальное сообщение
+в настроенный ``chat_id``. Это проверяет:
+* токен бота валиден (401 от MAX иначе);
+* бот добавлен в чат и имеет права писать (403/400 иначе);
+* ``chat_id`` корректный (400 «chat not found» иначе);
+* TLS к MAX работает (Russian Trusted CA в trust store).
+
+Пользователь видит сообщение в MAX — это и есть подтверждение «всё работает».
+
+Defense-in-depth: на ошибку маскируем ``str(exc)`` (MAX в JSON-ошибках
+иногда отражает часть токена или чувствительные детали). Полный traceback
+остаётся в server-log через ``logger.exception``.
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | `HelpdeskMaxBotTestResult` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `GET /api/v1/helpdesk/tickets`
+
+**Все заявки (агентский инбокс)**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `status` | query | `any` |  |  |
+| `assignee` | query | `any` |  |  |
+| `unassigned` | query | `boolean` |  |  |
+| `source` | query | `any` |  |  |
+| `active_only` | query | `boolean` |  |  |
+| `assigned` | query | `boolean` |  |  |
+| `q` | query | `any` |  |  |
+| `limit` | query | `integer` |  |  |
+| `offset` | query | `integer` |  |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | `TicketListOut` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `POST /api/v1/helpdesk/tickets`
+
+**Создать заявку через веб-форму (multipart/form-data)**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `portal_session` | cookie | `any` |  |  |
+
+**Request Body**
+
+Content-Type: `multipart/form-data` — schema: `Body_create_ticket_api_v1_helpdesk_tickets_post`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `subject` | string | ✓ |  |
+| `description` | string | ✓ |  |
+| `files` | array of string |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 201 | Successful Response | `TicketOut` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `GET /api/v1/helpdesk/tickets/counts`
+
+**Счётчик назначенных агенту тикетов в работе (для бейджа в меню)**
+
+Лёгкий count-endpoint для бейджа в меню пункта «Инбокс поддержки».
+
+``active`` — тикеты, назначенные лично этому агенту (``assignee = agent``),
+в статусах new/open/pending. «Моя нагрузка», а не «объём очереди»:
+неназначенные тикеты здесь не считаются (для них есть отдельный блок в
+инбоксе). ``closed`` исключён. Один ``count(*)`` без join'ов.
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | `TicketCountsOut` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `GET /api/v1/helpdesk/tickets/my`
+
+**Список своих заявок**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `status` | query | `any` |  |  |
+| `unassigned` | query | `boolean` |  |  |
+| `assigned` | query | `boolean` |  |  |
+| `limit` | query | `integer` |  |  |
+| `offset` | query | `integer` |  |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | `TicketListOut` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `GET /api/v1/helpdesk/tickets/my/counts`
+
+**Счётчик своих открытых заявок (для бейджа в меню)**
+
+Лёгкий count-endpoint для бейджа в меню пункта «Поддержка».
+
+``active`` — свои тикеты в статусах new/open/pending (closed исключён как
+архивная история). Один ``count(*)`` без join'ов и пагинации — дешевле
+list-endpoint'а с ``limit=1``, особенно при polling'е раз в 60 c.
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | `TicketCountsOut` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `GET /api/v1/helpdesk/tickets/my/{ticket_id}`
+
+**Своя заявка с публичными сообщениями**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `ticket_id` | path | `string` | ✓ |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | `TicketOut` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `POST /api/v1/helpdesk/tickets/my/{ticket_id}/messages`
+
+**Ответ по своей заявке**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `ticket_id` | path | `string` | ✓ |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Request Body**
+
+Content-Type: `multipart/form-data` — schema: `Body_add_my_message_api_v1_helpdesk_tickets_my__ticket_id__messages_post`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `body_text` | string |  |  |
+| `body_html` | string |  |  |
+| `files` | array of string |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 201 | Successful Response | `MessageOut` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `POST /api/v1/helpdesk/tickets/my/{ticket_id}/read`
+
+**Отметить свой тикет прочитанным (снять подсветку ответов агентов)**
+
+Заявительский аналог ``POST /tickets/{id}/read`` (агентского).
+
+Записывает ``last_seen_at = NOW()`` для пары ``(ticket, user)`` — UPSERT по
+``uq_helpdesk_ticket_reads_ticket_user``. Снимает подсветку в списке своих
+заявок: после открытия карточки заявителем ответы агентов больше не
+подсвечиваются как непрочитанные (контракт ``direction='outbound'`` в
+``enrich_with_unread``, см. ``GET /tickets/my``).
+
+ACL: только свои тикеты (``fetch_ticket_for_user`` → 404 для чужих, не
+раскрываем существование). Не требует audit/rate-limit (read-state —
+бизнес-состояние, как ``notifications.read``). Идемпотентно.
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `ticket_id` | path | `string` | ✓ |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | `MarkTicketReadOut` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `GET /api/v1/helpdesk/tickets/{ticket_id}`
+
+**Карточка заявки (агентский view, все сообщения)**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `ticket_id` | path | `string` | ✓ |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | `TicketAgentOut` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `POST /api/v1/helpdesk/tickets/{ticket_id}/assign`
+
+**Назначить ответственного**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `ticket_id` | path | `string` | ✓ |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Request Body**
+
+Content-Type: `application/json` — schema: `TicketAssignIn`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `assignee_user_id` | string | ✓ |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | `TicketAgentOut` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `POST /api/v1/helpdesk/tickets/{ticket_id}/inline-media`
+
+**Загрузить inline-картинку для rich-редактора ответа**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `ticket_id` | path | `string` | ✓ |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Request Body**
+
+Content-Type: `multipart/form-data` — schema: `Body_upload_ticket_inline_media_api_v1_helpdesk_tickets__ticket_id__inline_media_post`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `file` | string | ✓ |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 201 | Successful Response | `MediaUploadResponse` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `GET /api/v1/helpdesk/tickets/{ticket_id}/inline-media/{filename}`
+
+**Раздать inline-картинку (через nginx X-Accel-Redirect)**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `ticket_id` | path | `string` | ✓ |  |
+| `filename` | path | `string` | ✓ |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | any |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `POST /api/v1/helpdesk/tickets/{ticket_id}/messages`
+
+**Ответ агента (public/internal)**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `ticket_id` | path | `string` | ✓ |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Request Body**
+
+Content-Type: `multipart/form-data` — schema: `Body_add_agent_message_api_v1_helpdesk_tickets__ticket_id__messages_post`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `body_text` | string |  |  |
+| `body_html` | string |  |  |
+| `visibility` | string |  |  |
+| `files` | array of string |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 201 | Successful Response | `MessageOut` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `POST /api/v1/helpdesk/tickets/{ticket_id}/read`
+
+**Отметить тикет прочитанным (снять подсветку в инбоксе агента)**
+
+Записать ``last_seen_at = NOW()`` для пары ``(ticket, agent)`` — UPSERT
+по ``uq_helpdesk_ticket_reads_ticket_user``. Вызывается фронтендом при
+открытии карточки тикета (точка «прочитано» в инбоксе агента).
+
+Не требует audit (read-state — бизнес-состояние, не мутация, как
+``notifications.read``) и rate-limit (доступ только HelpdeskAgentDep).
+Идемпотентно: повторное открытие карточки = более свежий ``last_seen_at``.
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `ticket_id` | path | `string` | ✓ |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | `MarkTicketReadOut` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `POST /api/v1/helpdesk/tickets/{ticket_id}/reopen`
+
+**Reopen закрытой заявки**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `ticket_id` | path | `string` | ✓ |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | `TicketAgentOut` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `PATCH /api/v1/helpdesk/tickets/{ticket_id}/status`
+
+**Сменить статус по машине состояний**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `ticket_id` | path | `string` | ✓ |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Request Body**
+
+Content-Type: `application/json` — schema: `TicketStatusIn`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `status` | string | ✓ |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | `TicketAgentOut` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `POST /api/v1/helpdesk/tickets/{ticket_id}/take`
+
+**Взять нераспределённую заявку на себя**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `ticket_id` | path | `string` | ✓ |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | `TicketAgentOut` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+---
+
 ## keycloak-admin
 
 ### `GET /api/v1/admin/keycloak/settings`
@@ -3442,6 +4155,7 @@ Content-Type: `application/json` — schema: `CreateLinkRequest`
 | `supports_sso` | boolean |  |  |
 | `is_active` | boolean |  |  |
 | `show_on_home` | boolean |  |  |
+| `kb_url` | any |  |  |
 
 **Responses**
 
@@ -3519,6 +4233,7 @@ Content-Type: `application/json` — schema: `UpdateLinkRequest`
 | `supports_sso` | any |  |  |
 | `is_active` | any |  |  |
 | `show_on_home` | any |  |  |
+| `kb_url` | any |  |  |
 
 **Responses**
 
@@ -4135,6 +4850,31 @@ Content-Type: `application/json` — schema: `DirectoriesModuleIn`
 | Status | Description | Schema |
 |--------|-------------|--------|
 | 200 | Successful Response | `DirectoriesModuleOut` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `PUT /api/v1/admin/modules/helpdesk`
+
+**Update Helpdesk Module**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `portal_session` | cookie | `any` |  |  |
+
+**Request Body**
+
+Content-Type: `application/json` — schema: `HelpdeskModuleIn`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `enabled` | boolean |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | `HelpdeskModuleOut` |
 | 422 | Validation Error | `HTTPValidationError` |
 
 ### `PUT /api/v1/admin/modules/meetings`

@@ -108,6 +108,32 @@ chmod 600 system_data/certs/portal.key
 Для prod — выпустить через корпоративный CA / Let's Encrypt (если домен резолвится).
 Для dev — self-signed (`openssl req -x509 ...`).
 
+### Russian Trusted Root CA (для исходящих TLS к российским endpoint'ам)
+
+Если включён модуль **Helpdesk → MAX-messenger** (`helpdesk_max_bot_settings.enabled=true`),
+бэкенд ходит по TLS на `*.max.ru`, чей сертификат подписан `Russian Trusted Root CA`
+(Минцифры) — этот корневой сертификат **отсутствует** в Mozilla CA Bundle / `certifi`
+и без доустановки даёт `[SSL: CERTIFICATE_VERIFY_FAILED]`.
+
+Решение уже вшито в Docker-образ `backend`:
+- Сертификат лежит в репозитории: `backend/certs/russian_trusted_root_ca.crt`
+  (расширение **обязательно `.crt`** — `update-ca-certificates` игнорирует `.pem`/`.cer`).
+- В `backend/Dockerfile` stages `runtime-base` и `production` вызывается
+  `update-ca-certificates`, и сертификат попадает в системный trust store
+  (`/etc/ssl/certs/ca-certificates.crt`).
+- В `services/max_messenger/_client.py` httpx создаётся с
+  `verify=ssl.create_default_context()` — это заставляет httpx читать **системный**
+  trust store, а не свой `certifi.where()`.
+
+Это общий фикс: теперь любой российский TLS-endpoint (Госуслуги, Сбер, MAX и т.д.) с
+сертификатом Минцифры работает из контейнера автоматически. Если при добавлении
+нового endpoint'а получаете `CERTIFICATE_VERIFY_FAILED` — проверьте, что образ
+собран свежим (с сертификатом в `backend/certs/`).
+
+---
+
+## 6. Первый запуск
+
 ---
 
 ## 6. Первый запуск
