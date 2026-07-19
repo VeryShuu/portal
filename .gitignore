@@ -14,7 +14,7 @@ __pycache__/
 dist/
 build/
 .build/
-*.whl
+*.whl                    # wheels в корне backend/ — только для offline-экспериментов, не в git
 
 # Virtual environments
 .venv/
@@ -148,6 +148,7 @@ load/output/
 .playwright-mcp/
 .zenflow/
 .zenflow-attachments/
+.zcode/                  # локальный контекст ZCode (plans/settings) — не в git
 
 # ===== Временные файлы сессий =====
 _commit_msg.txt
