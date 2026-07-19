@@ -4,6 +4,7 @@ import {
   type HelpdeskAgentIn,
   type HelpdeskInboxParams,
   type HelpdeskMailboxSettingsIn,
+  type HelpdeskMaxBotSettingsIn,
   type HelpdeskMessageCreateDto,
   type HelpdeskMyListParams,
   type HelpdeskTicketCreateDto,
@@ -17,10 +18,12 @@ import {
   fetchAgentTickets,
   fetchHelpdeskAgents,
   fetchHelpdeskMailbox,
+  fetchHelpdeskMaxBot,
   fetchMyTicket,
   fetchMyTicketCounts,
   fetchMyTickets,
   putHelpdeskMailbox,
+  putHelpdeskMaxBot,
   reopenTicket,
   replyAgentTicket,
   replyMyTicket,
@@ -74,6 +77,24 @@ export function usePutHelpdeskMailboxMutation() {
   return useMutation({
     mutationFn: (dto: HelpdeskMailboxSettingsIn) => putHelpdeskMailbox(dto),
     onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.helpdesk.mailbox() }),
+  })
+}
+
+// ── MAX-messenger bot settings ─────────────────────────────────────────────
+
+export function useHelpdeskMaxBotQuery() {
+  return useQuery({
+    queryKey: queryKeys.helpdesk.maxBot(),
+    queryFn: () => fetchHelpdeskMaxBot(),
+    staleTime: 30_000,
+  })
+}
+
+export function usePutHelpdeskMaxBotMutation() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (dto: HelpdeskMaxBotSettingsIn) => putHelpdeskMaxBot(dto),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.helpdesk.maxBot() }),
   })
 }
 

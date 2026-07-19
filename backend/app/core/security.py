@@ -22,6 +22,16 @@ _JWKS_MIN_REFRESH_INTERVAL = 30.0
 SESSION_TTL_SECONDS = 8 * 3600
 SESSION_COOKIE_NAME = "portal_session"
 
+# Долгоживущий маркер типа последнего входа (ADR-036 п.7). Бэкенд — авторитативный
+# источник: ставит/обновляет cookie при успешном login/callback, НЕ удаляет при
+# logout. Фронт читает её на холодном старте, чтобы инициализировать
+# `_sessionAuthSource` корректным значением (без неё дефолт = keycloak, и
+# локальный юзер при истечении Redis-сессии улетал бы на SSO вместо /auth/local).
+# HttpOnly=False намеренно — фронт читает через document.cookie (как XSRF-TOKEN).
+# Содержимое — только маркер `'local' | 'keycloak'`, без PII.
+LAST_AUTH_METHOD_COOKIE = "portal_auth_method"
+LAST_AUTH_METHOD_TTL_SECONDS = 30 * 24 * 3600  # 30 дней
+
 _BCRYPT_ROUNDS = 12
 DUMMY_HASH = "$2b$12$AYIUKE1io/ocfe0hko1GT.nTl9gestrHkKwLQgmoQo25bjK5UuYGi"
 

@@ -21,6 +21,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.core.logging import get_logger
 from app.core.security import (
+    LAST_AUTH_METHOD_COOKIE,
+    LAST_AUTH_METHOD_TTL_SECONDS,
     SESSION_COOKIE_NAME,
     SESSION_TTL_SECONDS,
     parse_jwt_claims,
@@ -134,6 +136,19 @@ def _build_session_cookie_response(redirect_target: str, session_id: str) -> Red
         value=session_id,
         max_age=SESSION_TTL_SECONDS,
         httponly=True,
+        secure=get_settings().is_production,
+        samesite="lax",
+        path="/",
+    )
+    # ADR-036 п.7: одновременно обновляем маркер способа входа на 'keycloak'.
+    # Симметрично local_login, который ставит 'local'. Фронт на холодном старте
+    # инициализирует _sessionAuthSource из этой cookie, чтобы при истечении
+    # Redis-сессии уйти на корректный экран входа (а не на SSO для local-юзера).
+    redirect.set_cookie(
+        key=LAST_AUTH_METHOD_COOKIE,
+        value="keycloak",
+        max_age=LAST_AUTH_METHOD_TTL_SECONDS,
+        httponly=False,
         secure=get_settings().is_production,
         samesite="lax",
         path="/",

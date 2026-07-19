@@ -21,6 +21,17 @@
       </div>
       <HelpdeskMailboxSettings />
     </div>
+
+    <!-- Секция: MAX-мессенджер (уведомления о новых заявках в общий чат) -->
+    <div class="helpdesk-section">
+      <div class="branding-section__title">
+        {{ t('admin.helpdesk.max.title') }}
+      </div>
+      <div class="branding-section__hint">
+        {{ t('admin.helpdesk.max.hint') }}
+      </div>
+      <HelpdeskMaxBotSettings />
+    </div>
   </div>
 </template>
 
@@ -35,6 +46,9 @@ const HelpdeskAgentsManager = defineAsyncComponent(
 )
 const HelpdeskMailboxSettings = defineAsyncComponent(
   () => import('../../../components/admin/HelpdeskMailboxSettings.vue'),
+)
+const HelpdeskMaxBotSettings = defineAsyncComponent(
+  () => import('../../../components/admin/HelpdeskMaxBotSettings.vue'),
 )
 </script>
 

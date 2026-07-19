@@ -335,3 +335,46 @@ export function testHelpdeskMailbox(): Promise<HelpdeskMailboxTestResult> {
     method: 'POST',
   })
 }
+
+// ── MAX-messenger bot settings ─────────────────────────────────────────────
+
+export interface HelpdeskMaxBotSettingsOut {
+  /** ``true`` когда канал готов отправлять: enabled AND bot_token_set AND chat_id. */
+  configured: boolean
+  enabled: boolean
+  bot_token_set: boolean
+  chat_id: string | null
+  updated_at: string | null
+}
+
+export interface HelpdeskMaxBotSettingsIn {
+  enabled: boolean
+  /** Write-only: пусто/undefined = «оставить прежний шифр». */
+  bot_token?: string | null
+  chat_id?: string | null
+}
+
+export interface HelpdeskMaxBotTestResult {
+  ok: boolean
+  detail?: string | null
+  error?: string | null
+}
+
+export function fetchHelpdeskMaxBot(): Promise<HelpdeskMaxBotSettingsOut> {
+  return api<HelpdeskMaxBotSettingsOut>('/helpdesk/settings/max-bot')
+}
+
+export function putHelpdeskMaxBot(
+  dto: HelpdeskMaxBotSettingsIn,
+): Promise<HelpdeskMaxBotSettingsOut> {
+  return api<HelpdeskMaxBotSettingsOut>('/helpdesk/settings/max-bot', {
+    method: 'PUT',
+    body: dto,
+  })
+}
+
+export function testHelpdeskMaxBot(): Promise<HelpdeskMaxBotTestResult> {
+  return api<HelpdeskMaxBotTestResult>('/helpdesk/settings/max-bot/test', {
+    method: 'POST',
+  })
+}

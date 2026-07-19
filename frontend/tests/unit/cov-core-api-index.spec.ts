@@ -146,6 +146,34 @@ describe('src/api/index', () => {
     restoreLocation()
   })
 
+  it('cold start reads auth_source from portal_auth_method cookie', async () => {
+    // ADR-036 п.7: на холодном старте (до loadBootstrap) фронт знает тип
+    // последней сессии из бэкенд-управляемой cookie `portal_auth_method`.
+    // Без этого локальный юзер с истёкшей Redis-сессией уходил бы на Keycloak.
+    document.cookie = 'portal_auth_method=local'
+    try {
+      const { getSessionAuthSource } = await loadApiModule()
+      expect(getSessionAuthSource()).toBe('local')
+    } finally {
+      document.cookie = 'portal_auth_method=; max-age=0'
+    }
+  })
+
+  it('cold start without cookie defaults to keycloak', async () => {
+    const { getSessionAuthSource } = await loadApiModule()
+    expect(getSessionAuthSource()).toBe('keycloak')
+  })
+
+  it('invalid cookie value falls back to keycloak (defense-in-depth)', async () => {
+    document.cookie = 'portal_auth_method=evil'
+    try {
+      const { getSessionAuthSource } = await loadApiModule()
+      expect(getSessionAuthSource()).toBe('keycloak')
+    } finally {
+      document.cookie = 'portal_auth_method=; max-age=0'
+    }
+  })
+
   it('keycloak is the default session source for the redirect target', async () => {
     const restoreLocation = setLocation('/news')
     const err = Object.assign(new Error('unauth'), { status: 401 })

@@ -42,7 +42,16 @@ RUN apt-get update \
         libjpeg62-turbo \
         zlib1g \
         libwebp7 \
+        ca-certificates \
     && rm -rf /var/lib/apt/lists/*
+
+# Российские доверенные CA (Минцифры). Не входят в Mozilla CA Bundle Debian —
+# без этого исходящие HTTPS к российским сервисам (MAX Bot API, Госуслуги и т.д.)
+# падают с CERTIFICATE_VERIFY_FAILED. Промежуточные сертификаты сюда НЕ кладём:
+# серверы отдают их в TLS-handshake, OpenSSL сам соберёт chain leaf → sub → root.
+# См. backend/certs/README.md.
+COPY certs/*.crt /usr/local/share/ca-certificates/
+RUN update-ca-certificates
 
 FROM build-deps AS prod-builder
 
@@ -90,7 +99,14 @@ RUN apt-get update \
         libjpeg62-turbo \
         zlib1g \
         libwebp7 \
+        ca-certificates \
     && rm -rf /var/lib/apt/lists/*
+
+# Российские доверенные CA (Минцифры) — см. комментарий в runtime-base выше
+# и backend/certs/README.md. Без этого MAX Bot API и другие российские сервисы
+# падают с CERTIFICATE_VERIFY_FAILED.
+COPY certs/*.crt /usr/local/share/ca-certificates/
+RUN update-ca-certificates
 
 COPY --from=prod-builder /install /usr/local
 

@@ -634,6 +634,18 @@ async def _ingest_message(
         except Exception as exc:
             logger.warning("helpdesk.ingress.notify_email_failed", error=str(exc))
 
+        # MAX-messenger уведомление в общий чат поддержки (best-effort, через
+        # ``messenger_outbox``). Только при включённом канале. Аналогично
+        # email-уведомлению: только для новых тикетов, не для ответов.
+        try:
+            from app.services.helpdesk.notifications import (
+                notify_ticket_created_max,
+            )
+
+            await notify_ticket_created_max(db, ticket=ticket, first_message=message)
+        except Exception as exc:
+            logger.warning("helpdesk.ingress.notify_max_failed", error=str(exc))
+
 
 async def _match_ticket(
     db: AsyncSession,

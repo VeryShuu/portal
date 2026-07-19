@@ -23,10 +23,29 @@ let _redirectingOnExpiry = false
 // `/api/v1/auth/login` (Kerberos/Keycloak) бессмысленно — он должен вернуться
 // на форму `/auth/local`. Стор обновляет это значение при каждой загрузке
 // пользователя; на клир НЕ сбрасываем, чтобы на момент 401 знать тип сессии.
-let _sessionAuthSource: 'keycloak' | 'local' = 'keycloak'
+//
+// Холодный старт (ADR-036 п.7): до того, как стор успеет загрузить пользователя,
+// `_sessionAuthSource` инициализируется из бэкенд-управляемой cookie
+// `portal_auth_method`, которую бэкенд ставит при login/callback (см.
+// `_helpers._build_session_cookie_response` и `local.local_login`). Без этого
+// дефолт `'keycloak'` заставил бы локального юзера уйти на SSO при истечении
+// Redis-сессии на новой вкладке. Cookie — только маркер, без PII.
+const LAST_AUTH_METHOD_COOKIE = 'portal_auth_method'
+
+function _readAuthSourceFromCookie(): 'keycloak' | 'local' {
+  return readCookie(LAST_AUTH_METHOD_COOKIE) === 'local' ? 'local' : 'keycloak'
+}
+
+let _sessionAuthSource: 'keycloak' | 'local' = _readAuthSourceFromCookie()
 
 export function setSessionAuthSource(source: string | null | undefined): void {
   _sessionAuthSource = source === 'local' ? 'local' : 'keycloak'
+}
+
+// Геттер нужен стору (`redirectToSSO`, `logout`) — переменная модуля приватная.
+// Не экспортируем саму переменную, чтобы случайно не мутировать её снаружи.
+export function getSessionAuthSource(): 'keycloak' | 'local' {
+  return _sessionAuthSource
 }
 
 // Cross-tab redirect-guard: при массовом 401 (рестарт Redis, сбой Keycloak)

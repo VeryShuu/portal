@@ -116,6 +116,23 @@ class TestBuildSessionCookieResponse:
         set_cookie = resp.headers.get("set-cookie", "")
         assert "portal_session=my-session-id" in set_cookie or "portal_session" in set_cookie
 
+    def test_sets_last_auth_method_keycloak_cookie(self):
+        """ADR-036 п.7: OIDC-логин маркирует способ входа как 'keycloak'.
+
+        Фронт читает её на холодном старте, чтобы при истечении сессии уйти на
+        корректный экран входа (а не на /auth/local для keycloak-юзера).
+        """
+        from app.api.auth import _build_session_cookie_response
+
+        resp = _build_session_cookie_response("/", "sid")
+        # Cookie читается фронтендом через document.cookie → НЕ HttpOnly.
+        set_cookie_headers = resp.headers.getlist("set-cookie")
+        method_cookie = [h for h in set_cookie_headers if h.startswith("portal_auth_method=")]
+        assert method_cookie, "portal_auth_method cookie должна ставиться при OIDC-логине"
+        assert "portal_auth_method=keycloak" in method_cookie[0]
+        # httponly флаг не должен присутствовать (фронт читает напрямую).
+        assert "httponly" not in method_cookie[0].lower()
+
 
 # ── _resolve_id_token_nonce ───────────────────────────────────────────────────
 
@@ -185,6 +202,59 @@ class TestAuthConfig:
         resp = await client.get("/api/v1/auth/config")
         assert resp.status_code == 200
 
+    @pytest.mark.asyncio
+    async def test_last_auth_method_null_when_no_cookie(self, app):
+        """ADR-036 п.7: нет cookie `portal_auth_method` → last_auth_method=null
+        (новое устройство / чистый браузер; фронт остаётся на дефолте keycloak)."""
+        from httpx import ASGITransport, AsyncClient
+
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            resp = await ac.get("/api/v1/auth/config")
+        assert resp.status_code == 200
+        assert resp.json()["last_auth_method"] is None
+
+    @pytest.mark.asyncio
+    async def test_last_auth_method_local_from_cookie(self, app):
+        """Cookie `portal_auth_method=local` отражается в ответе /auth/config —
+        фронт использует это на холодном старте, чтобы знать тип прошлой сессии."""
+        from httpx import ASGITransport, AsyncClient
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://test",
+            cookies={"portal_auth_method": "local"},
+        ) as ac:
+            resp = await ac.get("/api/v1/auth/config")
+        assert resp.status_code == 200
+        assert resp.json()["last_auth_method"] == "local"
+
+    @pytest.mark.asyncio
+    async def test_last_auth_method_keycloak_from_cookie(self, app):
+        from httpx import ASGITransport, AsyncClient
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://test",
+            cookies={"portal_auth_method": "keycloak"},
+        ) as ac:
+            resp = await ac.get("/api/v1/auth/config")
+        assert resp.status_code == 200
+        assert resp.json()["last_auth_method"] == "keycloak"
+
+    @pytest.mark.asyncio
+    async def test_last_auth_method_invalid_cookie_value_returns_null(self, app):
+        """Подделанное/битое значение cookie не должно влиять на контракт."""
+        from httpx import ASGITransport, AsyncClient
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://test",
+            cookies={"portal_auth_method": "evil"},
+        ) as ac:
+            resp = await ac.get("/api/v1/auth/config")
+        assert resp.status_code == 200
+        assert resp.json()["last_auth_method"] is None
+
 
 # ── GET /auth/me ──────────────────────────────────────────────────────────────
 
@@ -250,6 +320,34 @@ class TestAuthLogout:
 
         assert resp.status_code == 302
         assert "local" in resp.headers["location"]
+
+    @pytest.mark.asyncio
+    async def test_logout_preserves_last_auth_method_cookie(self, authed_client_factory, app):
+        """ADR-036 п.7: logout удаляет только portal_session, но НЕ portal_auth_method.
+
+        Маркер способа входа должен пережить logout, чтобы после logout локальный
+        юзер при следующем входе снова попал на /auth/local (а не на SSO).
+        """
+        ac, _user = authed_client_factory(role="reader", auth_source="local")
+
+        with (
+            patch(
+                "app.api.auth.logout.get_session_from_request",
+                new=AsyncMock(return_value={"auth_source": "local"}),
+            ),
+            patch("app.api.auth.logout.delete_session", new=AsyncMock()),
+            patch("app.api.auth.logout.push_audit_event", new=AsyncMock()),
+        ):
+            async with ac:
+                resp = await ac.post("/api/v1/auth/logout", follow_redirects=False)
+
+        # Ни одна Set-Cookie не должна удалять portal_auth_method
+        # (delete_cookie шлёт 'portal_auth_method=; Max-Age=0; ...').
+        set_cookie_headers = resp.headers.get_list("set-cookie")
+        for header in set_cookie_headers:
+            assert (
+                not header.startswith("portal_auth_method=") or "max-age=0" not in header.lower()
+            ), f"portal_auth_method не должна удаляться при logout, получено: {header}"
 
     @pytest.mark.asyncio
     async def test_clears_session_cookie(self, authed_client_factory):
@@ -400,6 +498,61 @@ class TestLocalLogin:
         assert resp.json()["ok"] is True
         set_cookie = resp.headers.get("set-cookie", "")
         assert "portal_session" in set_cookie
+
+    @pytest.mark.asyncio
+    async def test_successful_login_sets_last_auth_method_cookie(self, client, app):
+        """ADR-036 п.7: локальный логин маркирует cookie portal_auth_method=local.
+
+        Без этого фронт на холодном старте не знает тип прошлой сессии и при
+        истечении Redis-сессии редиректит локального юзера на Keycloak SSO.
+        """
+        from app.api.deps import get_db
+
+        fake_user = SimpleNamespace(
+            id=uuid.uuid4(),
+            email="user@test.local",
+            auth_source="local",
+            password_hash="hashed",
+        )
+
+        db = MagicMock()
+        result = MagicMock()
+        result.scalar_one_or_none.return_value = fake_user
+        db.execute = AsyncMock(return_value=result)
+        db.commit = AsyncMock()
+
+        async def _fake_db():
+            return db
+
+        app.dependency_overrides[get_db] = _fake_db
+
+        try:
+            with patch("app.api.auth.local.settings") as mock_settings:
+                mock_settings.local_auth_enabled = True
+                mock_settings.is_production = False
+                with (
+                    patch(
+                        "app.api.auth.local.verify_password_async", new=AsyncMock(return_value=True)
+                    ),
+                    patch("app.api.auth.local.save_session", new=AsyncMock()),
+                    patch("app.api.auth.local.push_audit_event", new=AsyncMock()),
+                ):
+                    resp = await client.post(
+                        "/api/v1/auth/local/login",
+                        json={"email": "user@test.local", "password": "correct"},
+                    )
+        finally:
+            app.dependency_overrides.pop(get_db, None)
+
+        assert resp.status_code == 200
+        set_cookie_headers = resp.headers.get_list("set-cookie")
+        method_cookie = [h for h in set_cookie_headers if h.startswith("portal_auth_method=")]
+        assert method_cookie, "portal_auth_method должна ставиться при локальном логине"
+        assert "portal_auth_method=local" in method_cookie[0]
+        # Фронт читает через document.cookie → НЕ HttpOnly.
+        assert "httponly" not in method_cookie[0].lower()
+        # Долгоживущая (30 дней) — иначе знание теряется между сессиями.
+        assert "max-age=2592000" in method_cookie[0]
 
 
 # ── POST /auth/refresh ────────────────────────────────────────────────────────

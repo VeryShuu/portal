@@ -27,8 +27,8 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
-    text,
 )
+from sqlalchemy import text as sql_text
 from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -52,26 +52,26 @@ class HelpdeskTicket(Base):
         Index(
             "ix_helpdesk_tickets_assignee",
             "assignee_user_id",
-            postgresql_where=text("assignee_user_id IS NOT NULL"),
+            postgresql_where=sql_text("assignee_user_id IS NOT NULL"),
         ),
         Index(
             "ix_helpdesk_tickets_requester",
             "requester_user_id",
-            postgresql_where=text("requester_user_id IS NOT NULL"),
+            postgresql_where=sql_text("requester_user_id IS NOT NULL"),
         ),
-        Index("ix_helpdesk_tickets_email", text("LOWER(requester_email)")),
+        Index("ix_helpdesk_tickets_email", sql_text("LOWER(requester_email)")),
         Index("ix_helpdesk_tickets_last_activity", "last_activity_at", postgresql_using="btree"),
         Index(
             "ix_helpdesk_tickets_open_list",
             "status",
             "last_activity_at",
-            postgresql_where=text("status IN ('new','open','pending')"),
+            postgresql_where=sql_text("status IN ('new','open','pending')"),
             postgresql_using="btree",
         ),
         Index(
             "ix_helpdesk_tickets_ref_archive",
             "references_archived_ticket_number",
-            postgresql_where=text("references_archived_ticket_number IS NOT NULL"),
+            postgresql_where=sql_text("references_archived_ticket_number IS NOT NULL"),
         ),
         # Полнотекстовый поиск (миграция 078): tsvector over (subject + description).
         # Запрос — websearch_to_tsquery('russian_hunspell', q) @@ search_tsvector.
@@ -79,7 +79,7 @@ class HelpdeskTicket(Base):
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+        UUID(as_uuid=True), primary_key=True, server_default=sql_text("gen_random_uuid()")
     )
     number: Mapped[int] = mapped_column(
         BigInteger,
@@ -90,7 +90,7 @@ class HelpdeskTicket(Base):
     subject: Mapped[str] = mapped_column(String(500), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
     description_html: Mapped[str | None] = mapped_column(Text, nullable=True)
-    status: Mapped[str] = mapped_column(String(20), nullable=False, server_default=text("'new'"))
+    status: Mapped[str] = mapped_column(String(20), nullable=False, server_default=sql_text("'new'"))
     source: Mapped[str] = mapped_column(String(20), nullable=False)
 
     requester_user_id: Mapped[uuid.UUID | None] = mapped_column(
@@ -108,17 +108,17 @@ class HelpdeskTicket(Base):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
     last_activity_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=text("NOW()")
+        DateTime(timezone=True), nullable=False, server_default=sql_text("NOW()")
     )
     references_archived_ticket_number: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=text("NOW()")
+        DateTime(timezone=True), nullable=False, server_default=sql_text("NOW()")
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
-        server_default=text("NOW()"),
+        server_default=sql_text("NOW()"),
         onupdate=lambda: datetime.now(UTC),
     )
     # Полнотекстовый поиск (миграция 078): generated STORED tsvector over
@@ -167,7 +167,7 @@ class HelpdeskMessage(Base):
             "uq_helpdesk_messages_email_msg_id",
             "email_message_id",
             unique=True,
-            postgresql_where=text("email_message_id IS NOT NULL"),
+            postgresql_where=sql_text("email_message_id IS NOT NULL"),
         ),
         Index("ix_helpdesk_messages_ticket", "ticket_id", "created_at"),
         # Полнотекстовый поиск по телам ответов (миграция 078).
@@ -175,7 +175,7 @@ class HelpdeskMessage(Base):
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+        UUID(as_uuid=True), primary_key=True, server_default=sql_text("gen_random_uuid()")
     )
     ticket_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
@@ -189,7 +189,7 @@ class HelpdeskMessage(Base):
     author_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     direction: Mapped[str] = mapped_column(String(10), nullable=False)
     visibility: Mapped[str] = mapped_column(
-        String(10), nullable=False, server_default=text("'public'")
+        String(10), nullable=False, server_default=sql_text("'public'")
     )
     body_text: Mapped[str] = mapped_column(Text, nullable=False)
     body_html: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -204,7 +204,7 @@ class HelpdeskMessage(Base):
     email_message_id: Mapped[str | None] = mapped_column(String(998), nullable=True)
     in_reply_to: Mapped[str | None] = mapped_column(String(998), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=text("NOW()")
+        DateTime(timezone=True), nullable=False, server_default=sql_text("NOW()")
     )
 
     ticket: Mapped[HelpdeskTicket] = relationship(
@@ -231,7 +231,7 @@ class HelpdeskAttachment(Base):
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+        UUID(as_uuid=True), primary_key=True, server_default=sql_text("gen_random_uuid()")
     )
     ticket_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
@@ -253,14 +253,14 @@ class HelpdeskAttachment(Base):
     # ``/api/v1/helpdesk/attachments/{id}``. Обычные вложения (``is_inline=False``,
     # ``content_id IS NULL``) уходят как ``Content-Disposition: attachment``.
     is_inline: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, server_default=text("false")
+        Boolean, nullable=False, server_default=sql_text("false")
     )
     content_id: Mapped[str | None] = mapped_column(String(320), nullable=True)
     uploaded_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=text("NOW()")
+        DateTime(timezone=True), nullable=False, server_default=sql_text("NOW()")
     )
 
     message: Mapped[HelpdeskMessage | None] = relationship(
@@ -287,10 +287,10 @@ class HelpdeskAgent(Base):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
     added_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=text("NOW()")
+        DateTime(timezone=True), nullable=False, server_default=sql_text("NOW()")
     )
     notify_new: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, server_default=text("TRUE"), default=True
+        Boolean, nullable=False, server_default=sql_text("TRUE"), default=True
     )
 
     user: Mapped[User] = relationship("User", foreign_keys=[user_id], lazy="select")
@@ -317,7 +317,7 @@ class HelpdeskEmailLog(Base):
         nullable=True,
     )
     received_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=text("NOW()")
+        DateTime(timezone=True), nullable=False, server_default=sql_text("NOW()")
     )
     status: Mapped[str] = mapped_column(String(20), nullable=False)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -332,20 +332,20 @@ class HelpdeskMailboxSettings(Base):
 
     id: Mapped[int] = mapped_column(SmallInteger, primary_key=True, default=1)
     imap_host: Mapped[str] = mapped_column(String(255), nullable=False)
-    imap_port: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("993"))
+    imap_port: Mapped[int] = mapped_column(Integer, nullable=False, server_default=sql_text("993"))
     imap_username: Mapped[str] = mapped_column(String(255), nullable=False)
     imap_password_enc: Mapped[str] = mapped_column(Text, nullable=False)
     imap_use_ssl: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, server_default=text("TRUE"), default=True
+        Boolean, nullable=False, server_default=sql_text("TRUE"), default=True
     )
     imap_folder: Mapped[str] = mapped_column(
-        String(255), nullable=False, server_default=text("'INBOX'"), default="INBOX"
+        String(255), nullable=False, server_default=sql_text("'INBOX'"), default="INBOX"
     )
     poll_interval_seconds: Mapped[int] = mapped_column(
-        Integer, nullable=False, server_default=text("60"), default=60
+        Integer, nullable=False, server_default=sql_text("60"), default=60
     )
     delete_after_fetch: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, server_default=text("FALSE"), default=False
+        Boolean, nullable=False, server_default=sql_text("FALSE"), default=False
     )
     support_address: Mapped[str] = mapped_column(String(320), nullable=False)
     support_reply_to: Mapped[str | None] = mapped_column(String(320), nullable=True)
@@ -353,12 +353,12 @@ class HelpdeskMailboxSettings(Base):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=text("NOW()")
+        DateTime(timezone=True), nullable=False, server_default=sql_text("NOW()")
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
-        server_default=text("NOW()"),
+        server_default=sql_text("NOW()"),
         onupdate=lambda: datetime.now(UTC),
     )
 
@@ -387,7 +387,7 @@ class HelpdeskTicketArchive(Base):
     closed_by_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     payload: Mapped[dict] = mapped_column(JSONB, nullable=False)
     archived_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=text("NOW()")
+        DateTime(timezone=True), nullable=False, server_default=sql_text("NOW()")
     )
 
 
@@ -406,33 +406,124 @@ class HelpdeskDigestSettings(Base):
 
     id: Mapped[int] = mapped_column(SmallInteger, primary_key=True, default=1)
     enabled: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, server_default=text("TRUE"), default=True
+        Boolean, nullable=False, server_default=sql_text("TRUE"), default=True
     )
     digest_hour: Mapped[int] = mapped_column(
-        SmallInteger, nullable=False, server_default=text("8"), default=8
+        SmallInteger, nullable=False, server_default=sql_text("8"), default=8
     )
     digest_minute: Mapped[int] = mapped_column(
-        SmallInteger, nullable=False, server_default=text("0"), default=0
+        SmallInteger, nullable=False, server_default=sql_text("0"), default=0
     )
     digest_schedule: Mapped[str] = mapped_column(
-        String(16), nullable=False, server_default=text("'weekdays'"), default="weekdays"
+        String(16), nullable=False, server_default=sql_text("'weekdays'"), default="weekdays"
     )
     updated_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=text("NOW()")
+        DateTime(timezone=True), nullable=False, server_default=sql_text("NOW()")
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
-        server_default=text("NOW()"),
+        server_default=sql_text("NOW()"),
         onupdate=lambda: datetime.now(UTC),
     )
 
     updated_by: Mapped[User | None] = relationship(
         "User", foreign_keys=[updated_by_user_id], lazy="select"
     )
+
+
+class HelpdeskMaxBotSettings(Base):
+    """Singleton row (``id = 1``) holding the MAX-messenger bot configuration
+    for helpdesk notifications (new tickets → common support chat).
+
+    ``bot_token_enc`` is encrypted at rest through ``app.core.secret_crypto``
+    (Fernet derived from ``SECRET_KEY``); the plaintext is never returned by
+    the API (write-only, like ``HelpdeskMailboxSettings.imap_password_enc``).
+
+    By design (mirrors :class:`HelpdeskDigestSettings`, migration 076): every
+    column is either nullable or has a DEFAULT, the row is seeded by migration
+    081 with ``enabled=False``, and the admin flips the switch in the Helpdesk
+    tab after entering the token and chat_id. No separate ``configured`` state
+    is tracked — ``enabled=False`` until both token and chat_id are provided.
+    """
+
+    __tablename__ = "helpdesk_max_bot_settings"
+
+    id: Mapped[int] = mapped_column(SmallInteger, primary_key=True, default=1)
+    enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=sql_text("FALSE"), default=False
+    )
+    bot_token_enc: Mapped[str | None] = mapped_column(Text, nullable=True)
+    chat_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    updated_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=sql_text("NOW()")
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=sql_text("NOW()"),
+        onupdate=lambda: datetime.now(UTC),
+    )
+
+    updated_by: Mapped[User | None] = relationship(
+        "User", foreign_keys=[updated_by_user_id], lazy="select"
+    )
+
+
+class MessengerOutbox(Base):
+    """Transactional outbox for outbound messenger notifications (mirror of
+    :class:`email_outbox` for non-email channels).
+
+    ``provider`` reserves room for future channels (Telegram/Slack); only
+    ``'max'`` is implemented. CRUD is done through raw SQL in
+    :mod:`app.services.messenger_outbox` (FOR UPDATE SKIP LOCKED, retry/backoff);
+    this ORM mapping exists only for metadata introspection and typing.
+
+    ``payload`` (JSONB) stores provider-specific content: for MAX it carries
+    ``attachments`` (inline-keyboard with a "open on portal" URL button) and
+    any extra metadata. ``text`` is the message body itself.
+    """
+
+    __tablename__ = "messenger_outbox"
+    __table_args__ = (
+        Index(
+            "ix_messenger_outbox_pending",
+            "next_attempt_at",
+            postgresql_where=sql_text("status = 'PENDING'"),
+        ),
+        Index(
+            "ix_messenger_outbox_stale",
+            "updated_at",
+            postgresql_where=sql_text("status = 'SENDING'"),
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=sql_text("gen_random_uuid()")
+    )
+    provider: Mapped[str] = mapped_column(String(32), nullable=False)
+    chat_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    payload: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sql_text("'{}'::jsonb"))
+    status: Mapped[str] = mapped_column(String(16), nullable=False, server_default=sql_text("'PENDING'"))
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, server_default=sql_text("0"))
+    max_attempts: Mapped[int] = mapped_column(Integer, nullable=False, server_default=sql_text("6"))
+    next_attempt_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=sql_text("NOW()"))
+    last_error_type: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    last_error_class: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    related_resource_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    related_resource_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=sql_text("NOW()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=sql_text("NOW()"), onupdate=lambda: datetime.now(UTC))
 
 
 class HelpdeskTicketRead(Base):
@@ -465,7 +556,7 @@ class HelpdeskTicketRead(Base):
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+        UUID(as_uuid=True), primary_key=True, server_default=sql_text("gen_random_uuid()")
     )
     ticket_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
@@ -476,8 +567,8 @@ class HelpdeskTicketRead(Base):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
     last_seen_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=text("NOW()")
+        DateTime(timezone=True), nullable=False, server_default=sql_text("NOW()")
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=text("NOW()")
+        DateTime(timezone=True), nullable=False, server_default=sql_text("NOW()")
     )

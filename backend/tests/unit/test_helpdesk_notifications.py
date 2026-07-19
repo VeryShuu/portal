@@ -32,6 +32,7 @@ def _ticket(
     assignee_user_id: uuid.UUID | None = None,
     requester_name: str | None = None,
     requester_email: str | None = None,
+    source: str = "web",
 ) -> SimpleNamespace:
     """Билет как SimpleNamespace с ``ticket_number`` property-эмуляцией."""
     return SimpleNamespace(
@@ -43,6 +44,7 @@ def _ticket(
         assignee_user_id=assignee_user_id,
         requester_name=requester_name,
         requester_email=requester_email,
+        source=source,
     )
 
 
@@ -535,3 +537,214 @@ class TestBuildNewTicketAgentSubject:
         assert "[#TKT-42]" in subject
         assert "Новая заявка" in subject
         assert "Сломался принтер" in subject
+
+
+# ── MAX-messenger уведомление о новой заявке ─────────────────────────────────
+
+
+def _db_with_max_settings(settings_row: object | None) -> MagicMock:
+    """Заглушка сессии: первый execute возвращает HelpdeskMaxBotSettings (через
+    ``.scalars().one_or_none()``), последующие — для enqueue."""
+    db = MagicMock()
+    result = MagicMock()
+    result.scalars.return_value.one_or_none.return_value = settings_row
+    db.execute = AsyncMock(return_value=result)
+    db.commit = AsyncMock()
+    return db
+
+
+def _max_settings(*, enabled=True, token_enc="enc-token", chat_id="-100123456"):
+    return SimpleNamespace(
+        enabled=enabled,
+        bot_token_enc=token_enc,
+        chat_id=chat_id,
+    )
+
+
+class TestNotifyTicketCreatedMax:
+    """``notify_ticket_created_max`` — отправка MAX-messenger уведомления в общий
+    чат о новой заявке через ``messenger_outbox`` (provider='max')."""
+
+    @pytest.mark.asyncio
+    async def test_disabled_returns_zero(self):
+        """MAX выключен → graceful no-op, no enqueue, no commit."""
+        db = _db_with_max_settings(_max_settings(enabled=False))
+        ticket = _ticket(number=5, subject="Тема")
+        with patch.object(notif, "enqueue_messenger_message", new=AsyncMock()) as enqueue:
+            sent = await notif.notify_ticket_created_max(
+                db, ticket=ticket, first_message=_first_message()
+            )
+        assert sent == 0
+        enqueue.assert_not_awaited()
+        db.commit.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_no_settings_row_returns_zero(self):
+        db = _db_with_max_settings(None)
+        ticket = _ticket(number=5, subject="Тема")
+        with patch.object(notif, "enqueue_messenger_message", new=AsyncMock()) as enqueue:
+            sent = await notif.notify_ticket_created_max(
+                db, ticket=ticket, first_message=_first_message()
+            )
+        assert sent == 0
+        enqueue.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_misconfigured_returns_zero(self):
+        """enabled=True, но нет токена/chat_id → no-op (защита от ручного
+        редактирования БД)."""
+        db = _db_with_max_settings(_max_settings(enabled=True, token_enc=None))
+        ticket = _ticket(number=5, subject="Тема")
+        with patch.object(notif, "enqueue_messenger_message", new=AsyncMock()) as enqueue:
+            sent = await notif.notify_ticket_created_max(
+                db, ticket=ticket, first_message=_first_message()
+            )
+        assert sent == 0
+        enqueue.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_enabled_enqueues_one_message(self):
+        db = _db_with_max_settings(_max_settings())
+        ticket = _ticket(number=77, subject="Принтер не работает")
+        with (
+            _patch_resolve_requester(_requester_user(full_name="Иван Петров")),
+            patch.object(notif, "enqueue_messenger_message", new=AsyncMock()) as enqueue,
+        ):
+            sent = await notif.notify_ticket_created_max(
+                db, ticket=ticket, first_message=_first_message(text="Сломался")
+            )
+        assert sent == 1
+        enqueue.assert_awaited_once()
+        db.commit.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_uses_max_provider_and_chat_id(self):
+        db = _db_with_max_settings(_max_settings(chat_id="-100"))
+        ticket = _ticket(number=1)
+        with (
+            _patch_resolve_requester(_requester_user()),
+            patch.object(notif, "enqueue_messenger_message", new=AsyncMock()) as enqueue,
+        ):
+            await notif.notify_ticket_created_max(
+                db, ticket=ticket, first_message=_first_message()
+            )
+        kwargs = enqueue.await_args.kwargs
+        assert kwargs["provider"] == "max"
+        assert kwargs["chat_id"] == "-100"
+
+    @pytest.mark.asyncio
+    async def test_text_contains_ticket_number_and_subject(self):
+        db = _db_with_max_settings(_max_settings())
+        ticket = _ticket(number=88, subject="Не работает VPN")
+        with (
+            _patch_resolve_requester(_requester_user()),
+            patch.object(notif, "enqueue_messenger_message", new=AsyncMock()) as enqueue,
+        ):
+            await notif.notify_ticket_created_max(
+                db, ticket=ticket, first_message=_first_message(text="Подключиться не могу")
+            )
+        text = enqueue.await_args.kwargs["text"]
+        assert "#TKT-88" in text
+        assert "Не работает VPN" in text
+        # Превью первого сообщения тоже попадает в текст.
+        assert "Подключиться не могу" in text
+
+    @pytest.mark.asyncio
+    async def test_text_contains_requester_label(self):
+        db = _db_with_max_settings(_max_settings())
+        ticket = _ticket(number=1, source="email")
+        with (
+            _patch_resolve_requester(_requester_user(full_name="Пётр Сидоров")),
+            patch.object(notif, "enqueue_messenger_message", new=AsyncMock()) as enqueue,
+        ):
+            await notif.notify_ticket_created_max(
+                db, ticket=ticket, first_message=_first_message()
+            )
+        text = enqueue.await_args.kwargs["text"]
+        assert "Пётр Сидоров" in text
+        assert "email" in text  # source label
+
+    @pytest.mark.asyncio
+    async def test_payload_has_inline_keyboard_with_portal_url(self):
+        """Payload включает attachments с inline_keyboard — кнопка-ссылка «Открыть
+        на портале» ведёт на карточку тикета.
+
+        Формат MAX (см. ``max-bot-api-client-ts/src/.../attachment.ts``):
+        ``payload.buttons`` (НЕ ``rows``) — массив строк, каждая строка — массив
+        кнопок. Кнопка-ссылка: ``{"type": "link", "text", "url"}``.
+        """
+        db = _db_with_max_settings(_max_settings())
+        ticket = _ticket(number=99)
+        with (
+            _patch_resolve_requester(_requester_user()),
+            patch.object(notif, "enqueue_messenger_message", new=AsyncMock()) as enqueue,
+        ):
+            await notif.notify_ticket_created_max(
+                db, ticket=ticket, first_message=_first_message()
+            )
+        payload = enqueue.await_args.kwargs["payload"]
+        assert "attachments" in payload
+        kb = payload["attachments"][0]
+        assert kb["type"] == "inline_keyboard"
+        # Ключевое поле MAX — ``buttons``, не ``rows``.
+        assert "buttons" in kb["payload"]
+        assert "rows" not in kb["payload"]
+        button = kb["payload"]["buttons"][0][0]
+        assert button["type"] == "link"
+        assert button["text"] == "Открыть на портале"
+        assert "/helpdesk/tickets/" in button["url"]
+        assert str(ticket.id) in button["url"]
+
+    @pytest.mark.asyncio
+    async def test_related_resource_is_ticket(self):
+        db = _db_with_max_settings(_max_settings())
+        ticket = _ticket(number=42)
+        with (
+            _patch_resolve_requester(_requester_user()),
+            patch.object(notif, "enqueue_messenger_message", new=AsyncMock()) as enqueue,
+        ):
+            await notif.notify_ticket_created_max(
+                db, ticket=ticket, first_message=_first_message()
+            )
+        kwargs = enqueue.await_args.kwargs
+        assert kwargs["related_resource_type"] == "helpdesk_ticket"
+        assert kwargs["related_resource_id"] == ticket.id
+
+    @pytest.mark.asyncio
+    async def test_guest_requester_uses_ticket_snapshot(self):
+        """Если ``resolve_requester_user`` возвращает None (гость без аккаунта),
+        подпись заявителя берётся из снимка тикета (requester_email/name)."""
+        db = _db_with_max_settings(_max_settings())
+        ticket = _ticket(
+            number=11,
+            requester_email="guest@external.com",
+            requester_name="Гость",
+        )
+        with (
+            _patch_resolve_requester(None),
+            patch.object(notif, "enqueue_messenger_message", new=AsyncMock()) as enqueue,
+        ):
+            await notif.notify_ticket_created_max(
+                db, ticket=ticket, first_message=_first_message()
+            )
+        text = enqueue.await_args.kwargs["text"]
+        assert "guest@external.com" in text
+
+    @pytest.mark.asyncio
+    async def test_long_body_preview_is_truncated(self):
+        """Превью длинного текста обрезается (501+ символов → многоточие)."""
+        long_text = "а" * 800
+        db = _db_with_max_settings(_max_settings())
+        ticket = _ticket(number=1)
+        with (
+            _patch_resolve_requester(_requester_user()),
+            patch.object(notif, "enqueue_messenger_message", new=AsyncMock()) as enqueue,
+        ):
+            await notif.notify_ticket_created_max(
+                db, ticket=ticket, first_message=_first_message(text=long_text)
+            )
+        text = enqueue.await_args.kwargs["text"]
+        # Превью не длиннее 501 символа (500 + многоточие).
+        preview_line = text.split("\n")[-1]
+        assert len(preview_line) <= 501
+        assert preview_line.endswith("…")

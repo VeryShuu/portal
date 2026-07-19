@@ -25,13 +25,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.constants import HELPDESK_REOPEN_WINDOW_DAYS
 from app.core.logging import get_logger
-from app.models.helpdesk import HelpdeskAgent, HelpdeskTicket
+from app.models.helpdesk import HelpdeskAgent, HelpdeskMaxBotSettings, HelpdeskTicket
 from app.models.user import User
 from app.services.email_outbox import KIND_GENERIC, enqueue_outbox_email
 from app.services.helpdesk.email_template import (
     render_new_ticket_agent_email,
     render_system_email,
 )
+from app.services.messenger_outbox import PROVIDER_MAX, enqueue_messenger_message
 from app.services.notifications import create_notification
 
 logger = get_logger(__name__)
@@ -402,3 +403,188 @@ async def notify_ticket_created_email(
     sent = len(agents)
     logger.info("helpdesk.notify_created_email_sent", ticket_id=str(ticket.id), sent=sent)
     return sent
+
+
+# ---------------------------------------------------------------------------
+# MAX-messenger уведомление о новой заявке в общий чат поддержки.
+# ---------------------------------------------------------------------------
+
+
+def _truncate_preview(text: str | None, *, limit: int = 500) -> str:
+    """Сжать длинный текст заявки до ``limit`` символов для превью в чате.
+
+    MAX ограничивает тело сообщения ~4 KB, но для читаемости в чате поддержки
+    длинные описания урезаются с многоточием. ``text`` проходит через
+    ``body_text`` (plain, без HTML-тегов) —_STRIP-эскейпить не нужно,
+    markdown-формат и без того экранирует спецсимволы.
+    """
+    if not text:
+        return ""
+    text = text.strip()
+    if len(text) <= limit:
+        return text
+    return text[:limit].rstrip() + "…"
+
+
+def _build_ticket_url(ticket: HelpdeskTicket) -> str:
+    """Абсолютный URL карточки тикета для inline-кнопки «Открыть на портале».
+
+    Берёт ``portal_base_url`` из SystemSettings (обязан включать scheme — см.
+    AGENTS.md gotcha). Если настройка пустая, fallback на относительный путь
+    ``/helpdesk/tickets/{id}`` (MAX в этом случае не сделает ссылку кликабельной,
+    но отправка не упадёт).
+    """
+    ticket_path = f"/helpdesk/tickets/{ticket.id}"
+    try:
+        from app.core.system_config import load_system_settings
+
+        base = (load_system_settings().portal_base_url or "").rstrip("/")
+        if base:
+            return f"{base}{ticket_path}"
+    except Exception:  # best-effort: конфиг может быть не инициализирован в тестах
+        pass
+    return ticket_path
+
+
+def _build_max_inline_keyboard(url: str) -> list[dict]:
+    """Собрать MAX ``inline_keyboard``-attachment с одной кнопкой-ссылкой.
+
+    Формат (согласно официальному TypeScript-клиенту ``max-bot-api-client-ts``,
+    файл ``src/core/network/api/types/attachment.ts``):
+
+    ::
+
+        InlineKeyboardAttachment = {
+            "type": "inline_keyboard",
+            "payload": {
+                "buttons": Button[][]   # array of rows; row = array of Button
+            }
+        }
+        LinkButton = {"type": "link", "text": str, "url": str}
+
+    ВАЖНО: поле называется ``buttons`` (а не ``rows``), и кнопка-ссылка имеет
+    ``type: "link"`` (а не ``style``/``url`` на верхнем уровне). Другие типы
+    кнопок: ``callback`` (с ``payload`` и опциональным ``intent``),
+    ``request_contact``, ``request_geo_location``, ``chat``.
+    """
+    return [
+        {
+            "type": "inline_keyboard",
+            "payload": {
+                "buttons": [
+                    [
+                        {
+                            "type": "link",
+                            "text": "Открыть на портале",
+                            "url": url,
+                        }
+                    ]
+                ]
+            },
+        }
+    ]
+
+
+async def _load_max_bot_settings(db: AsyncSession) -> HelpdeskMaxBotSettings | None:
+    """Singleton (id=1). Засевается миграцией 081 с enabled=False."""
+    res = await db.execute(
+        select(HelpdeskMaxBotSettings).where(HelpdeskMaxBotSettings.id == 1)
+    )
+    return res.scalars().one_or_none()
+
+
+async def notify_ticket_created_max(
+    db: AsyncSession,
+    *,
+    ticket: HelpdeskTicket,
+    first_message: object,
+) -> int:
+    """Отправить MAX-messenger уведомление о новой заявке в общий чат поддержки.
+
+    Best-effort: вызывается из роутера/ingress **после** commit бизнес-операции.
+    Сам делает ``db.commit()`` (уведомление — отдельная транзакция, outbox-
+    инвариант: запись коммитится атомарно с постановкой в очередь). Возвращает
+    1, если сообщение поставлено в ``messenger_outbox``, иначе 0 (graceful no-op:
+    MAX выключен, не настроен или нет первого сообщения).
+
+    Формат сообщения (markdown):
+        🆕 Новая заявка #TKT-123
+
+        Тема: <subject>
+        Заявитель: <ФИО или email>
+        Источник: веб / email
+
+        <превью тела первого сообщения, обрезанное до 500 символов>
+
+    Inline-кнопка «Открыть на портале» → абсолютный URL тикета. Контакты
+    заявителя берутся через ``resolve_requester_user`` (как в email-аналоге).
+    """
+    settings_row = await _load_max_bot_settings(db)
+    if settings_row is None or not settings_row.enabled:
+        return 0
+    if not settings_row.bot_token_enc or not settings_row.chat_id:
+        # enabled=True, но настройки неполные — не должно случиться через API
+        # (валидатор требует токен+chat_id при enabled), но это защита для
+        # ручного редактирования БД. Тихий no-op, чтобы не ронять создание тикета.
+        logger.warning(
+            "helpdesk.notify_created_max.misconfigured",
+            ticket_id=str(ticket.id),
+            enabled=settings_row.enabled,
+            has_token=bool(settings_row.bot_token_enc),
+            has_chat=bool(settings_row.chat_id),
+        )
+        return 0
+
+    # Резолвим пользователя-заявителя (ФИО/email — как в email-уведомлении).
+    from app.services.helpdesk.tickets import resolve_requester_user
+
+    requester = await resolve_requester_user(db, ticket=ticket)
+
+    # Отображаемое имя заявителя: ФИО → email → снимок из тикета.
+    if requester is not None and getattr(requester, "full_name", None):
+        requester_label = requester.full_name
+    elif requester is not None and getattr(requester, "email", None):
+        requester_label = requester.email
+    else:
+        requester_label = ticket.requester_email or (
+            ticket.requester_name or "—"
+        )
+
+    source_label = "веб" if ticket.source == "web" else "email"
+
+    # ``first_message`` — ORM HelpdeskMessage с body_text (plain). Через getattr
+    # для устойчивости к SimpleNamespace в тестах.
+    body_text = getattr(first_message, "body_text", None) or ""
+    preview = _truncate_preview(body_text)
+
+    lines = [
+        f"🆕 Новая заявка #{ticket.ticket_number}",
+        "",
+        f"Тема: {ticket.subject}",
+        f"Заявитель: {requester_label}",
+        f"Источник: {source_label}",
+    ]
+    if preview:
+        lines += ["", preview]
+    text = "\n".join(lines)
+
+    url = _build_ticket_url(ticket)
+    attachments = _build_max_inline_keyboard(url)
+
+    await enqueue_messenger_message(
+        db,
+        provider=PROVIDER_MAX,
+        chat_id=settings_row.chat_id,
+        text=text,
+        payload={"attachments": attachments, "format": "markdown"},
+        related_resource_type="helpdesk_ticket",
+        related_resource_id=ticket.id,
+    )
+
+    await db.commit()
+    logger.info(
+        "helpdesk.notify_created_max_enqueued",
+        ticket_id=str(ticket.id),
+        chat_id=settings_row.chat_id,
+    )
+    return 1

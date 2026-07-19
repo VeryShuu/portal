@@ -14,6 +14,8 @@ from app.core.config import get_settings
 from app.core.limiter import email_identifier
 from app.core.security import (
     DUMMY_HASH,
+    LAST_AUTH_METHOD_COOKIE,
+    LAST_AUTH_METHOD_TTL_SECONDS,
     SESSION_COOKIE_NAME,
     SESSION_TTL_SECONDS,
     generate_session_id,
@@ -118,12 +120,34 @@ async def local_login(
         samesite="lax",
         path="/",
     )
+    # ADR-036 п.7: бэкенд-управляемый маркер способа входа. Фронт читает его на
+    # холодном старте, чтобы при истечении Redis-сессии уйти на /auth/local, а
+    # не на Keycloak SSO. Переживает logout (см. logout.py — не удаляется).
+    resp.set_cookie(
+        key=LAST_AUTH_METHOD_COOKIE,
+        value="local",
+        max_age=LAST_AUTH_METHOD_TTL_SECONDS,
+        httponly=False,
+        secure=get_settings().is_production,
+        samesite="lax",
+        path="/",
+    )
     return resp
 
 
 @router.get("/config", summary="Конфигурация аутентификации (без авторизации)")
-async def auth_config() -> dict:
+async def auth_config(
+    request: Request,
+) -> dict:
+    # ADR-036 п.7: `last_auth_method` даёт фронту на холодном старте знать тип
+    # последнего входа — куда редиректить при истечении сессии. Читается из
+    # долгоживущей cookie `portal_auth_method`, которую бэкенд ставит на
+    # login/callback. Отсутствует (None) — у нового устройства/чистого браузера
+    # нет истории входа, фронт остаётся на дефолте keycloak.
+    raw = request.cookies.get(LAST_AUTH_METHOD_COOKIE)
+    last_auth_method: str | None = raw if raw in ("local", "keycloak") else None
     return {
         "local_auth_enabled": settings.local_auth_enabled,
         "keycloak_enabled": True,
+        "last_auth_method": last_auth_method,
     }

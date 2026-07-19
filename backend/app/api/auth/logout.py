@@ -48,6 +48,10 @@ async def logout(
         )
 
     redirect.delete_cookie(SESSION_COOKIE_NAME, path="/")
+    # Намеренно НЕ удаляем cookie `portal_auth_method` (ADR-036 п.7): она несёт
+    # знание о способе входа для UX корректного re-login — после logout локальный
+    # юзер должен снова попасть на /auth/local, а не на Keycloak SSO. Cookie
+    # переживает logout и обновляется только на следующем login/callback.
     return redirect
 
 

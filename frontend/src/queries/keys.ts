@@ -133,5 +133,6 @@ export const queryKeys = {
     inbox: (params?: Record<string, unknown>) => ['helpdesk', 'inbox', params ?? {}] as const,
     agentTicket: (id: string) => ['helpdesk', 'agent-ticket', id] as const,
     agentTicketCounts: () => ['helpdesk', 'agent-ticket-counts'] as const,
+    maxBot: () => ['helpdesk', 'max-bot'] as const,
   },
 } as const

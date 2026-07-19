@@ -9,6 +9,7 @@ vi.mock('../../src/api/index', () => ({
   api: vi.fn(),
   refreshAuth: vi.fn(() => Promise.resolve(true)),
   setSessionAuthSource: vi.fn(),
+  getSessionAuthSource: vi.fn(() => 'keycloak'),
   BASE_URL: '/api/v1',
 }))
 

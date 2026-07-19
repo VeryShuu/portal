@@ -132,6 +132,15 @@ async def create_ticket(
             ),
             context="ticket_created_email",
         )
+        # MAX-messenger уведомление в общий чат поддержки (best-effort, через
+        # ``messenger_outbox``). Только при включённом канале (см.
+        # HelpdeskMaxBotSettings.enabled) — иначе функция делает no-op.
+        await _try_notify(
+            notifications_service.notify_ticket_created_max(
+                db, ticket=ticket, first_message=first_message
+            ),
+            context="ticket_created_max",
+        )
     return ticket_to_out(ticket, requester_profile=build_requester_profile(user))
 
 

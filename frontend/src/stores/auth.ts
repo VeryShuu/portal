@@ -2,7 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, computed, onScopeDispose } from 'vue'
 import { fetchMe, type UserMe } from '../api/auth'
 import { fetchBootstrap } from '../api/bootstrap'
-import { api, refreshAuth, setSessionAuthSource } from '../api/index'
+import { api, getSessionAuthSource, refreshAuth, setSessionAuthSource } from '../api/index'
 
 export type LoadUserResult = 'ok' | 'unauthenticated' | 'network_error'
 
@@ -250,7 +250,13 @@ export const useAuthStore = defineStore('auth', () => {
     recent.push(now)
     _writeAttempts(recent)
     const params = _safeRedirectParam(redirectAfter)
-    window.location.href = `/api/v1/auth/login${params}`
+    // ADR-036 п.7: симметрично `_handle401` в api/index.ts — локальная сессия
+    // уходит на форму `/auth/local` (поддерживает ?redirect=), а не на Keycloak
+    // SSO, который для local-пользователя только зациклит вход. Источник истины
+    // — `getSessionAuthSource()`, который инициализируется из бэкенд-управляемой
+    // cookie `portal_auth_method` на холодном старте (см. api/index.ts).
+    const loginUrl = getSessionAuthSource() === 'local' ? '/auth/local' : '/api/v1/auth/login'
+    window.location.href = `${loginUrl}${params}`
   }
 
   // Грациозный re-login после истечения сессии (в отличие от loop_detected —
@@ -269,17 +275,18 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   function logout(): void {
+    // ADR-036 п.5/п.7: фиксируем тип сессии ДО очистки user.value — после
+    // logout локальный юзер должен вернуться на /auth/local (а не на SSO, где
+    // у него нет Keycloak-учётки). Бэкенд тоже умеет это (см. logout.py), но
+    // фронт не полагается на обработку 302 в ofetch — предсказуемо навигирует сам.
+    const wasLocal = user.value?.auth_source === 'local'
     user.value = null
     isHelpdeskAgent.value = false
     stopSilentRefresh()
     api('/auth/logout', { method: 'POST' }).finally(() => {
-      // Backend ответит 302 на /auth/error?reason=logged_out (Keycloak)
-      // или /auth/local?logged_out=1 (local). Браузер сам последует за редиректом
-      // потому что fetch с credentials прозрачно его обрабатывает (manual mode не используем).
-      // Однако ofetch получит финальный ответ и не выполнит навигацию. Поэтому
-      // вручную отправляем пользователя на страницу выхода в зависимости от auth_source —
-      // но user уже null, поэтому просто отправляем на /auth/error?reason=logged_out.
-      window.location.href = '/auth/error?reason=logged_out'
+      window.location.href = wasLocal
+        ? '/auth/local?logged_out=1'
+        : '/auth/error?reason=logged_out'
     })
   }
 

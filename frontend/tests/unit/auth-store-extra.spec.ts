@@ -15,6 +15,7 @@ vi.mock('../../src/api/index', () => ({
   api: vi.fn(() => Promise.resolve(undefined)),
   refreshAuth: vi.fn(() => Promise.resolve(true)),
   setSessionAuthSource: vi.fn(),
+  getSessionAuthSource: vi.fn(() => 'keycloak'),
 }))
 
 vi.mock('../../src/stores/branding', () => ({
@@ -120,14 +121,33 @@ describe('useAuthStore — extra branches', () => {
     expect(auth.backendDown).toBe(false)
   })
 
-  it('logout: clears user, stops timer, navigates to /auth/error', async () => {
+  it('logout: local user → navigates to /auth/local?logged_out=1', async () => {
+    // ADR-036 п.5/п.7: локальный юзер после logout должен вернуться на форму
+    // /auth/local, а не на экран «ошибка входа» — у него нет Keycloak-учётки.
     const { fetchMe } = await import('../../src/api/auth')
     vi.mocked(fetchMe).mockResolvedValueOnce(reader as any)
     const { api } = await import('../../src/api/index')
 
     const auth = useAuthStore()
     await auth.loadUser()
-    expect(auth.user).not.toBeNull()
+    expect(auth.user?.auth_source).toBe('local')
+
+    auth.logout()
+    expect(auth.user).toBeNull()
+    expect(api).toHaveBeenCalledWith('/auth/logout', { method: 'POST' })
+
+    await vi.runAllTimersAsync()
+    expect(window.location.href).toBe('/auth/local?logged_out=1')
+  })
+
+  it('logout: keycloak user → navigates to /auth/error?reason=logged_out', async () => {
+    const { fetchMe } = await import('../../src/api/auth')
+    vi.mocked(fetchMe).mockResolvedValueOnce({ ...reader, auth_source: 'keycloak' } as any)
+    const { api } = await import('../../src/api/index')
+
+    const auth = useAuthStore()
+    await auth.loadUser()
+    expect(auth.user?.auth_source).toBe('keycloak')
 
     auth.logout()
     expect(auth.user).toBeNull()

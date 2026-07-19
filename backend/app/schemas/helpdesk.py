@@ -317,3 +317,48 @@ class HelpdeskDigestSettingsOut(HelpdeskDigestSettingsIn):
     model_config = ConfigDict(from_attributes=True)
 
     updated_at: datetime | None = None
+
+
+# --- MAX-messenger bot settings ---------------------------------------------
+# Singleton (id=1), seeded by migration 081 with enabled=False. The admin
+# flips ``enabled`` after entering ``bot_token`` (write-only) + ``chat_id`` of
+# the common support chat. When enabled, every new helpdesk ticket produces a
+# ``messenger_outbox`` entry that the cron worker dispatches to MAX Bot API.
+
+
+class HelpdeskMaxBotSettingsIn(BaseModel):
+    """Конфигурация MAX-бота для оповещений о новых заявках в чат поддержки.
+
+    ``bot_token`` — write-only (как ``imap_password``): при обновлении ``None``
+    = «оставить прежний шифр». Валидатор гарантирует, что при ``enabled=True``
+    оба поля (токен на момент сохранения или уже сохранённый, и ``chat_id``)
+    заполнены — иначе ``PUT`` вернёт 400.
+    """
+
+    enabled: bool = False
+    bot_token: str | None = Field(default=None, min_length=1, max_length=512)
+    chat_id: str | None = Field(default=None, min_length=1, max_length=64)
+
+
+class HelpdeskMaxBotSettingsOut(BaseModel):
+    """Текущие настройки MAX-бота. ``bot_token_set`` — признак, что токен задан
+    (сам токен не возвращается). ``configured`` = ``enabled AND bot_token_set
+    AND chat_id is not None`` — канал готов отправлять сообщения."""
+
+    configured: bool = False
+    enabled: bool = False
+    bot_token_set: bool = False
+    chat_id: str | None = None
+    updated_at: datetime | None = None
+
+
+class HelpdeskMaxBotTestResult(BaseModel):
+    """Результат ``POST /max-bot/test``: дёргает MAX ``GET /me`` с текущим
+    токеном, чтобы проверить, что бот валиден. ``detail`` на успехе — имя бота;
+    ``error`` на неудаче замаскирован (defence-in-depth против утечки токена
+    в HTTP-ответ/логи — полный traceback только в server-log через
+    ``logger.exception``)."""
+
+    ok: bool
+    detail: str | None = None
+    error: str | None = None

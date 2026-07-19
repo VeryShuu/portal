@@ -15,12 +15,19 @@ from sqlalchemy import select
 from app.api.deps import AdminDep, DbDep, RedisDep
 from app.core.logging import get_logger
 from app.core.secret_crypto import decrypt_secret, encrypt_secret
-from app.models.helpdesk import HelpdeskDigestSettings, HelpdeskMailboxSettings
+from app.models.helpdesk import (
+    HelpdeskDigestSettings,
+    HelpdeskMailboxSettings,
+    HelpdeskMaxBotSettings,
+)
 from app.schemas.helpdesk import (
     HelpdeskDigestSettingsIn,
     HelpdeskDigestSettingsOut,
     HelpdeskMailboxSettingsIn,
     HelpdeskMailboxSettingsOut,
+    HelpdeskMaxBotSettingsIn,
+    HelpdeskMaxBotSettingsOut,
+    HelpdeskMaxBotTestResult,
 )
 from app.services.audit import push_audit_event
 
@@ -204,3 +211,170 @@ async def put_digest_settings(
         },
     )
     return HelpdeskDigestSettingsOut.model_validate(row)
+
+
+# ---------------------------------------------------------------------------
+# MAX-messenger bot settings (singleton, seeded by migration 081).
+# ---------------------------------------------------------------------------
+
+
+async def _load_max_bot_singleton(db: DbDep) -> HelpdeskMaxBotSettings:
+    """Singleton helpdesk_max_bot_settings (id=1).
+
+    Засевается миграцией 081 — всегда существует. Защитный fallback: если
+    миграция ещё не применена/строка удалена, создаём новую с дефолтами
+    (best-effort; нормальный путь — миграция, как и в ``_load_digest_singleton``).
+    """
+    res = await db.execute(
+        select(HelpdeskMaxBotSettings).where(HelpdeskMaxBotSettings.id == 1)
+    )
+    row = res.scalars().one_or_none()
+    if row is None:
+        row = HelpdeskMaxBotSettings(id=1)
+        db.add(row)
+        await db.flush()
+    return row
+
+
+def _max_bot_to_out(row: HelpdeskMaxBotSettings) -> HelpdeskMaxBotSettingsOut:
+    bot_token_set = bool(row.bot_token_enc)
+    configured = bool(row.enabled and bot_token_set and row.chat_id)
+    return HelpdeskMaxBotSettingsOut(
+        configured=configured,
+        enabled=row.enabled,
+        bot_token_set=bot_token_set,
+        chat_id=row.chat_id,
+        updated_at=row.updated_at,
+    )
+
+
+@router.get("/max-bot", response_model=HelpdeskMaxBotSettingsOut)
+async def get_max_bot_settings(
+    _admin: AdminDep, db: DbDep
+) -> HelpdeskMaxBotSettingsOut:
+    row = await _load_max_bot_singleton(db)
+    return _max_bot_to_out(row)
+
+
+@router.put("/max-bot", response_model=HelpdeskMaxBotSettingsOut)
+async def put_max_bot_settings(
+    payload: HelpdeskMaxBotSettingsIn,
+    admin: AdminDep,
+    db: DbDep,
+    redis: RedisDep,
+) -> HelpdeskMaxBotSettingsOut:
+    """Сохранить конфигурацию MAX-бота (токен write-only, как IMAP-пароль).
+
+    Валидация: при ``enabled=True`` обязательно наличие токена (либо в текущем
+    payload, либо уже сохранённого) и ``chat_id`` — иначе 400 (нельзя включить
+    канал без валидных кредов).
+    """
+    row = await _load_max_bot_singleton(db)
+    row.enabled = payload.enabled
+    row.chat_id = payload.chat_id
+    if payload.bot_token:  # write-only: пусто/None = оставить прежний шифр
+        row.bot_token_enc = encrypt_secret(payload.bot_token)
+    row.updated_by_user_id = admin.id
+
+    # Валидация enabled=True требует полный набор кредов.
+    if row.enabled:
+        if not row.bot_token_enc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="bot_token is required when enabled=true",
+            )
+        if not row.chat_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="chat_id is required when enabled=true",
+            )
+
+    await db.commit()
+    await db.refresh(row)
+    await push_audit_event(
+        redis,
+        event_type="helpdesk.max_bot_settings_changed",
+        user_id=str(admin.id),
+        user_email=admin.email,
+        resource_type="helpdesk_max_bot_settings",
+        resource_id="1",
+        metadata={
+            "enabled": payload.enabled,
+            "chat_id": payload.chat_id,
+            "token_changed": bool(payload.bot_token),
+        },
+    )
+    return _max_bot_to_out(row)
+
+
+@router.post("/max-bot/test", response_model=HelpdeskMaxBotTestResult)
+async def test_max_bot_connection(admin: AdminDep, db: DbDep) -> HelpdeskMaxBotTestResult:
+    """Отправить тестовое сообщение в чат поддержки через MAX Bot API.
+
+    В отличие от ``POST /mailbox/test`` (который проверяет только IMAP-логин),
+    здесь мы делаем **полный end-to-end тест**: отправляем реальное сообщение
+    в настроенный ``chat_id``. Это проверяет:
+    * токен бота валиден (401 от MAX иначе);
+    * бот добавлен в чат и имеет права писать (403/400 иначе);
+    * ``chat_id`` корректный (400 «chat not found» иначе);
+    * TLS к MAX работает (Russian Trusted CA в trust store).
+
+    Пользователь видит сообщение в MAX — это и есть подтверждение «всё работает».
+
+    Defense-in-depth: на ошибку маскируем ``str(exc)`` (MAX в JSON-ошибках
+    иногда отражает часть токена или чувствительные детали). Полный traceback
+    остаётся в server-log через ``logger.exception``.
+    """
+    row = await _load_max_bot_singleton(db)
+    if not row.bot_token_enc:
+        return HelpdeskMaxBotTestResult(
+            ok=False, error="Bot token is not configured"
+        )
+    if not row.chat_id:
+        return HelpdeskMaxBotTestResult(
+            ok=False, error="Chat ID is not configured"
+        )
+    bot_token = decrypt_secret(row.bot_token_enc)
+    # Тестовое сообщение: короткое, с подписью кто инициировал проверку.
+    # ``markdown`` (а не ``plain``): MAX падает с "Can't deserialize body"
+    # при format=plain. Текст без разметки — markdown-парсер проходит без
+    # проблем (это просто текст без специальных символов).
+    text = (
+        "✅ Тест портала: уведомления helpdesk работают.\n"
+        f"Инициатор проверки: {admin.full_name}."
+    )
+    try:
+        from app.services.max_messenger import send_message
+
+        await send_message(
+            bot_token=bot_token,
+            chat_id=row.chat_id,
+            text=text,
+            format_="markdown",
+            attachments=None,
+            notify=True,
+        )
+    except Exception as exc:
+        logger.exception("helpdesk.max_bot.test_connection_failed")
+        # Подсказываем наиболее частые причины, исходя из статус-кода MAX.
+        # Это спасает админа от необходимости лезть в server-логи при типовых
+        # проблемах конфигурации (404 = бот не в чате, 403 = нет прав и т.д.).
+        status_code = getattr(exc, "status_code", None)
+        hint = "See server logs for details."
+        if status_code == 404:
+            hint = (
+                "MAX returned 'chat not found'. Add the bot to the support "
+                "chat in MAX (the bot must be a chat member), then re-check."
+            )
+        elif status_code == 403:
+            hint = "MAX denied access — bot lacks write permission in this chat."
+        elif status_code == 401:
+            hint = "Bot token is invalid or revoked. Re-issue the token in MAX."
+        return HelpdeskMaxBotTestResult(
+            ok=False,
+            error=f"MAX API call failed (HTTP {status_code}). {hint}",
+        )
+    return HelpdeskMaxBotTestResult(
+        ok=True,
+        detail=f"Test message sent to chat {row.chat_id}. Check MAX.",
+    )

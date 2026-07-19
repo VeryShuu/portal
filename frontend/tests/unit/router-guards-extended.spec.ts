@@ -39,6 +39,7 @@ vi.mock('../../src/api/index', () => ({
   api: vi.fn(),
   refreshAuth: vi.fn(),
   setSessionAuthSource: vi.fn(),
+  getSessionAuthSource: vi.fn(() => 'keycloak'),
 }))
 
 function makeTo(options: {

@@ -7,6 +7,8 @@ const mockAddHelpdeskAgent = vi.fn()
 const mockUpdateHelpdeskAgent = vi.fn()
 const mockDeleteHelpdeskAgent = vi.fn()
 const mockPutHelpdeskMailbox = vi.fn()
+const mockFetchHelpdeskMaxBot = vi.fn()
+const mockPutHelpdeskMaxBot = vi.fn()
 const mockFetchMyTickets = vi.fn()
 const mockFetchMyTicket = vi.fn()
 const mockCreateMyTicket = vi.fn()
@@ -26,6 +28,8 @@ vi.mock('../../src/api/helpdesk', () => ({
   updateHelpdeskAgent: mockUpdateHelpdeskAgent,
   deleteHelpdeskAgent: mockDeleteHelpdeskAgent,
   putHelpdeskMailbox: mockPutHelpdeskMailbox,
+  fetchHelpdeskMaxBot: mockFetchHelpdeskMaxBot,
+  putHelpdeskMaxBot: mockPutHelpdeskMaxBot,
   fetchMyTickets: mockFetchMyTickets,
   fetchMyTicket: mockFetchMyTicket,
   createMyTicket: mockCreateMyTicket,
@@ -246,6 +250,27 @@ describe('src/queries/helpdesk', () => {
     mockReopenTicket.mockResolvedValueOnce({})
     await m.mutationFn()
     expect(mockReopenTicket).toHaveBeenCalledWith('t1')
+    await m.onSuccess()
+    expect(mockInvalidate).toHaveBeenCalled()
+  })
+
+  // ── MAX-messenger bot ─────────────────────────────────────────────────────
+  it('useHelpdeskMaxBotQuery registers query and calls fetchHelpdeskMaxBot', async () => {
+    const { useHelpdeskMaxBotQuery } = await import('../../src/queries/helpdesk')
+    useHelpdeskMaxBotQuery()
+    mockFetchHelpdeskMaxBot.mockResolvedValueOnce({})
+    await capturedQueries[capturedQueries.length - 1].queryFn()
+    expect(mockFetchHelpdeskMaxBot).toHaveBeenCalledWith()
+  })
+
+  it('usePutHelpdeskMaxBotMutation calls putHelpdeskMaxBot and invalidates', async () => {
+    const { usePutHelpdeskMaxBotMutation } = await import('../../src/queries/helpdesk')
+    usePutHelpdeskMaxBotMutation()
+    const m = capturedMutations[capturedMutations.length - 1]
+    mockPutHelpdeskMaxBot.mockResolvedValueOnce({})
+    const dto = { enabled: true, chat_id: '100', bot_token: 'tok' }
+    await m.mutationFn(dto)
+    expect(mockPutHelpdeskMaxBot).toHaveBeenCalledWith(dto)
     await m.onSuccess()
     expect(mockInvalidate).toHaveBeenCalled()
   })

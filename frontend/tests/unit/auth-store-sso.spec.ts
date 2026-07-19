@@ -12,12 +12,17 @@ vi.mock('../../src/api/auth', () => ({
 describe('useAuthStore — SSO loop-protection', () => {
   let originalLocation: Location
 
-  beforeEach(() => {
+  beforeEach(async () => {
     setActivePinia(createPinia())
     originalLocation = window.location
     delete (window as any).location
     ;(window as any).location = { pathname: '/', search: '', href: '' }
     window.sessionStorage.clear()
+    // Сбрасываем общий модуль auth_source в дефолт (keycloak) между тестами:
+    // некоторые кейсы вызывают setSessionAuthSource('local'), и это состояние
+    // утекает в соседние тесты, т.к. модуль api/index — синглтон.
+    const { setSessionAuthSource } = await import('../../src/api/index')
+    setSessionAuthSource('keycloak')
   })
 
   afterEach(() => {
@@ -32,6 +37,19 @@ describe('useAuthStore — SSO loop-protection', () => {
     const attempts = JSON.parse(window.sessionStorage.getItem('sso_attempts') || '[]')
     expect(attempts.length).toBe(1)
     expect((window as any).location.href).toContain('/api/v1/auth/login?redirect=')
+  })
+
+  it('redirectToSSO для local-сессии шлёт на /auth/local, а не Keycloak', async () => {
+    // ADR-036 п.7: router-guard путь должен симметрично _handle401 уважать
+    // auth_source. Иначе локальный юзер на холодном старте уйдёт на Keycloak.
+    const { setSessionAuthSource } = await import('../../src/api/index')
+    setSessionAuthSource('local')
+    const { useAuthStore } = await import('../../src/stores/auth')
+    const auth = useAuthStore()
+    auth.redirectToSSO('/admin')
+    expect((window as any).location.href).toContain('/auth/local?redirect=')
+    expect((window as any).location.href).not.toContain('/api/v1/auth/login')
+    expect((window as any).location.href).toContain(encodeURIComponent('/admin'))
   })
 
   it('loop-detection: 2 попытки за 30s → /auth/error?reason=loop_detected', async () => {

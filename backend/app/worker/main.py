@@ -25,6 +25,10 @@ from app.worker.tasks.helpdesk import (
 )
 from app.worker.tasks.kb import cleanup_kb_orphan_dirs, purge_kb_trash
 from app.worker.tasks.meetings.email import send_meeting_email
+from app.worker.tasks.messenger_outbox import (
+    cleanup_messenger_outbox,
+    process_messenger_outbox,
+)
 from app.worker.tasks.metrics import (
     WORKER_HEARTBEAT_KEY,
     WORKER_HEARTBEAT_TTL,
@@ -187,6 +191,8 @@ class WorkerSettings:
         create_next_helpdesk_archive_partition,
         cleanup_helpdesk_attachments_task,
         send_helpdesk_digest,
+        process_messenger_outbox,
+        cleanup_messenger_outbox,
     ]
     cron_jobs = [
         cron(
@@ -273,6 +279,21 @@ class WorkerSettings:
             "app.worker.tasks.email_outbox.cleanup_email_outbox",
             hour=4,
             minute=15,
+            second=0,
+        ),
+        # ── Messenger (MAX) outbox ───────────────────────────────────────────
+        # Dispatch каждые 15с (немного реже чем email-outbox каждые 10с —
+        # разделение нагрузки). Distributed lock + SKIP LOCKED в claim
+        # безопасны при нескольких воркерах.
+        cron(
+            "app.worker.tasks.messenger_outbox.process_messenger_outbox",
+            second={0, 15, 30, 45},
+            run_at_startup=True,
+        ),
+        cron(
+            "app.worker.tasks.messenger_outbox.cleanup_messenger_outbox",
+            hour=4,
+            minute=20,
             second=0,
         ),
         cron(

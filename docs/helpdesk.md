@@ -227,6 +227,45 @@ Per-agent read-state: одна строка на пару `(ticket_id, user_id)`
 
 **Точка «прочитано»** — открытие карточки тикета агентом: `POST /tickets/{id}/read` → `mark_ticket_seen` (UPSERT `last_seen_at = NOW()`). Не требует audit (read-state — бизнес-состояние, не мутация, как `notifications.read`) и rate-limit (доступ только `HelpdeskAgentDep`).
 
+### `helpdesk_max_bot_settings` — singleton (id=1, миграция 081)
+
+Конфигурация MAX-бота для оповещений о новых заявках в один общий чат поддержки (max.ru). По образцу `helpdesk_digest_settings`: все колонки nullable/DEFAULT, строка засевается миграцией сразу, `enabled=False` по умолчанию (канал выключен, пока админ не активирует его в Helpdesk-вкладке).
+
+| Колонка | Тип | Примечание |
+|---|---|---|
+| `id` | SMALLINT PK DEFAULT 1, `CHECK (id=1)` | Singleton |
+| `enabled` | BOOLEAN NOT NULL default `FALSE` | Канал включён |
+| `bot_token_enc` | TEXT, nullable | Шифр токена бота (Fernet из `SECRET_KEY`, как `imap_password_enc`); plaintext не возвращается API (write-only) |
+| `chat_id` | VARCHAR(64), nullable | ID чата поддержки (ручной ввод админом; берётся у GetID-бота MAX или через `GET /chats` Bot API) |
+| `updated_by_user_id` | UUID → `users.id` `SET NULL` | Кто последний менял |
+| `created_at` / `updated_at` | `TIMESTAMPTZ` | |
+
+Канал готов к отправке, когда `enabled=True AND bot_token_enc IS NOT NULL AND chat_id IS NOT NULL` (флаг `configured` в API-ответе).
+
+### `messenger_outbox` — transactional outbox для мессенджеров (миграция 081)
+
+Полный аналог `email_outbox` для не-email каналов. Поле `provider` зарезервировано для будущих провайдеров (Telegram/Slack); сейчас используется только `'max'`. CRUD идёт через raw SQL в `services/messenger_outbox.py` (FOR UPDATE SKIP LOCKED, retry/backoff/DLQ), ORM-модель в `models/helpdesk.py` существует только для типизации.
+
+| Колонка | Тип | Примечание |
+|---|---|---|
+| `id` | UUID PK | `gen_random_uuid()` |
+| `provider` | VARCHAR(32) NOT NULL, `CHECK IN ('max')` | Провайдер (зарезервировано) |
+| `chat_id` | VARCHAR(64) NOT NULL | Куда отправлять |
+| `text` | TEXT NOT NULL | Тело сообщения |
+| `payload` | JSONB NOT NULL default `'{}'` | attachments + формат (для MAX: `{"attachments": [inline_keyboard], "format": "markdown"}`) |
+| `status` | VARCHAR(16) default `'PENDING'` | `PENDING/SENDING/SENT/FAILED/DLQ/CANCELLED` |
+| `attempts` / `max_attempts` | INTEGER | Счётчик попыток / лимит (по умолчанию 6) |
+| `next_attempt_at` | `TIMESTAMPTZ` default `NOW()` | Когда воркер возьмёт запись (для retry/backoff) |
+| `last_error_type` / `last_error_class` / `last_error` | VARCHAR/TEXT | Диагностика последней ошибки |
+| `sent_at` | `TIMESTAMPTZ`, nullable | Время успешной отправки |
+| `related_resource_type` / `related_resource_id` | VARCHAR/UUID | Связь с бизнес-сущностью (`helpdesk_ticket` + id) |
+| `created_by_user_id` | UUID, nullable | Кто создал (для audit) |
+| `created_at` / `updated_at` | `TIMESTAMPTZ` | |
+
+Индексы: `ix_messenger_outbox_pending ON (next_attempt_at) WHERE status='PENDING'` (claim-очередь), `ix_messenger_outbox_stale ON (updated_at) WHERE status='SENDING'` (watchdog для «зависших» SENDING). Воркер `process_messenger_outbox` (cron каждые 15с, distributed lock) → `cleanup_messenger_outbox` (cron 4:20, удаление SENT старше 30 дней).
+
+Retry-классификация (отличается от email): 429/5xx/timeout → transient (retry), 4xx (auth/not-found) → permanent (DLQ сразу, чинить в UI).
+
 ---
 
 ## 4. API
@@ -272,6 +311,9 @@ Per-agent read-state: одна строка на пару `(ticket_id, user_id)`
 | `POST` | `/settings/mailbox/test` | Проверка IMAP-соединения → `{ok, detail}`. |
 | `GET` | `/settings/digest` | Singleton расписания сводки (`enabled`, `digest_hour`, `digest_minute`, `digest_schedule`). |
 | `PUT` | `/settings/digest` | Обновить расписание. Аудит `helpdesk.digest_settings_changed`. |
+| `GET` | `/settings/max-bot` | Singleton MAX-бота (`enabled`, `bot_token_set`, `chat_id`, `configured`). Строка засевается миграцией 081, всегда существует. |
+| `PUT` | `/settings/max-bot` | Обновить. Токен write-only (`bot_token` пусто = прежний шифр). При `enabled=True` требует токен + chat_id, иначе 400. Аудит `helpdesk.max_bot_settings_changed`. |
+| `POST` | `/settings/max-bot/test` | Отправляет реальное тестовое сообщение в чат через MAX Bot API (end-to-end: проверяет и токен, и права бота в чате, и сам chat_id). На успех — `{"ok": true, "detail": "Test message sent to chat <id>. Check MAX."}`; на неудачу — маскированная ошибка с подсказкой по HTTP-коду MAX (404 → бот не участник чата, 401 → токен, 403 → права). |
 
 > **Архив в UI** показывается отдельной страницей `/helpdesk/archive` (роут `helpdesk-archive`), которая ходит через общий `GET /tickets?status=closed` (живые закрытые тикеты, не партиционированная таблица). Эндпоинтов `/archive*` и `/email-log` **нет** — service-функции `fetch_archive_list`/`fetch_archive_item` зарезервированы, но не обвязаны роутером (будущее: просмотр тикетов, попавших в `helpdesk_tickets_archive` после `HELPDESK_ARCHIVE_AFTER_DAYS`).
 
@@ -470,16 +512,16 @@ Per-agent read-state: одна строка на пару `(ticket_id, user_id)`
 
 In-app через общий `notifications`-движок (`create_notification` + Redis SSE), best-effort (сбой не ломает бизнес-операцию — паттерн feedback). Агенты-получатели in-app выбираются по `helpdesk_agents` JOIN `users` (`notify_inapp`, `deleted_at IS NULL`), **не** по `User.role`.
 
-| Событие | Получатели | In-app | Email |
-|---|---|---|---|
-| Новая заявка (email/web) | Агенты | ✅ (`notify_new` + `notify_inapp`) | ✅ агентам (`notify_new` + `notify_email`, через outbox `kind=generic`) |
-| Новая заявка (email/web) | Инициатор | — | ✅ подтверждение «заявка зарегистрирована» (через outbox `kind=helpdesk`, при настроенном mailbox) |
-| Взятие в работу / реассайн | Инициатор + новый агент (+ старый) | ✅ | ✅ инициатору (с ФИО ответственного, в теме `[#TKT-{number}]`) |
-| Публичный ответ агента | Инициатор | ✅ | ✅ (это и есть «ответ», через outbox) |
-| Сообщение от клиента | Текущий assignee (или все агенты) | ✅ | — |
-| Статус → `closed` | Инициатор | ✅ | — |
-| Internal note | Агенты | ✅ (не email) | — |
-| Ежедневная сводка (cron) | Каждый агент (персонально) | — | ✅ через outbox `kind=generic` (не тред тикета) |
+| Событие | Получатели | In-app | Email | MAX-мессенджер |
+|---|---|---|---|---|
+| Новая заявка (email/web) | Агенты | ✅ (`notify_new` + `notify_inapp`) | ✅ агентам (`notify_new` + `notify_email`, через outbox `kind=generic`) | ✅ в общий чат (`notify_ticket_created_max`, через `messenger_outbox`; §9.1) |
+| Новая заявка (email/web) | Инициатор | — | ✅ подтверждение «заявка зарегистрирована» (через outbox `kind=helpdesk`, при настроенном mailbox) | — |
+| Взятие в работу / реассайн | Инициатор + новый агент (+ старый) | ✅ | ✅ инициатору (с ФИО ответственного, в теме `[#TKT-{number}]`) | — |
+| Публичный ответ агента | Инициатор | ✅ | ✅ (это и есть «ответ», через outbox) | — |
+| Сообщение от клиента | Текущий assignee (или все агенты) | ✅ | — | — |
+| Статус → `closed` | Инициатор | ✅ | — | — |
+| Internal note | Агенты | ✅ (не email) | — | — |
+| Ежедневная сводка (cron) | Каждый агент (персонально) | — | ✅ через outbox `kind=generic` (не тред тикета) | — |
 
 **Email заявителю «заявка зарегистрирована»** (`enqueue_created_email` в `outbound.py`, тела — `build_created_email_bodies` в `notifications.py`): при создании заявки (web-форма или IMAP-ingress) заявителю отправляется подтверждение приёма обращения — номер `[#TKT-{number}]`, «обращение принято, с вами свяжется специалист», инструкция для ответа. Через outbox `kind=helpdesk` (входит в email-тред тикета): токен `[#TKT-{number}]` в теме + `Message-ID` (корень треда, на него ссылаются будущие ответы) + `References`/`Reply-To` → ответ заявителя вернётся в тот же тикет. Для нового тикета `references` пуст (это первое письмо треда), `in_reply_to=None`. Ставится в **ту же транзакцию**, что и создание тикета+сообщения (outbox-инвариант AGENTS.md — письмо коммитится атомарно с заявкой). Тема `"[#TKT-{number}] Заявка зарегистрирована"`. Только при сконфигурированном mailbox (`support_domain`); без mailbox (web-only) — no-op (`_try_enqueue_created_email` — best-effort, лог warning). Срабатывает для всех новых тикетов (web через `create_ticket`, email через `ingress._ingest_message` при `new_status == "created"`), не для ответов на существующие.
 
@@ -487,7 +529,38 @@ In-app через общий `notifications`-движок (`create_notification`
 
 **Email при назначении** (`_try_enqueue_assigned_email` в `tickets.py`, тела — `build_assigned_email_*` в `notifications.py`): при `assign`/`take`, только при сконфигурированном mailbox (`support_domain`). Письмо входит в email-тред тикета — тема `"[#TKT-{number}] Заявка принята в работу"`, заголовки `Message-ID`/`In-Reply-To`/`References`/`Reply-To` (формат как у публичных ответов, см. §8), чтобы ответ заявителя вернулся в тикет даже без живого `In-Reply-To` (Subject-token fallback). Тела (plain+html) с номером/темой заявки и ФИО ответственного, `html.escape` на пользовательские данные. Best-effort: сбой enqueue не ломает назначение (`_try_send`). Отправляется на `ticket.requester_email` (всегда заполнено, включая гостевые заявки).
 
-### 9.1 Ежедневная сводка (`digest.py`)
+### 9.1 MAX-messenger уведомления (`notify_ticket_created_max`)
+
+Оповещения о новых заявках в один общий чат поддержки в мессенджере MAX (max.ru, корпоративный мессенджер от VK/Сбер). Дублирует email-уведомление агентам: если последний недоступен или агент не подписан на email, MAX-сообщение всё равно дойдёт в чат, где дежурят агенты. Используется Bot API `https://platform-api2.max.ru` (домен `platform-api.max.ru` deprecated с 19.07.2026).
+
+**Активация:** админка → Helpdesk-вкладка → третья секция «Уведомления в MAX». Singleton `helpdesk_max_bot_settings` (миграция 081), `enabled=False` по умолчанию. Перед включением админ вводит токен бота (write-only, шифруется через Fernet из `SECRET_KEY`), ID чата поддержки (берётся у GetID-бота MAX или через `GET /chats` Bot API) и ставит `enabled=True`. Кнопка «Тест» дёргает `GET /me` для проверки бота (defence-in-depth: ошибки маскируются, чтобы не утекли в ответ/логи части токена).
+
+**Когда срабатывает:** только для **новых** заявок (web через `create_ticket`, email через `ingress._ingest_message` при `new_status == "created"`). Не для ответов/смены статуса/назначения (вне скоупа). Best-effort: вызывается **после** commit бизнес-операции (из роутера `_try_notify`, из ingress в собственном try/except), сбой не ломает создание заявки. Если `enabled=False` или нет токена/chat_id → graceful no-op (`return 0`).
+
+**Доставка** — transactional outbox (`messenger_outbox`, `provider='max'`), полный аналог `email_outbox` с retry/backoff/DLQ. Воркер `process_messenger_outbox` (cron каждые 15с, distributed lock `messenger:outbox:dispatch:lock`, batch 20). Retry-классификация (`classify_http_error` в `services/max_messenger/_client.py`): 429/5xx/timeout → transient (retry с экспоненциальным backoff), 4xx (auth/not-found/bad-request) → permanent (DLQ сразу, чинить в UI). Cleanup-cron `cleanup_messenger_outbox` (4:20 nightly) удаляет SENT старше 30 дней.
+
+**Контент сообщения** (markdown):
+```
+🆕 Новая заявка #TKT-123
+
+Тема: <subject>
+Заявитель: <ФИО или email — из User через resolve_requester_user, fallback на снимок тикета>
+Источник: веб / email
+
+<превью тела первого сообщения, обрезанное до 500 символов>
+```
+
+Inline-кнопка «Открыть на портале» (attachment `inline_keyboard`): ссылка на `{portal_base_url}/helpdesk/tickets/{id}`. Если `portal_base_url` не задан — fallback на относительный путь (MAX покажет как текст, отправка не упадёт).
+
+**Грабли:**
+- **TLS: Russian Trusted Root CA** (Минцифры). Сертификат `*.max.ru` подписан через `Russian Trusted Sub CA` → `Russian Trusted Root CA`. Этот Root CA **не входит** ни в Mozilla CA Bundle Debian, ни в `certifi` (который httpx использует по умолчанию). Решено в две части: (1) сертификат Минцифры лежит в `backend/certs/russian_trusted_root_ca.crt` и устанавливается в образ через `update-ca-certificates` (см. Dockerfile stages `runtime-base` и `production`); (2) httpx-клиент в `services/max_messenger/_client.py` создаётся с `verify=ssl.create_default_context()` — это заставляет httpx использовать системный trust store, а не свой `certifi`. Без второй части системный CA-bundle игнорируется, даже если сертификат добавлен в образ. Промежуточные сертификаты (Sub CA) **не добавляем** — MAX отдаёт их в TLS-handshake.
+- **Формат inline-keyboard** (согласно официальному `max-bot-api-client-ts/src/core/network/api/types/attachment.ts`): `attachments=[{"type": "inline_keyboard", "payload": {"buttons": Button[][]}}]`. Поле называется **`buttons`** (НЕ `rows`); кнопка-ссылка: `{"type": "link", "text": str, "url": str}` (`style`/`intent` бывает только у callback-кнопок).
+- **`format: "plain"` MAX не поддерживает** — парсер падает с «Can't deserialize body». Только `markdown` (по умолчанию) или `html`. В коде это учтено: default `format_="markdown"` в `_client.py`, `format_map` в воркере фильтрует только `markdown`/`html`.
+- **Бот должен быть участником чата** — MAX возвращает `404: chat not found` не только при неверном `chat_id`, но и если бот не добавлен в этот чат. Endpoint `/max-bot/test` даёт подсказку по HTTP-коду: 404 → membership, 401 → токен, 403 → права.
+- Авторизация: заголовок `Authorization: <bot_token>` **без** префикса `Bearer` (как в большинстве Bot API).
+- Outbox (`messenger_outbox`) — отдельная таблица, а не новый `kind` в `email_outbox`: последний жёстко завязан на SMTP/MIME (`to_email`, `subject`, `body_html`), универсализация сломала бы контракт.
+
+### 9.2 Ежедневная сводка (`digest.py`)
 
 Cron `send_helpdesk_digest` (см. §10) раз в день шлёт **каждому активному helpdesk-агенту** персональное email-письмо через outbox `kind=generic` (не `helpdesk` — дайджест не входит в email-тред конкретного тикета, не требует threading-заголовков и настроенного mailbox; SMTP-настройки общие).
 

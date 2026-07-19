@@ -1440,6 +1440,22 @@
         "test": "Test connection",
         "testOk": "Connection OK",
         "testFail": "Connection failed"
+      },
+      "max": {
+        "title": "MAX notifications",
+        "hint": "Notifications about new tickets in a common support chat in the MAX messenger (max.ru). The bot must be created in MAX and added to the chat.",
+        "botToken": "Bot token",
+        "tokenPlaceholder": "Paste the MAX bot token",
+        "tokenKeep": "Leave unchanged",
+        "chatId": "Support chat ID",
+        "chatIdPlaceholder": "e.g. -1001234567890",
+        "chatIdHint": "To get the chat ID: add the bot to the support chat, then call GET /chats on the bot (Bot API). The bot MUST be a member of this chat — otherwise MAX returns 404 'chat not found'.",
+        "enabled": "Enable new-ticket notifications",
+        "tokenRequired": "Bot token is required to enable",
+        "notConfigured": "Bot is not configured yet. Enter token and chat ID, then save.",
+        "test": "Send test message",
+        "testOk": "Message sent — check the chat in MAX",
+        "testFail": "Send failed (see details)"
       }
     }
   },
