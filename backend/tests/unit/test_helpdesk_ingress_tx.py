@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import uuid
 from email import message_from_bytes
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -321,8 +322,8 @@ async def test_post_commit_localize_uses_separate_session() -> None:
         patch("app.core.database.AsyncSessionLocal", return_value=_FakeCM()),
     ):
         await _localize_remote_post_commit(
-            ticket_id="00000000-0000-0000-0000-000000000000",
-            message_id="00000000-0000-0000-0000-000000000001",
+            ticket_id=uuid.UUID("00000000-0000-0000-0000-000000000000"),
+            message_id=uuid.UUID("00000000-0000-0000-0000-000000000001"),
             body_html=body_html,
         )
 
@@ -341,8 +342,8 @@ async def test_post_commit_localize_skips_when_no_remote_images() -> None:
 
     with patch("app.core.database.AsyncSessionLocal") as session_factory:
         await _localize_remote_post_commit(
-            ticket_id="00000000-0000-0000-0000-000000000000",
-            message_id="00000000-0000-0000-0000-000000000001",
+            ticket_id=uuid.UUID("00000000-0000-0000-0000-000000000000"),
+            message_id=uuid.UUID("00000000-0000-0000-0000-000000000001"),
             body_html=body_html,
         )
 

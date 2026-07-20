@@ -12,6 +12,8 @@ best-effort (src остаётся URL), неподдерживаемый фор�
 from __future__ import annotations
 
 from email import message_from_bytes
+from email.message import Message
+from typing import cast
 from unittest.mock import patch
 
 import pytest
@@ -182,16 +184,25 @@ class TestBuildMimeWithInlineImages:
         assert msg.get_content_type() == "multipart/related"
         # Внутри related — alternative (plain+html), плюс image-часть с Content-ID.
         payload = msg.get_payload()
+        # ``Message.get_payload() → str | list[Message | str] | bytes`` (typeshed).
+        # mypy не сужает по ``len()``/индексам списка, поэтому явный isinstance
+        # на список + cast на элементы-Message (в рантайме builder кладёт Message).
+        assert isinstance(payload, list)
         assert len(payload) == 2
-        assert payload[0].get_content_type() == "multipart/alternative"
+        alt_part = cast(Message, payload[0])
+        assert alt_part.get_content_type() == "multipart/alternative"
         # Вторая часть — картинка.
-        img_part = payload[1]
+        img_part = cast(Message, payload[1])
         assert img_part.get_content_type() == "image/png"
         cid = img_part.get("Content-ID", "")
         assert cid.startswith("<img-") and cid.endswith(">")
         # HTML внутри содержит ссылку на тот же cid.
-        html_part = payload[0].get_payload()[1]
-        assert f"cid:{cid.strip('<>')}" in html_part.get_payload(decode=True).decode("utf-8")
+        alt_payload = alt_part.get_payload()
+        assert isinstance(alt_payload, list)
+        html_part = cast(Message, alt_payload[1])
+        html_raw = html_part.get_payload(decode=True)
+        assert isinstance(html_raw, (bytes, bytearray))
+        assert f"cid:{cid.strip('<>')}" in html_raw.decode("utf-8")
 
     @pytest.mark.asyncio
     async def test_no_related_when_no_inline_images(self) -> None:
@@ -254,11 +265,12 @@ class TestBuildMimeWithInlineImages:
 
         assert msg.get_content_type() == "multipart/mixed"
         mixed_payload = msg.get_payload()
+        assert isinstance(mixed_payload, list)
         assert len(mixed_payload) == 2
         # 1-я часть — related (тело + inline-картинка).
-        assert mixed_payload[0].get_content_type() == "multipart/related"
+        assert cast(Message, mixed_payload[0]).get_content_type() == "multipart/related"
         # 2-я часть — обычное вложение (attachment).
-        assert mixed_payload[1].get_content_type() == "application/pdf"
+        assert cast(Message, mixed_payload[1]).get_content_type() == "application/pdf"
 
     @pytest.mark.asyncio
     async def test_roundtrip_serializable(self, tmp_path) -> None:

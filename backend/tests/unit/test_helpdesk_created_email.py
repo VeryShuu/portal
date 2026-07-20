@@ -15,17 +15,27 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
-from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from polyfactory.factories.sqlalchemy_factory import SQLAlchemyFactory
 
-from app.models.helpdesk import HelpdeskTicket
+from app.models.helpdesk import HelpdeskMailboxSettings, HelpdeskTicket
 from app.services.helpdesk.notifications import (
     build_created_email_bodies,
     build_created_email_subject,
 )
 from app.services.helpdesk.outbound import enqueue_created_email
+
+
+class _HelpdeskMailboxFactory(SQLAlchemyFactory[HelpdeskMailboxSettings]):
+    """In-memory HelpdeskMailboxSettings через polyfactory — типизированный
+    объект вместо ``SimpleNamespace`` (mypy строгий на ``tests/`` scope).
+    ``support_address`` и ``support_reply_to`` переопределяются в ``_mailbox``,
+    остальные обязательные поля (imap_*, created_at, ...) генерируются."""
+
+    __model__ = HelpdeskMailboxSettings
+    __set_relationships__ = False
 
 
 def _ticket(*, number: int = 42, subject: str = "Не работает VPN") -> HelpdeskTicket:
@@ -43,8 +53,16 @@ def _ticket(*, number: int = 42, subject: str = "Не работает VPN") -> 
     )
 
 
-def _mailbox() -> SimpleNamespace:
-    return SimpleNamespace(support_address="support@company.local")
+def _mailbox(*, support_address: str = "support@company.local") -> HelpdeskMailboxSettings:
+    """Типизированный singleton-mailbox для enqueue_created_email.
+
+    Тестам нужен только ``support_address`` (из него считается support_domain и
+    reply_to, т.к. ``support_reply_to=None`` — приоритет отдаётся базовому ящику).
+    Остальные обязательные поля генерируются polyfactory."""
+    return _HelpdeskMailboxFactory.build(
+        support_address=support_address,
+        support_reply_to=None,
+    )
 
 
 # ── Subject ──────────────────────────────────────────────────────────────────
@@ -132,6 +150,7 @@ class TestEnqueueCreatedEmail:
             "app.services.helpdesk.outbound.enqueue_outbox_email", new=AsyncMock()
         ) as enqueue:
             await enqueue_created_email(db, ticket=ticket, mailbox=_mailbox())
+        assert enqueue.await_args is not None
         assert enqueue.await_args.kwargs["to_email"] == ticket.requester_email
 
     @pytest.mark.asyncio
@@ -143,6 +162,7 @@ class TestEnqueueCreatedEmail:
             "app.services.helpdesk.outbound.enqueue_outbox_email", new=AsyncMock()
         ) as enqueue:
             await enqueue_created_email(db, ticket=_ticket(), mailbox=_mailbox())
+        assert enqueue.await_args is not None
         assert enqueue.await_args.kwargs["kind"] == "helpdesk"
 
     @pytest.mark.asyncio
@@ -152,6 +172,7 @@ class TestEnqueueCreatedEmail:
             "app.services.helpdesk.outbound.enqueue_outbox_email", new=AsyncMock()
         ) as enqueue:
             await enqueue_created_email(db, ticket=_ticket(number=99), mailbox=_mailbox())
+        assert enqueue.await_args is not None
         subject = enqueue.await_args.kwargs["subject"]
         assert "[#TKT-99]" in subject
         assert "Заявка зарегистрирована" in subject
@@ -165,6 +186,7 @@ class TestEnqueueCreatedEmail:
             "app.services.helpdesk.outbound.enqueue_outbox_email", new=AsyncMock()
         ) as enqueue:
             await enqueue_created_email(db, ticket=_ticket(), mailbox=_mailbox())
+        assert enqueue.await_args is not None
         payload = enqueue.await_args.kwargs["payload"]
         assert payload["references"] == []
         assert payload["in_reply_to"] is None
@@ -181,8 +203,9 @@ class TestEnqueueCreatedEmail:
             "app.services.helpdesk.outbound.enqueue_outbox_email", new=AsyncMock()
         ) as enqueue:
             await enqueue_created_email(
-                db, ticket=_ticket(), mailbox=SimpleNamespace(support_address="help@x.test")
+                db, ticket=_ticket(), mailbox=_mailbox(support_address="help@x.test")
             )
+        assert enqueue.await_args is not None
         payload = enqueue.await_args.kwargs["payload"]
         assert payload["support_domain"] == "x.test"
         assert payload["reply_to"] == "help@x.test"
@@ -196,6 +219,7 @@ class TestEnqueueCreatedEmail:
             "app.services.helpdesk.outbound.enqueue_outbox_email", new=AsyncMock()
         ) as enqueue:
             await enqueue_created_email(db, ticket=ticket, mailbox=_mailbox())
+        assert enqueue.await_args is not None
         kwargs = enqueue.await_args.kwargs
         assert kwargs["related_resource_type"] == "helpdesk_ticket"
         assert kwargs["related_resource_id"] == ticket.id
@@ -211,6 +235,7 @@ class TestEnqueueCreatedEmail:
             await enqueue_created_email(
                 db, ticket=_ticket(number=5, subject="Тест"), mailbox=_mailbox()
             )
+        assert enqueue.await_args is not None
         kwargs = enqueue.await_args.kwargs
         assert "TKT-5" in kwargs["body_text"]
         assert "регистрир" in kwargs["body_text"].lower()

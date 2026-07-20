@@ -148,7 +148,14 @@ def _build_req(app_routes: list, path: str = "/api/v1/x", method: str = "POST"):
     """Собирает starlette Request с заданным app.routes."""
     scope = _make_request_scope(path=path, method=method)
     scope["app"] = SimpleNamespace(routes=app_routes)
-    return Request(scope, lambda: {"type": "http.request", "body": b"", "more_body": False})
+
+    # Starlette Request принимает async receive (возвращает Awaitable сообщения).
+    # Используем именованную async-функцию вместо lambda: mypy на tests/ строго
+    # проверяет сигнатуру, лямбда-синхрон даёт [arg-type]/[return-value].
+    async def receive():
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    return Request(scope, receive)
 
 
 def _init_fastapi_limiter_defaults(monkeypatch, *, redis=None) -> None:
@@ -335,7 +342,11 @@ async def test_patched_call_skips_routes_without_path(monkeypatch):
 
     scope = _make_request_scope(path="/api/v1/auth/local/login")
     scope["app"] = _FakeApp()
-    req = Request(scope, lambda: {"type": "http.request", "body": b"", "more_body": False})
+
+    async def receive():  # type: ignore[no-untyped-def]
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    req = Request(scope, receive)
 
     rl = RateLimiter(times=5, minutes=15)
     rl._check = async_lambda(0)  # type: ignore[method-assign]

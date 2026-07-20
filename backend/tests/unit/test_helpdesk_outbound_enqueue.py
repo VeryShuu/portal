@@ -269,7 +269,11 @@ class TestTryEnqueueOutbound:
         ``</pre><script>...`` в тексте агента инжектит HTML."""
         prior = _msg()
         # Сообщение с body_html=None и body_text с HTML-инъекцией.
-        current = SimpleNamespace(
+        # Аннотация ``Any`` — иначе mypy ругается на SimpleNamespace вместо
+        # HelpdeskMessage (сигнатура enqueue_reply_outbound). Как и в _msg() /
+        # _current_message(), используем SimpleNamespace для минимальной заглушки
+        # — тест проверяет escape-логику, а не модель.
+        current: Any = SimpleNamespace(
             id=uuid.uuid4(),
             body_text="Текст </pre><script>alert(1)</script>",
             body_html=None,

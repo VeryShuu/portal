@@ -289,9 +289,16 @@ async def send_helpdesk_digest(ctx: dict) -> dict:
 
 
 __all__ = [
+    "ARCHIVE_LOCK_KEY",
+    "CLEANUP_LOCK_KEY",
+    "DIGEST_LOCK_KEY",
+    "PARTITION_LOCK_KEY",
+    "POLL_LOCK_KEY",
     "archive_closed_tickets_task",
     "cleanup_helpdesk_attachments_task",
     "create_next_helpdesk_archive_partition",
     "poll_helpdesk_mailbox",
     "send_helpdesk_digest",
 ]
+# Прим.: lock-keys (верхний регистр) и ARQ-задачи (snake_case) отсортированы
+# вместе по умолчанию RUF022 (isort-style).

@@ -23,7 +23,9 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from polyfactory.factories.sqlalchemy_factory import SQLAlchemyFactory
 
+from app.models.user import User
 from app.services.helpdesk.outbound import (
     _sanitize_references,
     enqueue_assigned_email,
@@ -31,6 +33,14 @@ from app.services.helpdesk.outbound import (
     enqueue_reply_outbound,
     reply_to_address,
 )
+
+
+class _UserFactory(SQLAlchemyFactory[User]):
+    """In-memory ``User`` через polyfactory — типизированный объект вместо
+    ``SimpleNamespace`` для ``assignee``/``actor`` (mypy строгий на ``tests/``)."""
+
+    __model__ = User
+    __set_relationships__ = False
 
 
 def _mailbox(*, support_reply_to: str | None = None) -> Any:
@@ -178,8 +188,8 @@ class TestProducersUseExplicitReplyTo:
     async def test_assigned_email_uses_explicit_reply_to(self) -> None:
         mb = _mailbox(support_reply_to="noreply@company.local")
         db = _make_db_with_refs([])
-        assignee = SimpleNamespace(id=uuid.uuid4(), full_name="Агент", email="a@x.test")
-        actor = SimpleNamespace(id=uuid.uuid4(), full_name="Админ", email="adm@x.test")
+        assignee = _UserFactory.build(id=uuid.uuid4(), full_name="Агент", email="a@x.test")
+        actor = _UserFactory.build(id=uuid.uuid4(), full_name="Админ", email="adm@x.test")
 
         with patch(
             "app.services.helpdesk.outbound.enqueue_outbox_email", new=AsyncMock()

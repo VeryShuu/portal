@@ -17,16 +17,26 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
-from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from polyfactory.factories.sqlalchemy_factory import SQLAlchemyFactory
 
+from app.models.helpdesk import HelpdeskTicket
 from app.services.helpdesk import reads as reads_svc
 
 TICKET_ID = uuid.uuid4()
 TICKET_ID_2 = uuid.uuid4()
 USER_ID = uuid.uuid4()
+
+
+class _HelpdeskTicketFactory(SQLAlchemyFactory[HelpdeskTicket]):
+    """In-memory ``HelpdeskTicket`` через polyfactory — типизированный объект
+    вместо ``SimpleNamespace`` (mypy строгий на ``tests/`` scope). Тестам reads
+    нужен только ``id`` — остальные поля генерируются автоматически."""
+
+    __model__ = HelpdeskTicket
+    __set_relationships__ = False
 
 
 def _result(*, scalar=None, rows=None) -> MagicMock:
@@ -45,9 +55,11 @@ def _make_db(execute_results: list) -> AsyncMock:
     return db
 
 
-def _ticket(*, id_: uuid.UUID | None = None) -> SimpleNamespace:
-    """Минимальная заглушка ``HelpdeskTicket`` — нужен только ``id``."""
-    return SimpleNamespace(id=id_ or uuid.uuid4())
+def _ticket(*, id_: uuid.UUID | None = None) -> HelpdeskTicket:
+    """Минимальная типизированная заглушка ``HelpdeskTicket`` — нужен только
+    ``id`` (для ``enrich_with_unread`` он читается как ``t.id`` в SQL-фильтре).
+    Остальные поля генерируются polyfactory."""
+    return _HelpdeskTicketFactory.build(id=id_ or uuid.uuid4())
 
 
 @pytest.mark.asyncio

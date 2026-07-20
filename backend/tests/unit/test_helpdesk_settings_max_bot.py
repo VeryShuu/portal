@@ -60,7 +60,7 @@ def _row(
     )
 
 
-def _make_db_with_row(row: SimpleNamespace | None) -> tuple[MagicMock, MagicMock]:
+def _make_db_with_row(row: SimpleNamespace | None) -> tuple[MagicMock, SimpleNamespace | None]:
     """Возвращает (db, row_mock) — заглушку, где execute возвращает row через
     ``.scalars().one_or_none()``. ``row_mock`` позволяет проверять мутации."""
     db = MagicMock()

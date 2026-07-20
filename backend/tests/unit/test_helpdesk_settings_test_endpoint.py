@@ -18,14 +18,24 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from polyfactory.factories.sqlalchemy_factory import SQLAlchemyFactory
 
 from app.api.helpdesk.settings import (
     test_mailbox_connection as mailbox_test_endpoint,
 )
+from app.models.user import User
 
 
-def _admin() -> SimpleNamespace:
-    return SimpleNamespace(id=uuid.uuid4(), email="admin@portal.local", role="admin")
+class _UserFactory(SQLAlchemyFactory[User]):
+    """In-memory ``User`` через polyfactory — типизированный объект вместо
+    ``SimpleNamespace`` (mypy строгий на ``tests/`` scope)."""
+
+    __model__ = User
+    __set_relationships__ = False
+
+
+def _admin() -> User:
+    return _UserFactory.build(id=uuid.uuid4(), email="admin@portal.local", role="admin")
 
 
 def _row() -> SimpleNamespace:

@@ -132,6 +132,20 @@ i18n-проверки, синхронизация `docs/testing.md` с акту�
 - [ ] 13.5 (опц.) `core/limiter.py` строки 52-54 — ветка `dep_index`-поиска по `route.dependencies`, требует сложной композиции зависимостей; 93% достаточно.
 - [ ] 13.6 (опц.) Оставшиеся 0%-файлы frontend: AnalyticsTab (75 branches), HelpdeskMailboxSettings (62), WorldClockWidget (45), RichEditorBubbleMenu (42), NewsCommentItem (36) — большая работа, отдельная итерация при необходимости поднять покрытие ещё выше.
 
+### Этап 14 — mypy на tests/ scope (CI красный → зелёный)
+- [x] 14.0 Корень проблемы: CI гоняет `mypy .` (весь проект), а AGENTS.md предписывает только `mypy app`. В результате 48 helpdesk-ошибок в `tests/unit/test_helpdesk_*.py` (SimpleNamespace вместо typed-моделей, str вместо UUID, Message-typing) существовали с прошлых итераций и не ловились локально.
+- [x] 14.1 `test_helpdesk_created_email.py` (14 ошибок): `_mailbox()` SimpleNamespace → `HelpdeskMailboxSettings` через polyfactory (`_HelpdeskMailboxFactory`), `enqueue.await_args is not None` checks (7 мест). 20/20 тестов.
+- [x] 14.2 `test_helpdesk_inline_images_email.py` (13 ошибок): `email.message.Message` typing — `isinstance(payload, list)` + `cast(Message, payload[N])` для индексов. 12/12 тестов.
+- [x] 14.3 `test_helpdesk_reads.py` (8 ошибок): `_ticket()` SimpleNamespace → `HelpdeskTicket` через polyfactory. 15/15 тестов.
+- [x] 14.4 `test_helpdesk_ingress_tx.py` (4 ошибки): `ticket_id`/`message_id` str → `uuid.UUID(...)`. 10/10 тестов.
+- [x] 14.5 `test_helpdesk_settings_test_endpoint.py` (3 ошибки): `_admin()` SimpleNamespace → `User` через polyfactory. 3/3 теста.
+- [x] 14.6 `test_helpdesk_outbound_replyto.py` (2 ошибки): `assignee`/`actor` SimpleNamespace → `User` через polyfactory. 12/12 тестов.
+- [x] 14.7 `test_helpdesk_email_images.py` (1 ошибка): `# type: ignore[method-assign]` → `# type: ignore[assignment]` (mypy подсказал правильный код).
+- [x] 14.8 `test_helpdesk_outbound_enqueue.py` (1 ошибка): `current = SimpleNamespace(...)` → `current: Any = SimpleNamespace(...)` (как в существующих `_msg()`/`_current_message()` — `Any`-обёртка для минимальной заглушки).
+- [x] 14.9 `test_helpdesk_settings_max_bot.py` (1 ошибка): `_make_db_with_row` return-type `tuple[MagicMock, MagicMock]` → `tuple[MagicMock, SimpleNamespace | None]` (неверная аннотация, row это SimpleNamespace).
+- [x] 14.10 `test_helpdesk_worker_locks.py` (1 ошибка) + `app/worker/tasks/helpdesk.py`: `POLL_LOCK_KEY`/`ARCHIVE_LOCK_KEY`/`PARTITION_LOCK_KEY`/`CLEANUP_LOCK_KEY`/`DIGEST_LOCK_KEY` добавлены в `__all__` (lock-keys — часть public surface модуля: нужны тестам + runtime-диагностике). `__all__` отсортирован (RUF022).
+- [x] 14.F Итог: `mypy .` → **Success: no issues found in 672 source files**. Все 48 pre-existing + мои 2 ошибки из итерации 17 (test_limiter.py) исправлены. Backend regression: **3740 passed, 5 skipped**. ruff/format — clean.
+
 ## Грабли / контекст
 
 - **Bash пайпы в plan mode блокируются хуком** — использовать простые команды или `/usr/bin/grep` с одним аргументом без `|`.
