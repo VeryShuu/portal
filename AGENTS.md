@@ -27,14 +27,19 @@
 
 ## Доступные инструменты (MCP)
 
-| Инструмент | Назначение | Когда использовать |
-|---|---|---|
-| **codebase-memory** | Граф знаний кодовой базы (callers/callees, hotspots, кластеры) | Impact-анализ, поиск callers/callees, cross-service трассировка, поиск хотспотов сложности. Подробнее — ниже в §«codebase-memory: граф кодовой базы» |
-| **playwright** | Браузерная автоматизация | E2E-тестирование, проверка UI, скриншоты страниц портала |
-| **sequential-thinking** | Структурированное пошаговое рассуждение | Сложные архитектурные решения, отладка трудновоспроизводимых багов |
-| **zen-cli** | Запуск субагентов, генерация изображений | Параллельное выполнение задач, делегирование изолированных подзадач |
-| **zencoder-rag-mcp** | Поиск по репозиториям и веб-поиск | Поиск паттернов в кодовой базе, поиск документации по библиотекам стека |
-| **zencoder-server** | Диагностика VS Code, вопросы пользователю | Получение диагностики TypeScript/Python, уточнение требований |
+Конфигурация: **workspace** серверы — в `.zcode/config.json` (auto-connect при открытии проекта, shared с командой через git); **user** серверы — в `~/.zcode/cli/config.json`. Секреты **никогда** в конфиг-файлах — только через env / wrapper-скрипты.
+
+| Инструмент | Scope | Назначение | Когда использовать |
+|---|---|---|---|
+| **codebase-memory** | user | Граф знаний кодовой базы (callers/callees, hotspots, кластеры) | Impact-анализ, поиск callers/callees, cross-service трассировка, поиск хотспотов сложности. Подробнее — ниже в §«codebase-memory: граф кодовой базы» |
+| **playwright** | workspace | Браузерная автоматизация (firefox, isolated) | E2E-тестирование, проверка UI, скриншоты страниц портала |
+| **postgres** | workspace | Read-only доступ к PostgreSQL (`--access-mode restricted`) | Инспекция схем/индексов/FTS, отладка outbox/audit, проверка миграций. Доступ через сеть `portal_internal`, пароль из `.env` |
+| **github** | workspace | Read-only GitHub API (через `gh auth token`) | Чтение CI/PR/issues репо `VeryShuu/portal`, без прав на запись |
+| **docker** | workspace | Управление контейнерами `portal-*` (`ps`, `logs`, `restart`, `exec`) | Логи контейнеров, рестарт после правок, exec без переключения контекста |
+
+> **Удалено (2026-07-20):** `sequential-thinking`, `zen-cli`, `zencoder-rag-mcp`, `zencoder-server` — не подключены и избыточны (рассуждения и субагенты встроены в модель; поиск по коду закрыт `codebase-memory` + встроенный grep; веб-поиск — встроенный `WebSearch`/`WebFetch`; LSP-диагностика — через `npm run typecheck`/`mypy app`).
+
+> **Gotcha (ZCode MCP schema):** конфигурационные MCP-серверы — **строгий schema**: любой неизвестный top-level ключ (например `_comment`) → сервер молча **dropped**. Шаблоны `${...}` в конфиг-файлах **НЕ раскрываются** (только в plugin-provided серверах) — использовать абсолютные пути. См. `/diagnosing-mcp` skill.
 
 ### codebase-memory: граф кодовой базы
 
