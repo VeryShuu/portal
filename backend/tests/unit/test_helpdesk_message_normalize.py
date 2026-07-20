@@ -40,7 +40,7 @@ class TestNormalizeMessageBodies:
 
     def test_strips_xss_script(self) -> None:
         """XSS через <script> — nh3 срезает."""
-        html_in = '<p>ok</p><script>alert(1)</script>'
+        html_in = "<p>ok</p><script>alert(1)</script>"
         plain, html = normalize_message_bodies(None, html_in)
         assert "<script>" not in (html or "")
         assert "alert" not in (html or "")

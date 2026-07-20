@@ -373,9 +373,7 @@ class TestAgentReadState:
         )
         assert unread is False, "ответ агента не должен делать тикет непрочитанным"
 
-    async def test_internal_note_does_not_make_unread(
-        self, real_db_session, ticket, real_admin
-    ):
+    async def test_internal_note_does_not_make_unread(self, real_db_session, ticket, real_admin):
         """Internal-заметка (``visibility='internal'``) НЕ делает тикет
         непрочитанным — это служебная активность, не требующая «прочтения»."""
         from app.models.helpdesk import HelpdeskMessage
@@ -406,9 +404,7 @@ class TestAgentReadState:
         )
         assert unread is False, "internal-заметка не должна делать тикет непрочитанным"
 
-    async def test_read_state_is_per_agent(
-        self, real_db_session, ticket, real_admin, real_editor
-    ):
+    async def test_read_state_is_per_agent(self, real_db_session, ticket, real_admin, real_editor):
         """Read-state per-user: один агент прочитал — для другого тикет всё
         ещё непрочитан (каждый видит свой «last seen»)."""
         from app.services.helpdesk import reads as reads_svc
@@ -428,9 +424,7 @@ class TestAgentReadState:
         assert admin_unread is False
         assert editor_unread is True, "для другого агента тикет всё ещё непрочитан"
 
-    async def test_enrich_returns_map_for_inbox(
-        self, real_db_session, ticket, real_admin
-    ):
+    async def test_enrich_returns_map_for_inbox(self, real_db_session, ticket, real_admin):
         """``enrich_with_unread`` одним запросом возвращает map для списка
         тикетов инбокса — без N+1 на каждый тикет."""
         from app.services.helpdesk import reads as reads_svc
@@ -441,9 +435,7 @@ class TestAgentReadState:
         assert set(unread_map.keys()) == {ticket.id}
         assert unread_map[ticket.id] is True
 
-    async def test_mark_seen_upsert_is_idempotent(
-        self, real_db_session, ticket, real_admin
-    ):
+    async def test_mark_seen_upsert_is_idempotent(self, real_db_session, ticket, real_admin):
         """Повторное открытие карточки = UPSERT (не падает на UNIQUE) и
         обновляет ``last_seen_at`` на более свежий."""
         from app.models.helpdesk import HelpdeskTicketRead

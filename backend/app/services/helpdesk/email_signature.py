@@ -74,10 +74,10 @@ _SIGNATURE_MAILTO_RE = re.compile(
 
 # Все паттерны в порядке «надёжность → вспомогательный».
 _SIGNATURE_PATTERNS: tuple[re.Pattern[str], ...] = (
-    _SIGNATURE_LOGO_RE,      # логотип — самый сильный маркер
-    _SIGNATURE_BORDER_RE,    # цвет границы ячейки
-    _SIGNATURE_BLUE_RE,      # фирменный синий
-    _SIGNATURE_MAILTO_RE,    # mailto:@mage.ru
+    _SIGNATURE_LOGO_RE,  # логотип — самый сильный маркер
+    _SIGNATURE_BORDER_RE,  # цвет границы ячейки
+    _SIGNATURE_BLUE_RE,  # фирменный синий
+    _SIGNATURE_MAILTO_RE,  # mailto:@mage.ru
 )
 
 

@@ -66,6 +66,7 @@ class _SystemSettingsBase(BaseModel):
         if "://" not in v:
             return f"https://{v}"
         return v
+
     onboarding_steps: list[OnboardingStep] | None = Field(default=None)
 
     @field_validator("phone_extract_regex")

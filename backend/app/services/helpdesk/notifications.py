@@ -456,15 +456,15 @@ def _build_ticket_url(ticket: HelpdeskTicket) -> str:
 # совпадает с RFC 6761/6762 (special-use) + ICANN-private-network registry.
 _MAX_LINK_BLOCKED_TLDS = frozenset(
     {
-        "local",       # mDNS / корпоративный интранет-домен портала по умолчанию
-        "localhost",   # hostname-only (даже без точки)
-        "internal",    # частый внутренний домен
+        "local",  # mDNS / корпоративный интранет-домен портала по умолчанию
+        "localhost",  # hostname-only (даже без точки)
+        "internal",  # частый внутренний домен
         "lan",
         "home",
-        "test",        # RFC 6761 reserved
-        "example",     # RFC 6761 reserved
-        "invalid",     # RFC 6761 reserved
-        "onion",       # RFC 7686
+        "test",  # RFC 6761 reserved
+        "example",  # RFC 6761 reserved
+        "invalid",  # RFC 6761 reserved
+        "onion",  # RFC 7686
         "arpa",
     }
 )
@@ -589,9 +589,7 @@ def _build_max_message_with_link(
 
 async def _load_max_bot_settings(db: AsyncSession) -> HelpdeskMaxBotSettings | None:
     """Singleton (id=1). Засевается миграцией 081 с enabled=False."""
-    res = await db.execute(
-        select(HelpdeskMaxBotSettings).where(HelpdeskMaxBotSettings.id == 1)
-    )
+    res = await db.execute(select(HelpdeskMaxBotSettings).where(HelpdeskMaxBotSettings.id == 1))
     return res.scalars().one_or_none()
 
 
@@ -651,9 +649,7 @@ async def notify_ticket_created_max(
     elif requester is not None and getattr(requester, "email", None):
         requester_label = requester.email
     else:
-        requester_label = ticket.requester_email or (
-            ticket.requester_name or "—"
-        )
+        requester_label = ticket.requester_email or (ticket.requester_name or "—")
 
     # Город заявителя из профиля Keycloak-attributes (``users.attributes['city']``).
     # Гость без аккаунта → нет attributes → прочерк (поле выводится всегда —

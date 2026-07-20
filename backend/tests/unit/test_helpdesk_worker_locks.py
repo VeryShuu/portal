@@ -173,7 +173,13 @@ class TestLockKeys:
     """Все lock-keys зарезервированы (защита от случайного rename/refactor)."""
 
     def test_keys_are_distinct(self) -> None:
-        keys = {POLL_LOCK_KEY, ARCHIVE_LOCK_KEY, PARTITION_LOCK_KEY, CLEANUP_LOCK_KEY, DIGEST_LOCK_KEY}
+        keys = {
+            POLL_LOCK_KEY,
+            ARCHIVE_LOCK_KEY,
+            PARTITION_LOCK_KEY,
+            CLEANUP_LOCK_KEY,
+            DIGEST_LOCK_KEY,
+        }
         assert len(keys) == 5
 
     def test_all_prefixed(self) -> None:

@@ -35,9 +35,7 @@ def _patch_rate_limiter_for_starlette1() -> None:
 
     async def _patched_call(self: RateLimiter, request: Request, response: Response) -> None:
         if not FastAPILimiter.redis:
-            raise Exception(
-                "You must call FastAPILimiter.init in startup event of fastapi!"
-            )
+            raise Exception("You must call FastAPILimiter.init in startup event of fastapi!")
         route_index = 0
         dep_index = 0
         for i, route in enumerate(request.app.routes):

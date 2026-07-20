@@ -4,6 +4,7 @@ import { defineComponent, h, nextTick } from 'vue'
 import { mount } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
 import { createMemoryHistory, createRouter } from 'vue-router'
+import { VueQueryPlugin, QueryClient } from '@tanstack/vue-query'
 
 import { useAppMenu } from '../../src/composables/useAppMenu'
 import { ROUTES } from '../../src/router'
@@ -75,7 +76,14 @@ async function setup(opts: {
     },
   })
 
-  mount(Host, { global: { plugins: [router, i18n] } })
+  // useAppMenu дёргает useMyTicketCountsQuery / useAgentTicketCountsQuery —
+  // для unit-теста нужен VueQueryPlugin с QueryClient (queries по умолчанию
+  // disabled через enabled=false, т.к. модуль helpdesk в тестах выключен).
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  })
+
+  mount(Host, { global: { plugins: [router, i18n, [VueQueryPlugin, { queryClient }]] } })
   await nextTick()
   return { menu: captured!, router, modules, auth }
 }

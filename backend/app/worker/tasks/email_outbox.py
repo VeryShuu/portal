@@ -368,8 +368,7 @@ async def _embed_helpdesk_attachment_images(
                 HelpdeskAttachment.id,
                 HelpdeskAttachment.filename,
                 HelpdeskAttachment.content_type,
-            )
-            .where(HelpdeskAttachment.id.in_(att_ids))
+            ).where(HelpdeskAttachment.id.in_(att_ids))
         )
         rows = res.all()
 

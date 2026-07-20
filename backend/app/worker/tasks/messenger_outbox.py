@@ -85,11 +85,7 @@ async def _release_lock(redis: Redis, key: str, token: str) -> None:
 
 async def _load_max_settings(db: AsyncSession) -> HelpdeskMaxBotSettings | None:
     return (
-        (
-            await db.execute(
-                select(HelpdeskMaxBotSettings).where(HelpdeskMaxBotSettings.id == 1)
-            )
-        )
+        (await db.execute(select(HelpdeskMaxBotSettings).where(HelpdeskMaxBotSettings.id == 1)))
         .scalars()
         .one_or_none()
     )
@@ -160,9 +156,7 @@ async def process_messenger_outbox(ctx: dict) -> int:
     sent_ok = 0
     try:
         async with AsyncSessionLocal() as session, session.begin():
-            await requeue_stale_sending(
-                session, older_than_seconds=STALE_SENDING_TIMEOUT_SECONDS
-            )
+            await requeue_stale_sending(session, older_than_seconds=STALE_SENDING_TIMEOUT_SECONDS)
             claimed = await claim_pending(session, limit=DISPATCH_BATCH_SIZE)
         if not claimed:
             return 0
@@ -186,9 +180,7 @@ async def process_messenger_outbox(ctx: dict) -> int:
                         current_attempts=row["attempts"],
                         max_attempts=row["max_attempts"],
                     )
-            logger.warning(
-                "messenger_outbox.dispatch.max_disabled", claimed=len(claimed)
-            )
+            logger.warning("messenger_outbox.dispatch.max_disabled", claimed=len(claimed))
             return 0
 
         if not max_settings.bot_token_enc or not max_settings.chat_id:
@@ -205,9 +197,7 @@ async def process_messenger_outbox(ctx: dict) -> int:
                         current_attempts=row["attempts"],
                         max_attempts=row["max_attempts"],
                     )
-            logger.error(
-                "messenger_outbox.dispatch.max_misconfigured", claimed=len(claimed)
-            )
+            logger.error("messenger_outbox.dispatch.max_misconfigured", claimed=len(claimed))
             return 0
 
         try:

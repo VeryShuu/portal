@@ -180,9 +180,7 @@ class TestFtsSearchInReplies:
         )
         real_db_session.add(t)
         await real_db_session.flush()
-        real_db_session.add(
-            _make_message(ticket_id=t.id, body_text="Настройте VPN по инструкции")
-        )
+        real_db_session.add(_make_message(ticket_id=t.id, body_text="Настройте VPN по инструкции"))
         await real_db_session.flush()
 
         matched = await _fetch_matched_ids(real_db_session, "vpn")

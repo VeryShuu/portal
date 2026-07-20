@@ -90,7 +90,9 @@ class HelpdeskTicket(Base):
     subject: Mapped[str] = mapped_column(String(500), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
     description_html: Mapped[str | None] = mapped_column(Text, nullable=True)
-    status: Mapped[str] = mapped_column(String(20), nullable=False, server_default=sql_text("'new'"))
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default=sql_text("'new'")
+    )
     source: Mapped[str] = mapped_column(String(20), nullable=False)
 
     requester_user_id: Mapped[uuid.UUID | None] = mapped_column(
@@ -510,11 +512,17 @@ class MessengerOutbox(Base):
     provider: Mapped[str] = mapped_column(String(32), nullable=False)
     chat_id: Mapped[str] = mapped_column(String(64), nullable=False)
     text: Mapped[str] = mapped_column(Text, nullable=False)
-    payload: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sql_text("'{}'::jsonb"))
-    status: Mapped[str] = mapped_column(String(16), nullable=False, server_default=sql_text("'PENDING'"))
+    payload: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, server_default=sql_text("'{}'::jsonb")
+    )
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, server_default=sql_text("'PENDING'")
+    )
     attempts: Mapped[int] = mapped_column(Integer, nullable=False, server_default=sql_text("0"))
     max_attempts: Mapped[int] = mapped_column(Integer, nullable=False, server_default=sql_text("6"))
-    next_attempt_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=sql_text("NOW()"))
+    next_attempt_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=sql_text("NOW()")
+    )
     last_error_type: Mapped[str | None] = mapped_column(String(128), nullable=True)
     last_error_class: Mapped[str | None] = mapped_column(String(16), nullable=True)
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -522,8 +530,15 @@ class MessengerOutbox(Base):
     related_resource_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
     related_resource_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=sql_text("NOW()"))
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=sql_text("NOW()"), onupdate=lambda: datetime.now(UTC))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=sql_text("NOW()")
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=sql_text("NOW()"),
+        onupdate=lambda: datetime.now(UTC),
+    )
 
 
 class HelpdeskTicketRead(Base):
@@ -549,9 +564,7 @@ class HelpdeskTicketRead(Base):
 
     __tablename__ = "helpdesk_ticket_reads"
     __table_args__ = (
-        UniqueConstraint(
-            "ticket_id", "user_id", name="uq_helpdesk_ticket_reads_ticket_user"
-        ),
+        UniqueConstraint("ticket_id", "user_id", name="uq_helpdesk_ticket_reads_ticket_user"),
         Index("ix_helpdesk_ticket_reads_user", "user_id"),
     )
 

@@ -153,7 +153,9 @@ class TestProducersUseExplicitReplyTo:
         with patch(
             "app.services.helpdesk.outbound.enqueue_outbox_email", new=AsyncMock()
         ) as enqueue:
-            await enqueue_reply_outbound(db, ticket=_ticket(), message=_current_message(), mailbox=mb)
+            await enqueue_reply_outbound(
+                db, ticket=_ticket(), message=_current_message(), mailbox=mb
+            )
 
         assert enqueue.await_args is not None
         assert enqueue.await_args.kwargs["payload"]["reply_to"] == "noreply@company.local"
@@ -166,7 +168,9 @@ class TestProducersUseExplicitReplyTo:
         with patch(
             "app.services.helpdesk.outbound.enqueue_outbox_email", new=AsyncMock()
         ) as enqueue:
-            await enqueue_reply_outbound(db, ticket=_ticket(), message=_current_message(), mailbox=mb)
+            await enqueue_reply_outbound(
+                db, ticket=_ticket(), message=_current_message(), mailbox=mb
+            )
 
         assert enqueue.await_args is not None
         assert enqueue.await_args.kwargs["payload"]["reply_to"] == "portal@company.local"
@@ -217,7 +221,9 @@ class TestProducersSanitizeReferences:
         with patch(
             "app.services.helpdesk.outbound.enqueue_outbox_email", new=AsyncMock()
         ) as enqueue:
-            await enqueue_reply_outbound(db, ticket=_ticket(), message=_current_message(), mailbox=mb)
+            await enqueue_reply_outbound(
+                db, ticket=_ticket(), message=_current_message(), mailbox=mb
+            )
 
         assert enqueue.await_args is not None
         payload = enqueue.await_args.kwargs["payload"]

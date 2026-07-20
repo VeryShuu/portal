@@ -526,9 +526,7 @@ class TestFetchRemoteSizeCap:
                 yield chunk
 
         resp.aiter_raw = _spy_aiter_raw  # type: ignore[method-assign]
-        fake = _FakeAsyncClient(
-            responses={"https://cdn.example.com/huge.png": resp}
-        )
+        fake = _FakeAsyncClient(responses={"https://cdn.example.com/huge.png": resp})
         p1, p2 = _patch_dns_public()
         with _patch_httpx_client(fake), p1, p2:
             result = await _fetch_remote("https://cdn.example.com/huge.png")
@@ -560,9 +558,7 @@ class TestFetchRemoteSizeCap:
                 for _ in range(needed_chunks):
                     yield chunk
 
-        fake = _FakeAsyncClient(
-            responses={"https://cdn.example.com/over.png": _OverflowResponse()}
-        )
+        fake = _FakeAsyncClient(responses={"https://cdn.example.com/over.png": _OverflowResponse()})
         p1, p2 = _patch_dns_public()
         with _patch_httpx_client(fake), p1, p2:
             result = await _fetch_remote("https://cdn.example.com/over.png")

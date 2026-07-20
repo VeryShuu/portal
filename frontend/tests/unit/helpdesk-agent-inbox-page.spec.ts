@@ -13,7 +13,6 @@ const ru = {
     sectionInWork: 'В работе',
     filterMine: 'Только мои',
     filterAllAssigned: 'Все назначенные',
-    archive: 'Архив',
     sectionArchive: 'Архив заявок',
     noNewTickets: 'Неназначенных заявок нет',
     noTickets: 'Заявок нет',

@@ -66,9 +66,7 @@ class TestEmbedAttachmentImages:
             patch("app.core.constants.HELPDESK_FILES_DIR", tmp_path),
             patch(
                 "app.worker.tasks.email_outbox.AsyncSessionLocal",
-                return_value=_mock_db_session(
-                    [(att_id, filename, "image/png")]
-                ),
+                return_value=_mock_db_session([(att_id, filename, "image/png")]),
             ),
         ):
             new_html, images = await _embed_helpdesk_attachment_images(html, 123)
@@ -95,9 +93,7 @@ class TestEmbedAttachmentImages:
             patch("app.core.constants.HELPDESK_FILES_DIR", tmp_path),
             patch(
                 "app.worker.tasks.email_outbox.AsyncSessionLocal",
-                return_value=_mock_db_session(
-                    [(att_id, filename, "image/jpeg")]
-                ),
+                return_value=_mock_db_session([(att_id, filename, "image/jpeg")]),
             ),
         ):
             new_html, images = await _embed_helpdesk_attachment_images(html, 7)
@@ -117,9 +113,7 @@ class TestEmbedAttachmentImages:
             (ticket_dir / fn).write_bytes(b"\x89PNG fake")
         html = _img_html(_att_url(att1)) + _img_html(_att_url(att2))
 
-        session_ctx = _mock_db_session(
-            [(att1, f1, "image/png"), (att2, f2, "image/png")]
-        )
+        session_ctx = _mock_db_session([(att1, f1, "image/png"), (att2, f2, "image/png")])
         with (
             patch("app.core.constants.HELPDESK_FILES_DIR", tmp_path),
             patch(
@@ -172,9 +166,7 @@ class TestEmbedAttachmentImages:
             patch("app.core.constants.HELPDESK_FILES_DIR", tmp_path),
             patch(
                 "app.worker.tasks.email_outbox.AsyncSessionLocal",
-                return_value=_mock_db_session(
-                    [(pdf_att, "doc.pdf", "application/pdf")]
-                ),
+                return_value=_mock_db_session([(pdf_att, "doc.pdf", "application/pdf")]),
             ),
         ):
             new_html, images = await _embed_helpdesk_attachment_images(html, 5)
@@ -196,9 +188,7 @@ class TestEmbedAttachmentImages:
             patch("app.core.constants.HELPDESK_FILES_DIR", tmp_path),
             patch(
                 "app.worker.tasks.email_outbox.AsyncSessionLocal",
-                return_value=_mock_db_session(
-                    [(att_id, "missing.png", "image/png")]
-                ),
+                return_value=_mock_db_session([(att_id, "missing.png", "image/png")]),
             ),
         ):
             new_html, images = await _embed_helpdesk_attachment_images(html, 99)
@@ -257,9 +247,7 @@ class TestEmbedAttachmentImages:
             patch("app.core.constants.HELPDESK_FILES_DIR", tmp_path),
             patch(
                 "app.worker.tasks.email_outbox.AsyncSessionLocal",
-                return_value=_mock_db_session(
-                    [(svg_att, "logo.svg", "image/svg+xml")]
-                ),
+                return_value=_mock_db_session([(svg_att, "logo.svg", "image/svg+xml")]),
             ),
         ):
             new_html, images = await _embed_helpdesk_attachment_images(html, 1)

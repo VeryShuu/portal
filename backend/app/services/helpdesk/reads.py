@@ -37,7 +37,7 @@ from app.models.helpdesk import HelpdeskMessage, HelpdeskTicket, HelpdeskTicketR
 # заметок, которые видны только агентам). Вынесены, чтобы тесты и запросы
 # ссылались на единый источник истины (защита от регрессии — например,
 # случайного учёта internal-заметок).
-INBOUND_DIRECTION = "inbound"   # от заявителя (для агентского unread-контракта)
+INBOUND_DIRECTION = "inbound"  # от заявителя (для агентского unread-контракта)
 OUTBOUND_DIRECTION = "outbound"  # от агента (для заявительского unread-контракта)
 PUBLIC_VISIBILITY = "public"
 
@@ -128,8 +128,7 @@ async def has_unread_requester_messages(
             HelpdeskMessage.ticket_id == ticket_id,
             HelpdeskMessage.direction == direction,
             HelpdeskMessage.visibility == PUBLIC_VISIBILITY,
-            HelpdeskMessage.created_at
-            > func.coalesce(last_seen_subq, EPOCH_SENTINEL),
+            HelpdeskMessage.created_at > func.coalesce(last_seen_subq, EPOCH_SENTINEL),
         )
         .exists()
     )
@@ -186,8 +185,7 @@ async def enrich_with_unread(
             HelpdeskMessage.ticket_id.in_(ticket_ids),
             HelpdeskMessage.direction == direction,
             HelpdeskMessage.visibility == PUBLIC_VISIBILITY,
-            HelpdeskMessage.created_at
-            > func.coalesce(last_seen_subq, EPOCH_SENTINEL),
+            HelpdeskMessage.created_at > func.coalesce(last_seen_subq, EPOCH_SENTINEL),
         )
         .group_by(HelpdeskMessage.ticket_id)
     )

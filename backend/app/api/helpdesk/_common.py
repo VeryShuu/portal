@@ -122,9 +122,7 @@ def build_requester_profile(user: User | None) -> RequesterProfileOut | None:
     )
 
 
-def ticket_to_list_out(
-    ticket: HelpdeskTicket, *, unread: bool | None = None
-) -> TicketListItemOut:
+def ticket_to_list_out(ticket: HelpdeskTicket, *, unread: bool | None = None) -> TicketListItemOut:
     return TicketListItemOut(
         id=ticket.id,
         number=ticket.number,

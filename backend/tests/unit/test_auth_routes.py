@@ -552,7 +552,7 @@ class TestLocalLogin:
         # Фронт читает через document.cookie → НЕ HttpOnly.
         assert "httponly" not in method_cookie[0].lower()
         # Долгоживущая (30 дней) — иначе знание теряется между сессиями.
-        assert "max-age=2592000" in method_cookie[0]
+        assert "max-age=2592000" in method_cookie[0].lower()
 
 
 # ── POST /auth/refresh ────────────────────────────────────────────────────────

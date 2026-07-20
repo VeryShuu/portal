@@ -36,10 +36,7 @@ def upgrade() -> None:
         "ALTER TABLE helpdesk_attachments "
         "ADD COLUMN IF NOT EXISTS is_inline BOOLEAN NOT NULL DEFAULT FALSE"
     )
-    op.execute(
-        "ALTER TABLE helpdesk_attachments "
-        "ADD COLUMN IF NOT EXISTS content_id VARCHAR(320)"
-    )
+    op.execute("ALTER TABLE helpdesk_attachments ADD COLUMN IF NOT EXISTS content_id VARCHAR(320)")
 
 
 def downgrade() -> None:

@@ -225,9 +225,7 @@ async def _load_max_bot_singleton(db: DbDep) -> HelpdeskMaxBotSettings:
     миграция ещё не применена/строка удалена, создаём новую с дефолтами
     (best-effort; нормальный путь — миграция, как и в ``_load_digest_singleton``).
     """
-    res = await db.execute(
-        select(HelpdeskMaxBotSettings).where(HelpdeskMaxBotSettings.id == 1)
-    )
+    res = await db.execute(select(HelpdeskMaxBotSettings).where(HelpdeskMaxBotSettings.id == 1))
     row = res.scalars().one_or_none()
     if row is None:
         row = HelpdeskMaxBotSettings(id=1)
@@ -249,9 +247,7 @@ def _max_bot_to_out(row: HelpdeskMaxBotSettings) -> HelpdeskMaxBotSettingsOut:
 
 
 @router.get("/max-bot", response_model=HelpdeskMaxBotSettingsOut)
-async def get_max_bot_settings(
-    _admin: AdminDep, db: DbDep
-) -> HelpdeskMaxBotSettingsOut:
+async def get_max_bot_settings(_admin: AdminDep, db: DbDep) -> HelpdeskMaxBotSettingsOut:
     row = await _load_max_bot_singleton(db)
     return _max_bot_to_out(row)
 
@@ -327,21 +323,16 @@ async def test_max_bot_connection(admin: AdminDep, db: DbDep) -> HelpdeskMaxBotT
     """
     row = await _load_max_bot_singleton(db)
     if not row.bot_token_enc:
-        return HelpdeskMaxBotTestResult(
-            ok=False, error="Bot token is not configured"
-        )
+        return HelpdeskMaxBotTestResult(ok=False, error="Bot token is not configured")
     if not row.chat_id:
-        return HelpdeskMaxBotTestResult(
-            ok=False, error="Chat ID is not configured"
-        )
+        return HelpdeskMaxBotTestResult(ok=False, error="Chat ID is not configured")
     bot_token = decrypt_secret(row.bot_token_enc)
     # Тестовое сообщение: короткое, с подписью кто инициировал проверку.
     # ``markdown`` (а не ``plain``): MAX падает с "Can't deserialize body"
     # при format=plain. Текст без разметки — markdown-парсер проходит без
     # проблем (это просто текст без специальных символов).
     text = (
-        "✅ Тест портала: уведомления helpdesk работают.\n"
-        f"Инициатор проверки: {admin.full_name}."
+        f"✅ Тест портала: уведомления helpdesk работают.\nИнициатор проверки: {admin.full_name}."
     )
     try:
         from app.services.max_messenger import send_message

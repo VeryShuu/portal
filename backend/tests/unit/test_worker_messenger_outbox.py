@@ -135,7 +135,9 @@ class TestProcessMessengerOutbox:
 
         rows = [_mk_row(), _mk_row()]
         monkeypatch.setattr(mo, "claim_pending", AsyncMock(return_value=rows))
-        monkeypatch.setattr(mo, "_load_max_settings", AsyncMock(return_value=_settings(enabled=False)))
+        monkeypatch.setattr(
+            mo, "_load_max_settings", AsyncMock(return_value=_settings(enabled=False))
+        )
         mark_failed_mock = AsyncMock()
         monkeypatch.setattr(mo, "mark_failed", mark_failed_mock)
 

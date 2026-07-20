@@ -88,7 +88,7 @@ class TestEmbedInlineImages:
         # Одна запись inline_image (дедуп), обе ссылки переписаны на один cid.
         assert len(images) == 1
         cid = images[0]["cid"]
-        assert new_html.count(f'cid:{cid}') == 2
+        assert new_html.count(f"cid:{cid}") == 2
 
     @pytest.mark.asyncio
     async def test_missing_file_keeps_relative_url(self, tmp_path) -> None:
@@ -191,7 +191,7 @@ class TestBuildMimeWithInlineImages:
         assert cid.startswith("<img-") and cid.endswith(">")
         # HTML внутри содержит ссылку на тот же cid.
         html_part = payload[0].get_payload()[1]
-        assert f'cid:{cid.strip("<>")}' in html_part.get_payload(decode=True).decode("utf-8")
+        assert f"cid:{cid.strip('<>')}" in html_part.get_payload(decode=True).decode("utf-8")
 
     @pytest.mark.asyncio
     async def test_no_related_when_no_inline_images(self) -> None:
@@ -217,9 +217,7 @@ class TestBuildMimeWithInlineImages:
         assert msg.get("Content-ID") is None
 
     @pytest.mark.asyncio
-    async def test_related_inside_mixed_when_both_inline_and_attachment(
-        self, tmp_path
-    ) -> None:
+    async def test_related_inside_mixed_when_both_inline_and_attachment(self, tmp_path) -> None:
         # Картинка inline + обычное вложение → multipart/mixed > related > alternative.
         img_path = tmp_path / "TKT-123" / "inline" / "shot.png"
         img_path.parent.mkdir(parents=True)

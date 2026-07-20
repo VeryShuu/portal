@@ -146,9 +146,7 @@ async def serve_ticket_inline_media(
     # X-Accel-Redirect указывает на nginx location ``/internal/helpdesk-media/``
     # (alias → ``/data/helpdesk/``). Внутренний путь:
     # ``TKT-{number}/inline/{filename}`` (совпадает с FS-структурой).
-    internal_path = (
-        f"/internal/helpdesk-media/TKT-{ticket.number}/inline/{quote(filename)}"
-    )
+    internal_path = f"/internal/helpdesk-media/TKT-{ticket.number}/inline/{quote(filename)}"
     return Response(
         status_code=status.HTTP_200_OK,
         headers={

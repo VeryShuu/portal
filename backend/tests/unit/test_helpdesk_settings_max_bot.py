@@ -133,9 +133,7 @@ class TestPutMaxBotSettings:
             patch("app.api.helpdesk.settings.push_audit_event", new=AsyncMock()),
         ):
             await put_max_bot_settings(
-                HelpdeskMaxBotSettingsIn(
-                    enabled=True, bot_token="plaintext-token", chat_id="100"
-                ),
+                HelpdeskMaxBotSettingsIn(enabled=True, bot_token="plaintext-token", chat_id="100"),
                 _admin(),
                 db,
                 redis,

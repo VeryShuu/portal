@@ -230,14 +230,10 @@ async def mark_my_ticket_read(
     раскрываем существование). Не требует audit/rate-limit (read-state —
     бизнес-состояние, как ``notifications.read``). Идемпотентно.
     """
-    ticket = await tickets_service.fetch_ticket_for_user(
-        db, ticket_id=ticket_id, user_id=user.id
-    )
+    ticket = await tickets_service.fetch_ticket_for_user(db, ticket_id=ticket_id, user_id=user.id)
     if ticket is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
-    seen_at = await reads_service.mark_ticket_seen(
-        db, ticket_id=ticket_id, user_id=user.id
-    )
+    seen_at = await reads_service.mark_ticket_seen(db, ticket_id=ticket_id, user_id=user.id)
     await db.commit()
     return MarkTicketReadOut(ticket_id=ticket_id, last_seen_at=seen_at)
 
@@ -387,9 +383,7 @@ async def list_all_tickets(
     # Enrich одним запросом: какие тикеты имеют непрочитанные ответы заявителя
     # для этого агента (миграция 080). Без этого был бы N+1 — на каждый тикет
     # отдельный EXISTS-запрос. Map → O(1)-lookup в сериализаторе.
-    unread_map = await reads_service.enrich_with_unread(
-        db, tickets=items, user_id=agent.id
-    )
+    unread_map = await reads_service.enrich_with_unread(db, tickets=items, user_id=agent.id)
     return TicketListOut(
         items=[ticket_to_list_out(i, unread=unread_map.get(i.id)) for i in items],
         total=total,
@@ -414,9 +408,7 @@ async def get_agent_ticket_counts(
     неназначенные тикеты здесь не считаются (для них есть отдельный блок в
     инбоксе). ``closed`` исключён. Один ``count(*)`` без join'ов.
     """
-    active = await tickets_service.count_assigned_active_tickets(
-        db, user_id=agent.id
-    )
+    active = await tickets_service.count_assigned_active_tickets(db, user_id=agent.id)
     return TicketCountsOut(active=active)
 
 
@@ -455,9 +447,7 @@ async def mark_ticket_read(
     """
     # Проверка существования тикета + агентский ACL (404 если нет/нет доступа).
     await _load_agent_ticket(db, ticket_id)
-    seen_at = await reads_service.mark_ticket_seen(
-        db, ticket_id=ticket_id, user_id=agent.id
-    )
+    seen_at = await reads_service.mark_ticket_seen(db, ticket_id=ticket_id, user_id=agent.id)
     await db.commit()
     return MarkTicketReadOut(ticket_id=ticket_id, last_seen_at=seen_at)
 

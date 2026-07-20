@@ -96,9 +96,7 @@ def _fake_redis() -> AsyncMock:
 # Минимальный валидный JPEG-хвост (magic-байты) — stream_upload_to_path мокается,
 # но MIME-валидация в реальном коде смотрит на magic.from_buffer; мы мокаем весь
 # stream_upload_to_path, поэтому содержимое не критично.
-_JPEG_BYTES = (
-    b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00\xff\xd9"
-)
+_JPEG_BYTES = b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00\xff\xd9"
 
 
 # ─── is_helpdesk_agent ──────────────────────────────────────────────────────

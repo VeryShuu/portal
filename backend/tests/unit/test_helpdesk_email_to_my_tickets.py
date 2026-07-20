@@ -121,7 +121,9 @@ def _disable_post_ingest_effects() -> Any:
     from contextlib import ExitStack
 
     stack = ExitStack()
-    stack.enter_context(patch("app.services.helpdesk.ingress._localize_remote_post_commit", new=AsyncMock()))
+    stack.enter_context(
+        patch("app.services.helpdesk.ingress._localize_remote_post_commit", new=AsyncMock())
+    )
     stack.enter_context(
         patch("app.services.helpdesk.notifications.notify_ticket_created", new=AsyncMock())
     )
@@ -273,7 +275,9 @@ class TestEmailFromGuestIsNotVisibleInMy:
         db.execute = AsyncMock(side_effect=_capture_execute)
 
         user_id = uuid.uuid4()
-        await tickets_svc.list_my_tickets(db, user_id=user_id, status_filter=None, limit=20, offset=0)
+        await tickets_svc.list_my_tickets(
+            db, user_id=user_id, status_filter=None, limit=20, offset=0
+        )
 
         assert len(captured_execute) == 1
         stmt_str = str(captured_execute[0])

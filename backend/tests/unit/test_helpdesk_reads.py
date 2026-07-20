@@ -71,9 +71,7 @@ class TestMarkTicketSeen:
         db = _make_db([_result()])
         before = datetime.now(UTC)
 
-        result = await reads_svc.mark_ticket_seen(
-            db, ticket_id=TICKET_ID, user_id=USER_ID
-        )
+        result = await reads_svc.mark_ticket_seen(db, ticket_id=TICKET_ID, user_id=USER_ID)
 
         after = datetime.now(UTC)
         assert before <= result <= after
@@ -101,9 +99,7 @@ class TestHasUnreadRequesterMessages:
     async def test_executes_one_query(self) -> None:
         """Один запрос на проверку (EXISTS — самый дешёвый путь)."""
         db = _make_db([_result(scalar=True)])
-        await reads_svc.has_unread_requester_messages(
-            db, ticket_id=TICKET_ID, user_id=USER_ID
-        )
+        await reads_svc.has_unread_requester_messages(db, ticket_id=TICKET_ID, user_id=USER_ID)
         assert db.execute.await_count == 1
 
 
@@ -131,9 +127,7 @@ class TestEnrichWithUnread:
             [_result(rows=[(TICKET_ID, 3)])]  # (ticket_id, unread_count)
         )
 
-        result = await reads_svc.enrich_with_unread(
-            db, tickets=[t1, t2], user_id=USER_ID
-        )
+        result = await reads_svc.enrich_with_unread(db, tickets=[t1, t2], user_id=USER_ID)
 
         assert set(result.keys()) == {TICKET_ID, TICKET_ID_2}
         assert result[TICKET_ID] is True
@@ -154,9 +148,7 @@ class TestEnrichWithUnread:
         t2 = _ticket(id_=TICKET_ID_2)
         db = _make_db([_result(rows=[(TICKET_ID, 1), (TICKET_ID_2, 2)])])
 
-        result = await reads_svc.enrich_with_unread(
-            db, tickets=[t1, t2], user_id=USER_ID
-        )
+        result = await reads_svc.enrich_with_unread(db, tickets=[t1, t2], user_id=USER_ID)
 
         assert result == {TICKET_ID: True, TICKET_ID_2: True}
 
@@ -222,7 +214,5 @@ class TestUnreadDirectionParameterization:
         """Дефолт ``enrich_with_unread`` — ``inbound`` (регресс агентского пути)."""
         t1 = _ticket(id_=TICKET_ID)
         db = _make_db([_result(rows=[])])
-        result = await reads_svc.enrich_with_unread(
-            db, tickets=[t1], user_id=USER_ID
-        )
+        result = await reads_svc.enrich_with_unread(db, tickets=[t1], user_id=USER_ID)
         assert result == {TICKET_ID: False}

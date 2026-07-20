@@ -630,9 +630,7 @@ class TestNotifyTicketCreatedMax:
             _patch_resolve_requester(_requester_user()),
             patch.object(notif, "enqueue_messenger_message", new=AsyncMock()) as enqueue,
         ):
-            await notif.notify_ticket_created_max(
-                db, ticket=ticket, first_message=_first_message()
-            )
+            await notif.notify_ticket_created_max(db, ticket=ticket, first_message=_first_message())
         kwargs = enqueue.await_args.kwargs
         assert kwargs["provider"] == "max"
         assert kwargs["chat_id"] == "-100"
@@ -665,9 +663,7 @@ class TestNotifyTicketCreatedMax:
             _patch_resolve_requester(_requester_user(full_name="Пётр Сидоров")),
             patch.object(notif, "enqueue_messenger_message", new=AsyncMock()) as enqueue,
         ):
-            await notif.notify_ticket_created_max(
-                db, ticket=ticket, first_message=_first_message()
-            )
+            await notif.notify_ticket_created_max(db, ticket=ticket, first_message=_first_message())
         text = enqueue.await_args.kwargs["text"]
         # ФИО заявителя ушёл в заголовок «Заявка от ...».
         assert "Пётр Сидоров" in text
@@ -684,9 +680,7 @@ class TestNotifyTicketCreatedMax:
             _patch_resolve_requester(_requester_user(city="Мурманск")),
             patch.object(notif, "enqueue_messenger_message", new=AsyncMock()) as enqueue,
         ):
-            await notif.notify_ticket_created_max(
-                db, ticket=ticket, first_message=_first_message()
-            )
+            await notif.notify_ticket_created_max(db, ticket=ticket, first_message=_first_message())
         text = enqueue.await_args.kwargs["text"]
         assert "**Город:** Мурманск" in text
 
@@ -700,9 +694,7 @@ class TestNotifyTicketCreatedMax:
             _patch_resolve_requester(_requester_user(city=None)),
             patch.object(notif, "enqueue_messenger_message", new=AsyncMock()) as enqueue,
         ):
-            await notif.notify_ticket_created_max(
-                db, ticket=ticket, first_message=_first_message()
-            )
+            await notif.notify_ticket_created_max(db, ticket=ticket, first_message=_first_message())
         text = enqueue.await_args.kwargs["text"]
         assert "**Город:** —" in text
 
@@ -715,9 +707,7 @@ class TestNotifyTicketCreatedMax:
             _patch_resolve_requester(None),
             patch.object(notif, "enqueue_messenger_message", new=AsyncMock()) as enqueue,
         ):
-            await notif.notify_ticket_created_max(
-                db, ticket=ticket, first_message=_first_message()
-            )
+            await notif.notify_ticket_created_max(db, ticket=ticket, first_message=_first_message())
         text = enqueue.await_args.kwargs["text"]
         assert "**Город:** —" in text
 
@@ -785,11 +775,13 @@ class TestNotifyTicketCreatedMax:
         with (
             _patch_resolve_requester(_requester_user()),
             patch.object(notif, "enqueue_messenger_message", new=AsyncMock()) as enqueue,
-            patch.object(notif, "_build_ticket_url", return_value="https://portal.example.com/helpdesk/tickets/x"),
+            patch.object(
+                notif,
+                "_build_ticket_url",
+                return_value="https://portal.example.com/helpdesk/tickets/x",
+            ),
         ):
-            await notif.notify_ticket_created_max(
-                db, ticket=ticket, first_message=_first_message()
-            )
+            await notif.notify_ticket_created_max(db, ticket=ticket, first_message=_first_message())
         payload = enqueue.await_args.kwargs["payload"]
         assert "attachments" in payload
         assert len(payload["attachments"]) == 1
@@ -821,16 +813,18 @@ class TestNotifyTicketCreatedMax:
         with (
             _patch_resolve_requester(_requester_user()),
             patch.object(notif, "enqueue_messenger_message", new=AsyncMock()) as enqueue,
-            patch.object(notif, "_build_ticket_url", return_value="https://portal.local/helpdesk/tickets/x"),
+            patch.object(
+                notif, "_build_ticket_url", return_value="https://portal.local/helpdesk/tickets/x"
+            ),
         ):
-            await notif.notify_ticket_created_max(
-                db, ticket=ticket, first_message=_first_message()
-            )
+            await notif.notify_ticket_created_max(db, ticket=ticket, first_message=_first_message())
         kwargs = enqueue.await_args.kwargs
         # Нет inline_keyboard-attachments — иначе MAX упадёт с 400 permanent.
         assert kwargs["payload"]["attachments"] == []
         # Ссылка вставлена в текст как markdown, с № тикета.
-        assert "[🔗 Открыть заявку #TKT-99](https://portal.local/helpdesk/tickets/x)" in kwargs["text"]
+        assert (
+            "[🔗 Открыть заявку #TKT-99](https://portal.local/helpdesk/tickets/x)" in kwargs["text"]
+        )
 
     @pytest.mark.asyncio
     async def test_related_resource_is_ticket(self):
@@ -840,9 +834,7 @@ class TestNotifyTicketCreatedMax:
             _patch_resolve_requester(_requester_user()),
             patch.object(notif, "enqueue_messenger_message", new=AsyncMock()) as enqueue,
         ):
-            await notif.notify_ticket_created_max(
-                db, ticket=ticket, first_message=_first_message()
-            )
+            await notif.notify_ticket_created_max(db, ticket=ticket, first_message=_first_message())
         kwargs = enqueue.await_args.kwargs
         assert kwargs["related_resource_type"] == "helpdesk_ticket"
         assert kwargs["related_resource_id"] == ticket.id
@@ -861,9 +853,7 @@ class TestNotifyTicketCreatedMax:
             _patch_resolve_requester(None),
             patch.object(notif, "enqueue_messenger_message", new=AsyncMock()) as enqueue,
         ):
-            await notif.notify_ticket_created_max(
-                db, ticket=ticket, first_message=_first_message()
-            )
+            await notif.notify_ticket_created_max(db, ticket=ticket, first_message=_first_message())
         text = enqueue.await_args.kwargs["text"]
         assert "guest@external.com" in text
 
@@ -921,11 +911,11 @@ class TestIsMaxLinkSafeUrl:
             "https://example.com/x",
             "https://portal.company.ru/x",
             "http://example.com:8080/path?q=1",
-            "https://10.0.0.5/x",       # private RFC1918
+            "https://10.0.0.5/x",  # private RFC1918
             "https://172.16.0.1/x",
             "https://192.168.1.10/x",
-            "https://127.0.0.1/x",      # loopback IP — MAX принимает
-            "https://[::1]/x",          # IPv6 loopback
+            "https://127.0.0.1/x",  # loopback IP — MAX принимает
+            "https://[::1]/x",  # IPv6 loopback
         ],
     )
     def test_safe_urls_pass(self, url):
@@ -934,7 +924,7 @@ class TestIsMaxLinkSafeUrl:
     @pytest.mark.parametrize(
         "url",
         [
-            "https://portal.local/x",       # типичный интранет-домен портала
+            "https://portal.local/x",  # типичный интранет-домен портала
             "http://localhost:8080/x",
             "https://portal.internal/x",
             "https://portal.lan/x",
@@ -943,8 +933,8 @@ class TestIsMaxLinkSafeUrl:
             "https://portal.invalid/x",
             "https://portal.onion/x",
             "https://portal.arpa/x",
-            "ftp://example.com/x",          # не http/https scheme
-            "/helpdesk/tickets/abc",        # относительный путь (нет scheme)
+            "ftp://example.com/x",  # не http/https scheme
+            "/helpdesk/tickets/abc",  # относительный путь (нет scheme)
             "not-a-url",
             "",
         ],

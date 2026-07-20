@@ -430,9 +430,7 @@ class TestMyTickets:
     async def test_count_with_assigned_filter(self):
         """``assigned=True`` — только тикеты с назначенным специалистом."""
         db = _db_returning_scalar(5)
-        n = await svc.count_my_tickets(
-            db, user_id=uuid.uuid4(), status_filter=None, assigned=True
-        )
+        n = await svc.count_my_tickets(db, user_id=uuid.uuid4(), status_filter=None, assigned=True)
         assert n == 5
 
     @pytest.mark.asyncio
@@ -470,9 +468,7 @@ class TestMyTickets:
         """Без unassigned/assigned — фильтр по assignee не накладывается (все тикеты)."""
         t1 = _ticket()
         db = _db_returning_scalars_all([t1])
-        await svc.list_my_tickets(
-            db, user_id=uuid.uuid4(), status_filter=None, limit=20, offset=0
-        )
+        await svc.list_my_tickets(db, user_id=uuid.uuid4(), status_filter=None, limit=20, offset=0)
         # Запрос выполнен (функция вызвана без исключения) — структурная проверка.
         db.execute.assert_awaited_once()
 
