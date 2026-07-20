@@ -166,7 +166,23 @@ i18n-проверки, синхронизация `docs/testing.md` с акту�
   - `docker build --target runtime-base backend/` — сертификат корректно включается в образ (verified: `/usr/local/share/ca-certificates/russian_trusted_root_ca.crt` присутствует)
   - Unit-regression: **3669 passed** (после mypy cleanup +29 тестов)
 
-## Грабли / контекст
+### Этап 16 — починка 10 integration-тестов, всплывших после этапа 15
+
+**Контекст**: После коммита этапа 15 CI запустил `backend-integration` и упал на **10 failures** (463/473). Все 10 — **не регрессия этапа 15**, а скрытые баги, которые годами сидели в skip'аемом джобе. Разделены на 3 класса:
+
+- [x] 16.1 **8 rate-limit тестов** (`test_rate_limit.py` 2 шт + `test_rate_limit_endpoints.py` 5 шт + `test_rate_limit_matrix.py::test_all_rate_limited_endpoints_return_429`) — `AttributeError: '_IncludedRouter' object has no attribute 'path'` в `fastapi_limiter/depends.py:41`.
+  - **Корень**: `tests/conftest.py:115` сохраняет `_real_rate_limiter_call = RateLimiter.__call__` **при импорте conftest'а**. В CI pytest грузит conftest **первым**, до импорта `app.main` → патч ADR-043 ещё не применён → `_real_rate_limiter_call` указывает на **оригинальный** (непатченный) `__call__`. Тесты в `try/finally` восстанавливают его в `RateLimiter.__call__` → затирают патч → AttributeError. Локально работало, потому что `app.main` импортировался раньше через какой-то путь.
+  - **Фикс**: в `conftest.py` перед чтением `__call__` форсированно импортировать `app.core.limiter` (что применяет патч). Тогда `_real_rate_limiter_call` указывает на патченный `_patched_call`, и рестор в фикстуре восстанавливает патч, а не оригинал. Симулировано CI-порядок локально — теперь консистентно.
+- [x] 16.2 **`test_discovery_finds_known_endpoints`** — связан с 16.1 (discovery полагался на патч). Прошёл автоматически после 16.1.
+- [x] 16.3 **`test_query_filter_by_subject`** — `query="Заявк"` (подстрока) не матчится через hunspell stemming: `websearch_to_tsquery('russian_hunspell', 'Заявк')` → `'заявк'`, а tsvector `subject='Заявка'` → `'заявка'`; лексемы не совпадают. FTS требует **полное слово**, не подстроку (в отличие от ilike). Фикс: тест использует `query="Заявка"` (полное слово).
+- [x] 16.4 **`test_new_requester_reply_makes_unread_again`** — `unread=False` вместо `True`.
+  - **Корень**: `HelpdeskMessage.created_at` имеет `server_default=NOW()` (PG), а `mark_ticket_seen.last_seen_at = datetime.now(UTC)` (Python). В savepoint-сессии теста обе операции идут в **одной** PG-транзакции → `NOW()` фиксируется на transaction-start time → все сообщения получают **одинаковое** `created_at`, и проверка `created_at > last_seen_at` всегда False. В проде mark/reply — разные HTTP-запросы (разные транзакции), баг не проявлялся.
+  - **Фикс**: явный `created_at=now` в `add_requester_reply`/`add_agent_reply`/`create_ticket` (Python-время, консистентно с `last_seen_at`). `now` уже вычислялся в `add_requester_reply` (строка 93), но не использовался — утечка переменной.
+- [x] 16.F **Верификация**:
+  - 3669 unit-тестов PASS
+  - 472/473 integration PASS (1 падение = `test_get_before_put_returns_not_configured` — грязная dev-БД с прод-данными `mail.mage.ru`; в CI с чистой БД пройдёт)
+  - ruff/mypy/format — clean (672 файла)
+  - Все 10 ранее падавших тестов локально PASS
 
 ## Грабли / контекст
 
@@ -185,3 +201,6 @@ i18n-проверки, синхронизация `docs/testing.md` с акту�
 - **`Identity(always=True)` vs тесты**: PostgreSQL `GENERATED ALWAYS AS IDENTITY` (как `helpdesk_tickets.number`) запрещает явный INSERT значения без `OVERRIDING SYSTEM VALUE`. Тесты должны **не передавать** такую колонку вообще — IDENTITY сам сгенерирует, ORM вернёт значение через RETURNING. Менять `always=True`→`always=False` в миграции не нужно, если prod-код не передаёт number (в нашем случае — не передаёт, проверено grep'ом).
 - **`.gitignore` + публичные trust anchors**: правило `*.crt` (защита от случайных коммитов TLS-секретов) блокирует и публичные CA-сертификаты, нужные для сборки Docker-образа. Решение — точечное `!path/to/public.crt` исключение + `.gitattributes` с `-text` (binary, без CRLF-нормализации, чтобы `update-ca-certificates` всегда получал валидный PEM). Сертификат Минцифры публикуется на gu-st.ru — секрета нет.
 - **Грязная dev-БД ломает integration-тесты**: локальный прогон `tests/integration` на dev-БД (где уже есть прод-данные: mailbox-settings, тикеты и т.д.) даёт ложные падения, которые **не воспроизводятся в CI** (там стартует с чистой БД через init.sql). Если тест зависит от отсутствия/присутствия записи — падение на dev-БД не означает дефект.
+- **`_real_rate_limiter_call` ловушка порядка импорта**: `tests/conftest.py` при импорте сохраняет `RateLimiter.__call__` в module-level переменную. Если pytest грузит conftest раньше `app.main` (как в CI), патч ADR-043 ещё не наложен → в переменную попадает **оригинальный** `__call__`. Тесты, восстанавливая `RateLimiter.__call__ = _real_rate_limiter_call` в `finally`, затирают патч → `AttributeError: '_IncludedRouter' object has no attribute 'path'`. Фикс: в conftest перед чтением `__call__` импортировать `app.core.limiter` (что применяет патч). Тогда переменная всегда указывает на патч.
+- **PG `NOW()` = transaction-start time, не wall-clock**: `server_default=NOW()` для `created_at` фиксируется на старте текущей транзакции (PG `transaction_timestamp()`). В тестах с savepoint-сессией (одна транзакция на весь тест) **все** сообщения получают одинаковое `created_at`. Любая семантика «новее чем» (`created_at > last_seen_at`) ломается. Решения: либо явный `created_at=now` из Python (как сделали мы), либо `clock_timestamp()` (real-time wall clock). Для прод-маршрута (разные HTTP-запросы → разные транзакции) проблема не проявляется.
+- **Hunspell stemming для FTS требует полное слово, не подстроку**: `websearch_to_tsquery('russian_hunspell', 'Заявк')` даёт лексему `'заявк'`, а `to_tsvector('Заявка')` → `'заявка'`. Они не совпадают (hunspell-нормализация query/tsvector асимметрична для усечённых форм). Для substring-поиска использовать `ilike`, не FTS.

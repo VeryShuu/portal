@@ -85,6 +85,10 @@ async def create_ticket(
         visibility="public",
         body_text=payload.description,
         source="web",
+        # Явный ``created_at`` (Python-время) — см. комментарий в
+        # ``add_requester_reply``: server_default ``NOW()`` фиксирует
+        # transaction-start time и ломает unread-семантику в тестах.
+        created_at=datetime.now(UTC),
     )
     db.add(first_message)
     await db.flush()  # нужен first_message.id для привязки вложений

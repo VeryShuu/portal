@@ -109,8 +109,18 @@ def _reset_runtime_config_caches():
 
 
 # ── FastAPILimiter no-op stub for unit tests ────────────────────────────────
+# ВАЖНО: импортируем `app.core.limiter` ДО чтения `RateLimiter.__call__`.
+# Патч ADR-043 (совместимость fastapi-limiter 0.1.6 со starlette 1.x —
+# `_IncludedRouter` не имеет атрибута `path`) применяется при импорте модуля.
+# Если conftest загрузится раньше `app.main` (как в CI), без этого форсированного
+# импорта `_real_rate_limiter_call` укажет на оригинальный (непатченный) `__call__`,
+# и integration-тесты, восстанавливая его в `RateLimiter.__call__ = saved_call`,
+# затрут патч → `AttributeError: '_IncludedRouter' object has no attribute 'path'`
+# на всех rate-limited endpoints (login/refresh/search/password).
 try:
     from fastapi_limiter.depends import RateLimiter as _RateLimiter
+
+    from app.core.limiter import patched_call as _adr043_patched_call  # noqa: F401
 
     _real_rate_limiter_call: Any = _RateLimiter.__call__
 except ImportError:

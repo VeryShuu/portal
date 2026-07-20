@@ -90,6 +90,15 @@ async def add_requester_reply(
     заметку или outbound-сообщение. ``files`` (опционально, Этап 4) —
     локальные вложения, привязываемые к новому сообщению.
     """
+    # Явный ``created_at`` (Python-время) — НЕ server_default ``NOW()``:
+    # последний фиксирует transaction-start time (одно и то же для всех INSERT
+    # в транзакции), что ломает unread-семантику ``mark_ticket_seen`` →
+    # ``add_requester_reply`` в одной savepoint-сессии (тесты): оба сообщения
+    # получат одинаковое ``created_at``, и проверка ``created_at >
+    # last_seen_at`` всегда False. В проде mark/read и reply — разные
+    # HTTP-запросы и разные транзакции, но явный ``created_at`` безопасен
+    # и в проде (консистентно с другими временными метками, проставляемыми
+    # из Python — например, ``ticket.last_activity_at``).
     now = datetime.now(UTC)
 
     message = HelpdeskMessage(
@@ -102,6 +111,7 @@ async def add_requester_reply(
         body_text=payload.body_text,
         body_html=payload.body_html,
         source="web",
+        created_at=now,
     )
     db.add(message)
     await db.flush()  # нужен message.id для привязки вложений
@@ -204,6 +214,7 @@ async def add_agent_reply(
         body_html=payload.body_html,
         source="web",
         email_message_id=email_message_id,
+        created_at=now,
     )
     db.add(message)
     await db.flush()  # нужен message.id/email_message_id для вложений и outbox

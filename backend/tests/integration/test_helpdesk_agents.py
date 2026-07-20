@@ -112,8 +112,13 @@ class TestAgentListDetail:
 
     async def test_query_filter_by_subject(self, real_db_session, real_editor, ticket):
         await _make_agent(real_db_session, real_editor)
+        # FTS через hunspell требует нормализуемое слово целиком, не подстроку —
+        # ``websearch_to_tsquery('russian_hunspell', 'Заявк')`` даёт лексему
+        # ``'заявк'``, а tsvector subject'а «Заявка» → ``'заявка'``; они не
+        # совпадают (hunspell-нормализация query и tsvector различается для
+        # усечённых форм). Ищем по валидному слову целиком.
         items = await tickets_service.list_agent_tickets(
-            real_db_session, query="Заявк", limit=50, offset=0
+            real_db_session, query="Заявка", limit=50, offset=0
         )
         assert any(t.id == ticket.id for t in items)
         total = await tickets_service.count_agent_tickets(
