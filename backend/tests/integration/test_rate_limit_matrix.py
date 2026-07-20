@@ -54,13 +54,38 @@ def _fill_path_params(path: str) -> str:
     return out
 
 
+def _iter_api_routes(routes):
+    """Обойти ``app.routes`` рекурсивно, раскрывая обёртки.
+
+    FastAPI 0.137+ (PR fastapi/fastapi#15785, требует starlette 1.x) меняет
+    поведение ``include_router``: вместо flatten'инга дочерних маршрутов в
+    ``app.routes`` теперь лежат ``_IncludedRouter`` обёртки **без** атрибута
+    ``path`` и без ``routes``, но с ``original_router.routes``. На 0.136 и
+    ниже — старое плоское представление (все APIRoute напрямую). Этот
+    генератор работает на обеих версиях: при встрече с обёрткой спускается
+    в ``original_router.routes`` (если есть).
+    """
+    for route in routes:
+        # ``_IncludedRouter`` — нет ``path``, нет ``routes``, но есть
+        # ``original_router``. Имя класса intentional не импортируем — это
+        # internal FastAPI, между версиями может переименовываться;
+        # duck-typing по отсутствию ``path`` + наличию ``original_router``
+        # стабильнее.
+        if not hasattr(route, "path") and hasattr(route, "original_router"):
+            yield from _iter_api_routes(route.original_router.routes)
+        elif not hasattr(route, "path") and hasattr(route, "routes"):
+            yield from _iter_api_routes(route.routes)
+        else:
+            yield route
+
+
 def _discover_rate_limited_routes(app) -> list[tuple[str, str, int]]:
     """Вернуть [(method, path, times), ...] для всех endpoints с RateLimiter."""
     from fastapi.routing import APIRoute
     from fastapi_limiter.depends import RateLimiter
 
     found: list[tuple[str, str, int]] = []
-    for route in app.routes:
+    for route in _iter_api_routes(app.routes):
         if not isinstance(route, APIRoute):
             continue
         dependant = route.dependant
