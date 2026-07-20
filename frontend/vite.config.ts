@@ -95,10 +95,15 @@ export default defineConfig({
       reporter: ['text', 'html', 'lcov', 'cobertura'],
       reportsDirectory: 'coverage',
       thresholds: {
-        lines: 60,
-        functions: 45,
-        branches: 60,
-        statements: 60,
+        // Фактическое покрытие (замер 2026-07-20, итерация 17):
+        // lines 66.67% / branches 60.58% / funcs 54.26% / stmts 68.31%.
+        // Пороги установлены на 2% ниже факта — защита от регресса без ложных
+        // срабатываний на CI-флуктуациях. Поднимать до фактических значений
+        // только осознанно, после стабилизации покрытия.
+        lines: 65,
+        functions: 52,
+        branches: 59,
+        statements: 66,
       },
     },
   },

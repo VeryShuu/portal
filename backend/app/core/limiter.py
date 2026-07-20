@@ -11,11 +11,12 @@ NB: намеренно БЕЗ ``from __future__ import annotations`` — ина�
 """
 
 import hashlib
+from collections.abc import Callable
 
 from fastapi import Request, Response
 
 
-def _patch_rate_limiter_for_starlette1() -> None:
+def _patch_rate_limiter_for_starlette1() -> Callable[..., object]:
     """Совместимость fastapi-limiter 0.1.6 со starlette 1.x.
 
     В starlette 1.x ``include_router`` оставляет в ``app.routes`` объекты
@@ -60,6 +61,12 @@ def _patch_rate_limiter_for_starlette1() -> None:
         try:
             pexpire = await self._check(key)
         except pyredis.exceptions.NoScriptError:
+            # redis-py выбрасывает NoScriptError (не «NoScriptException» —
+            # опечатка в оригинальном fastapi-limiter ловит несуществующий
+            # класс → при реальном NoScript except-branch падал бы с
+            # AttributeError во время обработки исключения). Здесь ловим
+            # правильное исключение: EVALSHA провалился (скрипт забыт после
+            # FLUSH/перезапуска Redis) → перезагружаем и повторяем.
             FastAPILimiter.lua_sha = await FastAPILimiter.redis.script_load(
                 FastAPILimiter.lua_script
             )
@@ -68,10 +75,13 @@ def _patch_rate_limiter_for_starlette1() -> None:
             return await callback(request, response, pexpire)
 
     RateLimiter.__call__ = _patched_call  # type: ignore[method-assign]
+    return _patched_call
 
 
 # Патч применяется при импорте модуля (до старта приложения и регистрации роутов).
-_patch_rate_limiter_for_starlette1()
+# Сохраняем ссылку для тестов — чтобы они могли вызывать именно патченный __call__,
+# а не session-fixture stub из tests/conftest.py::_stub_fastapi_limiter.
+patched_call = _patch_rate_limiter_for_starlette1()
 
 
 async def real_ip_identifier(request: Request) -> str:

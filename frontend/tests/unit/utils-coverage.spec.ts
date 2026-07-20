@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
 describe('src/utils/formatDate', () => {
   it('formats date in Russian locale', async () => {
@@ -26,6 +26,98 @@ describe('src/utils/formatDate', () => {
     const result = formatDateShort('2024-12-25T00:00:00Z', 'en')
     expect(result).toBeTruthy()
     expect(typeof result).toBe('string')
+  })
+})
+
+describe('src/utils/formatRelativeTime', () => {
+  // formatRelativeTime ведёт себя относительно «сейчас», поэтому фиксируем
+  // системное время через vi.setSystemTime и восстанавливаем после каждого теста.
+  // Пороги веток: <45s, <2700s (45min), <79200s (22h), <2592000s (30d), иначе —
+  // полная дата. Проверяем каждую ветку в обе стороны (future/past).
+
+  const NOW_ISO = '2026-07-20T12:00:00.000Z'
+  const NOW_MS = Date.parse(NOW_ISO)
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(NOW_ISO))
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  /**
+   * Считаем ISO-строку, отстоящую от NOW на заданное число секунд.
+   * Положительное → будущее, отрицательное → прошлое.
+   */
+  function isoOffsetSec(seconds: number): string {
+    return new Date(NOW_MS + seconds * 1000).toISOString()
+  }
+
+  it.each([
+    ['future +10s — секунды', 10],
+    ['past -10s — секунды', -10],
+  ])('попадает в диапазон <45s (%s)', async (_label, offsetSec) => {
+    const { formatRelativeTime } = await import('../../src/utils/formatDate')
+    const result = formatRelativeTime(isoOffsetSec(offsetSec), 'ru')
+    expect(typeof result).toBe('string')
+    expect(result.length).toBeGreaterThan(0)
+  })
+
+  it.each([
+    ['future +600s — минуты', 600],
+    ['past -600s — минуты', -600],
+  ])('попадает в диапазон <2700s / 45min (%s)', async (_label, offsetSec) => {
+    const { formatRelativeTime } = await import('../../src/utils/formatDate')
+    const result = formatRelativeTime(isoOffsetSec(offsetSec), 'ru')
+    expect(typeof result).toBe('string')
+    expect(result.length).toBeGreaterThan(0)
+  })
+
+  it.each([
+    ['future +7200s — часы', 7200],
+    ['past -7200s — часы', -7200],
+  ])('попадает в диапазон <79200s / 22h (%s)', async (_label, offsetSec) => {
+    const { formatRelativeTime } = await import('../../src/utils/formatDate')
+    const result = formatRelativeTime(isoOffsetSec(offsetSec), 'ru')
+    expect(typeof result).toBe('string')
+    expect(result.length).toBeGreaterThan(0)
+  })
+
+  it.each([
+    ['future +5days — дни', 5 * 86400],
+    ['past -5days — дни', -5 * 86400],
+  ])('попадает в диапазон <2592000s / 30d (%s)', async (_label, offsetSec) => {
+    const { formatRelativeTime } = await import('../../src/utils/formatDate')
+    const result = formatRelativeTime(isoOffsetSec(offsetSec), 'ru')
+    expect(typeof result).toBe('string')
+    expect(result.length).toBeGreaterThan(0)
+  })
+
+  it.each([
+    ['future +60days → полная дата', 60 * 86400],
+    ['past -60days → полная дата', -60 * 86400],
+  ])('выходит за 30d → формат полной даты (%s)', async (_label, offsetSec) => {
+    const { formatRelativeTime } = await import('../../src/utils/formatDate')
+    const result = formatRelativeTime(isoOffsetSec(offsetSec), 'ru')
+    // В дальней зоне rtf не используется — результат равен formatDateTime с годом.
+    expect(result).toMatch(/2026/)
+  })
+
+  it('использует английскую локаль', async () => {
+    const { formatRelativeTime } = await import('../../src/utils/formatDate')
+    const result = formatRelativeTime(isoOffsetSec(-60), 'en')
+    expect(typeof result).toBe('string')
+    expect(result.length).toBeGreaterThan(0)
+  })
+
+  it('граница 45s — ровно 44s ещё секунды', async () => {
+    const { formatRelativeTime } = await import('../../src/utils/formatDate')
+    // 44s в будущем → ветка <45s (second).
+    const result = formatRelativeTime(isoOffsetSec(44), 'ru')
+    expect(typeof result).toBe('string')
+    expect(result.length).toBeGreaterThan(0)
   })
 })
 

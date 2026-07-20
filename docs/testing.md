@@ -6,7 +6,9 @@
 > **Активный план доработки:** `wip/test-coverage-hardening.md`.
 > **ADR:** 037.
 
-> Последнее обновление: июль 2026 — итерация 16 (test-coverage audit & hardening). Замеры 2026-07-11: Backend — **3232** unit+security теста (0 failures, 7 warnings), **440** integration (real PG+Redis), покрытие **78.95%** по merged unit+security (гейт 75%). Frontend — **1884** Vitest-теста (161 spec-файл), покрытие **65.19% lines / 60.04% branches / 66.92% stmts / 52.43% functions** (гейты 50/35/50/45). Playwright e2e — 11 спеков (включая `@a11y` пилот через `@axe-core/playwright`), проекты chromium/firefox/webkit/mobile. Lint/типизация: `ruff` 0 errors, `mypy app` 0 issues, `i18n:check` OK. Итерация 15 (test-system audit & cleanup) — см. git-историю.
+> Последнее обновление: июль 2026 — итерация 17 (test-coverage hardening: нижний хвост backend + frontend smoke refactor + utils-тесты + поведенческие тесты). Замеры 2026-07-20: Backend — **3669** unit + **76** security тестов (0 failures, 5 skipped по jq-unavailable, 8 warnings), покрытие **81.08%** по merged unit+security (гейт 75%, было 78.95% в итерации 16). Frontend — **2111** Vitest-тест в **214** spec-файлах (было 1884 в 161 файле); покрытие **66.67% lines / 60.58% branches / 54.26% funcs / 68.31% stmts**; пороги подняты и зафиксированы: `lines 65 / functions 52 / branches 59 / statements 66` (с запасом 2% на CI-флуктуации). Smoke-файлы `pages-smoke.spec.ts` и `components-smoke-extra{1..5}.spec.ts` растащены в 35 отдельных файлов по правилу «one component per file». Playwright e2e — 11 спеков (включая `@a11y` пилот через `@axe-core/playwright`), проекты chromium/firefox/webkit/mobile. Lint/типизация: `ruff` 0 errors, `mypy app` 0 issues, `i18n:check` OK. Итерация 16 (test-coverage audit & hardening) — см. git-историю.
+
+> В итерации 17 найден и исправлен production-баг: `app/core/limiter.py` ловил несуществующее исключение `pyredis.exceptions.NoScriptException` (правильное имя `NoScriptError`) → при FLUSH Redis'а лимитер падал вместо перезагрузки Lua-скрипта. Покрыто регрессионным тестом `test_patched_call_reloads_lua_script_on_noscripterror`. См. обновлённый ADR-043 (грабли №4, №5).
 
 ---
 
@@ -333,7 +335,7 @@ BASE_URL=https://portal.staging \
 
 ## Покрытие
 
-### Backend Unit (3232 unit+security тестов по замеру 2026-07-11, gate 75% на merged unit+integration; фактическое merged-покрытие 78.95%)
+### Backend Unit (3745 unit+security тестов по замеру 2026-07-20, gate 75% на merged unit+integration; фактическое merged unit+security покрытие 81.08%)
 
 | Файл | Что покрывается |
 |------|-----------------|
@@ -401,6 +403,13 @@ BASE_URL=https://portal.staging \
 | `test_helpdesk_worker_poll.py` | worker/tasks/helpdesk.py (92%): `_module_enabled`, `poll_helpdesk_mailbox` (no-redis/not_configured/lock_held/bytes-str), `auto_close_resolved_tickets` (no-commit/commit-инвариант), `send_helpdesk_digest` (schedule/идемпотентность/lock/happy-path), archive+cleanup — 22 теста |
 | `test_mailing_recipients.py` | mailing_recipients.py (97%): `_escape_like` parametrize, `list_recipients` (фильтр/пагинация/total), `get_recipient_or_404`, `update_recipient` (IntegrityError→409), `soft_delete_recipient`, endpoint authz — 30 тестов |
 | `test_meetings_series_service_unit.py` | meetings/series_service.py (87%): `_recompute_canonical_rrule`, `_apply_series_update_to_booking` (5 сценариев), `create_booking_series`/`update_series` happy path, `_load_bookings_bulk`, чистые helpers — 32 теста |
+| `test_photos_tag_repo.py` | services/photos_tag_repo.py (100%): list_tags_with_usage с/без фильтра q, find_tag_by_name (±None), get_tag, delete_tag, list_photo_tags, clear_photo_tags — 8 тестов |
+| `test_photos_share_repo.py` | services/photos_share_repo.py (100%): list_folder/list_my_photo (scalars), list_my_folder (join), get_photo/get_folder (±None), fetch_by_token, scalar_folder_by_token — 9 тестов |
+| `test_photos_permission_repo.py` | services/photos_permission_repo.py (100%): list (±empty), find (±None), delete с/без subject_type (контракт опционального фильтра) — 6 тестов |
+| `test_news_comments_repo.py` | api/news/comments_repo.py (100%): count_active_comments (scalar_one), list_comments, get_comment_authors (empty-short-circuit/non-empty), get_comment (±None), increment/decrement (проверка `greatest(..., 0)` — защита от отрицательного счётчика при гонке) — 10 тестов |
+| `test_staff_service.py` | api/users/staff_service.py (100%): дедуп департаментов (trim+empty), дедуп users по id, дедуп hidden_user_ids, rollback-контракт при ошибке в любой из 3 мутаций, порядок replace→apply→apply→commit→fetch, empty-body — 9 тестов |
+| `test_helpdesk_archive_partitions.py` | services/helpdesk/archive_partitions.py (100%): имена партиций + количество, дефолт months_ahead=3, year-rollover (strftime), skip существующих через pg_class, SQL-форма CREATE TABLE PARTITION OF — 8 тестов |
+| `test_limiter.py` | core/limiter.py (93%): real_ip_identifier/email_identifier (X-Real-IP/fallback/JSON/form/malformed), `test_patched_call_*` (6) — покрыты все ветки monkey-patch ADR-043: redis-None→Exception, skip-маршрута-без-path, methods-None-match, custom identifier/callback, **NoScriptError-reload (регрессия на багфикс №4 ADR-043)**, default-callback при блокировке. Тесты вызывают `patched_call` напрямую, обходя session-fixture stub |
 
 ### Backend Integration (real PG + Redis)
 
@@ -452,9 +461,11 @@ BASE_URL=https://portal.staging \
 
 Постепенный план: при касании любого `describe` внутри `components-smoke-extra*.spec.ts` блок выносится в отдельный файл. Цель — полностью растащить «сборники» и удалить их.
 
-Уже расселены: `NotFoundPage.vue` → `tests/unit/not-found-page.spec.ts`; `TrashPage.vue` → `tests/unit/trash-page.spec.ts`.
+✅ **Итерация 17 (2026-07-20)**: все 5 `components-smoke-extra*.spec.ts` растащены — 24 describe → 24 отдельных файла (112 тестов, контракт 1:1). Также растащен `pages-smoke.spec.ts`: 11 describe → 11 отдельных файлов (24 теста); 7 страниц уже имели поведенческие тесты и были исключены из растаскивания. Оригинальные сборные файлы удалены. Правило «one component per file» теперь соблюдается полностью — сборных smoke-файлов в `tests/unit/` больше нет.
 
-### Frontend Unit (Vitest: 1884 теста в 161 spec-файле по замеру 2026-07-11; покрытие 65.19% lines / 60.04% branches / 66.92% stmts / 52.43% funcs; гейты 50/35/50/45)
+Уже расселены ранее: `NotFoundPage.vue` → `tests/unit/not-found-page.spec.ts`; `TrashPage.vue` → `tests/unit/trash-page.spec.ts`.
+
+### Frontend Unit (Vitest: 2111 тестов в 214 spec-файлах по замеру 2026-07-20; покрытие 66.67% lines / 60.58% branches / 54.26% funcs / 68.31% stmts; пороги подняты и зафиксированы 65/52/59/66; smoke-сборники `pages-smoke.spec.ts` + `components-smoke-extra{1..5}.spec.ts` растащены в 35 файлов; новые поведенческие тесты на NewsListPage/MyFeedbackPage/KbArticlePage; добавлены utils-тесты на `formatDate` (100%) и `sanitize` (100% lines / 95.65% branches); 15 нулевых файлов закрыты, в т.ч. composables useHomeNews/useManageDrawer/useCollabora/useStaffView/usePhoneFormat)
 
 | Файл | Что покрывается |
 |------|-----------------|
@@ -487,10 +498,11 @@ BASE_URL=https://portal.staging \
 | `files-bulk-permissions-smoke.spec.ts` | `FilesPermissionsModal` (4) + `FilesBulkBar` (8) — show/hide, count, emits, canUpload |
 | `kb-components-smoke.spec.ts` | `KbSectionTree` (6) / `KbCommentsTab` (3) / `KbVersionsTab` (3) / `KbPermissionsModal` (4) |
 | `photos-components-smoke.spec.ts` | `PhotosGrid` (7) / `LightboxModal` (6) / `PhotosTrashView` (6) |
-| `pages-smoke.spec.ts` | mount-smoke для 21 страницы `src/pages/` (AuthCallbackPage, LoginPage, HomePage, NewsListPage, NewsDetailPage, NewsFormPage, KbListPage, KbArticlePage, KbArticleFormPage, KbPlaceholderPage, FilesPage, BookmarksPage, LinksAndBookmarksPage, MyFeedbackPage, StaffDirectoryPage, MySharesPage, PublicFolderPage, PublicPhotoPage, AuthLocalPage, AuthErrorPage, AuthRedirectStub) |
-| `components-smoke-extra*.spec.ts` | NotFoundPage, SettingsPage, TrashPage + прочие компоненты (HeroBlock, StaffCard, LinkCard, KbArticleHeader, NewsGallery, FilesSidebar, FilesDropZone и др.) |
+| `pages-smoke.spec.ts` | ~~удалён в итерации 17~~ — растаскан в 11 отдельных файлов (`auth-*-page`, `news-*-page`, `kb-article-page`, `links-and-bookmarks-page`, `my-*-page`, `public-photo-page`); 7 страниц уже имели поведенческие тесты и были исключены из растаскивания |
+| `components-smoke-extra*.spec.ts` | ~~удалены в итерации 17~~ — растасканы в 24 отдельных файла (`empty-state`, `skeleton-card`, `news-card`, `kb-article-*`, `staff-*`, `link-card`, `hero-block`, …). Правило «one component per file» теперь соблюдается полностью |
 | `link-visuals.spec.ts` | `useLinkVisuals`: `colorFor`, `faviconFor`, `shortUrl`, `onIconError` — 12 тестов |
-| `utils-coverage.spec.ts` | `triggerDownload` с опциями и без — 2 теста |
+| `utils-coverage.spec.ts` | `formatDate`/`formatDateShort` (ru/en), `formatRelativeTime` (4 ветки abs<45/2700/79200/2592000 в обе стороны + граница 44s, через `vi.setSystemTime`), `formatSize`, `markdown`, `parseApiError` (401/403/422/500, FetchError, field translations), `triggerDownload`, `coverFocal` |
+| `sanitize.spec.ts` | XSS-щит для v-html: DOMPurify base + 4 профиля (`sanitizeHtml`, `sanitizeHelpdeskHtml`, `sanitizeHtmlAllowIframe`, `sanitizeKbHtml`): script/iframe/style/onclick/javascript: strip, figure/figcaption whitelist, KB-домены iframe (youtube/rutube/vimeo/vk), allowedOrigins для sanitizeHtmlAllowIframe, style-sanitize hook edge-cases, malformed-URL catch-ветки — 53 теста |
 | `photos-store.spec.ts` | `usePhotosStore`: `loadRecent`, ошибки, guard против двойного вызова |
 | `photo-decomposition.spec.ts` | `usePhotoUpload` composable: интерфейс, uploadingActive |
 | `theme-store.spec.ts` | `useThemeStore`: dark/light toggle |

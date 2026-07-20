@@ -19,6 +19,15 @@ vi.mock('../../src/stores/modules', () => ({
   useModulesStore: () => modulesState,
 }))
 
+// AppLayout тянет 14+ компонентов/композаблов (Naive UI, GlobalSearch,
+// OnboardingTour, FeedbackModal, AppSider/Header, ...). В тестах роутера нужны
+// только route-определения и guards — мокаем компонент заглушкой, чтобы не
+// грузить transform-pipeline. Без этого мока `loadRouterModule()` под CI
+// нагрузкой упирался в дефолтный таймаут vitest (5s).
+vi.mock('../../src/components/AppLayout.vue', () => ({
+  default: { name: 'AppLayoutStub', template: '<div/>' },
+}))
+
 async function loadRouterModule() {
   vi.resetModules()
 
