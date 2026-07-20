@@ -4,5 +4,11 @@ Dockerfile  text eol=lf
 *.conf      text eol=lf
 *.sql       text eol=lf
 
+# Public trust anchors — treat as binary (no EOL normalization).
+# `update-ca-certificates` validates PEM strictly; CRLF↔LF conversion must not
+# touch them on checkout. See backend/certs/README.md.
+*.crt       -text
+*.pem       -text
+
 # Windows-safe defaults for everything else
 *           text=auto

@@ -32,7 +32,10 @@ pytestmark = pytest.mark.asyncio
 # ─── helpers ─────────────────────────────────────────────────────────────────
 
 
-async def _create_db_user(db, role: str = "user"):
+async def _create_db_user(db, role: str = "reader"):
+    """Создать пользователя в БД. Дефолт ``role="reader"`` — канонический
+    «обычный пользователь» (в ``ck_users_role`` валидны только reader/editor/admin;
+    роли ``user`` не существует)."""
     from app.models.user import User
 
     u = User(
@@ -55,12 +58,13 @@ async def _create_db_user(db, role: str = "user"):
     return u
 
 
-async def _create_db_ticket(db, requester_id: uuid.UUID, number: int = 1):
+async def _create_db_ticket(db, requester_id: uuid.UUID):
+    """Создать тикет. ``number`` генерируется БД (``GENERATED ALWAYS AS IDENTITY`` —
+    явная вставка запрещена); читаем через ``ticket.number`` после commit."""
     from app.models.helpdesk import HelpdeskTicket
 
     t = HelpdeskTicket(
-        number=number,
-        subject=f"Тикет {number}",
+        subject="Тикет media-test",
         description="test",
         description_html=None,
         status="new",
@@ -121,13 +125,13 @@ class TestIsHelpdeskAgent:
         assert await _is_helpdesk_agent(real_db_session, user=admin) is True
 
     async def test_plain_user_not_agent(self, real_db_session):
-        u = await _create_db_user(real_db_session, role="user")
+        u = await _create_db_user(real_db_session, role="reader")
         assert await _is_helpdesk_agent(real_db_session, user=u) is False
 
     async def test_helpdesk_agent_member(self, real_db_session):
         from app.models.helpdesk import HelpdeskAgent
 
-        u = await _create_db_user(real_db_session, role="user")
+        u = await _create_db_user(real_db_session, role="reader")
         real_db_session.add(HelpdeskAgent(user_id=u.id, added_by=u.id))
         await real_db_session.commit()
         assert await _is_helpdesk_agent(real_db_session, user=u) is True
@@ -138,8 +142,8 @@ class TestIsHelpdeskAgent:
 
 class TestUploadInlineMedia:
     async def test_author_can_upload_and_gets_url(self, real_db_session):
-        u = await _create_db_user(real_db_session, role="user")
-        ticket = await _create_db_ticket(real_db_session, u.id, number=100001)
+        u = await _create_db_user(real_db_session, role="reader")
+        ticket = await _create_db_ticket(real_db_session, u.id)
 
         upload_file = _make_upload_file("screen.jpg", "image/jpeg", _JPEG_BYTES)
         with patch(
@@ -159,9 +163,9 @@ class TestUploadInlineMedia:
         assert kwargs["allowed_mimes"] == HELPDESK_INLINE_IMAGE_MIMES
 
     async def test_other_user_cannot_upload_to_foreign_ticket(self, real_db_session):
-        owner = await _create_db_user(real_db_session, role="user")
-        stranger = await _create_db_user(real_db_session, role="user")
-        ticket = await _create_db_ticket(real_db_session, owner.id, number=100002)
+        owner = await _create_db_user(real_db_session, role="reader")
+        stranger = await _create_db_user(real_db_session, role="reader")
+        ticket = await _create_db_ticket(real_db_session, owner.id)
 
         upload_file = _make_upload_file("x.jpg", "image/jpeg", _JPEG_BYTES)
         with pytest.raises(HTTPException) as exc:
@@ -171,8 +175,8 @@ class TestUploadInlineMedia:
         assert exc.value.status_code == 404
 
     async def test_bad_extension_rejected(self, real_db_session):
-        u = await _create_db_user(real_db_session, role="user")
-        ticket = await _create_db_ticket(real_db_session, u.id, number=100003)
+        u = await _create_db_user(real_db_session, role="reader")
+        ticket = await _create_db_ticket(real_db_session, u.id)
 
         upload_file = _make_upload_file("doc.exe", "application/octet-stream", b"MZ")
         with pytest.raises(HTTPException) as exc:
@@ -182,8 +186,8 @@ class TestUploadInlineMedia:
         assert exc.value.status_code == 400
 
     async def test_too_large_raises_413(self, real_db_session):
-        u = await _create_db_user(real_db_session, role="user")
-        ticket = await _create_db_ticket(real_db_session, u.id, number=100004)
+        u = await _create_db_user(real_db_session, role="reader")
+        ticket = await _create_db_ticket(real_db_session, u.id)
 
         upload_file = _make_upload_file("big.jpg", "image/jpeg", _JPEG_BYTES)
         with patch(
@@ -202,8 +206,8 @@ class TestUploadInlineMedia:
 
 class TestServeInlineMedia:
     async def test_author_gets_x_accel_redirect(self, real_db_session):
-        u = await _create_db_user(real_db_session, role="user")
-        ticket = await _create_db_ticket(real_db_session, u.id, number=100010)
+        u = await _create_db_user(real_db_session, role="reader")
+        ticket = await _create_db_ticket(real_db_session, u.id)
 
         filename = f"{uuid.uuid4().hex[:8]}_screen.png"
         resp = await serve_ticket_inline_media(
@@ -217,9 +221,9 @@ class TestServeInlineMedia:
         assert resp.headers["X-Content-Type-Options"] == "nosniff"
 
     async def test_stranger_gets_404(self, real_db_session):
-        owner = await _create_db_user(real_db_session, role="user")
-        stranger = await _create_db_user(real_db_session, role="user")
-        ticket = await _create_db_ticket(real_db_session, owner.id, number=100011)
+        owner = await _create_db_user(real_db_session, role="reader")
+        stranger = await _create_db_user(real_db_session, role="reader")
+        ticket = await _create_db_ticket(real_db_session, owner.id)
 
         with pytest.raises(HTTPException) as exc:
             await serve_ticket_inline_media(
@@ -228,8 +232,8 @@ class TestServeInlineMedia:
         assert exc.value.status_code == 404
 
     async def test_path_traversal_rejected(self, real_db_session):
-        u = await _create_db_user(real_db_session, role="user")
-        ticket = await _create_db_ticket(real_db_session, u.id, number=100012)
+        u = await _create_db_user(real_db_session, role="reader")
+        ticket = await _create_db_ticket(real_db_session, u.id)
 
         # Тикет доступен (автор), но имя файла — path-traversal.
         with pytest.raises(HTTPException) as exc:
@@ -239,8 +243,8 @@ class TestServeInlineMedia:
         assert exc.value.status_code == 400
 
     async def test_slash_in_filename_rejected(self, real_db_session):
-        u = await _create_db_user(real_db_session, role="user")
-        ticket = await _create_db_ticket(real_db_session, u.id, number=100013)
+        u = await _create_db_user(real_db_session, role="reader")
+        ticket = await _create_db_ticket(real_db_session, u.id)
 
         with pytest.raises(HTTPException) as exc:
             await serve_ticket_inline_media(

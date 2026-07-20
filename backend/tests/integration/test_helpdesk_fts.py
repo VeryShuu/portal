@@ -35,10 +35,15 @@ def _make_ticket(
     description: str = "",
     status: str = "new",
     requester_email: str = "user@portal.local",
-    number: int | None = None,
 ) -> HelpdeskTicket:
+    """Создать HelpdeskTicket для FTS-теста.
+
+    ``number`` намеренно НЕ передаётся — колонка объявлена как
+    ``GENERATED ALWAYS AS IDENTITY`` (миграция 075), и явный INSERT значения
+    без ``OVERRIDING SYSTEM VALUE`` падает с ``cannot insert a non-DEFAULT value``.
+    IDENTITY сам сгенерирует number; всем assertion'ам теста нужен только ``id``,
+    который выдаётся ``gen_random_uuid()`` ещё до flush."""
     return HelpdeskTicket(
-        number=number or abs(hash(subject)) % 1000000,
         subject=subject,
         description=description,
         description_html=None,
@@ -98,7 +103,7 @@ class TestFtsMorphology:
 
     async def test_case_insensitive(self, real_db_session):
         """Регистронезависимый поиск."""
-        t = _make_ticket(subject="Ошибка VPN подключения", number=400001)
+        t = _make_ticket(subject="Ошибка VPN подключения")
         real_db_session.add(t)
         await real_db_session.flush()
 
@@ -112,7 +117,6 @@ class TestFtsMorphology:
         t = _make_ticket(
             subject="Помощь",
             description="Не работает Outlook, письма не приходят",
-            number=400002,
         )
         real_db_session.add(t)
         await real_db_session.flush()
@@ -127,12 +131,10 @@ class TestFtsOperators:
         t1 = _make_ticket(
             subject="Сброс пароля",
             description="Нужно сбросить пароль учетной записи",
-            number=400010,
         )
         t2 = _make_ticket(
             subject="Другое",
             description="пароль был изменён ранее, нужен сброс учётки",
-            number=400011,
         )
         real_db_session.add_all([t1, t2])
         await real_db_session.flush()
@@ -143,8 +145,8 @@ class TestFtsOperators:
 
     async def test_or_operator(self, real_db_session):
         """OR — матчит любое из слов."""
-        t1 = _make_ticket(subject="Принтер", description="не печатает", number=400020)
-        t2 = _make_ticket(subject="Сканер", description="не сканирует", number=400021)
+        t1 = _make_ticket(subject="Принтер", description="не печатает")
+        t2 = _make_ticket(subject="Сканер", description="не сканирует")
         real_db_session.add_all([t1, t2])
         await real_db_session.flush()
 
@@ -154,10 +156,8 @@ class TestFtsOperators:
 
     async def test_exclude_operator(self, real_db_session):
         """Минус-исключение: слово после - исключает тикет с ним."""
-        t1 = _make_ticket(subject="Доступ", description="к базе данных", number=400030)
-        t2 = _make_ticket(
-            subject="Доступ", description="к базе данных отключён временно", number=400031
-        )
+        t1 = _make_ticket(subject="Доступ", description="к базе данных")
+        t2 = _make_ticket(subject="Доступ", description="к базе данных отключён временно")
         real_db_session.add_all([t1, t2])
         await real_db_session.flush()
 
@@ -176,7 +176,6 @@ class TestFtsSearchInReplies:
         t = _make_ticket(
             subject="Помощь",
             description="Нужна консультация",
-            number=400100,
         )
         real_db_session.add(t)
         await real_db_session.flush()
@@ -189,7 +188,7 @@ class TestFtsSearchInReplies:
     async def test_internal_note_is_searched(self, real_db_session):
         """Internal-заметки (visibility=internal) тоже участвуют в поиске —
         агент должен находить свои внутренние комментарии."""
-        t = _make_ticket(subject="Заявка", description="что-то", number=400101)
+        t = _make_ticket(subject="Заявка", description="что-то")
         real_db_session.add(t)
         await real_db_session.flush()
         real_db_session.add(
@@ -216,7 +215,6 @@ class TestEmailIlike:
             subject="Заявка",
             description="текст",
             requester_email="borisov.vs@company.local",
-            number=400200,
         )
         real_db_session.add(t)
         await real_db_session.flush()
@@ -235,14 +233,11 @@ class TestEmailIlike:
 class TestFtsWithFilters:
     async def test_fts_combined_with_status(self, real_db_session):
         """FTS-матч + status-фильтр работают вместе (AND)."""
-        t_open = _make_ticket(
-            subject="VPN проблема", description="не подключается", status="open", number=400300
-        )
+        t_open = _make_ticket(subject="VPN проблема", description="не подключается", status="open")
         t_closed = _make_ticket(
             subject="VPN проблема",
             description="решено ранее",
             status="closed",
-            number=400301,
         )
         real_db_session.add_all([t_open, t_closed])
         await real_db_session.flush()
@@ -261,7 +256,7 @@ class TestFtsWithFilters:
 
     async def test_empty_query_no_filter(self, real_db_session):
         """Пустой/whitespace query не добавляет FTS-условие — все тикеты видны."""
-        t = _make_ticket(subject="Любая", description="тема", number=400400)
+        t = _make_ticket(subject="Любая", description="тема")
         real_db_session.add(t)
         await real_db_session.flush()
 

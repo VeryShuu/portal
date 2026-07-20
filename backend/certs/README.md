@@ -3,7 +3,7 @@
 Сертификаты, не входящие в Mozilla CA Bundle (Debian `ca-certificates`), но
 необходимые для исходящих HTTPS-запросов из backend:
 
-- **`russian_trusted_root_ca.pem`** — корневой сертификат Минцифры
+- **`russian_trusted_root_ca.crt`** — корневой сертификат Минцифры
   (The Ministry of Digital Development and Communications).
   Источник: https://gu-st.ru/content/Other/doc/russian_trusted_root_ca.cer
   (официальная страница: https://www.gosuslugi.ru/crt).
@@ -17,6 +17,21 @@ TLS-handshake, и OpenSSL/httpx сами собирают chain `leaf → sub CA
 при наличии Root CA в trust store. Это правильнее, чем хардкодить промежуточные
 сертификаты, которые Минцифры периодически ротирует.
 
+## Хранение в git
+
+Файл `russian_trusted_root_ca.crt` **закоммичен в репозиторий** (это публичный
+trust anchor, не секрет). Расширение `.crt` обязательно — `update-ca-certificates`
+игнорирует все другие. Корневой `.gitignore` блокирует `*.crt` глобально, поэтому
+для этого файла сделано точечное исключение:
+
+```gitignore
+*.crt
+!backend/certs/russian_trusted_root_ca.crt
+```
+
+В `.gitattributes` сертификаты помечены как `-text` (binary) — git не делает
+CRLF↔LF нормализацию, чтобы `update-ca-certificates` всегда получал валидный PEM.
+
 ## Установка в Docker-образ
 
 `backend/Dockerfile` копирует сертификаты из этой папки в
@@ -27,6 +42,6 @@ requests, etc.) — никаких `verify=False` или ручной перед
 
 ## Обновление
 
-Если сертификат Минцифры отзовут или заменят — перезалить `.pem` сюда,
+Если сертификат Минцифры отзовут или заменят — перезалить `.crt` сюда,
 пересобрать образ backend/worker (`docker compose build backend worker`).
-Проверка: `openssl x509 -in russian_trusted_root_ca.pem -noout -subject`.
+Проверка: `openssl x509 -in russian_trusted_root_ca.crt -noout -subject`.

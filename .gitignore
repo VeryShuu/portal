@@ -124,6 +124,12 @@ test_output.txt
 *.p12
 *.pfx
 
+# Исключения: публичные trust anchors, необходимые для сборки Docker-образа.
+# Russian Trusted Root CA (Минцифры) — публичный, выложен на gu-st.ru/content/Other/doc/russian_trusted_root_ca.cer;
+# не входит в Mozilla CA Bundle / Debian ca-certificates, поэтому должен быть в git,
+# иначе COPY certs/*.crt в backend/Dockerfile падает в CI (clean checkout). См. backend/certs/README.md.
+!backend/certs/russian_trusted_root_ca.crt
+
 # ===== Database dumps =====
 *.dump
 *.sql.gz
