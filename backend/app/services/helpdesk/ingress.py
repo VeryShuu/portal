@@ -456,6 +456,124 @@ async def _localize_remote_post_commit(
         )
 
 
+def _parse_inbound_headers(msg: Message) -> dict:
+    """Декодирует и нормализует заголовки входящего письма (RFC 2047).
+
+    Кириллические Subject/From приходят как ``=?koi8-r?B?...?=`` / ``=?utf-8?B?...?=``
+    — без декодирования тема тикета сохранялась бы нечитаемой
+    (см. ``threading.decode_mime_header``).
+    """
+    subject_raw = threading_utils.decode_mime_header(msg.get("Subject"))
+    from_raw = threading_utils.decode_mime_header(msg.get("From"))
+    return {
+        "references": threading_utils.extract_references(msg),
+        "subject_raw": subject_raw,
+        "from_raw": from_raw,
+        "subject_token": threading_utils.extract_subject_token(subject_raw),
+        "recipient_token": threading_utils.extract_recipient_token(msg),
+        "sender_email": threading_utils.normalize_email(from_raw),
+        "sender_name": threading_utils.extract_display_name(from_raw),
+    }
+
+
+def _apply_requester_reply(ticket: HelpdeskTicket) -> None:
+    """Сменить статус тикета по машине состояний при ответе заявителя.
+
+    ``new``/``open``/``pending`` → reopen-переходы; ``closed`` → reopen-on-closed
+    со сбросом ``closed_at`` / ``closed_by_user_id`` при необходимости.
+    """
+    if ticket.status in REQUESTER_REOPEN_STATUSES:
+        result = requester_reply(ticket.status)
+        ticket.status = result.status
+    elif ticket.status == "closed":
+        result = requester_reply_on_closed(ticket.closed_at)
+        ticket.status = result.status
+        if result.cleared_closed:
+            ticket.closed_at = None
+            ticket.closed_by_user_id = None
+
+
+def _build_inbound_helpdesk_message(
+    *,
+    ticket: HelpdeskTicket,
+    requester: User | None,
+    headers: dict,
+    message_id: str,
+    body_text: str,
+    body_html: str,
+) -> HelpdeskMessage:
+    """Конструктор ``HelpdeskMessage`` для входящего письма."""
+    return HelpdeskMessage(
+        ticket_id=ticket.id,
+        author_user_id=requester.id if requester else None,
+        author_email=headers["sender_email"],
+        author_name=headers["sender_name"],
+        direction="inbound",
+        visibility="public",
+        body_text=body_text,
+        body_html=body_html,
+        source="email",
+        email_message_id=message_id,
+        in_reply_to=headers["references"][0] if headers["references"] else None,
+    )
+
+
+async def _dispatch_ingest_notifications(
+    db: AsyncSession,
+    redis: Redis,
+    *,
+    new_status: str,
+    ticket: HelpdeskTicket,
+    message: HelpdeskMessage,
+    body_text: str,
+) -> None:
+    """Post-commit уведомления: in-app, email-агентам, MAX-messenger.
+
+    Все каналы — best-effort: сбой одного не роняет остальные и не влияет на
+    уже закоммиченный тикет. Email- и MAX-уведомления идут только для новых
+    тикетов (для ответов агент уже оповещён in-app, а email-тред ведётся
+    отдельно с заявителем).
+    """
+    # In-app уведомление агентам/assignee.
+    try:
+        from app.services.helpdesk.notifications import (
+            notify_requester_reply,
+            notify_ticket_created,
+        )
+
+        if new_status == "created":
+            await notify_ticket_created(db, redis, ticket=ticket)
+        else:
+            await notify_requester_reply(db, redis, ticket=ticket, body_preview=body_text[:200])
+    except Exception as exc:
+        logger.warning("helpdesk.ingress.notify_failed", error=str(exc))
+
+    if new_status != "created":
+        return
+
+    # Email-уведомление агентам о новой заявке (через outbox ``kind=generic`` —
+    # не требует настроенного mailbox).
+    try:
+        from app.services.helpdesk.notifications import (
+            notify_ticket_created_email,
+        )
+
+        await notify_ticket_created_email(db, ticket=ticket, first_message=message)
+    except Exception as exc:
+        logger.warning("helpdesk.ingress.notify_email_failed", error=str(exc))
+
+    # MAX-messenger уведомление в общий чат поддержки (через ``messenger_outbox``).
+    # Только при включённом канале.
+    try:
+        from app.services.helpdesk.notifications import (
+            notify_ticket_created_max,
+        )
+
+        await notify_ticket_created_max(db, ticket=ticket, first_message=message)
+    except Exception as exc:
+        logger.warning("helpdesk.ingress.notify_max_failed", error=str(exc))
+
+
 async def _ingest_message(
     db: AsyncSession,
     redis: Redis,
@@ -464,17 +582,13 @@ async def _ingest_message(
     settings_row: HelpdeskMailboxSettings,
     summary: dict,
 ) -> None:
-    references = threading_utils.extract_references(msg)
-    # Декодируем заголовки (RFC 2047 encoded-words): кириллические Subject/From
-    # приходят как =?koi8-r?B?...?= / =?utf-8?B?...?= — без декодирования
-    # тема тикета сохранялась бы нечитаемой (см. threading.decode_mime_header).
-    subject_raw = threading_utils.decode_mime_header(msg.get("Subject"))
-    from_raw = threading_utils.decode_mime_header(msg.get("From"))
-    subject_token = threading_utils.extract_subject_token(subject_raw)
-    recipient_token = threading_utils.extract_recipient_token(msg)
-
-    sender_email = threading_utils.normalize_email(from_raw)
-    sender_name = threading_utils.extract_display_name(from_raw)
+    headers = _parse_inbound_headers(msg)
+    sender_email = headers["sender_email"]
+    references = headers["references"]
+    subject_token = headers["subject_token"]
+    recipient_token = headers["recipient_token"]
+    subject_raw = headers["subject_raw"]
+    sender_name = headers["sender_name"]
 
     ticket = await _match_ticket(
         db,
@@ -487,12 +601,15 @@ async def _ingest_message(
     requester = await _find_user_by_email(db, sender_email)
 
     body_text, body_html = _extract_bodies(msg)
+    # ``_extract_bodies`` возвращает ``tuple[str | None, str | None]``, но ниже по
+    # потоку (HelpdeskTicket/Message, html_to_plain) требует ``str``. Пустое тело
+    # входящего письма тоже валидно (напр. только вложения) — нормализуем в "".
+    body_text = body_text or ""
+    body_html = body_html or ""
 
     if ticket is None:
         # Новый тикет. Если subject_token указывал на архивный — сохраним ссылку.
-        ref_archived = None
-        if subject_token is not None:
-            ref_archived = subject_token  # нет живого тикета → продолжение архивного
+        ref_archived = subject_token if subject_token is not None else None
         ticket = HelpdeskTicket(
             subject=_derive_subject(subject_raw),
             description=body_text,
@@ -509,29 +626,16 @@ async def _ingest_message(
         new_status = "created"
     else:
         # Ответ на существующий тикет → сменить статус по машине.
-        if ticket.status in REQUESTER_REOPEN_STATUSES:
-            result = requester_reply(ticket.status)
-            ticket.status = result.status
-        elif ticket.status == "closed":
-            result = requester_reply_on_closed(ticket.closed_at)
-            ticket.status = result.status
-            if result.cleared_closed:
-                ticket.closed_at = None
-                ticket.closed_by_user_id = None
+        _apply_requester_reply(ticket)
         new_status = "appended"
 
-    message = HelpdeskMessage(
-        ticket_id=ticket.id,
-        author_user_id=requester.id if requester else None,
-        author_email=sender_email,
-        author_name=sender_name,
-        direction="inbound",
-        visibility="public",
+    message = _build_inbound_helpdesk_message(
+        ticket=ticket,
+        requester=requester,
+        headers=headers,
+        message_id=message_id,
         body_text=body_text,
         body_html=body_html,
-        source="email",
-        email_message_id=message_id,
-        in_reply_to=references[0] if references else None,
     )
     db.add(message)
     await db.flush()  # message.id нужен для привязки вложений/локализации картинок
@@ -607,45 +711,9 @@ async def _ingest_message(
         body_html=localized_html if localized_html is not None else body_html,
     )
 
-    # In-app уведомление агентам/assignee — best-effort.
-    try:
-        from app.services.helpdesk.notifications import (
-            notify_requester_reply,
-            notify_ticket_created,
-        )
-
-        if new_status == "created":
-            await notify_ticket_created(db, redis, ticket=ticket)
-        else:
-            await notify_requester_reply(db, redis, ticket=ticket, body_preview=body_text[:200])
-    except Exception as exc:
-        logger.warning("helpdesk.ingress.notify_failed", error=str(exc))
-
-    # Email-уведомление агентам о новой заявке (best-effort, через outbox
-    # ``kind=generic`` — не требует настроенного mailbox). Только для новых
-    # тикетов: для ответов на существующий тикет агент уже оповещён in-app,
-    # а email-тред ведётся отдельно с заявителем.
-    if new_status == "created":
-        try:
-            from app.services.helpdesk.notifications import (
-                notify_ticket_created_email,
-            )
-
-            await notify_ticket_created_email(db, ticket=ticket, first_message=message)
-        except Exception as exc:
-            logger.warning("helpdesk.ingress.notify_email_failed", error=str(exc))
-
-        # MAX-messenger уведомление в общий чат поддержки (best-effort, через
-        # ``messenger_outbox``). Только при включённом канале. Аналогично
-        # email-уведомлению: только для новых тикетов, не для ответов.
-        try:
-            from app.services.helpdesk.notifications import (
-                notify_ticket_created_max,
-            )
-
-            await notify_ticket_created_max(db, ticket=ticket, first_message=message)
-        except Exception as exc:
-            logger.warning("helpdesk.ingress.notify_max_failed", error=str(exc))
+    await _dispatch_ingest_notifications(
+        db, redis, new_status=new_status, ticket=ticket, message=message, body_text=body_text
+    )
 
 
 async def _match_ticket(

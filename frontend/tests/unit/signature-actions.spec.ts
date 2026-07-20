@@ -1,4 +1,3 @@
-/* eslint-disable vue/one-component-per-file -- тестовые компоненты-заглушки объявляются в одном файле */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'

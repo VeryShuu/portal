@@ -593,6 +593,73 @@ async def _load_max_bot_settings(db: AsyncSession) -> HelpdeskMaxBotSettings | N
     return res.scalars().one_or_none()
 
 
+def _resolve_requester_label(requester: object | None, ticket: HelpdeskTicket) -> str:
+    """Отображаемое имя заявителя в порядке приоритета: ФИО → email → снимок тикета.
+
+    Снимок из тикета (``requester_email`` / ``requester_name``) — финальный
+    fallback, когда гостевой заявитель не сопоставлен аккаунту (requester=None).
+    ``requester`` — ``object | None`` (а не ``User | None``), чтобы принимать
+    ``SimpleNamespace`` в unit-тестах (как ``resolve_requester_user`` callers).
+    """
+    if requester is not None:
+        full_name = getattr(requester, "full_name", None)
+        if full_name:
+            return str(full_name)
+        email = getattr(requester, "email", None)
+        if email:
+            return str(email)
+    return ticket.requester_email or (ticket.requester_name or "—")
+
+
+def _resolve_requester_city(requester: object | None) -> str:
+    """Город заявителя из профиля Keycloak-attributes (``users.attributes['city']``).
+
+    Keycloak иногда отдаёт multi-valued attributes как ``list[str]`` — берём
+    первый элемент. Гость без аккаунта → нет attributes → прочерк. Поле выводится
+    всегда: оператору важно видеть, что заявка без города, а не гадать пропущено ли.
+    """
+    if requester is None:
+        return "—"
+    attrs = getattr(requester, "attributes", None) or {}
+    city_val = attrs.get("city") if isinstance(attrs, dict) else None
+    if isinstance(city_val, list) and city_val:
+        return str(city_val[0]) or "—"
+    if isinstance(city_val, str) and city_val.strip():
+        return city_val.strip()
+    return "—"
+
+
+def _build_max_ticket_lines(
+    *,
+    requester_label: str,
+    requester_city: str,
+    ticket: HelpdeskTicket,
+    body_preview: str,
+) -> list[str]:
+    """Шаблон MAX-уведомления (markdown, **bold**-лейблы):
+
+        **Заявка от <ФИО>**
+        **Город:** Мурманск
+
+        **Тема:** ...
+        **Текст заявки:**
+        <превью тела>
+
+    № тикета не в заголовке — он переезжает в inline-кнопку «Открыть заявку
+    #TKT-N», чтобы оператор сразу видел куда кликать.
+    """
+    lines = [
+        f"**Заявка от {requester_label}**",
+        f"**Город:** {requester_city}",
+        "",
+        f"**Тема:** {ticket.subject}",
+        "**Текст заявки:**",
+    ]
+    if body_preview:
+        lines.append(body_preview)
+    return lines
+
+
 async def notify_ticket_created_max(
     db: AsyncSession,
     *,
@@ -642,53 +709,20 @@ async def notify_ticket_created_max(
     from app.services.helpdesk.tickets import resolve_requester_user
 
     requester = await resolve_requester_user(db, ticket=ticket)
-
-    # Отображаемое имя заявителя: ФИО → email → снимок из тикета.
-    if requester is not None and getattr(requester, "full_name", None):
-        requester_label = requester.full_name
-    elif requester is not None and getattr(requester, "email", None):
-        requester_label = requester.email
-    else:
-        requester_label = ticket.requester_email or (ticket.requester_name or "—")
-
-    # Город заявителя из профиля Keycloak-attributes (``users.attributes['city']``).
-    # Гость без аккаунта → нет attributes → прочерк (поле выводится всегда —
-    # оператору важно видеть что заявка без города, а не гадать пропущено ли поле).
-    requester_city = "—"
-    if requester is not None:
-        attrs = getattr(requester, "attributes", None) or {}
-        city_val = attrs.get("city") if isinstance(attrs, dict) else None
-        if isinstance(city_val, list) and city_val:
-            # Keycloak иногда отдаёт multi-valued attributes как list[str].
-            requester_city = str(city_val[0]) or "—"
-        elif isinstance(city_val, str) and city_val.strip():
-            requester_city = city_val.strip()
+    requester_label = _resolve_requester_label(requester, ticket)
+    requester_city = _resolve_requester_city(requester)
 
     # ``first_message`` — ORM HelpdeskMessage с body_text (plain). Через getattr
     # для устойчивости к SimpleNamespace в тестах.
     body_text = getattr(first_message, "body_text", None) or ""
     body_preview = _truncate_preview(body_text)
 
-    # Шаблон MAX-уведомления (markdown, **bold**-лейблы):
-    #   **Заявка от <ФИО>**
-    #   **Город:** Мурманск
-    #
-    #   **Тема:** ...
-    #   **Текст заявки:**
-    #   <превью тела>
-    #
-    # № тикета не в заголовке — он переезжает в inline-кнопку «Открыть заявку
-    # #TKT-N», чтобы оператор сразу видел куда кликать.
-    lines = [
-        f"**Заявка от {requester_label}**",
-        f"**Город:** {requester_city}",
-        "",
-        f"**Тема:** {ticket.subject}",
-        "**Текст заявки:**",
-    ]
-    if body_preview:
-        lines.append(body_preview)
-
+    lines = _build_max_ticket_lines(
+        requester_label=requester_label,
+        requester_city=requester_city,
+        ticket=ticket,
+        body_preview=body_preview,
+    )
     url = _build_ticket_url(ticket)
     text, attachments = _build_max_message_with_link(lines, url, ticket_number=ticket.ticket_number)
 

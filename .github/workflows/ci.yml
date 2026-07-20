@@ -437,20 +437,21 @@ jobs:
         working-directory: backend
         run: pip install -e ".[dev]"
 
-      # Ratchet, не уборка: текущий худший ранг сложности — E (CC≤40).
-      # Гейт падает только на ранге F (CC>40), т.е. блокирует регрессию
-      # «сверх текущего худшего», но не форсит рефакторинг существующего
-      # (это отдельная задача — P2 item 15).
-      - name: Complexity ratchet — no rank-F (CC>40) functions (backend)
+      # Complexity gate: блокирует любой rank-D/E/F (CC>10). После декомпозиции
+      # трёх D-функций (audit 2026-07-20) в репозитории не осталось функций
+      # хуже C — этот gate фиксирует планку и не даёт регрессии вернуться.
+      # Уборка существующего долга делается через декомпозицию (не через
+      # повышение порога гейта).
+      - name: Complexity gate — no rank-D+ (CC>10) functions (backend)
         working-directory: backend
         run: |
-          out="$(radon cc app -n F -s)"
+          out="$(radon cc app -n D -s)"
           if [ -n "$out" ]; then
-            echo "::error::New rank-F (CC>40) function(s) introduced — refactor before merge:"
+            echo "::error::Rank-D+ (CC>10) function(s) detected — refactor before merge:"
             echo "$out"
             exit 1
           fi
-          echo "OK: no rank-F functions (current worst rank is E)."
+          echo "OK: no rank-D+ functions (all functions are C or better)."
 
       - name: npm ci (frontend)
         working-directory: frontend

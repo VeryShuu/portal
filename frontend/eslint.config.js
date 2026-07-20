@@ -164,6 +164,12 @@ export default [
       "@typescript-eslint/no-explicit-any": "off",
       "@typescript-eslint/no-require-imports": "off",
       "no-empty": "off",
+      // Тестовые компоненты-двойники (inline defineComponent в spec-файлах)
+      // намеренно не типизируют пропы и не выносятся в отдельные файлы — это
+      // заглушки для конкретного spec, а не переиспользуемые компоненты.
+      // Production-компоненты (src/**/*.vue) эти правила продолжают применять.
+      "vue/require-prop-types": "off",
+      "vue/one-component-per-file": "off",
     },
   },
 ];

@@ -43,13 +43,28 @@ from __future__ import annotations
 
 import re
 
+# ─── Company-specific маркеры подписи ─────────────────────────────────────────
+# TODO(owner: IT / branding): при ребрендинге, смене шаблона подписи, фирменных
+# цветов или домена — обновить эти константы. Они захардкожены, потому что
+# мы авторы шаблона подписи (``app.services.signature``) и точно знаем его
+# структуру. Источник: ``backend/app/services/signature.py`` (render_signature).
+# Если изменится домен/email/логотип/цвет — эвристика ``strip_email_signature``
+# молча перестанет отрезать подпись у ВСЕХ сотрудников (~300 чел.), и подписи
+# снова начнут попадать в bodies/MAX-уведомления (см. баг от 20.07.2026).
+SIGNATURE_LOGO_FILENAME = "Mage_Ru.png"
+SIGNATURE_BORDER_COLOR = "#7B92AE"
+SIGNATURE_BLUE_COLOR = "#00479D"
+# Домены корпоративной почты (для mailto-маркера). ``portal-svc`` — service
+# account (App Password для Nextcloud, см. ADR-032), тоже часть подписи.
+SIGNATURE_EMAIL_DOMAINS = ("mage.ru", "portal-svc")
+
 # Компилируем один раз при импорте (как ``_QUOTE_PATTERNS`` в ``email_quote``).
 
 # 1. Логотип Mage_Ru.png (в любом регистре, любой путь до имени файла).
 #    Outlook оборачивает ``src`` в кавычки/без, добавляет ``id=``, ``width=``,
 #    ``height=`` — поэтому паттерн ищет только ``src=".../Mage_Ru.png"``.
 _SIGNATURE_LOGO_RE = re.compile(
-    r"""<img\b[^>]*\bsrc\s*=\s*["'][^"']*/?Mage_Ru\.png["']""",
+    rf"""<img\b[^>]*\bsrc\s*=\s*["'][^"']*/?{re.escape(SIGNATURE_LOGO_FILENAME)}["']""",
     re.IGNORECASE,
 )
 
@@ -57,18 +72,25 @@ _SIGNATURE_LOGO_RE = re.compile(
 #    Outlook любит ``border-right:solid #7B92AE 1.0pt`` (без пробелов),
 #    генератор — ``border-right: solid 1px #7B92AE`` (пробелы). Допускаем оба.
 _SIGNATURE_BORDER_RE = re.compile(
-    r"""border(?:-right|-left|-top|-bottom)?\s*:\s*solid\s+(?:\d+(?:\.\d+)?(?:px|pt)\s+)?#7[Bb]92[Aa][Ee]""",
+    rf"""border(?:-right|-left|-top|-bottom)?\s*:\s*solid\s+(?:\d+(?:\.\d+)?(?:px|pt)\s+)?{re.escape(SIGNATURE_BORDER_COLOR)}""",
     re.IGNORECASE,
 )
 
 # 3. Фирменный синий ФИО ``color:#00479D``. Outlook иногда вставляет ``;`` после,
 #    генератор — без. Ищем в любом ``style="..."``.
-_SIGNATURE_BLUE_RE = re.compile(r"""color\s*:\s*#00[47]79[Dd]""", re.IGNORECASE)
+#    Character class ``[47]`` на 3-й позиции цвета — намеренная толерантность
+#    к легаси-варианту ``#00779D`` (опечатка в ранних шаблонах подписи). Сам
+#    канонический цвет — ``SIGNATURE_BLUE_COLOR`` выше.
+_SIGNATURE_BLUE_RE = re.compile(
+    r"""color\s*:\s*#00[47]79[Dd]""",
+    re.IGNORECASE,
+)
 
-# 4. Mailto-ссылка на mage.ru — финальный маркер (email в подписи). Подпись
-#    всегда заканчивается ``<a href="mailto:...@mage.ru">``.
+# 4. Mailto-ссылка на корпоративный домен — финальный маркер (email в подписи).
+#    Подпись всегда заканчивается ``<a href="mailto:...@mage.ru">``.
+_SIGNATURE_DOMAINS_ALT = "(?:{})".format("|".join(re.escape(d) for d in SIGNATURE_EMAIL_DOMAINS))
 _SIGNATURE_MAILTO_RE = re.compile(
-    r"""<a\b[^>]*\bhref\s*=\s*["']mailto:[^"']*@(?:mage\.ru|portal-svc)["']""",
+    rf"""<a\b[^>]*\bhref\s*=\s*["']mailto:[^"']*@{_SIGNATURE_DOMAINS_ALT}["']""",
     re.IGNORECASE,
 )
 
@@ -84,20 +106,31 @@ _SIGNATURE_PATTERNS: tuple[re.Pattern[str], ...] = (
 def strip_email_signature(html: str | None) -> str | None:
     """Отрезать корпоративную подпись из HTML-тела письма.
 
-    Ищет первый совпавший маркер подписи (логотип Mage_Ru.png / цвет границы
-    #7B92AE / синий #00479D / mailto:@mage.ru) и отрезает от него до конца
-    строки (подпись всегда в конце письма).
+    Ищет **все** маркеры подписи (логотип Mage_Ru.png / цвет границы #7B92AE /
+    синий #00479D / mailto:@mage.ru) и режет от **самой ранней позиции** среди
+    всех совпавших до конца строки (подпись всегда в конце письма).
 
-    Возвращает обновлённый HTML или исходный, если подпись не найдена.
+    Раньше (аудит 2026-07-20 N2) срез шёл по «первому паттерну по приоритету»:
+    цикл по ``_SIGNATURE_PATTERNS`` возвращал срез по первому паттерну, который
+    что-то нашёл — игнорируя, что низкоприоритетный маркер (напр. синий цвет в
+    легитимной цитате) мог оказаться раньше в теле, чем высокоприоритетный
+    (LOGO) в подписи. Это приводило к потере тела заявки. Сейчас берём
+    ``min(start)`` по всем совпадениям.
+
+    Возвращает обновлённый HTML или исходный, если ни один маркер не найден.
     ``None``/пустая строка → возвращаются как есть (идемпотентно).
     """
     if not html:
         return html
-    for pattern in _SIGNATURE_PATTERNS:
-        match = pattern.search(html)
-        if match:
-            # Отрезаем от начала совпавшего маркера до конца.
-            # Trim trailing whitespace (подпись обычно отделяется ``<p>&nbsp;</p>``
-            # и пустыми строками — оставляем минимальный хвост чистоты).
-            return html[: match.start()].rstrip()
-    return html
+    # Минимальная позиция среди всех маркеров (а не первый по приоритету).
+    # ``min(...)`` на пустом наборе поднял бы ValueError — фильтруем через
+    # default=``None`` и проверяем явно.
+    earliest = min(
+        (m.start() for p in _SIGNATURE_PATTERNS if (m := p.search(html))),
+        default=None,
+    )
+    if earliest is None:
+        return html
+    # Trim trailing whitespace (подпись обычно отделяется ``<p>&nbsp;</p>``
+    # и пустыми строками — оставляем минимальный хвост чистоты).
+    return html[:earliest].rstrip()

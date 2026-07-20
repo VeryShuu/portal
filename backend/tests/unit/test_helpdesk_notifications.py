@@ -882,6 +882,106 @@ class TestNotifyTicketCreatedMax:
         assert len(preview_line) <= 501
         assert preview_line.endswith("…")
 
+    @pytest.mark.asyncio
+    async def test_empty_body_preview_omits_text_section(self):
+        """``first_message.body_text`` пустой/None → превью опускается
+        (ветка ``if body_preview`` пропускается). За лейблом «**Текст заявки:**»
+        идёт пустая строка, а не строка превью."""
+        db = _db_with_max_settings(_max_settings())
+        ticket = _ticket(number=1, subject="Пустое тело")
+        # URL-патч делает ссылку валидной → она уходит в inline-кнопку, и текст
+        # заканчивается ровно на «**Текст заявки:**\n» (без превью и без markdown-ссылки).
+        with (
+            _patch_resolve_requester(_requester_user()),
+            patch.object(notif, "enqueue_messenger_message", new=AsyncMock()) as enqueue,
+            patch.object(notif, "_build_ticket_url", return_value="https://portal.example.com/x"),
+        ):
+            await notif.notify_ticket_created_max(
+                db, ticket=ticket, first_message=_first_message(text="")
+            )
+        text = enqueue.await_args.kwargs["text"]
+        assert "**Текст заявки:**" in text
+        # ``body_preview`` пустой → ветка ``if body_preview`` пропущена →
+        # список ``lines`` оканчивается ровно на лейбле (join без trailing \n).
+        assert text.endswith("**Текст заявки:**")
+
+    @pytest.mark.asyncio
+    async def test_requester_label_falls_back_to_email_when_no_full_name(self):
+        """Requester есть в системе, но без ``full_name`` → подпись берётся из
+        ``requester.email`` (вторая ветка в каскаде ``requester_label``)."""
+        db = _db_with_max_settings(_max_settings())
+        ticket = _ticket(number=1)
+        requester = SimpleNamespace(full_name=None, email="known@company.local", attributes={})
+        with (
+            _patch_resolve_requester(requester),
+            patch.object(notif, "enqueue_messenger_message", new=AsyncMock()) as enqueue,
+        ):
+            await notif.notify_ticket_created_max(db, ticket=ticket, first_message=_first_message())
+        text = enqueue.await_args.kwargs["text"]
+        assert "known@company.local" in text
+        assert "**Заявка от known@company.local**" in text
+
+    @pytest.mark.asyncio
+    async def test_requester_label_falls_back_to_ticket_snapshot_when_no_contacts(self):
+        """Requester есть, но без ``full_name`` И без ``email`` → берётся снимок
+        из тикета (``requester_email``/``requester_name``)."""
+        db = _db_with_max_settings(_max_settings())
+        ticket = _ticket(
+            number=1,
+            requester_email="snapshot@external.com",
+            requester_name="Снимок",
+        )
+        # Независимо от того, что requester.email — None, должна пройти ветка
+        # ``ticket.requester_email or ticket.requester_name``.
+        requester = SimpleNamespace(full_name=None, email=None, attributes={})
+        with (
+            _patch_resolve_requester(requester),
+            patch.object(notif, "enqueue_messenger_message", new=AsyncMock()) as enqueue,
+        ):
+            await notif.notify_ticket_created_max(db, ticket=ticket, first_message=_first_message())
+        text = enqueue.await_args.kwargs["text"]
+        assert "snapshot@external.com" in text
+        assert "**Заявка от snapshot@external.com**" in text
+
+    @pytest.mark.asyncio
+    async def test_requester_city_as_list_uses_first_element(self):
+        """Keycloak иногда отдаёт multi-valued attributes как ``list[str]``.
+        Первый элемент списка берётся как город."""
+        db = _db_with_max_settings(_max_settings())
+        ticket = _ticket(number=1)
+        requester = SimpleNamespace(
+            full_name="Иван",
+            email="x@y.z",
+            attributes={"city": ["Архангельск", "Североморск"]},
+        )
+        with (
+            _patch_resolve_requester(requester),
+            patch.object(notif, "enqueue_messenger_message", new=AsyncMock()) as enqueue,
+        ):
+            await notif.notify_ticket_created_max(db, ticket=ticket, first_message=_first_message())
+        text = enqueue.await_args.kwargs["text"]
+        assert "**Город:** Архангельск" in text
+        assert "Североморск" not in text
+
+    @pytest.mark.asyncio
+    async def test_requester_city_blank_string_falls_back_to_dash(self):
+        """``city=""`` (или только пробелы) после ``.strip()`` — эквивалентно
+        отсутствию города → прочерк."""
+        db = _db_with_max_settings(_max_settings())
+        ticket = _ticket(number=1)
+        requester = SimpleNamespace(
+            full_name="Иван",
+            email="x@y.z",
+            attributes={"city": "   "},
+        )
+        with (
+            _patch_resolve_requester(requester),
+            patch.object(notif, "enqueue_messenger_message", new=AsyncMock()) as enqueue,
+        ):
+            await notif.notify_ticket_created_max(db, ticket=ticket, first_message=_first_message())
+        text = enqueue.await_args.kwargs["text"]
+        assert "**Город:** —" in text
+
 
 class TestIsMaxLinkSafeUrl:
     """``_is_max_link_safe_url`` — предикат «пройдёт ли URL валидацию MAX Bot API

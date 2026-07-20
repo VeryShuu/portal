@@ -169,3 +169,53 @@ class TestStripEmailSignature:
         result = strip_email_signature(html)
         assert "Системное письмо" in result
         assert "portal-svc@mage.ru" not in result
+
+    def test_min_position_when_high_priority_marker_is_later(self):
+        """Когда высокоприоритетный LOGO найден ПОЗЖЕ низкоприоритетного BLUE,
+        но ОБА в подписи (не в теле) — режем по минимальной позиции (BLUE).
+
+        Регрессия аудита 2026-07-20 (N2): до фикса цикл по ``_SIGNATURE_PATTERNS``
+        в порядке «логотип → бордер → синий → mailto» возвращал срез по первому
+        паттерну по приоритету (LOGO), игнорируя более ранний BLUE — в результате
+        кусок подписи между BLUE и LOGO оставался в теле. После фикса: срез по
+        ``min(start)`` по всем совпавшим маркерам.
+
+        Примечание: ``min(pos)`` НЕ спасает от сценария «BLUE в легитимной
+        цитате в теле + MAILTO в подписи» — там BLUE остаётся самым ранним
+        маркером и тело режется. Это фундаментальное ограничение эвристики
+        (любой фирменный цвет в теле выглядит как подпись). Нивелируется тем,
+        что реальные подписи начинаются с логотипа, а не с цвета.
+        """
+        # BLUE @ 50 (в подписи), LOGO @ 200 (тоже в подписи).
+        html = (
+            "<p>Тело письма.</p>"
+            "<table><tr>"
+            "<td><span style='color:#00479D'>ФИО подписи</span></td>"  # BLUE раньше
+            "</tr><tr>"
+            "<td><img src='Mage_Ru.png'></td>"  # LOGO позже
+            "</tr></table>"
+        )
+        result = strip_email_signature(html)
+        # Весь блок подписи отрезан (от самого раннего маркера BLUE, не от LOGO).
+        assert "ФИО подписи" not in result
+        assert "Mage_Ru.png" not in result
+        assert "Тело письма." in result
+
+    def test_all_markers_in_signature_cut_at_earliest(self):
+        """Все 4 маркера в подписи → срез по самому раннему (независимо от
+        приоритета). Проверка что ``min(pos)`` корректно выбирает минимум
+        среди разнотипных маркеров."""
+        # MAILTO раньше всех, потом BLUE, BORDER, LOGO.
+        html = (
+            "<p>Тело.</p>"
+            '<a href="mailto:first@mage.ru">first</a>'  # MAILTO @ рано
+            "<table><tr><td style='border-right:solid #7B92AE 1.0pt'>"  # BORDER
+            "<span style='color:#00479D'>ФИО</span></td></tr>"  # BLUE
+            "<tr><td><img src='Mage_Ru.png'></td></tr></table>"  # LOGO
+        )
+        result = strip_email_signature(html)
+        assert "Тело." in result
+        assert "first@mage.ru" not in result
+        assert "#7B92AE" not in result
+        assert "#00479D" not in result
+        assert "Mage_Ru.png" not in result

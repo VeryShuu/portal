@@ -261,7 +261,13 @@ class TestGetNews:
         redis.setex = AsyncMock()
 
         app = _build_app(user, db, redis)
-        with patch(f"{_NEWS_SVC}.get_news_by_id", new=AsyncMock(return_value=news)):
+        with (
+            patch(f"{_NEWS_SVC}.get_news_by_id", new=AsyncMock(return_value=news)),
+            # ``is_liked_by`` внутри делает ``await db.execute(...)`` и ``res.first()``
+            # на голом AsyncMock это создаёт coroutine, который никогда не await'ится
+            # → ``PytestUnraisableExceptionWarning``. Мокаем svc-метод целиком.
+            patch(f"{_NEWS_SVC}.is_liked_by", new=AsyncMock(return_value=False)),
+        ):
             async with httpx.AsyncClient(
                 transport=ASGITransport(app=app), base_url="http://test"
             ) as client:
@@ -286,6 +292,8 @@ class TestGetNews:
         with (
             patch(f"{_NEWS_SVC}.get_news_by_id", new=AsyncMock(return_value=news)),
             patch(f"{_NEWS_SVC}.increment_view_count", new=AsyncMock()) as mock_incr,
+            # См. ``test_returns_news`` — мокаем, чтобы не плодить unawaited coroutines.
+            patch(f"{_NEWS_SVC}.is_liked_by", new=AsyncMock(return_value=False)),
         ):
             async with httpx.AsyncClient(
                 transport=ASGITransport(app=app), base_url="http://test"

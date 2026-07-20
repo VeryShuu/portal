@@ -13,9 +13,14 @@ from __future__ import annotations
 import base64
 import re
 import uuid
+from email import encoders
+from email.mime.base import MIMEBase
 from email.mime.image import MIMEImage
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from email.utils import formatdate
+
+import aiofiles
 
 from app.core.database import AsyncSessionLocal
 from app.core.logging import get_logger
@@ -425,125 +430,82 @@ async def _embed_helpdesk_attachment_images(
     return html_with_cid, inline_images
 
 
-async def _build_helpdesk_mime(row: dict, cfg: dict) -> MIMEMultipart:
-    """Сборка MIME для исходящего helpdesk-письма (ТЗ §5.2).
+_DEFAULT_FROM_ADDRESS = "portal@company.local"
 
-    Канонические заголовки (ТЗ §1.3.3):
-    * ``Message-ID: <tkn-{ticket_number}-{message_uuid}@{support_domain}>`` —
-      берётся из ``payload.message_id_header`` (генерируется заранее сервисом).
-    * ``In-Reply-To`` / ``References`` — цепочка Message-ID предшествующих
-      сообщений тикета.
-    * ``Reply-To: {support_address}`` — чистый настроенный адрес ящика (без
-      plus-addressing). Матчинг входящих ответов идёт по ``In-Reply-To`` /
-      ``References``, токену ``[#TKT-{number}]`` в теме и опционально по
-      ``+TKT-{number}`` в адресе получателя — plus-маркер в ``Reply-To`` для
-      этого не нужен и только ломал доставку на ящиках, где local-part ≠
-      ``support`` (например ``portal@domain`` → ответ на несуществующий
-      ``support+TKT-N@domain``).
-    * ``Subject: "[#TKT-{number}] {original_subject}"``.
 
-    Вложения читаются с локального диска (``/data/helpdesk/TKT-{number}/{file}``)
-    через ``aiofiles``; их содержимое НЕ лежит в JSONB ``payload`` — только
-    метаданные (filename/original_name/content_type). Если ``support_domain``
-    пуст/невалиден — raise (outbox → mark_failed): RFC 5322 требует валидный
-    домен в msg-id, ``localhost`` подставлять нельзя.
+def _resolve_helpdesk_reply_to(payload: dict, cfg: dict) -> str:
+    """Чистый адрес ящика из настроек (без plus-addressing).
 
-    Inline-картинки rich-редактора (``<img src="/api/v1/helpdesk/.../inline-media/...">``
-    в ``body_html``) встраиваются как ``cid:``-attach в ``multipart/related`` —
-    заявитель видит их прямо в почтовом клиенте (без доступа к порталу, как OTRS).
-    Файлы читаются с диска, ``src`` переписывается на ``cid:{token}``. Best-effort:
-    если файл не найден/не читается — ``src`` остаётся относительным (в веб-ленте
-    портала картинка всё равно видна).
+    Матчинг входящих ответов идёт по ``In-Reply-To`` / ``References`` и токену
+    ``[#TKT-{number}]`` в теме — plus-маркер в ``Reply-To`` для этого не нужен
+    и ломал доставку на ящиках, где local-part ≠ ``support`` (напр. при
+    ``portal@domain`` ответ уходил на несуществующий ``support+TKT-N@domain``).
     """
-    from email.mime.base import MIMEBase
-    from email.utils import formatdate
-
-    import aiofiles
-
-    from app.core.constants import HELPDESK_FILES_DIR
-
-    payload = row["payload"] or {}
-    to_email = _sanitize_header(row["to_email"])
-    from_address = _sanitize_header(cfg["from_address"] or "portal@company.local")
-    body_html = row["body_html"] or ""
-    body_text = row["body_text"]
-
-    ticket_number = payload.get("ticket_number")
-    # Встраиваем inline-картинки rich-редактора как cid:-attach (multipart/related).
-    # Делаем до сборки тела: HTML уже должен содержать src="cid:...". Файлы читаются
-    # из HELPDESK_FILES_DIR / TKT-{n} / inline / {file} (см. media.py).
-    if ticket_number:
-        body_html, inline_images = await _embed_helpdesk_inline_images(body_html, ticket_number)
-        # Картинки из истории переписки — локализованные email-attachments (входящие
-        # письма заявителя с inline cid:/внешними http, сохранённые в БД через
-        # email_images.py). Без этой ветки их ``src=/api/v1/.../attachments/{id}``
-        # остаётся URL — почтовый клиент cookie не передаёт, картинка не грузится.
-        # Здесь — встраиваем как cid: (как rich-картинки), один DB-запрос на все.
-        body_html, att_inline_images = await _embed_helpdesk_attachment_images(
-            body_html, ticket_number
-        )
-        inline_images.extend(att_inline_images)
-    else:
-        inline_images = []
-    support_domain = (payload.get("support_domain") or "").strip()
-    if not ticket_number or not support_domain:
-        raise ValueError(
-            "helpdesk outbound requires payload.ticket_number and "
-            "payload.support_domain (from helpdesk_mailbox_settings.support_address)"
-        )
-    # Чистый адрес ящика из настроек (без plus-addressing). см. docstring.
-    reply_to_address = _sanitize_header(
+    return _sanitize_header(
         (payload.get("support_address") or "").strip()
-        or cfg["from_address"]
-        or "portal@company.local"
+        or cfg.get("from_address")
+        or _DEFAULT_FROM_ADDRESS
     )
 
-    subject_original = _sanitize_header(payload.get("subject_original") or "")
-    subject = _sanitize_header(f"[#TKT-{ticket_number}] {subject_original}")
 
-    has_attachments = bool(payload.get("attachments"))
+def _build_helpdesk_body_root(body_text: str, body_html: str, inline_images: list) -> MIMEMultipart:
+    """Тело письма: ``multipart/alternative`` (plain + html), при наличии
+    inline-картинок rich-редактора оборачивается в ``multipart/related``.
 
-    # Тело письма: multipart/alternative (plain + html). При наличии inline-картинок
-    # rich-редактора оборачивается в multipart/related — HTML ссылается на картинки
-    # через cid:, сами картинки идут как related-части (Content-ID).
+    HTML ссылается на картинки через ``cid:``, сами картинки идут как related-части
+    (Content-ID) — заявитель видит их прямо в почтовом клиенте.
+    """
     alternative = MIMEMultipart("alternative")
     if body_text:
         alternative.attach(MIMEText(body_text, "plain", "utf-8"))
     alternative.attach(MIMEText(body_html, "html", "utf-8"))
 
-    if inline_images:
-        body_root: MIMEMultipart = MIMEMultipart("related")
-        body_root.attach(alternative)
-        for img in inline_images:
-            _attach_inline_image(body_root, img)
-    else:
-        body_root = alternative
+    if not inline_images:
+        return alternative
 
-    # outer: mixed — если есть обычные вложения (body_root + attachments),
-    # иначе body_root сам становится корневым (related или alternative).
-    if has_attachments:
-        outer = MIMEMultipart("mixed")
-        outer.attach(body_root)
-        ticket_dir = HELPDESK_FILES_DIR / f"TKT-{ticket_number}"
-        for att_meta in payload["attachments"]:
-            filename = att_meta.get("filename") or ""
-            content_type = att_meta.get("content_type") or "application/octet-stream"
-            original_name = att_meta.get("original_name") or filename
-            disk_path = ticket_dir / filename
-            async with aiofiles.open(disk_path, "rb") as f:
-                data = await f.read()
-            maintype, _, subtype = content_type.partition("/")
-            part = MIMEBase(maintype or "application", subtype or "octet-stream")
-            part.set_payload(data)
-            from email import encoders
+    body_root: MIMEMultipart = MIMEMultipart("related")
+    body_root.attach(alternative)
+    for img in inline_images:
+        _attach_inline_image(body_root, img)
+    return body_root
 
-            encoders.encode_base64(part)
-            part.add_header("Content-Disposition", "attachment", filename=original_name)
-            outer.attach(part)
-    else:
-        outer = body_root
 
-    # Канонические заголовки (на корневую часть).
+async def _read_helpdesk_attachment(ticket_number: int, att_meta: dict) -> MIMEBase:
+    """Читает файл вложения с диска (aiofiles) и собирает MIME-часть.
+
+    Вложения лежат в ``/data/helpdesk/TKT-{number}/{file}``; их содержимое НЕ
+    лежит в JSONB ``payload`` — только метаданные (filename/original_name/content_type).
+    """
+    from app.core.constants import HELPDESK_FILES_DIR
+
+    filename = att_meta.get("filename") or ""
+    content_type = att_meta.get("content_type") or "application/octet-stream"
+    original_name = att_meta.get("original_name") or filename
+    disk_path = HELPDESK_FILES_DIR / f"TKT-{ticket_number}" / filename
+    async with aiofiles.open(disk_path, "rb") as f:
+        data = await f.read()
+    maintype, _, subtype = content_type.partition("/")
+    part = MIMEBase(maintype or "application", subtype or "octet-stream")
+    part.set_payload(data)
+    encoders.encode_base64(part)
+    part.add_header("Content-Disposition", "attachment", filename=original_name)
+    return part
+
+
+def _apply_helpdesk_headers(
+    outer: MIMEMultipart,
+    *,
+    subject: str,
+    from_address: str,
+    to_email: str,
+    reply_to_address: str,
+    payload: dict,
+) -> None:
+    """Канонические заголовки на корневую часть (ТЗ §1.3.3/§5.2).
+
+    Subject, From, To, Date, Message-ID, In-Reply-To, References, Reply-To — все
+    проходят через ``_sanitize_header`` (защита от CRLF-injection, ТЗ H-4).
+    """
     outer["Subject"] = subject
     outer["From"] = from_address
     outer["To"] = to_email
@@ -559,6 +521,81 @@ async def _build_helpdesk_mime(row: dict, cfg: dict) -> MIMEMultipart:
         outer["References"] = _sanitize_header(" ".join(references))
     outer["Reply-To"] = reply_to_address
 
+
+async def _build_helpdesk_mime(row: dict, cfg: dict) -> MIMEMultipart:
+    """Сборка MIME для исходящего helpdesk-письма (ТЗ §5.2).
+
+    Канонические заголовки (ТЗ §1.3.3):
+    * ``Message-ID: <tkn-{ticket_number}-{message_uuid}@{support_domain}>`` —
+      берётся из ``payload.message_id_header`` (генерируется заранее сервисом).
+    * ``In-Reply-To`` / ``References`` — цепочка Message-ID предшествующих
+      сообщений тикета.
+    * ``Reply-To: {support_address}`` — чистый настроенный адрес ящика (без
+      plus-addressing). См. :func:`_resolve_helpdesk_reply_to`.
+    * ``Subject: "[#TKT-{number}] {original_subject}"``.
+
+    Вложения читаются с локального диска через aiofiles (см.
+    :func:`_read_helpdesk_attachment`). Если ``support_domain`` пуст/невалиден —
+    raise (outbox → mark_failed): RFC 5322 требует валидный домен в msg-id,
+    ``localhost`` подставлять нельзя.
+
+    Inline-картинки rich-редактора встраиваются как ``cid:``-attach в
+    ``multipart/related`` — заявитель видит их прямо в почтовом клиенте (без
+    доступа к порталу, как OTRS). Best-effort: если файл не найден/не читается —
+    ``src`` остаётся относительным (в веб-ленте портала картинка всё равно видна).
+    """
+    payload = row["payload"] or {}
+    to_email = _sanitize_header(row["to_email"])
+    from_address = _sanitize_header(cfg.get("from_address") or _DEFAULT_FROM_ADDRESS)
+    body_html = row["body_html"] or ""
+    body_text = row["body_text"]
+
+    ticket_number = payload.get("ticket_number")
+    support_domain = (payload.get("support_domain") or "").strip()
+    if not ticket_number or not support_domain:
+        raise ValueError(
+            "helpdesk outbound requires payload.ticket_number and "
+            "payload.support_domain (from helpdesk_mailbox_settings.support_address)"
+        )
+
+    # Встраиваем inline-картинки rich-редактора как cid:-attach (multipart/related).
+    # Делаем до сборки тела: HTML уже должен содержать src="cid:...". Файлы читаются
+    # из HELPDESK_FILES_DIR / TKT-{n} / inline / {file} (см. media.py).
+    body_html, inline_images = await _embed_helpdesk_inline_images(body_html, ticket_number)
+    # Картинки из истории переписки — локализованные email-attachments (входящие
+    # письма заявителя с inline cid:/внешними http, сохранённые в БД через
+    # email_images.py). Без этой ветки их ``src=/api/v1/.../attachments/{id}``
+    # остаётся URL — почтовый клиент cookie не передаёт, картинка не грузится.
+    # Здесь — встраиваем как cid: (как rich-картинки), один DB-запрос на все.
+    body_html, att_inline_images = await _embed_helpdesk_attachment_images(
+        body_html, ticket_number
+    )
+    inline_images.extend(att_inline_images)
+
+    subject_original = _sanitize_header(payload.get("subject_original") or "")
+    subject = _sanitize_header(f"[#TKT-{ticket_number}] {subject_original}")
+    reply_to_address = _resolve_helpdesk_reply_to(payload, cfg)
+
+    body_root = _build_helpdesk_body_root(body_text, body_html, inline_images)
+
+    # outer: mixed — если есть обычные вложения (body_root + attachments),
+    # иначе body_root сам становится корневым (related или alternative).
+    if not payload.get("attachments"):
+        outer = body_root
+    else:
+        outer = MIMEMultipart("mixed")
+        outer.attach(body_root)
+        for att_meta in payload["attachments"]:
+            outer.attach(await _read_helpdesk_attachment(ticket_number, att_meta))
+
+    _apply_helpdesk_headers(
+        outer,
+        subject=subject,
+        from_address=from_address,
+        to_email=to_email,
+        reply_to_address=reply_to_address,
+        payload=payload,
+    )
     return outer
 
 

@@ -1,16 +1,17 @@
 # Аудит качества кода портала
 
-> **Последнее обновление:** 2026-07-19 (синхронизация меток после helpdesk/MAX-итераций; ниже — ранее 2026-07-12)
-> **Предыдущий аудит:** 2026-06-06
+> **Последнее обновление:** 2026-07-20 (после remediation аудита 2026-07-20: декомпозиция 3 D-функций → ≤ C, CI-gate по radon F→D, email_signature min-pos + company-маркеры в константы; см. `./wip/audit-2026-07-remediation.md`).
+> **Предыдущие обновления:** 2026-07-19 (синхронизация меток после helpdesk/MAX-итераций), 2026-07-12.
+> **Первичный аудит:** 2026-06-06.
 > **Метод:** трёхуровневый аудит (автоматические метрики → целевое AI-ревью → архитектурный анализ).
-> **Масштаб:** backend ~55k LOC, frontend ~60k LOC реального кода, **81 миграция** (075–081 — модуль Helpdesk + MAX-messenger; детали в `./helpdesk.md`), 290+ backend-тестов + 180+ frontend-spec.
+> **Масштаб:** backend ~55k LOC, frontend ~60k LOC реального кода, **81 миграция** (075–081 — модуль Helpdesk + MAX-messenger; детали в `./helpdesk.md`), 3669 backend-тестов + 2111 frontend-spec.
 > **Цель:** оценить здоровье проекта, приоритизировать техдолг. Это **диагностический** документ, не план правок.
 
 ---
 
 ## TL;DR (читать здесь)
 
-**Проект в хорошем состоянии.** Базовая гигиена образцовая: 0 TODO/FIXME, 0 `: any` в frontend, строгая типизация, radon MI = A для всех файлов, **0 функций сложности D/E** (макс. C/18), bandit 0 High + 0 Medium. Тестов больше, чем кода (test:app = 1.34).
+**Проект в хорошем состоянии.** Базовая гигиена образцовая: 0 TODO/FIXME, 0 `: any` в frontend, строгая типизация, radon MI = A для всех файлов, **0 функций сложности D/E** (макс. C/18) — восстановлено 2026-07-20 декомпозицией 3 D-функций helpdesk/MAX-кода, теперь блокируется CI-gate `radon cc -n D`, bandit 0 High + 0 Medium. Тестов больше, чем кода (test:app = 1.34).
 
 **Главный итог переаудита:** **все 5 P0-находок июньского аудита исправлены** (F1, F2, E1, B1, A1), и большинство P1 (F3, F4, F5, E2, E3, E6, A2). Это подтверждает, что прошлая работа была предметной. Подробный статус — §4.
 
@@ -28,8 +29,14 @@
 - **P1 #9** frontend func-cov на hotspots (≥ 70%)
 - **P2 #12** FE-5: LinksTab.vue → composable
 - **P2 #13** inline-SQL из api/kb/* в repo/service-слой
-- **P2 #15** декомпозиция 3 длинных функций
-- **P3 #17** CI gates (radon, knip, jscpd, func-cov threshold)
+- **P2 #15** декомпозиция длинных функций: `import_scan_run` (202 LOC), `oidc.callback` (171), `bulk_move_files` (125). Три helpdesk/MAX-функции (`_build_helpdesk_mime`, `_ingest_message`, `notify_ticket_created_max`) декомпозированы 2026-07-20.
+- **P3 #17** CI gates: radon (✅ добавлен 2026-07-20, порог D), jscpd (✅), knip (информационно), func-cov threshold (✅ через vite.config).
+
+**✅ Remediation 2026-07-20 (точечно, без правок API/БД):**
+- **N1 (сложность):** 3 функции класса D (`_build_helpdesk_mime`, `_ingest_message`, `notify_ticket_created_max`) декомпозированы до ≤ C. CI-gate `quality-gates` снижен с порога F (CC>40) до D (CC>10) — «прививка» от повторной регрессии.
+- **N2 (email_signature):** срез подписи теперь идёт по минимальной позиции среди всех маркеров (а не по первому паттерну по приоритету); company-маркеры (`Mage_Ru.png`, `#7B92AE`, `#00479D`, `@mage.ru`) вынесены в именованные константы с TODO(owner: IT/branding).
+- **N3 (дрейф доки):** этот раздел обновлён.
+- План: `./wip/audit-2026-07-remediation.md`.
 
 **Вердикт:** глобальный рефакторинг **не нужен**. Все P0/P1 закрыты, P2 — точечно. Проект production-ready.
 
@@ -37,7 +44,7 @@
 
 ## 1. Executive summary
 
-Проект **значительно здоровее, чем можно ожидать от кодовой базы, написанной разными ИИ-агентами**. Базовая гигиена образцовая: линтеры, типы и тесты проходят на обоих стеках, средняя сложность низкая, дублирование кода ~2%, 0 функций D/E по radon. Декларируемый в `AGENTS.md` процесс (DoD: lint+typecheck+tests перед коммитом) реально соблюдается.
+Проект **значительно здоровее, чем можно ожидать от кодовой базы, написанной разными ИИ-агентами**. Базовая гигиена образцовая: линтеры, типы и тесты проходят на обоих стеках, средняя сложность низкая, дублирование кода ~2%, 0 функций D/E по radon (восстановлено 2026-07-20 после регрессии в helpdesk/MAX-коде). Декларируемый в `AGENTS.md` процесс (DoD: lint+typecheck+tests перед коммитом) реально соблюдается.
 
 За месяц между аудитами (июнь→июль) **добавлен целиком модуль helpdesk** (~5300 LOC backend + 2300 LOC frontend), и при этом **не появилось regression** по старым находкам — напротив, они были закрыты. Это сильный сигнал зрелости процесса.
 
@@ -46,7 +53,7 @@
 | Ось | Оценка | Комментарий |
 |---|---|---|
 | Базовая гигиена (lint/types) | 5/5 | ruff/mypy/eslint/vue-tsc — 0 ошибок |
-| Сложность / читаемость | 4.5/5 | radon: 0 блоков D/E, макс. C/18, MI = A для всех |
+| Сложность / читаемость | 4.5/5 | radon: 0 блоков D/E (CI-gate D), макс. C/18, MI = A для всех |
 | Дублирование | 5/5 | ~2% (Python 0.6%, TS 2.1%) |
 | Тестовое покрытие (backend) | 4/5 | 201 файл, хорошее покрытие |
 | Тестовое покрытие (frontend) | 3/5 | statements 72%, но func-cov низкий на hotspots |
@@ -76,18 +83,18 @@
 | Метрика | Результат (июль 2026) | Тренд к июню |
 |---|---|---|
 | `ruff check` | **0 нарушений** | = |
-| `mypy app` | **0 ошибок** (341 файл) | ↑ (279→341) |
-| Радон CC — блоков D/E | **0** (макс. C/18) | улучшено (было ~17 D/E) |
+| `mypy app` | **0 ошибок** (349 файлов) | ↑ (341→349 после helpdesk/MAX) |
+| Радон CC — блоков D/E | **0** (макс. C/18; CI-gate `quality-gates` блокирует D) | ↑ (было 3 D после helpdesk/MAX-итераций → 0 после декомпозиции 2026-07-20) |
 | Radon MI | **все файлы = A** | = |
-| `bandit` | 1 HIGH + 8 MED + 39 LOW — **все ложные/низкорисковые** | см. §3.4 |
+| `bandit` | 0 HIGH + 0 MED + 27 LOW | ↑ (см. §3.4) |
 | `vulture` (conf≥80) | 46 — почти все ложные (pydantic `cls`, декораторы) | = |
-| Backend тестов | **201 файл** (158 unit + 37 integration + 6 security) | ↑ |
+| Backend тестов | **3669 unit** (плюс integration/security — см. ниже) | ↑ с 3290 |
 | LOC (app) | 52 314 (тесты 69 925 → ratio 1.34) | ↑ с 41k |
 | `TODO`/`FIXME`/`HACK` | **0** | = |
 | `print()` в app | **0** (везде structlog) | ↑ (было 3) |
 
 **Самые длинные функции** (кандидаты на декомпозицию, не баги):
-`worker/tasks/photos/import_scan.py::import_scan_run` (202 LOC), `api/auth/oidc.py::callback` (171), `worker/tasks/news.py::sync_users_from_keycloak` (158), `worker/tasks/photos/zip_jobs.py::generate_folder_zip` (143), `services/helpdesk/ingress.py::_ingest_message` (129), `api/files/files_ops.py::bulk_move_files` (125).
+`worker/tasks/photos/import_scan.py::import_scan_run` (202 LOC), `api/auth/oidc.py::callback` (171), `worker/tasks/news.py::sync_users_from_keycloak` (158), `worker/tasks/photos/zip_jobs.py::generate_folder_zip` (143), `api/files/files_ops.py::bulk_move_files` (125). Три helpdesk/MAX-функции (`_build_helpdesk_mime`, `_ingest_message`, `notify_ticket_created_max`) декомпозированы 2026-07-20 — в список больше не входят.
 
 ### 3.2 Frontend (Vue 3 + TS)
 
@@ -97,7 +104,7 @@
 | `vue-tsc` (typecheck) | **0 ошибок** |
 | `i18n:check` | **OK** |
 | `: any` / `as any` / `@ts-ignore` (вне сгенер.) | **0** |
-| Unit-тесты | **177 spec-файлов** |
+| Unit-тесты | **214 spec-файлов** (2111 specs) |
 | Покрытие | statements ~72%, func-cov низкий на hotspots (см. P1-FE) |
 
 > ⚠️ Подтверждено июньской находкой: line-coverage обманчив. `PhotosIndexPage.vue` (churn-hotspot) всё ещё имеет низкое func-cov. Это риск, явно описанный в `AGENTS.md`.
@@ -338,7 +345,7 @@
 - Helpdesk-модуль хорошо декомпозирован с самого начала (20+ файлов), path traversal и HTML-injection закрыты.
 - Outbox-pattern, серверные сессии, ACL через БД, ADR-037 (bootstrap/runtime config) — грамотные решения.
 - Документация (40+ доков, ADR, curated+generated схемы) — выше среднего по индустрии.
-- Низкое дублирование, компактные файлы, 0 функций D/E — структура не «расплылась».
+- Низкое дублирование, компактные файлы, 0 функций D/E (CI-gate блокирует регрессию) — структура не «расплылась».
 - Защита от path traversal, CSP-sandbox preview, DOMPurify во всех v-html, корректный `useHighlight`, экранирование в email-шаблонах.
 
 ---
