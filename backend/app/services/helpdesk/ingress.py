@@ -812,7 +812,14 @@ def _derive_subject(raw: str | None) -> str:
 
 
 def _extract_bodies(msg: Message) -> tuple[str, str | None]:
-    """Извлечь ``(text/plain, text/html|None)``. HTML — sanitized."""
+    """Извлечь ``(text/plain, text/html|None)``. HTML — sanitized.
+
+    Инвариант: если есть HTML — он же источник истины для ``plain`` (как в
+    ``normalize_message_bodies``). Это гарантирует, что подпись/цитата, отрезанные
+    из HTML, отсутствуют и в ``plain`` (а значит — в ``body_text``,
+    ``description``, MAX- и email-уведомлениях). Для писем без HTML (text/plain
+    only) возвращается оригинальный plain после ``strip_quoted_reply``.
+    """
     plain = None
     html = None
     if msg.is_multipart():
@@ -846,19 +853,21 @@ def _extract_bodies(msg: Message) -> tuple[str, str | None]:
     # подписью автора ответа). См. ``email_signature``.
     if html is not None:
         html = strip_email_signature(html)
-    # Plain-вариант тоже чистим — подпись в text/plain это просто строки
-    # «Вячеслав Борзихин / +7 ... / borzihin.vs@mage.ru», но без уникальных
-    # маркеров. Применяем strip_email_signature к HTML-деривации ниже, если
-    # plain пустой. Если plain уже есть — оставляем как есть (редкий кейс
-    # для multipart/alternative, где подпись сложно отличить от текста).
 
-    if plain is None and html:
-        # Деривация plain из HTML: тривиально — sanitized HTML без тегов.
-        # Прогоняем через strip_quoted_reply повторно — html-цитата могла
-        # оставить «On … wrote:» / заголовки Outlook и после снятия тегов.
-        plain = strip_quoted_reply(html_to_plain(sanitize_html(html)))
+    # HTML — источник истины (как ``normalize_message_bodies``): если html есть,
+    # ``plain`` **всегда** деривируется из уже очищенного html, а не берётся из
+    # исходной text/plain-части письма. Раньше для ``multipart/alternative``
+    # (доминирующий формат Outlook — plain+html копии в одном письме) исходный
+    # ``plain`` сохранялся как есть, без отсечения подписи (подпись в text/plain
+    # не содержит уникальных HTML-маркеров), и улетал в ``body_text`` → в MAX-
+    # уведомление о новой заявке (баг 20.07.2026). Единый инвариант «plain —
+    # дериват из чистого html» консистентен для всех даунстримов: web-лента
+    # (``body_html``), email-нотификации агентам (``_message_body_html``), MAX.
     if html is not None:
         html = sanitize_html(html)
+        # ``strip_quoted_reply`` повторно: html-цитата могла оставить
+        # «On … wrote:» / заголовки Outlook и после снятия тегов.
+        plain = strip_quoted_reply(html_to_plain(html))
     return (plain or "").strip() or "(пустое сообщение)", html
 
 

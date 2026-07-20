@@ -185,6 +185,38 @@
   Тесты: `test_payload_has_inline_keyboard_with_portal_url` (safe → кнопка),
   `test_fallback_to_markdown_for_local_url` (`.local` → markdown),
   `TestIsMaxLinkSafeUrl` (parametrize на ~20 кейсов из таблицы выше).
+- **Подпись автора письма попадала в MAX-уведомление о новой заявке**
+  (20.07.2026). Симптом: превью тела заявки в общем чате поддержки оканчивалось
+  блоком «Вячеслав Борзихин / Руководитель отдела ИТ / +7 … / borzihin.vs@mage.ru»,
+  хотя в браузерной версии тикета подписи не было.
+
+  **Причина:** `_extract_bodies` (`app/services/helpdesk/ingress.py`) применял
+  `strip_email_signature` только к HTML-части письма, а `plain` для
+  `multipart/alternative` (доминирующий формат Outlook — plain+html копии в одном
+  письме) уходил в БД оригинальным — без отсечения подписи. Каскад:
+  `HelpdeskMessage.body_text` (с подписью) → `notify_ticket_created_max` →
+  `_truncate_preview(body_text)` → подпись в MAX. Браузер работал, т.к. рендерил
+  `body_html` (он почищен). Эталон «HTML = источник истины, plain = дериват»
+  уже был в `normalize_message_bodies` (`messages.py`) — баг был расхождением с
+  собственным эталоном в одном месте.
+
+  **Решение** (два слоя, defence-in-depth):
+  1. `_extract_bodies` — если HTML есть, `plain` **всегда** деривируется из
+     уже очищенного HTML (`strip_email_signature` + `sanitize_html` +
+     `html_to_plain` + повторный `strip_quoted_reply`). Единый инвариант для
+     всех даунстримов: `body_text`, `description`, MAX/email/web.
+  2. `notify_ticket_created_max` — превью берётся из `body_html` (если есть) с
+     повторной идемпотентной `strip_email_signature`, fallback на `body_text`
+     для legacy-записей и plain-only писем. Защита даже от данных, попавших в
+     БД до слоя 1.
+
+  Тесты (`tests/unit/test_helpdesk_ingress_extract.py`:
+  `TestExtractBodiesSignatureStripping` — 6 кейсов, включая реальный
+  Outlook HTML из баг-репорта в multipart/alternative;
+  `tests/unit/test_helpdesk_notifications.py`:
+  `test_signature_excluded_from_preview_when_html_present`,
+  `test_preview_falls_back_to_body_text_when_no_html`).
+  Миграций нет — старые записи в БД не правятся (защита слоем 2).
 - **13 frontend-тестов `use-app-menu.spec.ts` падают** — это пред-существующая
   регрессия (проверено через `git stash`), не связана с MAX-интеграцией.
 

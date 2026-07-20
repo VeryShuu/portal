@@ -982,6 +982,66 @@ class TestNotifyTicketCreatedMax:
         text = enqueue.await_args.kwargs["text"]
         assert "**Город:** —" in text
 
+    # ── Регрессия бага 20.07.2026: подпись в превью MAX-уведомления ──────────
+
+    # Сокращённый HTML подписи (маркер Mage_Ru.png, как в email_signature-тестах).
+    _SIG_HTML = (
+        "<p>Принтер сломался</p>"
+        '<table><tr><td><img src="https://mage.ru/sign/Mage_Ru.png"></td>'
+        '<td><b>Вячеслав Борзихин</b><br>+7 (8152) 400 580</td></tr></table>'
+    )
+    # ``body_text`` «грязный» — как будто подпись не отрезалась в ingress
+    # (симулирует legacy-запись в БД до фикса _extract_bodies).
+    _SIG_DIRTY_PLAIN = (
+        "Принтер сломался\n\nВячеслав Борзихин\nРуководитель отдела ИТ\n+7 (8152) 400 580"
+    )
+
+    @pytest.mark.asyncio
+    async def test_signature_excluded_from_preview_when_html_present(self):
+        """Defence-in-depth: превью берётся из ``body_html`` (если есть) с
+        повторной очисткой ``strip_email_signature``. Даже если ``body_text``
+        содержит подпись (legacy-запись до фикса ingress), в MAX она не попадёт.
+
+        Регрессия бага 20.07.2026: превью читалось напрямую из ``body_text``
+        (plain), который для multipart/alternative писем содержал подпись.
+        """
+        db = _db_with_max_settings(_max_settings())
+        ticket = _ticket(number=99, subject="Принтер")
+        first_msg = _first_message(
+            text=self._SIG_DIRTY_PLAIN,  # грязный plain (с подписью)
+            html=self._SIG_HTML,  # html с подписью (будет почищен)
+        )
+        with (
+            _patch_resolve_requester(_requester_user()),
+            patch.object(notif, "enqueue_messenger_message", new=AsyncMock()) as enqueue,
+        ):
+            await notif.notify_ticket_created_max(db, ticket=ticket, first_message=first_msg)
+        text = enqueue.await_args.kwargs["text"]
+        # Тело заявки сохраняется в превью.
+        assert "Принтер сломался" in text
+        # Подпись НИКОГДА не попадает в MAX-уведомление.
+        assert "Вячеслав Борзихин" not in text
+        assert "Руководитель отдела ИТ" not in text
+        assert "+7 (8152) 400 580" not in text
+
+    @pytest.mark.asyncio
+    async def test_preview_falls_back_to_body_text_when_no_html(self):
+        """Контроль: если ``body_html`` отсутствует (web-сабмит без TipTap,
+        legacy-запись), превью берётся из ``body_text`` как есть — без подписи
+        для чистого plain (контроль обратной совместимости с 22 существующими
+        тестами).
+        """
+        db = _db_with_max_settings(_max_settings())
+        ticket = _ticket(number=1, subject="Тема")
+        first_msg = _first_message(text="Чистый текст заявки", html=None)
+        with (
+            _patch_resolve_requester(_requester_user()),
+            patch.object(notif, "enqueue_messenger_message", new=AsyncMock()) as enqueue,
+        ):
+            await notif.notify_ticket_created_max(db, ticket=ticket, first_message=first_msg)
+        text = enqueue.await_args.kwargs["text"]
+        assert "Чистый текст заявки" in text
+
 
 class TestIsMaxLinkSafeUrl:
     """``_is_max_link_safe_url`` — предикат «пройдёт ли URL валидацию MAX Bot API

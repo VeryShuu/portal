@@ -27,9 +27,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.constants import HELPDESK_REOPEN_WINDOW_DAYS
 from app.core.logging import get_logger
+from app.core.sanitize import sanitize_html
 from app.models.helpdesk import HelpdeskAgent, HelpdeskMaxBotSettings, HelpdeskTicket
 from app.models.user import User
 from app.services.email_outbox import KIND_GENERIC, enqueue_outbox_email
+from app.services.helpdesk.email_quote import html_to_plain
+from app.services.helpdesk.email_signature import strip_email_signature
 from app.services.helpdesk.email_template import (
     render_new_ticket_agent_email,
     render_system_email,
@@ -712,9 +715,18 @@ async def notify_ticket_created_max(
     requester_label = _resolve_requester_label(requester, ticket)
     requester_city = _resolve_requester_city(requester)
 
-    # ``first_message`` — ORM HelpdeskMessage с body_text (plain). Через getattr
-    # для устойчивости к SimpleNamespace в тестах.
-    body_text = getattr(first_message, "body_text", None) or ""
+    # Превью тела заявки. HTML — предпочтительный источник (как в
+    # ``_extract_bodies`` / ``normalize_message_bodies``): он пере-чистится
+    # идемпотентной ``strip_email_signature``, что защищает даже от legacy-
+    # записей в БД, где ``body_text`` мог остаться с подписью (до фикса ingress
+    # 20.07.2026). Fallback на ``body_text`` — для сообщений без html (web-сабмит
+    # без TipTap, plain-only письма). Через getattr для устойчивости к
+    # SimpleNamespace в тестах.
+    raw_html = getattr(first_message, "body_html", None)
+    if raw_html:
+        body_text = html_to_plain(sanitize_html(strip_email_signature(raw_html)))
+    else:
+        body_text = getattr(first_message, "body_text", None) or ""
     body_preview = _truncate_preview(body_text)
 
     lines = _build_max_ticket_lines(
