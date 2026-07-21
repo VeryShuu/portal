@@ -8,67 +8,12 @@ from datetime import UTC, datetime
 from typing import Any
 
 from redis.asyncio import Redis
-from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.database import AsyncSessionLocal
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
 
 AUDIT_QUEUE_KEY = "audit_queue"
-
-
-async def log(
-    *,
-    db: AsyncSession | None = None,  # kept for API compatibility, no longer used
-    user_id: str | None = None,
-    event_type: str,
-    metadata: dict[str, Any] | None = None,
-) -> None:
-    """Direct insert into audit_log using an isolated session (fire-and-forget, does not raise).
-
-    Uses a fresh session so this can never accidentally commit the caller's
-    in-progress transaction, regardless of call order.
-
-    .. deprecated::
-        Используйте :func:`push_audit_event` для всех новых call-sites.
-        Эта функция — synchronous INSERT в БД, в обход Redis-очереди и
-        батч-флеша ARQ-воркером. На данный момент не имеет runtime-callers в
-        приложении (только unit-тесты); оставлена как потенциальный fallback
-        при недоступности Redis, но на практике ``push_audit_event`` сам
-        обрабатывает ошибки Redis (логирует warning + Sentry, не рвёт
-        бизнес-транзакцию). Удаление — отдельное решение (см. plan
-        ``docs/wip/observability-remediation.md`` §P2.3).
-    """
-    try:
-        async with AsyncSessionLocal() as audit_db:
-            await audit_db.execute(
-                text(
-                    "INSERT INTO audit_log (event_type, user_id, metadata, created_at) "
-                    "VALUES (:event_type, :user_id, CAST(:metadata AS jsonb), :created_at)"
-                ),
-                {
-                    "event_type": event_type,
-                    "user_id": user_id,
-                    "metadata": json.dumps(metadata or {}),
-                    "created_at": datetime.now(UTC),
-                },
-            )
-            await audit_db.commit()
-    except Exception as exc:
-        logger.warning(
-            "audit.log_failed",
-            error=str(exc),
-            error_type=type(exc).__name__,
-            event_type=event_type,
-        )
-        try:
-            import sentry_sdk
-
-            sentry_sdk.capture_exception(exc)
-        except Exception as exc2:  # pragma: no cover
-            logger.debug("audit.sentry_capture_failed", error=str(exc2))
 
 
 async def push_audit_event(

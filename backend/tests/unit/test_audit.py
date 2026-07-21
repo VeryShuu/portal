@@ -1,4 +1,4 @@
-"""T7: тесты для services/audit — push_audit_event и audit.log."""
+"""T7: тесты для services/audit — push_audit_event и make_audit_emitter."""
 
 from __future__ import annotations
 
@@ -8,7 +8,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from app.services.audit import AUDIT_QUEUE_KEY, make_audit_emitter, push_audit_event
-from app.services.audit import log as audit_log
 
 
 @pytest.mark.asyncio
@@ -97,100 +96,6 @@ async def test_push_audit_event_serialises_complex_metadata():
 
     record = json.loads(redis.rpush.await_args.args[1])
     assert record["metadata"] == meta
-
-
-# ---------------------------------------------------------------------------
-# audit.log() — прямой INSERT в БД (isolated session)
-# ---------------------------------------------------------------------------
-
-
-def _make_audit_session(execute_side_effect=None, commit_side_effect=None):
-    """Return a MagicMock session that works as an async context manager."""
-    session = MagicMock()
-    session.execute = AsyncMock(side_effect=execute_side_effect)
-    session.commit = AsyncMock(side_effect=commit_side_effect)
-    session.__aenter__ = AsyncMock(return_value=session)
-    session.__aexit__ = AsyncMock(return_value=False)
-    return session
-
-
-@pytest.mark.asyncio
-async def test_audit_log_inserts_record() -> None:
-    session = _make_audit_session()
-    with patch("app.services.audit.AsyncSessionLocal", return_value=session):
-        await audit_log(user_id="u-1", event_type="news.created", metadata={"key": "val"})
-
-    session.execute.assert_awaited_once()
-    session.commit.assert_awaited_once()
-
-    call_kwargs = session.execute.await_args.args[1]
-    assert call_kwargs["event_type"] == "news.created"
-    assert call_kwargs["user_id"] == "u-1"
-    assert json.loads(call_kwargs["metadata"]) == {"key": "val"}
-    assert call_kwargs["created_at"] is not None
-
-
-@pytest.mark.asyncio
-async def test_audit_log_db_param_ignored_but_accepted() -> None:
-    """db= kwarg is kept for API compat but no longer used."""
-    session = _make_audit_session()
-    db = MagicMock()
-    db.execute = AsyncMock()
-    db.commit = AsyncMock()
-
-    with patch("app.services.audit.AsyncSessionLocal", return_value=session):
-        await audit_log(db=db, event_type="auth.login")
-
-    db.execute.assert_not_awaited()
-    db.commit.assert_not_awaited()
-    session.execute.assert_awaited_once()
-
-
-@pytest.mark.asyncio
-async def test_audit_log_default_metadata_is_empty_dict() -> None:
-    session = _make_audit_session()
-    with patch("app.services.audit.AsyncSessionLocal", return_value=session):
-        await audit_log(event_type="auth.login")
-
-    call_kwargs = session.execute.await_args.args[1]
-    assert json.loads(call_kwargs["metadata"]) == {}
-    assert call_kwargs["user_id"] is None
-
-
-@pytest.mark.asyncio
-async def test_audit_log_swallows_db_errors() -> None:
-    session = _make_audit_session(execute_side_effect=RuntimeError("db failure"))
-    with patch("app.services.audit.AsyncSessionLocal", return_value=session):
-        await audit_log(event_type="search")
-
-    session.execute.assert_awaited_once()
-    session.commit.assert_not_awaited()
-
-
-@pytest.mark.asyncio
-async def test_audit_log_swallows_commit_errors() -> None:
-    session = _make_audit_session(commit_side_effect=Exception("commit failed"))
-    with patch("app.services.audit.AsyncSessionLocal", return_value=session):
-        await audit_log(event_type="news.deleted", user_id="u-2")
-
-    session.execute.assert_awaited_once()
-    session.commit.assert_awaited_once()
-
-
-@pytest.mark.asyncio
-async def test_audit_log_uses_isolated_session() -> None:
-    """audit.log must not share the caller's session — uses AsyncSessionLocal."""
-    sessions_created = []
-
-    def _factory():
-        s = _make_audit_session()
-        sessions_created.append(s)
-        return s
-
-    with patch("app.services.audit.AsyncSessionLocal", side_effect=_factory):
-        await audit_log(event_type="test.event")
-
-    assert len(sessions_created) == 1
 
 
 # ---------------------------------------------------------------------------

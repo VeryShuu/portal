@@ -38,10 +38,11 @@ snapshot, Sentry scrub_sensitive). Доработки — точечные, на
   сама, подключать ли через overlay (`docker-compose.monitoring.yml`) или
   внешним scrape. Причина: не ломать prod-деплой, не тащить тяжёлые образы
   (prometheus/grafana) в базовый compose.
-- **2026-07-21:** `audit.log()` НЕ удаляем — у него 7 unit-тестов, и это
-  потенциальный fallback-API при недоступности Redis (хотя `push_audit_event`
-  и так ловит ошибки). Помечаем `@deprecated` в docstring + обновляем
-  `docs/audit.md`. Удаление — отдельное решение пользователя.
+- **2026-07-21:** `audit.log()` — изначально планировалось пометить
+  `@deprecated` и не трогать (7 unit-тестов, нет runtime-callers). После
+  ревью с пользователем (2026-07-21, после коммита и рестарта контейнеров)
+  решили **полностью удалить** — мёртвый код не нужен, fallback через
+  Redis-down и так работает (warning + Sentry). См. Handoff ниже.
 - **2026-07-21:** event-type taxonomy — `StrEnum` (Python 3.12, уже в стеке),
   не `Literal`. Причина: итерация по значениям (для/docs/генерации), и
   mypy-совместимость с существующими call-sites `event_type="news.created"`.
@@ -133,7 +134,8 @@ snapshot, Sentry scrub_sensitive). Доработки — точечные, на
 ## Handoff (заполняется в конце каждой сессии)
 
 ```
-СДЕЛАНО: все 11 пунктов плана закрыты в одной сессии.
+СДЕЛАНО:
+  Сессия 1 (2026-07-21) — все 11 пунктов плана:
   - P1.1 Nginx: log_format json_combined + request_id (system_data/nginx/nginx.conf);
     proxy_set_header X-Request-Id $req_id в proxy_locations.conf.tmpl (api/health/SSE/federation).
     Map $http_x_request_id → $req_id (fallback на nginx $request_id).
@@ -153,21 +155,28 @@ snapshot, Sentry scrub_sensitive). Доработки — точечные, на
   - P2.2 backend/tests/unit/test_request_logging_middleware.py — 11 характеризующих
     тестов (correlation id, status→level, slow-request branch, exception-flow,
     response header).
-  - P2.3 backend/app/services/audit.py:log() — docstring @deprecated;
-    docs/audit.md §6 — альтернативный путь + note про EventType enum.
   - P3.1 _sync_pg_url() helper в worker/tasks/audit.py (DRY ×3 → 1).
   - DoD: ruff check ✓, mypy app ✓ (350 файлов), pytest tests/unit ✓ (3706 passed,
     17 новых), все YAML/JSON валидированы.
+  - Пользователь закоммитил, контейнеры перезапущены.
+
+  Сессия 2 (2026-07-21, follow-up):
+  - P2.3 (перерешено): полностью УДАЛЕН audit.log() из services/audit.py
+    (вместо @deprecated). Проверка AST: 0 callers в app/. Удалены 6 unit-тестов
+    из test_audit.py + хелпер _make_audit_session. Обновлён docs/audit.md
+    §6 — «single-path» note вместо deprecated-раздела.
+  - Alertmanager receivers: задача ОТМЕНЕНА пользователем («пока стоп, к этому
+    вернёмся позже»). monitoring/alerts/alertmanager.yml остаётся как есть
+    (webhook-placeholder). Reference-стек (P1.2–P1.4) НЕ подключается в прод
+    до отдельного решения.
 В РАБОТЕ: —
 ДАЛЕЕ: пользователь коммитит; всё готово к мёржу.
 ОТКРЫТЫЕ ВОПРОСЫ:
-  - Подключать ли monitoring/ как overlay в проде? Решает команда на деплое
-    (instructions в monitoring/README.md).
-  - alertmanager.yml — заглушка receivers (webhook-placeholder). Реальные
-    transport'ы (email/Slack/Telegram) настраивает команда под свою инфру.
-  - audit.log() удаление — отдельное решение пользователя (сейчас deprecated,
-    7 unit-тестов, нет runtime-callers).
-  - Портал не пересобирался — nginx-правки (P1.1) применятся после
-    `docker compose restart nginx` (system_data — volume под git, не образ).
+  - Подключать ли monitoring/ как overlay в проде? Решение отложено
+    пользователем («чуть позже»). Instructions в monitoring/README.md.
+  - Alertmanager receivers (email admins / Telegram / MAX-бот) — отложено.
+  - audit.log() удалён — при необходимости fallback при падении Redis
+    добавить заново (но push_audit_event уже логирует warning + Sentry,
+    бизнес-транзакция не рвётся).
 КОММИТ: см. ниже
 ```

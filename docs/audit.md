@@ -124,15 +124,11 @@ flowchart TD
 4. После успешного коммита в PostgreSQL очищает список `audit_processing` с помощью `DEL`.
 5. Снимает блокировку `audit:flush:lock` через выполнение Lua-скрипта (для безопасного удаления ключа только его создателем).
 
-### Альтернативный путь: `audit.log()` (deprecated)
-В том же модуле есть `log()` — synchronous INSERT в `audit_log` через
-изолированную сессию (минуя Redis-очередь и батч-флеш). На данный момент не
-имеет runtime-callers в приложении (только unit-тесты); оставлен как
-потенциальный fallback при недоступности Redis. На практике
-`push_audit_event` сам обрабатывает ошибки Redis (warning + Sentry, не рвёт
-бизнес-транзакцию), поэтому `log()` фактически мёртвый код. Новые call-sites
-всегда должны использовать `push_audit_event`. См. план удаления:
-`./docs/wip/observability-remediation.md` §P2.3.
+> **Single-path:** запись в `audit_log` идёт **только** через Redis-очередь и
+> ARQ-воркер. Прямого synchronous-INSERT в API-коде нет — это намеренно:
+> fire-and-forget semantics, ошибка Redis не рвёт бизнес-транзакцию (warning +
+> Sentry), а батч-вставка снижает накладные расходы. Прежде была функция
+> `log()` как deprecated fallback, удалена за отсутствием callers.
 
 ---
 
