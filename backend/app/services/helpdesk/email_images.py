@@ -428,6 +428,8 @@ async def _attach_orphan_inline(
             data=inline_map[cid].data,
             original_name=inline_map[cid].filename,
             total_tracker=total_tracker,
+            is_inline=True,
+            content_id=cid,
         )
         used_cids.add(cid)
         new_srcs.append(f"{ATTACHMENT_URL_PREFIX}{att.id}" if att is not None else None)
@@ -471,6 +473,8 @@ async def _localize_cid(
         data=inline.data,
         original_name=inline.filename,
         total_tracker=total_tracker,
+        is_inline=True,
+        content_id=cid,
     )
     if att is None:
         return None
@@ -520,6 +524,10 @@ async def _localize_remote(
         data=data,
         original_name=_derive_remote_filename(url),
         total_tracker=total_tracker,
+        # Внешние http(s)://-картинки — inline: они уже вставлены в ``body_html``
+        # как ``<img src="...">``, и в ленте должны рендериться в теле, а не как
+        # ссылка-вложение внизу. ``content_id`` нет (это не ``multipart/related``).
+        is_inline=True,
     )
     if att is None:
         return None
@@ -708,6 +716,10 @@ if TYPE_CHECKING:
     from app.models.helpdesk import HelpdeskAttachment, HelpdeskMessage, HelpdeskTicket
 
     _SaveFn = Callable[..., Awaitable[HelpdeskAttachment | None]]
+    # kwargs, которые передаёт :func:`_localize_cid`/:func:`_localize_remote`:
+    # db, ticket, message_id, data, original_name, total_tracker, is_inline,
+    # content_id. Тесты подставляют мок с совместимой сигнатурой (см.
+    # ``test_helpdesk_email_images::_save_mock``).
 
 
 class _TotalTrackerLike(Protocol):

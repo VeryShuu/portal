@@ -29,6 +29,16 @@ _FLUSH_LOCK_RELEASE_LUA = (
 )
 
 
+def _sync_pg_url() -> str:
+    """Вернуть synchronous postgres URL для asyncpg.
+
+    SQLAlchemy-драйвер использует схему ``postgresql+asyncpg://``, asyncpg —
+    ``postgresql://``. Эту подстановку раньше повторяли в каждой cron-задаче
+    вручную (3×), вынесли сюда для DRY.
+    """
+    return settings.database_url.replace("postgresql+asyncpg://", "postgresql://")
+
+
 def _parse_dt(value: str | None) -> datetime:
     if value is None:
         return datetime.now(tz=UTC)
@@ -109,8 +119,7 @@ async def flush_audit_queue(ctx: dict) -> int:
 async def create_next_audit_partition(ctx: dict) -> str:
     from app.services.audit_partitions import ensure_partitions
 
-    pg_url = settings.database_url.replace("postgresql+asyncpg://", "postgresql://")
-    conn = await asyncpg.connect(pg_url, statement_cache_size=0)
+    conn = await asyncpg.connect(_sync_pg_url(), statement_cache_size=0)
     try:
         created = await ensure_partitions(conn, months_ahead=3)
         logger.info("audit.partitions_created", tables=created)
@@ -122,8 +131,7 @@ async def create_next_audit_partition(ctx: dict) -> str:
 async def drop_old_audit_partitions(ctx: dict) -> str:
     from app.services.audit_partitions import drop_old_partitions
 
-    pg_url = settings.database_url.replace("postgresql+asyncpg://", "postgresql://")
-    conn = await asyncpg.connect(pg_url, statement_cache_size=0)
+    conn = await asyncpg.connect(_sync_pg_url(), statement_cache_size=0)
     try:
         dropped = await drop_old_partitions(conn, retention_months=12)
         logger.info("audit.partitions_dropped", tables=dropped)
@@ -138,8 +146,7 @@ async def cleanup_idempotency_keys(ctx: dict) -> str:
     Idempotency keys are only needed for the dedup window (typically minutes).
     Without a cleanup job they accumulate indefinitely.
     """
-    pg_url = settings.database_url.replace("postgresql+asyncpg://", "postgresql://")
-    conn = await asyncpg.connect(pg_url, statement_cache_size=0)
+    conn = await asyncpg.connect(_sync_pg_url(), statement_cache_size=0)
     try:
         result = await conn.execute(
             "DELETE FROM idempotency_keys WHERE created_at < NOW() - INTERVAL '24 hours'"

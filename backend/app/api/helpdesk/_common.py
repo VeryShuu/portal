@@ -43,8 +43,19 @@ def _public_messages(messages: list[HelpdeskMessage]) -> list[HelpdeskMessage]:
 def _attachments(msg: HelpdeskMessage) -> list[AttachmentOut]:
     """Вложения сообщения. ``internal``-сообщения для инициатора уже
     отфильтрованы выше (``_public_messages``), поэтому здесь просто
-    сериализуем то, что загружено через ``selectin`` relationship."""
-    return [AttachmentOut.model_validate(a) for a in getattr(msg, "attachments", []) or []]
+    сериализуем то, что загружено через ``selectin`` relationship.
+
+    **Inline-картинки исключаются** (``is_inline=True``): они сохранены в БД
+    как attachment (для ACL/скачивания), но в теле сообщения уже рендерятся
+    по ``<img src="/api/v1/helpdesk/attachments/{id}">`` — показывать их ещё
+    и ссылками-вложениями внизу пузыря было бы дублированием. См.
+    ``email_images._localize_cid``/``_localize_remote``.
+    """
+    return [
+        AttachmentOut.model_validate(a)
+        for a in (getattr(msg, "attachments", []) or [])
+        if not getattr(a, "is_inline", False)
+    ]
 
 
 def message_to_out(msg: HelpdeskMessage) -> MessageOut:

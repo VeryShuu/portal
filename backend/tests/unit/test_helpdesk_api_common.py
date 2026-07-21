@@ -178,15 +178,19 @@ class TestAttachmentsMapping:
     фронтенд мог их отрендерить после перезагрузки страницы (фикс «файл
     пропадает после обновления» — без этих данных в ответе UI нечего показать)."""
 
-    def _att(self, name: str = "doc.pdf") -> HelpdeskAttachment:
+    def _att(
+        self, name: str = "doc.pdf", *, is_inline: bool = False, content_id: str | None = None
+    ) -> HelpdeskAttachment:
         return HelpdeskAttachment(
             id=uuid.uuid4(),
             ticket_id=uuid.uuid4(),
             message_id=uuid.uuid4(),
-            filename=f"{uuid.uuid4().hex}_doc.pdf",
+            filename=f"{uuid.uuid4().hex}_{name}",
             original_name=name,
             content_type="application/pdf",
             size_bytes=1024,
+            is_inline=is_inline,
+            content_id=content_id,
             created_at=datetime.now(UTC),
         )
 
@@ -207,6 +211,39 @@ class TestAttachmentsMapping:
         ticket = _ticket([_msg(attachments=[att])])
         out = ticket_to_out(ticket, requester_view=True)
         assert out.messages[0].attachments[0].original_name == "report.xlsx"
+
+    def test_inline_attachments_excluded_from_message_out(self) -> None:
+        """Inline-картинка входящего письма (``is_inline=True``) НЕ попадает в
+        ``MessageOut.attachments`` — она уже рендерится в теле по
+        ``<img src="/api/v1/helpdesk/attachments/{id}">``, показывать её ещё и
+        ссылкой-вложением внизу было бы дублированием. Обычные ``Content-
+        Disposition: attachment``-части (``is_inline=False``) остаются.
+        """
+        m = _msg(
+            attachments=[
+                self._att("screenshot.png", is_inline=True, content_id="shot@outlook"),
+                self._att("report.pdf"),
+                self._att("logo.png", is_inline=True),
+            ]
+        )
+        out = message_to_out(m)
+        # Только обычное вложение осталось; оба inline отброшены.
+        assert [a.original_name for a in out.attachments] == ["report.pdf"]
+
+    def test_inline_attachments_excluded_in_ticket_out(self) -> None:
+        """Сквозной путь: inline-картинки отсечены и в TicketOut (requester)."""
+        ticket = _ticket(
+            [
+                _msg(
+                    attachments=[
+                        self._att("doc.pdf"),
+                        self._att("inline.png", is_inline=True, content_id="x"),
+                    ]
+                )
+            ]
+        )
+        out = ticket_to_out(ticket, requester_view=True)
+        assert [a.original_name for a in out.messages[0].attachments] == ["doc.pdf"]
 
 
 def _user(

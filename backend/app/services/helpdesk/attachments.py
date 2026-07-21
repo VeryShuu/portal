@@ -143,6 +143,8 @@ async def save_image_bytes(
     data: bytes,
     original_name: str,
     total_tracker: _TotalTracker | None = None,
+    is_inline: bool = False,
+    content_id: str | None = None,
 ) -> HelpdeskAttachment | None:
     """Сохранить байты (inline ``cid:`` или выкачанная внешняя картинка) в FS и
     создать запись ``HelpdeskAttachment``.
@@ -151,6 +153,13 @@ async def save_image_bytes(
     httpx-выкачка). Переиспользует те же проверки, что и ``upload_attachments``:
     MIME через ``magic.from_buffer`` по первым байтам, лимит одного файла и
     (опционально) суммарный лимит через ``total_tracker``.
+
+    ``is_inline``/``content_id`` маркируют inline-картинки входящего письма
+    (``multipart/related`` ``cid:`` и внешние ``http(s)://``). В ленте портала
+    такие attachment'ы **не** показываются как ссылки-вложения внизу сообщения
+    (они уже видны в теле по ``<img src="/api/v1/helpdesk/attachments/{id}">``).
+    См. ``api/helpdesk/_common.py::_attachments``. Обычные attach-части писем
+    (``Content-Disposition: attachment``) идут с дефолтом ``is_inline=False``.
 
     Возвращает ``None`` (и ничего не пишет на диск), если данные пусты, не прошли
     MIME-валидацию или превышен лимит — это best-effort путь ingress, одна
@@ -206,6 +215,8 @@ async def save_image_bytes(
         content_type=effective,
         size=len(data),
         uploaded_by_user_id=None,
+        is_inline=is_inline,
+        content_id=content_id,
     )
     # id генерится в БД (``gen_random_uuid()`` server-side) — flush, чтобы caller
     # сразу получил ``att.id`` (нужно для переписывания img-src на
@@ -268,8 +279,15 @@ def _build_attachment(
     content_type: str,
     size: int,
     uploaded_by_user_id: uuid.UUID | None,
+    is_inline: bool = False,
+    content_id: str | None = None,
 ) -> HelpdeskAttachment:
-    """Создать запись ``HelpdeskAttachment`` и добавить в сессию."""
+    """Создать запись ``HelpdeskAttachment`` и добавить в сессию.
+
+    ``is_inline``/``content_id`` — для inline-картинок входящего письма (см.
+    ``save_image_bytes``); обычные web-upload'ы и attach-части писем идут с
+    дефолтом ``is_inline=False``.
+    """
     att = HelpdeskAttachment(
         ticket_id=ticket.id,
         message_id=message_id,
@@ -278,6 +296,8 @@ def _build_attachment(
         content_type=content_type,
         size_bytes=size,
         uploaded_by_user_id=uploaded_by_user_id,
+        is_inline=is_inline,
+        content_id=content_id,
     )
     db.add(att)
     return att

@@ -1,0 +1,168 @@
+# Portal alerting rules — reference.
+#
+# Философия: алерт = «человек должен посмотреть СЕЙЧАС». Всё, что
+# самовосстанавливается (единичный 5xx, кратковременный lag снапшота), —
+# не алертим. Минимальный `for:` — 2–5 мин, чтобы дать системе settle.
+#
+# Метрики, на которые опираемся (см. backend/app/core/metrics.py):
+#   http_requests_total{status,handler}        — RED (prometheus_fastapi_instrumentator)
+#   http_request_duration_seconds_bucket       — latency histogram
+#   portal_audit_queue_depth                   — gauge (Redis audit_queue)
+#   portal_audit_processing_depth              — gauge (Redis audit_processing)
+#   portal_audit_events_pushed_total           — counter (rate push)
+#   portal_sse_connections                     — gauge
+#   portal_active_users_last_1h                — gauge
+#   portal_arq_jobs_enqueued_total{function}   — counter
+#   portal_arq_jobs_failed_total{function}     — counter
+#   up{job="portal"}                           — scrape success
+#
+# Worker heartbeat (не metric, а Redis key `arq:heartbeat` с TTL 90s) —
+# косвенно виден через stale гейджи: если воркер мёртв, кастомные метрики
+# замерзают (см. PortalWorkerDown через stale).
+
+groups:
+  # ===================================================================
+  # Availability — базовое «живо ли вообще»
+  # ===================================================================
+  - name: portal-availability
+    interval: 30s
+    rules:
+      # Backend не отвечает на scrape 3 подряд попытки (≈1.5 мин).
+      - alert: PortalBackendDown
+        expr: up{job="portal"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: portal-backend
+        annotations:
+          summary: "Portal backend недоступен для scrape"
+          description: "Prometheus не может получить /metrics от {{ $labels.instance }} уже {{ $value }} (up=0). Проверить `docker compose ps backend`, логи backend."
+
+      # Multiple 5xx за окно — что-то системно сломалось.
+      # rate за 5 мин × 100% > 5% от всех запросов, при абсолютном минимуме 10 ошибок.
+      - alert: PortalHighErrorRate
+        expr: |
+          (
+            sum(rate(http_requests_total{job="portal", status=~"5.."}[5m])) by (service)
+            /
+            clamp_min(sum(rate(http_requests_total{job="portal"}[5m])) by (service), 1)
+          ) > 0.05
+          and
+          sum(rate(http_requests_total{job="portal", status=~"5.."}[5m])) by (service) > 0.03
+        for: 5m
+        labels:
+          severity: critical
+          service: portal-backend
+        annotations:
+          summary: "Высокий уровень 5xx ошибок на портале"
+          description: "Доля 5xx ответов > 5% при rate > 0.03/s (≈3/мин) в течение 5 мин. Смотреть Sentry + `docker compose logs backend`."
+
+  # ===================================================================
+  # Audit pipeline — буферизованная очередь Redis → PostgreSQL
+  # ===================================================================
+  - name: portal-audit-pipeline
+    interval: 30s
+    rules:
+      # Очередь растёт — воркер не успевает flush'ить (или вообще мёртв).
+      # >1000 событий pending — индикатор проблемы (обычно там 0–50).
+      - alert: PortalAuditQueueBacklog
+        expr: portal_audit_queue_depth > 1000
+        for: 5m
+        labels:
+          severity: warning
+          service: portal-audit
+        annotations:
+          summary: "Audit queue растёт ({{ $value }} событий)"
+          description: "Redis-очередь audit_queue > 1000 событий уже 5 мин. Проверить `docker compose ps worker`, логи `audit.flush_*`. Возможно упал flush_audit_queue cron."
+
+      # Processing list не очищается — воркер взял батч, но не закоммитил
+      # в БД. Может быть symptom упавшей PG-связности или deadlock.
+      - alert: PortalAuditFlushStuck
+        expr: portal_audit_processing_depth > 0
+        for: 10m
+        labels:
+          severity: warning
+          service: portal-audit
+        annotations:
+          summary: "Audit processing list завис ({{ $value }} событий)"
+          description: "Redis-список audit_processing > 0 уже 10 мин — батч взят воркером, но не закоммичен/не очищен. Проверить `audit:flush:lock` в Redis и БД-связность."
+
+      # Audit push rate упал в ноль — события больше не эмитятся.
+      # На активном портале (~300 юзеров) за 5 мин точно есть хотя бы 1 событие.
+      - alert: PortalAuditPushRateZero
+        expr: rate(portal_audit_events_pushed_total[5m]) == 0
+        for: 10m
+        labels:
+          severity: warning
+          service: portal-audit
+        annotations:
+          summary: "Audit-события не эмиттятся"
+          description: "За последние 10 мин счётчик audit_events_pushed_total не растёт. Либо порталом никто не пользуется, либо сломался push_audit_event (Redis down?)."
+
+  # ===================================================================
+  # Worker health — ARQ cron jobs и heartbeat
+  # ===================================================================
+  - name: portal-worker
+    interval: 30s
+    rules:
+      # Worker heartbeat обновляется cron'ом `worker_heartbeat` раз в 30с,
+      # ключ в Redis `arq:heartbeat` (TTL 90с). Если воркер жив, кастомные
+      # гейджи (`portal_audit_queue_depth`, `portal_active_users_last_1h`)
+      # обновляются через `metrics:snapshot` раз в 30с.
+      #
+      # Косвенный индикатор: если 3 подряд scrape (≈1.5 мин) показывают одно
+      # и то же значение gauge — воркер скорее всего лежит. time() самого
+      # gauge мы не имеем, поэтому используем `changes()` за окно.
+      - alert: PortalWorkerStale
+        expr: changes(portal_audit_queue_depth[3m]) == 0 and portal_audit_queue_depth > 0
+        for: 2m
+        labels:
+          severity: warning
+          service: portal-worker
+        annotations:
+          summary: "ARQ-воркер, возможно, мёртв"
+          description: "Гейдж portal_audit_queue_depth не менялся 3 мин при ненулевой очереди — ARQ-cron refresh_custom_metrics/flush_audit_queue не выполняется. Проверить `docker compose ps worker` и ключ Redis `arq:heartbeat`."
+
+      # Высокий rate failures ARQ-задач — что-то системно падает в воркере.
+      - alert: PortalArqJobsFailing
+        expr: rate(portal_arq_jobs_failed_total[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          service: portal-worker
+        annotations:
+          summary: "ARQ-задачи падают (function={{ $labels.function }})"
+          description: "Rate failures > 0.1/s (≈6/мин) для функции {{ $labels.function }} в течение 5 мин. Смотреть `docker compose logs worker` (filter: failed/exception)."
+
+  # ===================================================================
+  # Saturation — ресурсы и ёмкость
+  # ===================================================================
+  - name: portal-saturation
+    interval: 30s
+    rules:
+      # Медленные запросы — p99 latency > 5s на 5 мин окне.
+      # histogram_quantile по handler — находит конкретный медленный endpoint.
+      - alert: PortalHighLatencyP99
+        expr: |
+          histogram_quantile(0.99,
+            sum(rate(http_request_duration_seconds_bucket{job="portal"}[5m])) by (le, handler)
+          ) > 5
+        for: 5m
+        labels:
+          severity: warning
+          service: portal-backend
+        annotations:
+          summary: "Высокая p99-латентность (handler={{ $labels.handler }})"
+          description: "p99 latency > 5s для handler={{ $labels.handler }} в течение 5 мин. Возможные причины: медленный SQL-запрос, блокировки БД, нехватка соединений пула."
+
+      # Фото-хранилище > 100 ГБ — порог для планирования расширения.
+      # Низкий priority, чисто информационный.
+      - alert: PortalPhotoStorageHigh
+        expr: portal_photo_storage_bytes > 1e11  # 100 GB
+        for: 1h
+        labels:
+          severity: info
+          service: portal-photos
+        annotations:
+          summary: "Фото-хранилище большое ({{ $value | humanize1024 }})"
+          description: "/data/photos/originals превысил 100 ГБ. Планировать ёмкость или чистить по retention."

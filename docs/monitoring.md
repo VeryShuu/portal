@@ -1,7 +1,7 @@
 # Мониторинг и наблюдаемость
 
 > **Когда читать:** Нужно понять health/readiness-пробы, как устроен `/metrics` для Prometheus (включая токен-защиту и кастомные гейджи), heartbeat воркера, а также runtime-настройки наблюдаемости из Admin UI (вкладка «Мониторинг»: метрики, уровень логирования, Sentry, лимит ARQ).
-> **Ключевой код:** `./backend/app/api/health.py`, `./backend/app/middleware/metrics.py`, `./backend/app/core/metrics.py`, `./backend/app/worker/tasks/metrics.py`, `./backend/app/core/sentry.py`, `./backend/app/api/system_settings/_settings.py`, `./frontend/src/pages/admin/tabs/MonitoringTab.vue`.
+> **Ключевой код:** `./backend/app/api/health.py`, `./backend/app/middleware/metrics.py`, `./backend/app/core/metrics.py`, `./backend/app/worker/tasks/metrics.py`, `./backend/app/core/sentry.py`, `./backend/app/api/system_settings/_settings.py`, `./frontend/src/pages/admin/tabs/MonitoringTab.vue`. **Reference-стек alerting/Grafana:** `./monitoring/`.
 > **ADR:** 037 (bootstrap env vs runtime JSON). См. также `./deploy.md`, `./audit.md`.
 
 ---
@@ -157,7 +157,79 @@ structlog (`./backend/app/core/logging.py`, обязательно
 
 ---
 
-## 7. Грабли / контекст
+## 7. Alerting и Grafana (reference-стек)
+
+Сам портал **только экспортирует** метрики (`/metrics`). Consumer-сторона —
+scrape, alerting-правила, дашборды — оформлена как **reference-конфиги** в
+`./monitoring/`. Они **не** подключены к основному `docker-compose.yml`,
+поднимаются отдельным overlay, чтобы не тащить тяжёлые образы в базовый деплой.
+
+### Структура
+
+```
+monitoring/
+├── README.md                          ← детальная инструкция запуска
+├── prometheus.yml                     ← scrape portal-backend (/metrics + token)
+├── alerts/
+│   ├── portal.yml                     ← alerting rules (PromQL)
+│   └── alertmanager.yml               ← routing (placeholder receivers)
+├── grafana/
+│   ├── portal-overview.json           ← дашборд (RED + audit + worker + content)
+│   └── provisioning/                  ← auto-provision datasource и dashboards
+└── docker-compose.monitoring.yml      ← overlay
+```
+
+### Запуск
+
+```bash
+docker compose \
+  -f docker-compose.yml \
+  -f monitoring/docker-compose.monitoring.yml \
+  up -d prometheus alertmanager grafana
+```
+
+С scrap-токеном (если `system.json::metrics_token` задан):
+
+```bash
+PORTAL_METRICS_TOKEN="$(jq -r .metrics_token // empty system_data/settings/system.json)" \
+  docker compose -f docker-compose.yml -f monitoring/docker-compose.monitoring.yml up -d prometheus
+```
+
+UI (на хосте, прокинут на `127.0.0.1`): Prometheus — `:9090`, Alertmanager —
+`:9093`, Grafana — `:3000` (admin/admin при первом старте — сменить!).
+
+### Ключевые алерты (`monitoring/alerts/portal.yml`)
+
+| Alert | Severity | Условие | Что значит |
+|---|---|---|---|
+| `PortalBackendDown` | 🔴 critical | `up{job="portal"} == 0` 1 мин | Prometheus не получает `/metrics` — backend упал или завис |
+| `PortalHighErrorRate` | 🔴 critical | 5xx > 5% при rate > 3/мин | Системная деградация, смотреть Sentry |
+| `PortalAuditQueueBacklog` | 🟡 warning | `portal_audit_queue_depth > 1000` 5 мин | ARQ-воркер не успевает flush'ить (или мёртв) |
+| `PortalAuditFlushStuck` | 🟡 warning | `portal_audit_processing_depth > 0` 10 мин | Батч взят, но не закоммичен — БД-связность / deadlock |
+| `PortalWorkerStale` | 🟡 warning | gauge не менялся 3 мин | ARQ-cron не выполняется — воркер скорее всего мёртв |
+| `PortalArqJobsFailing` | 🟡 warning | `rate(portal_arq_jobs_failed_total[5m]) > 0.1` | Задачи систематически падают |
+| `PortalHighLatencyP99` | 🟡 warning | p99 latency > 5s | Медленный SQL / блокировки / нехватка пула |
+| `PortalPhotoStorageHigh` | 🔵 info | `/data/photos > 100 ГБ` | Планировать ёмкость |
+
+Полный PromQL и rationale — в самом `portal.yml`. Alertmanager-routing —
+заглушка (webhook-placeholder), реальный transport (email/Slack/Telegram)
+настраивает команда под свою инфраструктуру.
+
+### Грабли reference-стека
+
+- **Scrape-токен через env.** `PORTAL_METRICS_TOKEN` подставляется в
+  `prometheus.yml` (`${...}` раскрытие compose-ом при `up`). **Не хардкодить**
+  токен в YAML и **не коммитить**.
+- **`for:` ≥ 2 мин** на все алерты — даёт лагу cross-process snapshot (≤30с) и
+  отдельным всплескам 5xx settle'нуться без будоражащего alerting'а.
+- **Inhibition**: `PortalBackendDown` глушит все остальные `service=portal-backend`
+  алерты — нет смысла будить из-за error rate, если сам бэкенд лежит.
+- **Гейджи без воркера «замерзают».** `PortalWorkerStale` ловит это по
+  `changes(portal_audit_queue_depth[3m]) == 0` — см. §7 Грабли основного стека.
+
+---
+
+## 8. Грабли / контекст
 
 - **Кастомные гейджи без воркера «замерзают».** Если ARQ-воркер не запущен,
   `metrics:snapshot` не обновляется и кастомные метрики на `/metrics` показывают
@@ -170,3 +242,9 @@ structlog (`./backend/app/core/logging.py`, обязательно
   отдаваться наружу только флагом `*_set`, как `metrics_token`/`sentry_dsn`.
 - **`/health` и `/ready` без префикса** `/api/v1` и без auth — учитывайте при
   настройке allowlist/nginx.
+- **Nginx access-log содержит `request_id`.** `system_data/nginx/nginx.conf`
+  пишет JSON-access-log с полем `request_id` (берётся из `X-Request-Id`
+  клиента или генерируется nginx'ом). Тот же id проксируется в backend через
+  `proxy_set_header X-Request-Id` и попадает во все structlog-строки через
+  `middleware/logging.py` — сквозная корреляция nginx-access ↔ backend-request.
+  Искать по `request_id` в обоих источниках.

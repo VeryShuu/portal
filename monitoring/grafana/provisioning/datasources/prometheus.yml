@@ -1,0 +1,17 @@
+# Auto-provisioned Prometheus datasource for Grafana.
+# Grafana загружает datasources из этого файла при старте — без ручной настройки UI.
+# http://docs.grafana.org/administration/provisioning/#data-sources
+
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090   # внутри сети portal_internal
+    isDefault: true
+    editable: true
+    jsonData:
+      timeInterval: 30s           # должно совпадать с scrape_interval prometheus.yml
+      httpMethod: POST
+      manageAlerts: false         # Alertmanager управляет алертами, не Grafana

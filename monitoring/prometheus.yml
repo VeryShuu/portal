@@ -1,0 +1,67 @@
+# Reference Prometheus configuration for the portal.
+#
+# Scrape targets:
+#   - portal-backend (`/metrics` на порту 8000 внутри сети portal_internal)
+#   - prometheus (self-scrape для health)
+#
+# Token protection: backend требует заголовок `X-Metrics-Token` если
+# `system.json::metrics_token` задан (см. middleware/metrics.py).
+# Передаём через `authorization.credentials`. Если токен пуст — `/metrics`
+# открыт (допустимо в закрытом периметре/VPN).
+#
+# Запуск:
+#   PORTAL_METRICS_TOKEN="$(jq -r .metrics_token // empty system_data/settings/system.json)" \
+#     docker compose -f docker-compose.yml -f monitoring/docker-compose.monitoring.yml \
+#       up -d prometheus alertmanager grafana
+
+global:
+  scrape_interval: 30s       # 30s — достаточно для RED; кастомные гейджи обновляются раз в 30с
+  evaluation_interval: 30s   # частота проверки alerting rules
+  external_labels:
+    cluster: portal
+    environment: prod        # поменять на staging/dev для overlay-окружений
+
+rule_files:
+  - /etc/prometheus/rules/*.yml
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
+      # Если alertmanager требует basic-auth или TLS — настроить здесь.
+      # http://localhost:9093 внутри сети — открытый.
+
+scrape_configs:
+  # -------------------------------------------------------------------
+  # Portal backend — RED-метрики + кастомные гейджи (audit queue, etc.)
+  # -------------------------------------------------------------------
+  - job_name: "portal"
+    scheme: http
+    metrics_path: /metrics
+    scrape_interval: 30s
+    scrape_timeout: 10s
+    # Токен из env (пустая строка → /metrics открыт). Не хардкодить тут!
+    authorization:
+      type: Bearer
+      credentials: ${PORTAL_METRICS_TOKEN}
+    static_configs:
+      - targets: ["backend:8000"]
+        labels:
+          service: portal-backend
+    # Cross-process snapshot: гейджи гидрируются из Redis при каждом scrape,
+    # поэтому если backend жив, но Redis/воркер лежат — гейджи застывают.
+    # Алерт PortalWorkerDown поймает это по отсутствию heartbeat.
+
+  # -------------------------------------------------------------------
+  # Prometheus self-monitoring
+  # -------------------------------------------------------------------
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # -------------------------------------------------------------------
+  # Alertmanager self-monitoring (опционально — для метрик о fired/resolved)
+  # -------------------------------------------------------------------
+  - job_name: "alertmanager"
+    static_configs:
+      - targets: ["alertmanager:9093"]

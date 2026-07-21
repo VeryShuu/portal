@@ -95,7 +95,7 @@ flowchart TD
     A[Мутирующее событие в API] -->|1. Успешный DB commit| B[push_audit_event]
     B -->|2. Сериализация в JSON| C[(Redis list: audit_queue)]
     C -->|3. Инкремент метрики| D[Prometheus: audit_events_pushed]
-    
+
     E[ARQ-воркер: flush_audit_queue] -->|4. Захват блокировки| F[Redis lock: audit:flush:lock]
     F -->|5. LMOVE LEFT->RIGHT| G[(Redis list: audit_processing)]
     G -->|6. Батч-вставка executemany| H[(PostgreSQL: audit_log)]
@@ -109,6 +109,13 @@ flowchart TD
 - Инкременирует счётчик Prometheus-метрик `audit_events_pushed` по переданному типу события.
 - Действие изолировано блоком `try/except`. При сбоях Redis ошибка отправляется в Sentry, но выполнение основного запроса пользователя продолжается без прерывания.
 
+> **SoTL:** `event_type`-литералы сверяются с centralized enum'ом
+> `./backend/app/services/audit_events.py::EventType` — тест
+> `./backend/tests/unit/test_audit_events.py` гарантирует, что каждый literal
+> в `app/` зарегистрирован (защита от опечаток вида `links.vistied`).
+> Новые call-sites могут использовать либо literal, либо `EventType.XXX`
+> (StrEnum, `EventType.AUTH_LOGIN == "auth.login"`).
+
 ### Шаг 2: Обработка воркером (`flush_audit_queue`)
 Воркер ARQ (`./backend/app/worker/tasks/audit.py`) периодически запускает задачу `flush_audit_queue` для сброса накопленного буфера в БД:
 1. Захватывает атомарную блокировку в Redis с ключом `audit:flush:lock` на 30 секунд. Если блокировку захватить не удалось (её удерживает другой воркер), выполнение завершается.
@@ -116,6 +123,16 @@ flowchart TD
 3. Парсит перенесенные записи и выполняет батч-вставку в БД за один запрос `executemany` в PostgreSQL.
 4. После успешного коммита в PostgreSQL очищает список `audit_processing` с помощью `DEL`.
 5. Снимает блокировку `audit:flush:lock` через выполнение Lua-скрипта (для безопасного удаления ключа только его создателем).
+
+### Альтернативный путь: `audit.log()` (deprecated)
+В том же модуле есть `log()` — synchronous INSERT в `audit_log` через
+изолированную сессию (минуя Redis-очередь и батч-флеш). На данный момент не
+имеет runtime-callers в приложении (только unit-тесты); оставлен как
+потенциальный fallback при недоступности Redis. На практике
+`push_audit_event` сам обрабатывает ошибки Redis (warning + Sentry, не рвёт
+бизнес-транзакцию), поэтому `log()` фактически мёртвый код. Новые call-sites
+всегда должны использовать `push_audit_event`. См. план удаления:
+`./docs/wip/observability-remediation.md` §P2.3.
 
 ---
 

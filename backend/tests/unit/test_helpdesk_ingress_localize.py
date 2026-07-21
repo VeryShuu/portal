@@ -66,9 +66,19 @@ class TestLocalizeAttachmentsAndImages:
         # Возвращаем разные id, проверим количество вызовов.
         saved = []
 
-        async def _save(db, *, ticket, message_id, data, original_name, total_tracker=None):
+        async def _save(
+            db,
+            *,
+            ticket,
+            message_id,
+            data,
+            original_name,
+            total_tracker=None,
+            is_inline=False,
+            content_id=None,
+        ):
             att = SimpleNamespace(id=att_id)
-            saved.append((original_name, data))
+            saved.append((original_name, data, is_inline, content_id))
             return att
 
         with (
@@ -93,8 +103,12 @@ class TestLocalizeAttachmentsAndImages:
         assert out is not None
         assert f"/api/v1/helpdesk/attachments/{att_id}" in out
         assert "cid:logo" not in out
-        # Attach-часть (doc.pdf) сохранена.
-        assert any(name == "doc.pdf" for name, _ in saved)
+        # Attach-часть (doc.pdf) сохранена как обычное вложение (is_inline=False),
+        # inline cid:logo — как inline-картинка (is_inline=True, content_id="logo").
+        assert ("doc.pdf", b"%PDF fake", False, None) in saved
+        assert any(
+            is_inline and cid == "logo" for _name, _data, is_inline, cid in saved
+        )
         # Tracker возвращён (для cleanup при rollback — H-5).
         assert tracker is not None
 

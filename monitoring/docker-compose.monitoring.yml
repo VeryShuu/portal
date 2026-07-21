@@ -1,0 +1,112 @@
+# Docker Compose overlay для observability-стека (Prometheus + Alertmanager + Grafana).
+#
+# НЕ подключается автоматически к основному docker-compose.yml — это overlay,
+# который поднимается явно через `-f`. Так тяжёлые образы (≈500 МБ суммарно)
+# не тащатся в базовый деплой портала.
+#
+# Запуск (полный observability-стек):
+#   docker compose \
+#     -f docker-compose.yml \
+#     -f monitoring/docker-compose.monitoring.yml \
+#     up -d prometheus alertmanager grafana
+#
+# Запуск с scrape-токеном (если metrics_token задан в system.json):
+#   PORTAL_METRICS_TOKEN="$(jq -r .metrics_token // empty system_data/settings/system.json)" \
+#     docker compose \
+#       -f docker-compose.yml \
+#       -f monitoring/docker-compose.monitoring.yml \
+#       up -d prometheus
+#
+# Сервисы подключаются к существующей сети `portal_internal` (объявлена в
+# основном docker-compose.yml), поэтому видят `backend`, `redis`, `postgres`.
+#
+# Volumes (данные переживают restart):
+#   - prometheus-data      — TSDB (≈30 дней retention по умолчанию)
+#   - alertmanager-data    — state алертов (silences, notifications)
+#   - grafana-data         — пользователи, дашборды (правленные через UI)
+
+services:
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: portal-prometheus
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=30d"
+      - "--storage.tsdb.retention.size=10GB"
+      - "--web.console.libraries=/usr/share/prometheus/console_libraries"
+      - "--web.console.templates=/usr/share/prometheus/consoles"
+      - "--web.enable-lifecycle"   # позволяет POST /-/reload без restart
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/alerts:/etc/prometheus/rules:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "127.0.0.1:9090:9090"     # только localhost — пробрасывать наружу через reverse-proxy
+    environment:
+      # Подставляется в prometheus.yml::scrape_configs.authorization.credentials.
+      # Пустая строка → /metrics открыт (закрытый периметр/VPN).
+      PORTAL_METRICS_TOKEN: ${PORTAL_METRICS_TOKEN:-}
+    networks:
+      - internal
+    logging: &default-logging
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
+        compress: "true"
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    container_name: portal-alertmanager
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    command:
+      - "--config.file=/etc/alertmanager/alertmanager.yml"
+      - "--storage.path=/alertmanager"
+    volumes:
+      - ./monitoring/alerts/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager-data:/alertmanager
+    ports:
+      - "127.0.0.1:9093:9093"
+    networks:
+      - internal
+    logging: *default-logging
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    container_name: portal-grafana
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      # Первый запуск: admin/admin. СМЕНИТЬ сразу или настроить OAuth/auth-proxy.
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_SERVER_ROOT_URL: "http://localhost:3000"
+      GF_INSTALL_PLUGINS: ""
+    volumes:
+      # Provisioning — datasources и dashboards загружаются при старте.
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/portal-overview.json:/var/lib/grafana/dashboards/portal-overview.json:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "127.0.0.1:3000:3000"
+    networks:
+      - internal
+    logging: *default-logging
+
+volumes:
+  prometheus-data:
+  alertmanager-data:
+  grafana-data:
+
+networks:
+  internal:
+    external: true
+    name: portal_internal

@@ -61,9 +61,22 @@ show_menu() {
     echo -e "  ${BOLD}5.${RESET}  Настроить / пересоздать .env"
     echo -e "  ${DIM}     Изменить пароли, порты, учётную запись администратора.${RESET}"
     echo
+    echo -e "  ${BOLD}6.${RESET}  ${GREEN}Обновить Production${RESET}"
+    echo -e "  ${DIM}     git pull → pg_dump (опц.) → docker compose pull → up -d.${RESET}"
+    echo -e "  ${DIM}     Миграции применяются автоматически. Текущий режим: $(current_mode_label).${RESET}"
+    echo
+    echo -e "  ${BOLD}7.${RESET}  Перезапустить стек ${DIM}(без пересборки)${RESET}"
+    echo -e "  ${DIM}     docker compose restart. Текущий режим: $(current_mode_label).${RESET}"
+    echo
+    echo -e "  ${BOLD}8.${RESET}  Остановить стек"
+    echo -e "  ${DIM}     docker compose down. Данные сохраняются.${RESET}"
+    echo
+    echo -e "  ${BOLD}9.${RESET}  Статус + последние логи"
+    echo -e "  ${DIM}     docker compose ps + logs --tail=30 backend.${RESET}"
+    echo
     echo -e "  ${BOLD}0.${RESET}  Выход"
     echo
-    read -r -p "  Выберите [0-5]: " MENU_CHOICE
+    read -r -p "  Выберите [0-9]: " MENU_CHOICE
     echo
 }
 
@@ -90,6 +103,10 @@ ask_secret() {
         fi
         if [[ "$var" == *"'"* ]]; then
             warn "Пароль не должен содержать символ ' (одинарная кавычка) — используйте другой символ."
+            continue
+        fi
+        if [[ "$var" == *'\'* ]]; then
+            warn "Пароль не должен содержать символ \\ (backslash) — он ломает парсинг .env."
             continue
         fi
         read -r -s -p "    Повторите для подтверждения: " confirm
@@ -477,7 +494,9 @@ services:
           cpus: "1.0"
           memory: 768m
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:5173/ 2>/dev/null | grep -q '<div id=\"app\">' || exit 1"]
+      # /@vite/client — это Vite-эндпоинт (HTTP 200 пока dev-сервер жив),
+      # надёжнее чем греп index.html: index.html рендерится даже при сломанном бандле.
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:5173/@vite/client 2>/dev/null | head -c1 | grep -q . || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -516,7 +535,7 @@ services:
 
   backend:
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     environment:
       ENVIRONMENT: staging
       SENTRY_ENVIRONMENT: staging
@@ -616,7 +635,9 @@ apply_sysctl() {
         echo "    sudo sysctl --system"
         echo ""
         warn "vm.overcommit_memory не применён — производительность Redis в production может пострадать."
-        return 1
+        # Не делаем return 1: при set -euo pipefail это роняло бы весь скрипт.
+        # Предупреждение уже выведено; Redis продолжит работу (с варнингом в логах).
+        return 0
     fi
 
     if sysctl -w vm.overcommit_memory=1 &>/dev/null; then
@@ -756,30 +777,62 @@ check_services() {
             "$icon" "$label" "$st" "$(echo -e "${DIM}${h}${RESET}")"
     done
 
-    # ── Проверка HTTP /health ────────────────────────────────────────────────────
+    # ── Проверка HTTP /ready (DB + Redis + NC + audit-партиции) ───────────────
+    # /health — это liveness (тупо {"status":"ok"}), он ничего не проверяет.
+    # Реальная готовность — /ready. См. backend/app/api/health.py + AGENTS.md:
+    #   «Не использовать Docker healthcheck на /health (использовать /ready)».
     sep
 
-    local port
-    port="$(grep '^HTTP_PORT=' .env 2>/dev/null | cut -d= -f2 || echo '80')"
+    local http_port https_port scheme url
+    http_port="$(grep '^HTTP_PORT='  .env 2>/dev/null | cut -d= -f2 || echo '80')"
+    https_port="$(grep '^HTTPS_PORT=' .env 2>/dev/null | cut -d= -f2 || echo '443')"
+
+    # В prod/staging nginx Terminates TLS и редиректит 80→443 →
+    # запрос по http на production-порт либо 301, либо обрывается (000).
+    # Поэтому в прод-режиме стучимся по https на https-порт,
+    # с -k (self-signed / корпоративный CA, которого нет в curl).
+    if [[ "$mode" == "dev" ]]; then
+        scheme="http";  url="http://localhost:${http_port}/ready"
+    else
+        scheme="https"; url="https://localhost:${https_port}/ready"
+    fi
 
     local http_code
-    http_code=$(curl -s --max-time 5 -o /dev/null -w "%{http_code}" \
-        "http://localhost:${port}/health" 2>/dev/null || true)
+    if [[ "$scheme" == "https" ]]; then
+        http_code=$(curl -sk --max-time 5 -o /dev/null -w "%{http_code}" "$url" 2>/dev/null || true)
+    else
+        http_code=$(curl -s  --max-time 5 -o /dev/null -w "%{http_code}" "$url" 2>/dev/null || true)
+    fi
     http_code="${http_code:-000}"
 
     if [[ "$http_code" == "200" ]]; then
         printf "  ${GREEN}%s${RESET}  %-14s  %-12s  %s\n" \
-            "✓" "/health" "HTTP ${http_code}" ""
+            "✓" "/ready" "HTTP ${http_code}" ""
+    elif [[ "$http_code" == "503" ]]; then
+        # /ready возвращает 503 если хотя бы одна подсистема (DB/Redis/NC/audit) упала.
+        # Сам nginx при этом жив — показываем тело ответа, чтобы указать на виновника.
+        printf "  ${RED}%s${RESET}  %-14s  %-12s  %s\n" \
+            "✗" "/ready" "HTTP ${http_code}" ""
+        warn "nginx жив, но backend /ready сообщает о сбое подсистемы. Тело ответа:"
+        if [[ "$scheme" == "https" ]]; then
+            curl -sk --max-time 5 "$url" 2>/dev/null | sed 's/^/  │ /'
+        else
+            curl -s  --max-time 5 "$url" 2>/dev/null | sed 's/^/  │ /'
+        fi
+        echo
+        failed+=("backend")
     elif [[ "$http_code" == "000" ]]; then
         printf "  ${YELLOW}%s${RESET}  %-14s  %-12s  %s\n" \
-            "⚠" "/health" "нет ответа" ""
-    else
-        printf "  ${RED}%s${RESET}  %-14s  %-12s  %s\n" \
-            "✗" "/health" "HTTP ${http_code}" ""
+            "⚠" "/ready" "нет ответа" ""
+        warn "nginx не отвечает на ${scheme}://localhost:${http_port} — см. логи nginx ниже."
         local nginx_container
         nginx_container=$(docker compose ps --format '{{.Name}}\t{{.Service}}' 2>/dev/null \
             | awk -F'\t' '$2=="nginx"{print $1; exit}')
         failed+=("${nginx_container:-nginx}")
+    else
+        printf "  ${RED}%s${RESET}  %-14s  %-12s  %s\n" \
+            "✗" "/ready" "HTTP ${http_code}" ""
+        failed+=("nginx")
     fi
 
     echo
@@ -849,6 +902,269 @@ show_done() {
     echo
 }
 
+# ─── Загрузить переменные из .env в текущий шелл ───────────────────────────────
+# Читаем вручную (grep + cut), чтобы не зависеть от.Env-парсера bash и не тащить
+# лишнее (set -a; source .env; set +a ломается на значениях с пробелами/спец-символами,
+# к тому же .env парсится docker'ом, а не bash — у них разные правила кавычек).
+load_env_var() {
+    local key="$1" default="${2:-}"
+    local val
+    val=$(grep -E "^${key}=" .env 2>/dev/null | head -1 | cut -d= -f2-)
+    # Убираем одинарные кавычки, которыми setup_env оборачивает секреты
+    val="${val#\'}"; val="${val%\'}"
+    printf '%s' "${val:-$default}"
+}
+
+# ─── Подобрать compose-флаги для текущего режима ───────────────────────────────
+compose_files_args() {
+    local mode="$1"
+    local -a files=(-f docker-compose.yml)
+    case "$mode" in
+        dev)     files+=(-f docker-compose.dev.yml) ;;
+        staging) files+=(-f docker-compose.staging.yml) ;;
+        prod)    : ;;
+        *)       err "compose_files_args: неизвестный режим '$mode'" ;;
+    esac
+    printf '%s\n' "${files[@]}"
+}
+
+# ─── Бэкап PostgreSQL перед рискованными операциями ────────────────────────────
+# Снимает pg_dump -Fc в backups/portal_<timestamp>.dump.
+# Использует данные из .env (POSTGRES_USER / POSTGRES_DB).
+# Возвращает 0 при успехе, 1 при ошибке.
+pg_backup() {
+    local backup_dir="backups"
+    local stamp ts pg_user pg_db container dump_file
+    ts=$(date +%Y%m%d_%H%M%S)
+    pg_user=$(load_env_var POSTGRES_USER portal)
+    pg_db=$(load_env_var   POSTGRES_DB   portal)
+
+    # Контейнер postgres — берём из текущего compose-стека (не хардкодим имя).
+    mapfile -t compose_files < <(compose_files_args "$(cat "$MODE_FILE" 2>/dev/null || echo prod)")
+    container=$(docker compose "${compose_files[@]}" ps --format '{{.Name}}\t{{.Service}}' 2>/dev/null \
+        | awk -F'\t' '$2=="postgres"{print $1; exit}')
+
+    if [[ -z "$container" ]]; then
+        warn "Контейнер postgres не найден в текущем стеке — пропускаю pg_dump."
+        warn "Если это первое развёртывание — это нормально (БД ещё не создана)."
+        return 1
+    fi
+
+    mkdir -p "$backup_dir"
+    dump_file="${backup_dir}/portal_${ts}.dump"
+
+    echo -e "  ${DIM}Снимаю pg_dump в ${dump_file} ...${RESET}"
+    if docker compose "${compose_files[@]}" exec -T postgres \
+        pg_dump -U "$pg_user" -d "$pg_db" -Fc > "$dump_file" 2>/dev/null; then
+        # Проверим, что файл не пустой и похож на pg_dump-custom (начинается с "PGDMP")
+        if [[ -s "$dump_file" ]] && head -c 5 "$dump_file" | grep -q "PGDMP"; then
+            local size
+            size=$(du -h "$dump_file" | cut -f1)
+            ok "Бэкап готов: ${dump_file} (${size})"
+            return 0
+        fi
+    fi
+    warn "pg_dump завершился ошибкой или файл повреждён — продолжать без бэкапа рискованно."
+    rm -f "$dump_file"
+    return 1
+}
+
+# ─── Предложение снять бэкап перед операцией ───────────────────────────────────
+# $1 — описание операции для контекста (например, «обновлением prod»).
+offer_backup() {
+    local op="$1" answer
+    echo
+    echo -e "  ${YELLOW}⚠${RESET}  Рекомендуется снять бэкап БД перед ${op}."
+    read -r -p "  Снять pg_dump сейчас? (Y/n): " answer
+    if [[ "${answer,,}" != "n" ]]; then
+        pg_backup || warn "Бэкап не удался — решать тебе: продолжать или прервать."
+    else
+        warn "Продолжаю без бэкапа. Ответственность за потерю данных — на операторе."
+    fi
+}
+
+# ─── Preflight: проверки перед запуском/обновлением ────────────────────────────
+# Возвращает 0 если всё ок, 1 если есть блокирующие проблемы.
+preflight() {
+    local mode="$1"
+    local fatal=0
+    echo
+
+    # ── Docker daemon ────────────────────────────────────────────────────────
+    if ! docker info &>/dev/null; then
+        err "Docker daemon недоступен. Проверьте: systemctl status docker / sudo service docker start"
+    fi
+    ok "Docker daemon: ok"
+
+    # ── docker compose v2 ───────────────────────────────────────────────────
+    if ! docker compose version &>/dev/null; then
+        err "docker compose v2 недоступен. Установите: docker compose plugin."
+    fi
+    ok "docker compose v2: ok"
+
+    # ── .env (кроме первого запуска) ─────────────────────────────────────────
+    if [[ -f .env ]]; then
+        # Проверяем обязательные ключи
+        local missing=()
+        for key in POSTGRES_DB POSTGRES_USER POSTGRES_PASSWORD REDIS_PASSWORD \
+                   SECRET_KEY ADMIN_EMAIL ADMIN_PASSWORD; do
+            if [[ -z "$(load_env_var "$key")" ]]; then
+                missing+=("$key")
+            fi
+        done
+        if [[ ${#missing[@]} -gt 0 ]]; then
+            warn ".env есть, но пустые/отсутствуют ключи: ${missing[*]}"
+            warn "Пересоздайте .env через пункт «Настроить .env»."
+            fatal=1
+        else
+            ok ".env: все обязательные ключи заполнены"
+        fi
+    fi
+
+    # ── Свободные порты ──────────────────────────────────────────────────────
+    # Проверяем только prod/staging (dev использует переопределённые порты).
+    if [[ "$mode" == "prod" || "$mode" == "staging" ]] && [[ -f .env ]]; then
+        local http_port https_port
+        http_port=$(load_env_var HTTP_PORT 80)
+        https_port=$(load_env_var HTTPS_PORT 443)
+        for p in "$http_port" "$https_port"; do
+            # ss без root не показывает имя процесса; достаточно знать что порт занят.
+            if ss -tlnH 2>/dev/null | awk '{print $4}' | grep -qE "[.:]${p}$"; then
+                warn "Порт ${p} уже занят (обычно это сам портал или другой веб-сервер)."
+                warn "Если это не сам портал — укажите другой порт в .env или освободите этот:"
+                warn "    sudo ss -tlnp | grep ':${p} '  (покажет PID/имя процесса)"
+                fatal=1
+            else
+                ok "Порт ${p}: свободен"
+            fi
+        done
+    fi
+
+    # ── Место под base_data/postgres ─────────────────────────────────────────
+    local data_dir="base_data/postgres"
+    mkdir -p "$data_dir" 2>/dev/null || true
+    local avail_kb avail_gb
+    avail_kb=$(df -P "$data_dir" 2>/dev/null | awk 'NR==2{print $4}')
+    if [[ "$avail_kb" =~ ^[0-9]+$ ]]; then
+        avail_gb=$(( avail_kb / 1024 / 1024 ))
+        if [[ "$avail_gb" -lt 5 ]]; then
+            warn "Места на диске для ${data_dir}: ${avail_gb} GB (< 5 GB минимум)."
+            warn "PostgreSQL может остановиться при переполнении диска."
+            fatal=1
+        else
+            ok "Свободно на диске: ${avail_gb} GB"
+        fi
+    fi
+
+    return $fatal
+}
+
+# ─── Обновление Production до новой версии ─────────────────────────────────────
+update_production() {
+    h2 "Обновление Production"
+
+    if [[ ! -f .env ]]; then
+        err ".env не найден — сначала настройте (пункт «Настроить .env»)."
+    fi
+    if [[ "$(cat "$MODE_FILE" 2>/dev/null || echo prod)" != "prod" ]]; then
+        warn "Текущий режим в .portal-mode — не prod. Обновляем всё равно prod-стек."
+        read -r -p "  Продолжить? (y/N): " answer
+        [[ "${answer,,}" == "y" ]] || { echo "  Отмена."; exit 0; }
+    fi
+
+    echo -e "  ${DIM}Процедура: git pull → pg_dump (опционально) → docker compose pull → up -d.${RESET}"
+    echo -e "  ${DIM}Миграции применятся автоматически при старте backend (scripts/migrate.sh).${RESET}"
+    echo
+
+    # ── 1.Preflight ───────────────────────────────────────────────────────────
+    preflight prod || {
+        warn "Preflight выявил проблемы. Продолжить принудительно? (y/N): "
+        read -r -p "  " answer
+        [[ "${answer,,}" == "y" ]] || exit 1
+    }
+
+    # ── 2. git pull ───────────────────────────────────────────────────────────
+    echo -e "  ${BOLD}1/4. Git pull ...${RESET}"
+    if git rev-parse --is-inside-work-tree &>/dev/null; then
+        local branch
+        branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "main")
+        echo -e "  ${DIM}Текущая ветка: ${branch}${RESET}"
+        if ! git pull --ff-only 2>&1 | sed 's/^/  │ /'; then
+            warn "git pull --ff-only не удался (локальные коммиты или расхождение)."
+            warn "Разберитесь вручную: git status && git log --oneline -5"
+            err "Прерываю обновление."
+        fi
+        ok "git pull: ok"
+    else
+        warn "Не в git-репозитории — пропускаю git pull."
+    fi
+
+    # ── 3. Backup ─────────────────────────────────────────────────────────────
+    offer_backup "обновлением prod"
+
+    # ── 4. docker compose pull ────────────────────────────────────────────────
+    echo
+    echo -e "  ${BOLD}2/4. Pull образов (если обновились в registry) ...${RESET}"
+    if ! docker compose pull 2>&1 | sed 's/^/  │ /'; then
+        warn "docker compose pull завершился с ошибкой — возможно часть образов собирается локально."
+    fi
+
+    # ── 5. build + up ─────────────────────────────────────────────────────────
+    echo
+    echo -e "  ${BOLD}3/4. Build + up -d ...${RESET}"
+    docker compose down --remove-orphans 2>&1 | sed 's/^/  │ /' || true
+    run_compose prod
+    echo "prod" > "$MODE_FILE"
+
+    # ── 6. Контроль миграций + check_services ─────────────────────────────────
+    echo
+    echo -e "  ${BOLD}4/4. Ожидаю применения миграций ...${RESET}"
+    # Миграции отрабатывают в одноразовом контейнере migrations.
+    # check_services дождётся его завершения и проверит /ready.
+    check_services prod
+    show_done prod
+}
+
+# ─── Служебные операции: restart / stop / status ───────────────────────────────
+ops_restart() {
+    local mode
+    mode=$(cat "$MODE_FILE" 2>/dev/null || echo "prod")
+    case "$mode" in prod|dev|staging) : ;; *) mode="prod" ;; esac
+
+    mapfile -t compose_files < <(compose_files_args "$mode")
+    echo -e "  Перезапуск сервисов (режим: $(current_mode_label)) ..."
+    docker compose "${compose_files[@]}" restart 2>&1 | sed 's/^/  │ /'
+    ok "Перезапущено. Проверьте /ready через ~10-20 секунд."
+}
+
+ops_stop() {
+    local mode
+    mode=$(cat "$MODE_FILE" 2>/dev/null || echo "prod")
+    case "$mode" in prod|dev|staging) : ;; *) mode="prod" ;; esac
+
+    mapfile -t compose_files < <(compose_files_args "$mode")
+    echo -e "  Остановка сервисов (режим: $(current_mode_label)) ..."
+    read -r -p "  Подтвердить остановку? (y/N): " answer
+    [[ "${answer,,}" == "y" ]] || { echo "  Отмена."; exit 0; }
+    docker compose "${compose_files[@]}" down 2>&1 | sed 's/^/  │ /'
+    ok "Стек остановлен. Данные в base_data/ сохранены."
+}
+
+ops_status() {
+    local mode
+    mode=$(cat "$MODE_FILE" 2>/dev/null || echo "prod")
+    case "$mode" in prod|dev|staging) : ;; *) mode="prod" ;; esac
+
+    mapfile -t compose_files < <(compose_files_args "$mode")
+    echo -e "  Статус сервисов (режим: $(current_mode_label)):"
+    echo
+    docker compose "${compose_files[@]}" ps
+    echo
+    echo -e "  ${DIM}Последние 30 строк логов backend:${RESET}"
+    docker compose "${compose_files[@]}" logs --tail=30 backend 2>&1 | sed 's/^/  │ /'
+    echo
+}
+
 # ─── Точка входа ───────────────────────────────────────────────────────────────
 main() {
     # Неинтерактивный режим для CI: сгенерировать dev/staging compose-оверрайды и выйти.
@@ -879,6 +1195,7 @@ main() {
             check_existing_data
             create_dirs
             apply_sysctl
+            preflight prod
             echo "prod" > "$MODE_FILE"
             echo -e "  Запускаю ${GREEN}Production${RESET}..."
             echo
@@ -891,6 +1208,7 @@ main() {
             create_dirs
             apply_sysctl
             generate_dev_files
+            preflight dev
             echo "dev" > "$MODE_FILE"
             echo -e "  Запускаю ${CYAN}Разработка${RESET}..."
             echo
@@ -903,6 +1221,7 @@ main() {
             create_dirs
             apply_sysctl
             generate_dev_files
+            preflight staging
             echo "staging" > "$MODE_FILE"
             echo -e "  Запускаю ${YELLOW}Стейджинг${RESET}..."
             echo
@@ -921,10 +1240,14 @@ main() {
             esac
             check_existing_data
             apply_sysctl
+            preflight "$saved_mode"
             if [[ "$saved_mode" == "dev" || "$saved_mode" == "staging" ]]; then
                 generate_dev_files
             fi
             echo -e "  Полная пересборка (--no-cache), режим: $(current_mode_label)"
+            # --no-cache пересобирает образы — если что-то пойдёт не так,
+            # откат без бэкапа будет болезненным. Предлагаем pg_dump.
+            offer_backup "полной пересборкой (--no-cache)"
             echo
             echo -e "  ${DIM}Останавливаю контейнеры...${RESET}"
             docker compose down --remove-orphans
@@ -937,6 +1260,18 @@ main() {
             echo
             echo -e "  ${DIM}Вернитесь в меню чтобы запустить контейнеры с новыми настройками.${RESET}"
             echo
+            ;;
+        6)
+            update_production
+            ;;
+        7)
+            ops_restart
+            ;;
+        8)
+            ops_stop
+            ;;
+        9)
+            ops_status
             ;;
         0)
             echo -e "  Выход."

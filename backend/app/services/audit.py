@@ -30,6 +30,16 @@ async def log(
 
     Uses a fresh session so this can never accidentally commit the caller's
     in-progress transaction, regardless of call order.
+
+    .. deprecated::
+        Используйте :func:`push_audit_event` для всех новых call-sites.
+        Эта функция — synchronous INSERT в БД, в обход Redis-очереди и
+        батч-флеша ARQ-воркером. На данный момент не имеет runtime-callers в
+        приложении (только unit-тесты); оставлена как потенциальный fallback
+        при недоступности Redis, но на практике ``push_audit_event`` сам
+        обрабатывает ошибки Redis (логирует warning + Sentry, не рвёт
+        бизнес-транзакцию). Удаление — отдельное решение (см. plan
+        ``docs/wip/observability-remediation.md`` §P2.3).
     """
     try:
         async with AsyncSessionLocal() as audit_db:

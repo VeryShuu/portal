@@ -1,0 +1,85 @@
+# Reference Alertmanager configuration — STUB.
+#
+# Реальные receivers (email/Slack/Telegram/PagerDuty) настраивает команда под
+# свою инфраструктуру. Здесь — структура с placeholder-ами и routing-логикой.
+#
+# Проверка конфига:
+#   docker compose -f monitoring/docker-compose.monitoring.yml run --rm alertmanager \
+#     amtool check-config /etc/alertmanager/alertmanager.yml
+#
+# Тест отправки алерта (после запуска):
+#   amtool alert add PortalBackendDown alertmanager=http://localhost:9093 \
+#     severity=critical 'description=test alert'
+
+global:
+  # SMTP- Relay для email-receivers (если используется).
+  # Настройте под свою инфраструктуру. Параметры можно вынести в env.
+  smtp_smarthost: "localhost:25"
+  smtp_from: "portal-alerts@mage.ru"
+  smtp_hello: "portal-monitoring"
+  # resolve_timeout — сколько ждать, прежде чем считать алерт resolved,
+  # если Prometheus перестал слать updates (например, при его рестарте).
+  resolve_timeout: 5m
+
+# Дерево routing'а: severity → конкретный receiver.
+# Top-level route применяется ко всем алертам, подпути — фильтруют по labels.
+route:
+  receiver: default-webhook
+  group_by: ["alertname", "service", "severity"]
+  group_wait: 30s        # первый алерт в группе ждём 30с, потом шлём
+  group_interval: 5m     # интервал между обновлениями группы
+  repeat_interval: 4h    # повторно слать ту же группу не чаще 4ч
+  routes:
+    # Critical → отдельный канал, без дедупликации.
+    - matchers:
+        - severity = critical
+      receiver: critical-webhook
+      group_wait: 0s
+      repeat_interval: 1h
+
+    # Warning → основной канал с группировкой.
+    - matchers:
+        - severity = warning
+      receiver: default-webhook
+
+    # Info → только архивируем, не будим.
+    - matchers:
+        - severity = info
+      receiver: info-null
+
+# Receivers — placeholders. Заменить на реальные webhook/email/etc.
+# Шаблон показывает как именно подключить разные transport'ы.
+receivers:
+  # Default — webhook на внутренний endpoint (например, MAX-мессенджер бот).
+  - name: default-webhook
+    webhook_configs:
+      - url: "http://localhost:5001/alertmanager"
+        send_resolved: true
+
+  # Critical — отдельный канал (звонок/PG-реплика).
+  - name: critical-webhook
+    webhook_configs:
+      - url: "http://localhost:5001/alertmanager/critical"
+        send_resolved: true
+    # + email-реплика для архива (раскомментировать и настроить smtp_smarthost):
+    # email_configs:
+    #   - to: "oncall@mage.ru"
+    #     send_resolved: true
+    #     headers:
+    #       Subject: 'CRITICAL: {{ .CommonLabels.alertname }}'
+
+  # Info — заглушка (drop на полпути). Удобно для storage-growth и т.п.
+  - name: info-null
+    webhook_configs:
+      - url: "http://localhost:5001/alertmanager/info"
+        send_resolved: false
+
+# Inhibition — подавление «дочерних» алертов, когда родительский firing.
+# Пример: если PortalBackendDown — гасим все PortalHighErrorRate/PortalHighLatency
+# (они всё равно не имеют смысла без живого бэкенда).
+inhibit_rules:
+  - source_matchers:
+      - alertname = PortalBackendDown
+    target_matchers:
+      - service = portal-backend
+    equal: ["service"]

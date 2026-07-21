@@ -173,9 +173,34 @@ def _message() -> Any:
 
 
 def _save_mock(att_id: uuid.UUID) -> AsyncMock:
-    """Мок save_image_bytes — возвращает attachment с заданным id."""
+    """Мок save_image_bytes — возвращает attachment с заданным id.
 
-    async def _save(db, *, ticket, message_id, data, original_name, total_tracker=None):
+    Принимает любые kwargs (включая ``is_inline``/``content_id``), чтобы
+    оставаться совместимым с расширенной сигнатурой ``save_image_bytes``.
+    """
+
+    async def _save(db, *, ticket, message_id, data, original_name, total_tracker=None, **_):
+        return SimpleNamespace(id=att_id)
+
+    return AsyncMock(side_effect=_save)
+
+
+def _save_spy(att_id: uuid.UUID) -> AsyncMock:
+    """Как ``_save_mock``, но без default для обязательных kwargs — чтобы
+    тест мог точно проверить, с какими ``is_inline``/``content_id`` save
+    вызван (spy на фактическую сигнатуру вызова)."""
+
+    async def _save(
+        db,
+        *,
+        ticket,
+        message_id,
+        data,
+        original_name,
+        total_tracker=None,
+        is_inline=False,
+        content_id=None,
+    ):
         return SimpleNamespace(id=att_id)
 
     return AsyncMock(side_effect=_save)
@@ -262,6 +287,94 @@ class TestLocalizeImages:
         out = await _run_localize(html, inline_map, att_id)
         # src не переписан (относительный — оставлен), orphan-fallback не сработал.
         assert "/api/v1/helpdesk/attachments/keep" in out
+
+
+@pytest.mark.asyncio
+class TestInlineFlagMarking:
+    """Inline-картинки входящего письма маркируются ``is_inline=True`` в БД
+    (с ``content_id`` для ``cid:``), чтобы сериализатор ``_common._attachments``
+    мог отрезать их от списка вложений (анти-дублирование: картинка уже видна
+    в теле сообщения, не нужно показывать её ещё и ссылкой внизу пузыря).
+    """
+
+    async def test_cid_inline_marked_inline_with_content_id(self) -> None:
+        """``cid:xxx`` → save вызван с ``is_inline=True, content_id="xxx"``."""
+        spy = _save_spy(uuid.uuid4())
+        inline_map = {
+            "logo@comp": InlineImage(data=b"png", content_type="image/png", filename="logo.png")
+        }
+        html = '<img src="cid:logo@comp">'
+        with patch(
+            "app.services.helpdesk.email_images._fetch_remote",
+            new=AsyncMock(return_value=None),
+        ):
+            await localize_images(
+                cast("Any", object()),
+                ticket=_ticket(),
+                message=_message(),
+                html=html,
+                inline_map=inline_map,
+                total_tracker=None,
+                save=spy,
+            )
+        spy.assert_called_once()
+        kwargs = spy.call_args.kwargs
+        assert kwargs["is_inline"] is True
+        assert kwargs["content_id"] == "logo@comp"
+
+    async def test_remote_marked_inline_without_content_id(self) -> None:
+        """Внешняя ``http(s)://``-картинка → ``is_inline=True``, ``content_id``
+        не передаётся (это не ``multipart/related`` — Content-ID отсутствует)."""
+        spy = _save_spy(uuid.uuid4())
+        html = '<img src="https://example.com/a.png">'
+        with patch(
+            "app.services.helpdesk.email_images._fetch_remote",
+            new=AsyncMock(return_value=b"png"),
+        ), patch(
+            "app.services.helpdesk.email_images._assert_safe_to_fetch",
+            new=AsyncMock(return_value=True),
+        ):
+            await localize_images(
+                cast("Any", object()),
+                ticket=_ticket(),
+                message=_message(),
+                html=html,
+                inline_map={},
+                total_tracker=None,
+                save=spy,
+            )
+        spy.assert_called_once()
+        kwargs = spy.call_args.kwargs
+        assert kwargs["is_inline"] is True
+        assert "content_id" not in kwargs or kwargs.get("content_id") is None
+
+    async def test_orphan_outlook_img_marked_inline_with_content_id(self) -> None:
+        """Outlook-кейс (<img> без src, cid дропнут) → orphan-inline тоже
+        маркируется ``is_inline=True`` + ``content_id``."""
+        spy = _save_spy(uuid.uuid4())
+        inline_map = {
+            "shot@outlook": InlineImage(
+                data=b"png", content_type="image/png", filename="shot.png"
+            )
+        }
+        html = '<p>txt</p><img width="100" id="Pic_x0020_1">'
+        with patch(
+            "app.services.helpdesk.email_images._fetch_remote",
+            new=AsyncMock(return_value=None),
+        ):
+            await localize_images(
+                cast("Any", object()),
+                ticket=_ticket(),
+                message=_message(),
+                html=html,
+                inline_map=inline_map,
+                total_tracker=None,
+                save=spy,
+            )
+        spy.assert_called_once()
+        kwargs = spy.call_args.kwargs
+        assert kwargs["is_inline"] is True
+        assert kwargs["content_id"] == "shot@outlook"
 
 
 async def _run_localize(

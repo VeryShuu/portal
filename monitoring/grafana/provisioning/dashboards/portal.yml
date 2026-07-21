@@ -1,0 +1,17 @@
+# Auto-provisioned dashboards for Grafana.
+# Grafana сканирует `path` на наличие .json-файлов и импортирует их при старте.
+# http://docs.grafana.org/administration/provisioning/#dashboards
+
+apiVersion: 1
+
+providers:
+  - name: Portal dashboards
+    orgId: 1
+    folder: Portal              # папка в Grafana UI, куда складывать дашборды
+    type: file
+    disableDeletion: false      # true — запретить удаление через UI
+    updateIntervalSeconds: 30   # проверять файлы на изменения раз в 30с
+    allowUiUpdates: true        # правки из UI сохраняются обратно в JSON
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false
