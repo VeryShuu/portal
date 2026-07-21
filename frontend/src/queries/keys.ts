@@ -124,6 +124,12 @@ export const queryKeys = {
   helpdesk: {
     all: ['helpdesk'] as const,
     agents: () => ['helpdesk', 'agents'] as const,
+    // Список активных агентов для смены ответственного (агентский endpoint
+    // ``GET /tickets/assignable-agents``, рендерится простым списком в popover).
+    // Отдельный ключ от ``agents`` (admin-only список с notify_new-флагами) —
+    // здесь компактный PII-минимизированный список для операции смены, доступный
+    // любому агенту.
+    assignableAgents: () => ['helpdesk', 'assignable-agents'] as const,
     mailbox: () => ['helpdesk', 'mailbox'] as const,
     myTickets: (params?: Record<string, unknown>) => ['helpdesk', 'my-tickets', params ?? {}] as const,
     myTicket: (id: string) => ['helpdesk', 'my-ticket', id] as const,

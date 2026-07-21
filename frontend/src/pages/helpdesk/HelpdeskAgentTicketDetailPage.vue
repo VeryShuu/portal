@@ -71,7 +71,10 @@
           </div>
 
           <aside class="ticket-layout__aside">
-            <TicketInfoCard :ticket="ticket" />
+            <TicketInfoCard
+              :ticket="ticket"
+              editable
+            />
             <RequesterProfileCard :profile="ticket.requester_profile" />
           </aside>
         </div>

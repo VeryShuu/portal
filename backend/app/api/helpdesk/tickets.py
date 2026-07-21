@@ -32,6 +32,8 @@ from app.api.kb._common import _rfc5987_filename
 from app.core.logging import get_logger
 from app.models.helpdesk import HelpdeskTicket
 from app.schemas.helpdesk import (
+    AgentOptionListOut,
+    AgentOptionOut,
     HelpdeskVisibility,
     MarkTicketReadOut,
     MessageCreateIn,
@@ -155,6 +157,7 @@ async def list_my_tickets(
     status_filter: str | None = Query(default=None, alias="status"),
     unassigned: bool = Query(default=False),
     assigned: bool = Query(default=False),
+    active_only: bool = Query(default=False),
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
 ) -> TicketListOut:
@@ -165,6 +168,7 @@ async def list_my_tickets(
         status_filter=status_filter,
         unassigned=unassigned,
         assigned=assigned,
+        active_only=active_only,
     )
     items = await tickets_service.list_my_tickets(
         db,
@@ -174,6 +178,7 @@ async def list_my_tickets(
         offset=offset,
         unassigned=unassigned,
         assigned=assigned,
+        active_only=active_only,
     )
     # Unread для заявителя: «есть ли публичные ответы агентов новее last_seen_at».
     # Контракт зеркален агентскому (там — ответы заявителя, direction='inbound'),
@@ -413,6 +418,37 @@ async def get_agent_ticket_counts(
 
 
 @router.get(
+    "/tickets/assignable-agents",
+    response_model=AgentOptionListOut,
+    summary="Активные агенты для смены ответственного (список)",
+)
+async def list_assignable_agents(
+    agent: HelpdeskAgentDep,
+    db: DbDep,
+) -> AgentOptionListOut:
+    """Все активные helpdesk-агенты (с живым аккаунтом, ``deleted_at IS NULL``)
+    для списка смены ответственного в карточке тикета.
+
+    Возвращает компактные пункты ``(user_id, full_name, email)`` без флагов
+    уведомлений (PII-минимизация: агенту для смены ответственного достаточно
+    знать, кому можно передать заявку). Сортировка — по ФИО. На фронте
+    рендерится простым списком в popover (без поиска — агентов поддержки
+    обычно ~5 человек).
+
+    Доступ — любой helpdesk-агент/админ (``HelpdeskAgentDep``): смена
+    ответственного доступна любому агенту, а не только админу. Не заменяет
+    admin-only ``GET /agents`` (там есть флаги ``notify_new`` и
+    admin-управление составом), а даёт агентам минимум данных для операции.
+    """
+    rows = await tickets_service.list_assignable_agents(db)
+    items = [
+        AgentOptionOut(user_id=uid, full_name=full_name, email=email)
+        for uid, full_name, email in rows
+    ]
+    return AgentOptionListOut(items=items, total=len(items))
+
+
+@router.get(
     "/tickets/{ticket_id}",
     response_model=TicketAgentOut,
     summary="Карточка заявки (агентский view, все сообщения)",
@@ -540,6 +576,19 @@ async def assign_ticket(
     redis: RedisDep,
 ) -> TicketAgentOut:
     ticket = await _load_agent_ticket(db, ticket_id)
+    # Валидация таргета: передать заявку можно только действующему
+    # helpdesk-агенту (требование: «сменить на любого агента тех. поддержки»).
+    # Не-агент / удалённый аккаунт → 404 (не раскрываем детали членства).
+    # 404 (а не 400/422) — единый ответ «not found» для пользовательского id,
+    # как и в других lookup-эндпоинтах helpdesk (см. ``_load_agent_ticket``).
+    if not await tickets_service.is_active_helpdesk_agent(db, user_id=payload.assignee_user_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent not found")
+    # Реассайн: запоминаем предыдущего assignee ДО смены, чтобы пометить в audit
+    # (отличить take от реассайна в логах). ``took=True`` ставится только в
+    # ``take_ticket`` (взятие на себя неназначенной заявки), здесь всегда
+    # ``reassigned=True`` — даже если заявка до этого не была никому назначена,
+    # действие шло от агента, выбирающего другого исполнителя.
+    previous_assignee_id = ticket.assignee_user_id
     ticket = await tickets_service.assign_ticket(
         db, ticket=ticket, assignee_id=payload.assignee_user_id
     )
@@ -570,7 +619,17 @@ async def assign_ticket(
         user_email=agent.email,
         resource_type="helpdesk_ticket",
         resource_id=str(ticket.id),
-        metadata={"assignee_user_id": str(payload.assignee_user_id)},
+        metadata={
+            "assignee_user_id": str(payload.assignee_user_id),
+            # ``reassigned=True`` отличает смену ответственного от первичного
+            # назначения через ``take`` в audit-логе (полезно для отчётов).
+            "reassigned": previous_assignee_id is not None,
+            **(
+                {"previous_assignee_user_id": str(previous_assignee_id)}
+                if previous_assignee_id is not None
+                else {}
+            ),
+        },
     )
     profile = await _ticket_requester_profile(db, ticket=ticket)
     return ticket_to_agent_out(ticket, requester_profile=profile)

@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/vue-query'
+import type { MaybeRef } from 'vue'
 import { queryKeys } from './keys'
 import {
   type HelpdeskAgentIn,
@@ -16,6 +17,7 @@ import {
   fetchAgentTicket,
   fetchAgentTicketCounts,
   fetchAgentTickets,
+  fetchAssignableAgents,
   fetchHelpdeskAgents,
   fetchHelpdeskMailbox,
   fetchHelpdeskMaxBot,
@@ -36,6 +38,23 @@ export function useHelpdeskAgentsQuery() {
     queryKey: queryKeys.helpdesk.agents(),
     queryFn: () => fetchHelpdeskAgents(),
     staleTime: 30_000,
+  })
+}
+
+// Список активных helpdesk-агентов для списка смены ответственного в карточке
+// тикета (рендерится простым списком в popover — без поиска, т.к. агентов
+// поддержки обычно ~5 человек). Доступ — любой helpdesk-агент (не admin-only).
+// ``enabled`` принимает реактивный ``Ref<boolean>`` — карточка тикета активирует
+// запрос только при открытии popover'а смены (большинство открытий карточки —
+// для ответа, а не смены ответственного, и лишний JOIN users на каждый просмотр
+// не нужен). ``staleTime`` 60 c — состав агентов меняется редко, повторные
+// открытия в течение минуты берут кеш.
+export function useAssignableAgentsQuery(enabled: MaybeRef<boolean> = true) {
+  return useQuery({
+    queryKey: queryKeys.helpdesk.assignableAgents(),
+    queryFn: () => fetchAssignableAgents(),
+    enabled,
+    staleTime: 60_000,
   })
 }
 

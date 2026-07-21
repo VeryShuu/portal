@@ -100,6 +100,9 @@ export interface HelpdeskMyListParams {
   unassigned?: boolean
   /** Только назначенные (с агентом) — блок «в работе у специалиста». */
   assigned?: boolean
+  /** Только активные (new/open/pending) — закрытые скрыты (они в архиве
+   *  заявителя). Игнорируется, если задан ``status`` (он точнее). */
+  activeOnly?: boolean
   limit?: number
   offset?: number
 }
@@ -112,7 +115,12 @@ export interface HelpdeskTicketCounts {
 }
 
 export function fetchMyTickets(params: HelpdeskMyListParams = {}): Promise<HelpdeskTicketList> {
-  return api<HelpdeskTicketList>('/helpdesk/tickets/my', { params })
+  // activeOnly (camelCase) → active_only (snake_case для бэкенд Query), как в
+  // fetchAgentTickets.
+  const { activeOnly, ...rest } = params
+  const query: Record<string, unknown> = { ...rest }
+  if (activeOnly) query.active_only = true
+  return api<HelpdeskTicketList>('/helpdesk/tickets/my', { params: query })
 }
 
 /** Счётчик своих открытых тикетов (new/open/pending) — для бейджа в меню. */
@@ -259,6 +267,21 @@ export interface HelpdeskAgentIn {
   notify_new?: boolean
 }
 
+// Компактный пункт списка смены ответственного: user_id + ФИО + email.
+// Без флагов уведомлений (PII-минимизация) — агенту для смены ответственного
+// достаточно знать, кому можно передать заявку. На фронте рендерится простым
+// списком в popover (без поиска — агентов поддержки обычно ~5 человек).
+export interface HelpdeskAgentOption {
+  user_id: string
+  full_name: string | null
+  email: string
+}
+
+export interface HelpdeskAgentOptionList {
+  items: HelpdeskAgentOption[]
+  total: number
+}
+
 export function fetchHelpdeskAgents(): Promise<HelpdeskAgentList> {
   return api<HelpdeskAgentList>('/helpdesk/agents')
 }
@@ -279,6 +302,13 @@ export function updateHelpdeskAgent(
 
 export function deleteHelpdeskAgent(userId: string): Promise<void> {
   return api<void>(`/helpdesk/agents/${userId}`, { method: 'DELETE' })
+}
+
+// Список активных helpdesk-агентов для смены ответственного в карточке тикета
+// (агентский endpoint, доступ — любой helpdesk-агент/админ). Возвращает компактные
+// пункты без флагов уведомлений. На фронте рендерится простым списком в popover.
+export function fetchAssignableAgents(): Promise<HelpdeskAgentOptionList> {
+  return api<HelpdeskAgentOptionList>('/helpdesk/tickets/assignable-agents')
 }
 
 // ── Mailbox settings ──────────────────────────────────────────────────────

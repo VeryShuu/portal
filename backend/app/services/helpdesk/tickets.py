@@ -124,10 +124,17 @@ async def count_my_tickets(
     status_filter: str | None,
     unassigned: bool = False,
     assigned: bool = False,
+    active_only: bool = False,
 ) -> int:
     conditions = [HelpdeskTicket.requester_user_id == user_id]
     if status_filter:
         conditions.append(HelpdeskTicket.status == status_filter)
+    # Активные тикеты (new/open/pending) — closed скрыт в архиве заявителя.
+    # Используется двухблочным my-tickets («ожидают принятия» / «в работе»),
+    # чтобы не тащить закрытые в основной вид. Игнорируется, если задан
+    # конкретный status_filter (он точнее) — симметрично _agent_filter_conditions.
+    elif active_only:
+        conditions.append(HelpdeskTicket.status.in_(_ACTIVE_STATUSES))
     # Деление на «неназначенные» / «назначенные» для двухблочного вида my-tickets
     # (по образцу _agent_filter_conditions). Взаимоисключающие через elif —
     # как у агентов (нельзя одновременно unassigned+assigned).
@@ -190,6 +197,7 @@ async def list_my_tickets(
     offset: int,
     unassigned: bool = False,
     assigned: bool = False,
+    active_only: bool = False,
 ) -> Sequence[HelpdeskTicket]:
     """Список тикетов инициатора. ``assignee_name`` подтягивается через
     relationship; для списков достаточно не загружать сообщения.
@@ -197,10 +205,15 @@ async def list_my_tickets(
     ``unassigned``/``assigned`` — деление на «ожидают принятия» (без агента) и
     «в работе у специалиста» (с назначенным агентом) для двухблочного вида
     my-tickets. Взаимоисключающие через ``elif`` (как у агентов).
+
+    ``active_only`` — скрыть closed (только new/open/pending). Симметрично
+    ``_agent_filter_conditions``. Игнорируется при явном ``status_filter``.
     """
     conditions = [HelpdeskTicket.requester_user_id == user_id]
     if status_filter:
         conditions.append(HelpdeskTicket.status == status_filter)
+    elif active_only:
+        conditions.append(HelpdeskTicket.status.in_(_ACTIVE_STATUSES))
     if unassigned:
         conditions.append(HelpdeskTicket.assignee_user_id.is_(None))
     elif assigned:
@@ -433,6 +446,48 @@ async def assign_ticket(
         ticket.status = "open"
     ticket.last_activity_at = now
     return ticket
+
+
+async def is_active_helpdesk_agent(db: AsyncSession, *, user_id: uuid.UUID) -> bool:
+    """Является ли ``user_id`` активным helpdesk-агентом (живой аккаунт).
+
+    Used by ``POST /tickets/{id}/assign`` для валидации таргета: передать заявку
+    можно только действующему агенту техподдержки. Суперсет admin'ов здесь не
+    подразумевается (админ без ``helpdesk_agents``-членства не считается агентом
+    для цели назначения — но это редко встречается, т.к. админ обычно назначает
+    сам себя через ``take``).
+
+    Возвращает ``bool``, без проброса исключений — caller решает, что делать при
+    ``False`` (роутер транслирует в 404, чтобы не раскрывать детали членства)."""
+    from app.models.helpdesk import HelpdeskAgent
+
+    res = await db.execute(
+        select(HelpdeskAgent.user_id)
+        .join(User, User.id == HelpdeskAgent.user_id)
+        .where(HelpdeskAgent.user_id == user_id, User.deleted_at.is_(None))
+    )
+    return res.first() is not None
+
+
+async def list_assignable_agents(db: AsyncSession) -> list[tuple[uuid.UUID, str | None, str]]:
+    """Активные helpdesk-агенты (с живым аккаунтом) для списка смены
+    ответственного в карточке тикета.
+
+    Возвращает список ``(user_id, full_name, email)`` — без флагов уведомлений
+    (PII-минимизация: агенту для смены ответственного достаточно знать, кому
+    можно передать заявку). JOIN users — единый источник правды о живом аккаунте
+    (``deleted_at IS NULL``). Сортировка — по ФИО (как в admin-списке агентов).
+    На фронте рендерится простым списком в popover (без поиска — агентов
+    поддержки обычно ~5 человек)."""
+    from app.models.helpdesk import HelpdeskAgent
+
+    res = await db.execute(
+        select(User.id, User.full_name, User.email)
+        .join(HelpdeskAgent, HelpdeskAgent.user_id == User.id)
+        .where(User.deleted_at.is_(None))
+        .order_by(User.full_name)
+    )
+    return [(r[0], r[1], r[2]) for r in res.all()]
 
 
 async def change_status(
