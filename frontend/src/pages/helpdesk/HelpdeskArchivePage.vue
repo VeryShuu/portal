@@ -7,7 +7,7 @@
       <n-button
         quaternary
         tag="a"
-        href="/helpdesk"
+        :href="inboxHref"
       >
         {{ t('helpdesk.backToInbox') }}
       </n-button>
@@ -66,16 +66,24 @@
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
-import { NSpin, NEmpty, NPagination, NInput, NRadioGroup, NRadioButton, useMessage } from 'naive-ui'
+import { NSpin, NEmpty, NPagination, NInput, NRadioGroup, NRadioButton, NButton, useMessage } from 'naive-ui'
 import TicketList from '../../components/helpdesk/TicketList.vue'
 import { useAuthStore } from '../../stores/auth'
 import { fetchAgentTickets, type HelpdeskTicketListItem } from '../../api/helpdesk'
 import { parseApiError } from '../../utils/parseApiError'
+import { ROUTES } from '../../router'
 
 const { t } = useI18n()
 const router = useRouter()
 const message = useMessage()
 const auth = useAuthStore()
+
+// Инбокс вынесен на отдельную страницу /helpdesk (роут helpdesk). Ссылка
+// рендерится как нативная ``<a>`` (``tag="a"`` + ``:href``) — тот же стиль, что
+// у кнопки «Архив» в инбоксе агента (HelpdeskAgentInboxPage.vue) и кнопки
+// «К моим заявкам» в архиве заявителя (HelpdeskMyArchivePage.vue): единый язык
+// навигации между списками helpdesk.
+const inboxHref = ROUTES.HELPDESK_INBOX
 
 const items = ref<HelpdeskTicketListItem[]>([])
 const total = ref(0)

@@ -171,6 +171,7 @@ async function loadWaiting() {
   try {
     const res = await fetchMyTickets({
       unassigned: true,
+      activeOnly: true,
       limit: waitingLimit,
       offset: (waitingPage.value - 1) * waitingLimit,
     })
@@ -188,6 +189,7 @@ async function loadInWork() {
   try {
     const res = await fetchMyTickets({
       assigned: true,
+      activeOnly: true,
       limit: inWorkLimit,
       offset: (inWorkPage.value - 1) * inWorkLimit,
     })

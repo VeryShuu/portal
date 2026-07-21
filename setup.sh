@@ -783,25 +783,31 @@ check_services() {
     #   «Не использовать Docker healthcheck на /health (использовать /ready)».
     sep
 
-    local http_port https_port scheme url
+    local http_port https_port nginx_container
     http_port="$(grep '^HTTP_PORT='  .env 2>/dev/null | cut -d= -f2 || echo '80')"
     https_port="$(grep '^HTTPS_PORT=' .env 2>/dev/null | cut -d= -f2 || echo '443')"
+    nginx_container=$(docker compose ps --format '{{.Name}}\t{{.Service}}' 2>/dev/null \
+        | awk -F'\t' '$2=="nginx"{print $1; exit}')
 
-    # В prod/staging nginx Terminates TLS и редиректит 80→443 →
-    # запрос по http на production-порт либо 301, либо обрывается (000).
-    # Поэтому в прод-режиме стучимся по https на https-порт,
-    # с -k (self-signed / корпоративный CA, которого нет в curl).
-    if [[ "$mode" == "dev" ]]; then
-        scheme="http";  url="http://localhost:${http_port}/ready"
+    # ВАЖНО: стучимся ВНУТРИ nginx-контейнера на http://localhost:80/ready,
+    # а не с хоста через https://localhost:${https_port}/ready.
+    # Причины:
+    #   1. Снаружи self-signed/корпоративный CA может быть не в curl trust store
+    #      → ssl-ошибка → http_code 000 (ложная тревога).
+    #   2. На хосте может стоять HTTPS_PROXY env — рвёт localhost.
+    #   3. Внутри контейнера nginx слушает :80 и проксирует /ready на backend.
+    #      Plain HTTP, никаких TLS/SNI — детерминированно.
+    # docker compose exec сам подставляет нужный compose-файл (с оверраем для dev).
+    local http_code body
+    if [[ -n "$nginx_container" ]]; then
+        # curl -s --max-time 5 -o /dev/null -w "%{http_code}" — пишем код в stdout,
+        # тело (если 503) — в файл, чтобы вывести его позже.
+        http_code=$(docker exec "$nginx_container" \
+            curl -s --max-time 5 -o /tmp/portal-ready-body -w "%{http_code}" \
+            "http://localhost:80/ready" 2>/dev/null || true)
     else
-        scheme="https"; url="https://localhost:${https_port}/ready"
-    fi
-
-    local http_code
-    if [[ "$scheme" == "https" ]]; then
-        http_code=$(curl -sk --max-time 5 -o /dev/null -w "%{http_code}" "$url" 2>/dev/null || true)
-    else
-        http_code=$(curl -s  --max-time 5 -o /dev/null -w "%{http_code}" "$url" 2>/dev/null || true)
+        # nginx контейнер не найден — упадём ниже по логике failed.
+        http_code="000"
     fi
     http_code="${http_code:-000}"
 
@@ -810,29 +816,24 @@ check_services() {
             "✓" "/ready" "HTTP ${http_code}" ""
     elif [[ "$http_code" == "503" ]]; then
         # /ready возвращает 503 если хотя бы одна подсистема (DB/Redis/NC/audit) упала.
-        # Сам nginx при этом жив — показываем тело ответа, чтобы указать на виновника.
+        # Сам nginx + backend живы — показываем тело ответа (JSON с массивом checks),
+        # чтобы сразу указать виновника.
         printf "  ${RED}%s${RESET}  %-14s  %-12s  %s\n" \
             "✗" "/ready" "HTTP ${http_code}" ""
         warn "nginx жив, но backend /ready сообщает о сбое подсистемы. Тело ответа:"
-        if [[ "$scheme" == "https" ]]; then
-            curl -sk --max-time 5 "$url" 2>/dev/null | sed 's/^/  │ /'
-        else
-            curl -s  --max-time 5 "$url" 2>/dev/null | sed 's/^/  │ /'
-        fi
+        docker exec "$nginx_container" cat /tmp/portal-ready-body 2>/dev/null | sed 's/^/  │ /'
         echo
         failed+=("backend")
     elif [[ "$http_code" == "000" ]]; then
         printf "  ${YELLOW}%s${RESET}  %-14s  %-12s  %s\n" \
             "⚠" "/ready" "нет ответа" ""
-        warn "nginx не отвечает на ${scheme}://localhost:${http_port} — см. логи nginx ниже."
-        local nginx_container
-        nginx_container=$(docker compose ps --format '{{.Name}}\t{{.Service}}' 2>/dev/null \
-            | awk -F'\t' '$2=="nginx"{print $1; exit}')
+        warn "nginx не отвечает на http://localhost:80/ready (изнутри контейнера)."
+        warn "Возможно nginx ещё стартует, либо упал backend-upstream."
         failed+=("${nginx_container:-nginx}")
     else
         printf "  ${RED}%s${RESET}  %-14s  %-12s  %s\n" \
             "✗" "/ready" "HTTP ${http_code}" ""
-        failed+=("nginx")
+        failed+=("${nginx_container:-nginx}")
     fi
 
     echo
@@ -850,11 +851,15 @@ check_services() {
         sep
         echo
         echo -e "  ${BOLD}Возможные причины:${RESET}"
-        echo -e "  ${DIM}• Неверный пароль в .env — пересоздайте через пункт 4${RESET}"
-        echo -e "  ${DIM}• Порт 80/443 занят другим процессом — проверьте: ss -tlnp${RESET}"
+        echo -e "  ${DIM}• Неверный пароль в .env — пересоздайте через пункт «Настроить .env»${RESET}"
+        echo -e "  ${DIM}• Порт из .env (HTTP_PORT/HTTPS_PORT) занят — проверьте: ss -tlnp${RESET}"
         echo -e "  ${DIM}• Нехватка памяти — рекомендуется минимум 4 GB RAM${RESET}"
         echo -e "  ${DIM}• Полные логи: docker compose logs <сервис>${RESET}"
         echo -e "  ${DIM}• Статус всех контейнеров: docker compose ps${RESET}"
+        echo
+        echo -e "  ${DIM}Если все сервисы healthy, но /ready падает — скорее всего проблема${RESET}"
+        echo -e "  ${DIM}в подсистеме (DB/Redis/NC/audit), а не в nginx. Проверьте:${RESET}"
+        echo -e "  ${DIM}  curl -sk http://localhost/ready   (изнутри nginx-контейнера)${RESET}"
         echo
     fi
 }
@@ -934,7 +939,8 @@ compose_files_args() {
 # Возвращает 0 при успехе, 1 при ошибке.
 pg_backup() {
     local backup_dir="backups"
-    local stamp ts pg_user pg_db container dump_file
+    local ts pg_user pg_db container dump_file
+    local started_by_us=false
     ts=$(date +%Y%m%d_%H%M%S)
     pg_user=$(load_env_var POSTGRES_USER portal)
     pg_db=$(load_env_var   POSTGRES_DB   portal)
@@ -944,25 +950,50 @@ pg_backup() {
     container=$(docker compose "${compose_files[@]}" ps --format '{{.Name}}\t{{.Service}}' 2>/dev/null \
         | awk -F'\t' '$2=="postgres"{print $1; exit}')
 
+    # Если стек остановлен — но volume есть, временно поднимаем postgres,
+    # снимаем дамп, аккуратно останавливаем. Это безопасно: volume на диске,
+    # данные не теряются. См. docs/deploy.md §7.
     if [[ -z "$container" ]]; then
-        warn "Контейнер postgres не найден в текущем стеке — пропускаю pg_dump."
-        warn "Если это первое развёртывание — это нормально (БД ещё не создана)."
-        return 1
+        if [[ ! -d base_data/postgres ]] || [[ -z "$(ls -A base_data/postgres 2>/dev/null)" ]]; then
+            warn "Контейнер postgres не запущен и volume base_data/postgres/ пуст."
+            warn "Если это первое развёртывание — это нормально (БД ещё не создана)."
+            return 1
+        fi
+        echo -e "  ${DIM}Стек остановлен. Временно поднимаю postgres для дампа ...${RESET}"
+        if ! docker compose "${compose_files[@]}" up -d --wait postgres 2>&1 | sed 's/^/  │ /'; then
+            warn "Не удалось поднять postgres для дампа."
+            return 1
+        fi
+        started_by_us=true
+        # Обновим имя контейнера
+        container=$(docker compose "${compose_files[@]}" ps --format '{{.Name}}\t{{.Service}}' 2>/dev/null \
+            | awk -F'\t' '$2=="postgres"{print $1; exit}')
     fi
 
     mkdir -p "$backup_dir"
     dump_file="${backup_dir}/portal_${ts}.dump"
 
     echo -e "  ${DIM}Снимаю pg_dump в ${dump_file} ...${RESET}"
+    local dump_ok=false
     if docker compose "${compose_files[@]}" exec -T postgres \
         pg_dump -U "$pg_user" -d "$pg_db" -Fc > "$dump_file" 2>/dev/null; then
         # Проверим, что файл не пустой и похож на pg_dump-custom (начинается с "PGDMP")
-        if [[ -s "$dump_file" ]] && head -c 5 "$dump_file" | grep -q "PGDMP"; then
+        if [[ -s "$dump_file" ]] && head -c 5 "$dump_file" | command grep -q "PGDMP"; then
             local size
             size=$(du -h "$dump_file" | cut -f1)
             ok "Бэкап готов: ${dump_file} (${size})"
-            return 0
+            dump_ok=true
         fi
+    fi
+
+    # Если мы сами подняли postgres — остановим его обратно (приведём стек в исходное состояние).
+    if $started_by_us; then
+        echo -e "  ${DIM}Останавливаю временно поднятый postgres ...${RESET}"
+        docker compose "${compose_files[@]}" stop postgres &>/dev/null || true
+    fi
+
+    if $dump_ok; then
+        return 0
     fi
     warn "pg_dump завершился ошибкой или файл повреждён — продолжать без бэкапа рискованно."
     rm -f "$dump_file"

@@ -241,6 +241,59 @@
         "title": "AgentListOut",
         "type": "object"
       },
+      "AgentOptionListOut": {
+        "description": "Список активных агентов для dropdown'а смены ответственного в карточке\nтикета (агентский endpoint ``GET /tickets/assignable-agents``).",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AgentOptionOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total"
+        ],
+        "title": "AgentOptionListOut",
+        "type": "object"
+      },
+      "AgentOptionOut": {
+        "description": "Компактный пункт dropdown'а смены ответственного: ``user_id`` + ФИО +\nemail активного helpdesk-агента.\n\nВ отличие от ``AgentOut``, не содержит флагов уведомлений (``notify_new``)\nи служебных меток — агенту для смены ответственного достаточно знать, кому\nможно передать заявку. PII-минимизация: только то, что нужно для dropdown.",
+        "properties": {
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "full_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Full Name"
+          },
+          "user_id": {
+            "format": "uuid",
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "email"
+        ],
+        "title": "AgentOptionOut",
+        "type": "object"
+      },
       "AgentOut": {
         "properties": {
           "added_at": {
@@ -22657,6 +22710,56 @@
         ]
       }
     },
+    "/api/v1/helpdesk/tickets/assignable-agents": {
+      "get": {
+        "description": "Все активные helpdesk-агенты (с живым аккаунтом, ``deleted_at IS NULL``)\nдля dropdown'а смены ответственного в карточке тикета.\n\nВозвращает компактные пункты ``(user_id, full_name, email)`` без флагов\nуведомлений (PII-минимизация: агенту для смены ответственного достаточно\nзнать, кому можно передать заявку). Сортировка — по ФИО.\n\nДоступ — любой helpdesk-агент/админ (``HelpdeskAgentDep``): смена\nответственного доступна любому агенту, а не только админу. Не заменяет\nadmin-only ``GET /agents`` (там есть флаги ``notify_new`` и\nadmin-управление составом), а даёт агентам минимум данных для операции.",
+        "operationId": "list_assignable_agents_api_v1_helpdesk_tickets_assignable_agents_get",
+        "parameters": [
+          {
+            "in": "cookie",
+            "name": "portal_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Portal Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentOptionListOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Активные агенты для смены ответственного (dropdown)",
+        "tags": [
+          "helpdesk"
+        ]
+      }
+    },
     "/api/v1/helpdesk/tickets/counts": {
       "get": {
         "description": "Лёгкий count-endpoint для бейджа в меню пункта «Инбокс поддержки».\n\n``active`` — тикеты, назначенные лично этому агенту (``assignee = agent``),\nв статусах new/open/pending. «Моя нагрузка», а не «объём очереди»:\nненазначенные тикеты здесь не считаются (для них есть отдельный блок в\nинбоксе). ``closed`` исключён. Один ``count(*)`` без join'ов.",
@@ -22744,6 +22847,16 @@
             "schema": {
               "default": false,
               "title": "Assigned",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "active_only",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Active Only",
               "type": "boolean"
             }
           },
