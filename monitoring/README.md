@@ -123,7 +123,7 @@ docker run --rm -v ./monitoring/alerts/alertmanager.yml:/etc/alertmanager/alertm
 
 # Alloy (River-синтаксис):
 docker run --rm -v ./monitoring/alloy/config.alloy:/etc/alloy/config.alloy:ro \
-  --entrypoint alloy grafana/alloy:1.18.0 fmt --test /etc/alloy/config.alloy
+  --entrypoint alloy grafana/alloy:v1.18.0 fmt --test /etc/alloy/config.alloy
 ```
 
 ## Грабли

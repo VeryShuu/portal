@@ -159,7 +159,7 @@ services:
   # stderr контейнеров portal-*, push в Loki. Заменяет Promtail (maintenance).
   # ---------------------------------------------------------------------
   alloy:
-    image: grafana/alloy:1.18.0
+    image: grafana/alloy:v1.18.0
     container_name: portal-alloy
     restart: unless-stopped
     security_opt:
