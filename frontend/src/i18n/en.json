@@ -2588,6 +2588,14 @@
     "replyAll": "Reply all",
     "ccLabel": "Cc",
     "ccPlaceholder": "Add email to Cc…",
+    "cc": {
+      "searchPlaceholder": "Search an employee or type an email…",
+      "searchHint": "Start typing a name; if no employee is found, enter an email to add an external recipient",
+      "externalBadge": "external",
+      "invited": "Recipients ({count})",
+      "remove": "Remove",
+      "searchError": "Search failed"
+    },
     "participants": {
       "title": "Participants",
       "requester": "Requester"

@@ -17,18 +17,11 @@
       >
         {{ t('helpdesk.replyAll') }}
       </n-checkbox>
-      <n-select
+      <CcRecipientPicker
         v-if="replyAll"
-        v-model:value="ccEmails"
-        multiple
-        filterable
-        tag
-        :options="ccOptions"
-        :placeholder="t('helpdesk.ccPlaceholder')"
-        :max-tag-count="5"
-        size="small"
-        class="ticket-reply__cc-select"
+        v-model="ccRecipients"
         :disabled="loading"
+        class="ticket-reply__cc-select"
       />
     </div>
     <div class="ticket-reply__actions">
@@ -78,10 +71,11 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { NButton, NUpload, NIcon, NRadioGroup, NRadioButton, NCheckbox, NSelect } from 'naive-ui'
+import { NButton, NUpload, NIcon, NRadioGroup, NRadioButton, NCheckbox } from 'naive-ui'
 import { AttachOutline } from '@vicons/ionicons5'
 import type { UploadFileInfo } from 'naive-ui'
 import RichEditor from '../RichEditor.vue'
+import CcRecipientPicker, { type CcRecipient } from './CcRecipientPicker.vue'
 import { mdUnsafe as md } from '../../utils/markdown'
 import type { HelpdeskParticipant } from '../../api/helpdesk'
 
@@ -115,36 +109,27 @@ const markdown = ref('')
 const visibility = ref<'public' | 'internal'>('public')
 const fileList = ref<UploadFileInfo[]>([])
 
-// «Ответить всем» (миграция 083): чекбокс раскрывает редактируемый список Cc.
+// «Ответить всем» (миграция 083): чекбокс раскрывает селектор получателей Cc.
 // По умолчанию выключен — чтобы агент осознанно подтвердил получателей (Cc —
 // attacker-controlled из inbound email; отправка только по явному действию).
 const replyAll = ref(false)
-// Список email'ов в копии. Изначально pre-fill из участников тикета (минус
-// requester — он в To; support_address/агента выкинет бэк на нормализации).
-// ``tag`` в n-select позволяет добавить произвольный email (нет в адресной книге).
-const ccEmails = ref<string[]>([])
+// Список получателей копии. ``CcRecipient`` несёт email + name + source
+// (directory/external) — нужен для chip-отображения (бейдж «внешний»). На submit
+// мапится в ``string[]`` email'ов (контракт бэка ``cc: list[str]``).
+const ccRecipients = ref<CcRecipient[]>([])
 
 const participants = computed(() => props.participants ?? [])
 
-// Опции для n-select: участники тикета (кроме requester — он уже в To).
-const ccOptions = computed(() =>
-  participants.value
-    .filter((p) => !p.is_requester)
-    .map((p) => ({
-      label: p.name ? `${p.name} (${p.email})` : p.email,
-      value: p.email,
-    })),
-)
-
-// При включении чекбокса — pre-fill из участников (минус requester). При
-// выключении — очистка (на случай повторного включения берём свежий список).
+// При включении чекбокса — pre-fill из участников тикета (минус requester — он
+// уже в To; support_address/агента выкинет бэк на нормализации). При выключении —
+// очистка (на случай повторного включения берём свежий список).
 watch(replyAll, (on) => {
   if (on) {
-    ccEmails.value = participants.value
+    ccRecipients.value = participants.value
       .filter((p) => !p.is_requester)
-      .map((p) => p.email)
+      .map((p) => ({ email: p.email, name: p.name, source: 'directory' as const }))
   } else {
-    ccEmails.value = []
+    ccRecipients.value = []
   }
 })
 
@@ -165,14 +150,19 @@ function onSubmit() {
     .map((f) => f.file)
     .filter((f): f is File => !!f)
   // Cc передаём только при включённом чекбоксе (иначе undefined — бэк не
-  // получит поле ``cc`` в FormData, создаст ответ без копии).
-  const cc = replyAll.value && ccEmails.value.length > 0 ? ccEmails.value : undefined
+  // получит поле ``cc`` в FormData, создаст ответ без копии). ``CcRecipient[]``
+  // → ``string[]`` email'ов: бэк принимает именно список адресов (нормализует
+  // сам — strip/dedup/exclude agent+requester/limit 20).
+  const cc =
+    replyAll.value && ccRecipients.value.length > 0
+      ? ccRecipients.value.map((r) => r.email)
+      : undefined
   emit('submit', { body_html: bodyHtml, visibility: visibility.value, files, cc })
   // Сброс после отправки (родитель управляет loading; успех — очистка).
   markdown.value = ''
   fileList.value = []
   replyAll.value = false
-  ccEmails.value = []
+  ccRecipients.value = []
 }
 </script>
 

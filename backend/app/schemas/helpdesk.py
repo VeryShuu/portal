@@ -429,3 +429,17 @@ class HelpdeskMaxBotTestResult(BaseModel):
     ok: bool
     detail: str | None = None
     error: str | None = None
+
+
+class HelpdeskUserOption(BaseModel):
+    """Результат поиска пользователя для CC-селектора агента (``GET /users/search``).
+
+    Используется блоком «Ответить всем»: агент ищет получателей копии по
+    справочнику Keycloak (ФИО/email). ``email`` — ``str`` (не ``EmailStr``):
+    Pydantic EmailStr ломается на корпоративных ``.local``-доменах (AGENTS.md
+    gotcha), а валидацию формата Keycloak уже выполнил.
+    """
+
+    user_id: str
+    full_name: str
+    email: str

@@ -2588,6 +2588,14 @@
     "replyAll": "Ответить всем",
     "ccLabel": "Копия",
     "ccPlaceholder": "Добавьте email в копию…",
+    "cc": {
+      "searchPlaceholder": "Поиск сотрудника или ввод email…",
+      "searchHint": "Начните вводить имя; если сотрудник не найден — введите email",
+      "externalBadge": "внешний",
+      "invited": "Получатели ({count})",
+      "remove": "Удалить",
+      "searchError": "Ошибка поиска"
+    },
     "participants": {
       "title": "Участники",
       "requester": "Заявитель"

@@ -1,5 +1,5 @@
 <!-- AUTO-GENERATED — do not edit manually. Run: cd backend && python -m scripts.generate_api_contracts_doc --output ../docs/api-contracts.generated.md -->
-<!-- Generated: 2026-07-22 08:07 UTC -->
+<!-- Generated: 2026-07-22 12:58 UTC -->
 
 # API Contracts (auto-generated)
 
@@ -2889,6 +2889,7 @@ Content-Type: `multipart/form-data` — schema: `Body_add_agent_message_api_v1_h
 | `body_text` | string |  |  |
 | `body_html` | string |  |  |
 | `visibility` | string |  |  |
+| `cc` | array of string |  |  |
 | `files` | array of string |  |  |
 
 **Responses**
@@ -2984,6 +2985,25 @@ Content-Type: `application/json` — schema: `TicketStatusIn`
 | Status | Description | Schema |
 |--------|-------------|--------|
 | 200 | Successful Response | `TicketAgentOut` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `GET /api/v1/helpdesk/users/search`
+
+**Поиск пользователя для CC (ответить всем) по справочнику**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `q` | query | `string` | ✓ |  |
+| `limit` | query | `integer` |  |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | array of `HelpdeskUserOption` |
 | 422 | Validation Error | `HTTPValidationError` |
 
 ---

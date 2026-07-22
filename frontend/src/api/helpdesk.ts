@@ -443,3 +443,22 @@ export function testHelpdeskMaxBot(): Promise<HelpdeskMaxBotTestResult> {
     method: 'POST',
   })
 }
+
+// ── User search (CC typeahead) ──────────────────────────────────────────────
+
+/** Результат поиска пользователя для CC-селектора агента (``GET /users/search``). */
+export interface HelpdeskUserOption {
+  user_id: string
+  full_name: string
+  email: string
+}
+
+/**
+ * Поиск пользователя по справочнику (Keycloak) для CC-селектора «Ответить всем».
+ * ``<3 символов`` → пустой список (бэк отдаёт ``[]``, не 422 — чтобы не ломать
+ * empty-state ``n-select``). Компонент ``CcRecipientPicker`` дёргает это при
+ * вводе и сам добавляет synthetic «external»-опцию для email'ов не из справочника.
+ */
+export function searchHelpdeskUsers(q: string): Promise<HelpdeskUserOption[]> {
+  return api<HelpdeskUserOption[]>('/helpdesk/users/search', { params: { q } })
+}
