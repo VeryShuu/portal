@@ -18,13 +18,12 @@ from app.core.security import (
     LAST_AUTH_METHOD_TTL_SECONDS,
     SESSION_COOKIE_NAME,
     SESSION_TTL_SECONDS,
-    generate_session_id,
     verify_password_async,
 )
 from app.models.user import User
 from app.schemas.user import LocalLoginRequest
 from app.services.audit import push_audit_event
-from app.services.session import delete_session, save_session
+from app.services.session import rotate_session
 
 from ._helpers import _mask_email, logger
 
@@ -84,18 +83,17 @@ async def local_login(
     await db.execute(update(User).where(User.id == user.id).values(last_login_at=now))
     await db.commit()
 
+    # rotate_session создаёт свежий session_id (anti-fixation) и удаляет старый
+    # ТОЛЬКО если он принадлежит другому пользователю — см. cascade-фикс в
+    # app.services.session.rotate_session (плавающий login-loop при нескольких вкладках).
     old_session_id = request.cookies.get(SESSION_COOKIE_NAME)
-    if old_session_id:
-        await delete_session(redis, old_session_id)
-
-    session_id = generate_session_id()
-    await save_session(
+    session_id = await rotate_session(
         redis,
-        session_id,
         {
             "user_id": str(user.id),
             "auth_source": "local",
         },
+        old_session_id=old_session_id,
     )
 
     await push_audit_event(

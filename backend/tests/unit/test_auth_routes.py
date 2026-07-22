@@ -484,7 +484,10 @@ class TestLocalLogin:
                     patch(
                         "app.api.auth.local.verify_password_async", new=AsyncMock(return_value=True)
                     ),
-                    patch("app.api.auth.local.save_session", new=AsyncMock()),
+                    patch(
+                        "app.api.auth.local.rotate_session",
+                        new=AsyncMock(return_value="test-session-id"),
+                    ),
                     patch("app.api.auth.local.push_audit_event", new=AsyncMock()),
                 ):
                     resp = await client.post(
@@ -534,7 +537,10 @@ class TestLocalLogin:
                     patch(
                         "app.api.auth.local.verify_password_async", new=AsyncMock(return_value=True)
                     ),
-                    patch("app.api.auth.local.save_session", new=AsyncMock()),
+                    patch(
+                        "app.api.auth.local.rotate_session",
+                        new=AsyncMock(return_value="test-session-id"),
+                    ),
                     patch("app.api.auth.local.push_audit_event", new=AsyncMock()),
                 ):
                     resp = await client.post(

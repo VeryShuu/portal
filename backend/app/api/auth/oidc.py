@@ -15,7 +15,6 @@ from app.core.security import (
     extract_user_data,
     generate_pkce_challenge,
     generate_pkce_verifier,
-    generate_session_id,
     generate_state,
     parse_jwt_claims,
 )
@@ -23,10 +22,9 @@ from app.services import keycloak as kc_service
 from app.services.audit import push_audit_event
 from app.services.full_name_source import get_full_name_attr_key_sa, resolve_full_name
 from app.services.session import (
-    delete_session,
     get_and_delete_pkce_state,
+    rotate_session,
     save_pkce_state,
-    save_session,
 )
 
 from ._helpers import (
@@ -235,14 +233,12 @@ async def callback(
     await db.commit()
 
     # Phase 7: rotate session.
+    # rotate_session создаёт свежий session_id (anti-fixation) и удаляет старый
+    # ТОЛЬКО если он принадлежит другому пользователю — см. cascade-фикс в
+    # app.services.session.rotate_session (плавающий SSO login-loop).
     old_session_id = request.cookies.get(SESSION_COOKIE_NAME)
-    if old_session_id:
-        await delete_session(redis, old_session_id)
-
-    session_id = generate_session_id()
-    await save_session(
+    session_id = await rotate_session(
         redis,
-        session_id,
         {
             "access_token": tokens["access_token"],
             "refresh_token": tokens.get("refresh_token"),
@@ -251,6 +247,7 @@ async def callback(
             "keycloak_id": user.keycloak_id,
             "auth_source": "keycloak",
         },
+        old_session_id=old_session_id,
     )
 
     # Phase 8: emit audit events.

@@ -14,7 +14,7 @@ from redis.asyncio import Redis
 
 from app.core.config import get_settings
 from app.core.logging import get_logger
-from app.core.security import SESSION_COOKIE_NAME
+from app.core.security import SESSION_COOKIE_NAME, generate_session_id
 
 settings = get_settings()
 logger = get_logger(__name__)
@@ -86,6 +86,41 @@ async def get_session(redis: Redis, session_id: str) -> dict[str, Any] | None:
     if raw is None:
         return None
     return cast(dict[str, Any], json.loads(raw))
+
+
+async def rotate_session(
+    redis: Redis,
+    data: dict[str, Any],
+    old_session_id: str | None = None,
+) -> str:
+    """Создаёт свежий ``session_id`` с данными ``data`` и возвращает его.
+
+    Ротация session_id при каждом логине — обязательная anti-fixation-мера
+    (OWASP): даже если атакующий подсунул жертве предустановленную cookie,
+    после входа жертва получит новый случайный id.
+
+    Cascade-фикс (плавающий продакшен-баг SSO login-loop): ``old_session_id``
+    удаляется **только если он принадлежит другому пользователю**. У одного
+    браузера cookie одна на все вкладки, поэтому callback вкладки B получал в
+    cookie сессию, созданную вкладкой A. Безусловный ``delete_session`` убивал
+    её → 401 на следующий bootstrap вкладки A → новый логин → бесконечный
+    ``login → callback → 401``-цикл (log 2026-07-22 14:05–14:10). Проверка
+    «тот же user_id?» сохраняет соседние валидные сессии этого же юзера, не
+    ослабляя защиту от fixation (чужая cookie всё равно инвалидируется).
+    """
+    if old_session_id:
+        old_data = await get_session(redis, old_session_id)
+        if old_data is not None:
+            old_user = old_data.get("user_id")
+            new_user = data.get("user_id")
+            # Чужая (или анонимная/битая) сессия в cookie — это фиксация:
+            # убиваем. Своя — оставляем жить (вкладки не отваливаются).
+            if old_user is None or old_user != new_user:
+                await delete_session(redis, old_session_id)
+
+    new_session_id = generate_session_id()
+    await save_session(redis, new_session_id, data)
+    return new_session_id
 
 
 async def delete_session(redis: Redis, session_id: str) -> None:
