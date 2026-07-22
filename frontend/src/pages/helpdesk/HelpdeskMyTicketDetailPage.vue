@@ -102,7 +102,6 @@ async function load() {
 
 async function onReply(payload: {
   body_html: string
-  visibility: 'public' | 'internal'
   files: File[]
 }) {
   replying.value = true

@@ -24,7 +24,7 @@ describe('replyAgentTicket — Cc (reply all)', () => {
   it('appends each cc email as a separate form field', async () => {
     await replyAgentTicket(
       't1',
-      { body_html: '<p>hi</p>', visibility: 'public', cc: ['a@x.local', 'b@y.local'] },
+      { body_html: '<p>hi</p>', cc: ['a@x.local', 'b@y.local'] },
       [],
     )
     expect(mockApiUpload).toHaveBeenCalledTimes(1)
@@ -34,7 +34,7 @@ describe('replyAgentTicket — Cc (reply all)', () => {
   })
 
   it('does not append cc field when cc is undefined', async () => {
-    await replyAgentTicket('t1', { body_html: '<p>hi</p>', visibility: 'public' }, [])
+    await replyAgentTicket('t1', { body_html: '<p>hi</p>' }, [])
     const [, fd] = mockApiUpload.mock.calls[0]
     expect(fd.has('cc')).toBe(false)
   })
@@ -42,7 +42,7 @@ describe('replyAgentTicket — Cc (reply all)', () => {
   it('does not append cc field when cc is empty', async () => {
     await replyAgentTicket(
       't1',
-      { body_html: '<p>hi</p>', visibility: 'public', cc: [] },
+      { body_html: '<p>hi</p>', cc: [] },
       [],
     )
     const [, fd] = mockApiUpload.mock.calls[0]

@@ -92,10 +92,9 @@ async def _archive_one(db: AsyncSession, ticket: HelpdeskTicket) -> None:
             {
                 "id": str(m.id),
                 "direction": m.direction,
-                "visibility": m.visibility,
                 "body_text": m.body_text,
                 # ``body_html`` (rich-редактор ответов) — для полноты архива.
-                # Без него форматированные ответы/заметки агентов теряли разметку.
+                # Без него форматированные ответы агентов теряли разметку.
                 "body_html": m.body_html,
                 "author_email": m.author_email,
                 "created_at": m.created_at.isoformat(),

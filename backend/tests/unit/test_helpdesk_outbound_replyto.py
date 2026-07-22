@@ -109,7 +109,6 @@ def _current_message() -> Any:
         body_text="Ответ агента.",
         body_html="<p>Ответ агента.</p>",
         direction="outbound",
-        visibility="public",
         author_name="Агент",
         author_email="portal@company.local",
         created_at=datetime(2026, 7, 1, 12, 0),

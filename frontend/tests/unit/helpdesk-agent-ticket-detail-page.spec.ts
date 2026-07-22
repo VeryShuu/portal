@@ -95,7 +95,7 @@ const stubs = {
   TicketInfoCard: { template: '<div class="ticket-info" />', props: ['ticket'] },
   TicketMessageList: { template: '<div class="ticket-messages" />', props: ['messages', 'agentMode'] },
   TicketReplyForm: {
-    template: '<button class="reply-form" @click="$emit(\'submit\', { body_html: \'<p>ответ</p>\', visibility: \'public\', files: [] })">Ответить</button>',
+    template: '<button class="reply-form" @click="$emit(\'submit\', { body_html: \'<p>ответ</p>\', files: [] })">Ответить</button>',
     props: ['agentMode', 'loading', 'ticketId'],
     emits: ['submit'],
   },
@@ -217,7 +217,7 @@ describe('HelpdeskAgentTicketDetailPage', () => {
     expect(messageSuccess).toHaveBeenCalled()
   })
 
-  it('onReply отправляет ответ агента с visibility', async () => {
+  it('onReply отправляет ответ агента', async () => {
     const wrapper = mountPage()
     await flushPromises()
     fetchAgentTicketMock.mockClear()
@@ -227,7 +227,7 @@ describe('HelpdeskAgentTicketDetailPage', () => {
 
     expect(replyAgentTicketMock).toHaveBeenCalledWith(
       'ticket-99',
-      { body_html: '<p>ответ</p>', visibility: 'public' },
+      { body_html: '<p>ответ</p>' },
       [],
     )
     expect(messageSuccess).toHaveBeenCalled()

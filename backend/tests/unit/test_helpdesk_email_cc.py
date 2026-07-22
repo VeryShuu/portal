@@ -108,7 +108,6 @@ def _cc_msg(
         body_text=text,
         body_html=None,
         direction="outbound",
-        visibility="public",
         author_name="Агент",
         author_email="portal@company.local",
         author_user_id=uuid.uuid4(),
@@ -307,7 +306,6 @@ def _ticket_msg(
     return SimpleNamespace(
         id=uuid.uuid4(),
         direction=direction,
-        visibility="public",
         source="email",
         author_email=author_email,
         author_name=author_name,

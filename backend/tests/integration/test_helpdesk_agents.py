@@ -100,7 +100,6 @@ class TestAgentListDetail:
         assert full is not None
         # Инвариант первого сообщения — агент видит его.
         assert len(full.messages) == 1
-        assert full.messages[0].visibility == "public"
 
     async def test_unassigned_filter(self, real_db_session, real_editor, ticket):
         await _make_agent(real_db_session, real_editor)
@@ -207,11 +206,10 @@ class TestAgentReply:
             real_db_session,
             ticket=ticket,
             agent=real_editor,
-            payload=MessageCreateIn(body_text="Ответ агенту", visibility="public"),
+            payload=MessageCreateIn(body_text="Ответ агенту"),
             files=[],
         )
         assert msg.direction == "outbound"
-        assert msg.visibility == "public"
         # Публичный ответ агента переводит тикет в pending.
         assert ticket.status == "pending"
 
@@ -223,33 +221,11 @@ class TestAgentReply:
             real_db_session,
             ticket=ticket,
             agent=real_editor,
-            payload=MessageCreateIn(body_text="ответ", visibility="public"),
+            payload=MessageCreateIn(body_text="ответ"),
             files=[],
         )
         # ТЗ §4.2.1: первый публичный ответ без assignee → авто-назначение.
         assert ticket.assignee_user_id == real_editor.id
-
-    async def test_internal_note_does_not_change_status(self, real_db_session, real_editor, ticket):
-        from sqlalchemy import select
-
-        from app.models.helpdesk import HelpdeskMessage
-
-        await _make_agent(real_db_session, real_editor)
-        await messages_service.add_agent_reply(
-            real_db_session,
-            ticket=ticket,
-            agent=real_editor,
-            payload=MessageCreateIn(body_text="заметка", visibility="internal"),
-            files=[],
-        )
-        # Internal-заметка статус не меняет (ТЗ §4.2.1).
-        assert ticket.status == "new"
-        # Сообщение создано как internal — прямым запросом мимо session-cache.
-        res = await real_db_session.execute(
-            select(HelpdeskMessage).where(HelpdeskMessage.ticket_id == ticket.id)
-        )
-        msgs = res.scalars().all()
-        assert any(m.visibility == "internal" for m in msgs)
 
 
 # ---------------------------------------------------------------------------

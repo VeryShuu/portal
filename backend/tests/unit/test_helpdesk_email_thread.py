@@ -3,8 +3,8 @@
 Чистые функции на заглушках-объектах (без БД) — образец ``test_helpdesk_email_quote``.
 
 Покрывает: пустая история (первый ответ), одно/несколько сообщений, исключение
-текущего ответа, отсев internal-заметок, лимит HISTORY_MAX_MESSAGES, escaping
-пользовательских данных, структуру plain/html.
+текущего ответа, лимит HISTORY_MAX_MESSAGES, escaping пользовательских данных,
+структуру plain/html.
 """
 
 from __future__ import annotations
@@ -25,7 +25,6 @@ def _msg(
     text: str = "Текст сообщения",
     html: str | None = None,
     direction: str = "inbound",
-    visibility: str = "public",
     author_name: str | None = "Иван Петров",
     author_email: str = "ivan@example.com",
     created_at: datetime | None = None,
@@ -37,7 +36,6 @@ def _msg(
         body_text=text,
         body_html=html,
         direction=direction,
-        visibility=visibility,
         author_name=author_name,
         author_email=author_email,
         created_at=created_at or datetime(2026, 7, 1, 10, 0),
@@ -53,13 +51,6 @@ class TestEmptyHistory:
         который исключается)."""
         current = _msg(direction="outbound")
         plain, html = build_thread_history([current], exclude_id=current.id, ticket_number=5)
-        assert plain == ""
-        assert html == ""
-
-    def test_only_internal_notes_excluded(self) -> None:
-        """Internal-заметки не попадают в историю (заявитель их не видит)."""
-        note = _msg(visibility="internal", text="Внутренняя заметка")
-        plain, html = build_thread_history([note], exclude_id=uuid.uuid4(), ticket_number=5)
         assert plain == ""
         assert html == ""
 

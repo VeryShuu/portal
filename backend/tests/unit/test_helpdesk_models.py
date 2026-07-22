@@ -102,10 +102,9 @@ class TestHelpdeskMessage:
         )
         assert idx.unique is True
 
-    def test_direction_visibility_length(self) -> None:
+    def test_direction_length(self) -> None:
         cols = _columns(cast("sa.Table", HelpdeskMessage.__table__))
         assert cast("sa.String", cols["direction"].type).length == 10
-        assert cast("sa.String", cols["visibility"].type).length == 10
 
 
 class TestHelpdeskAttachment:

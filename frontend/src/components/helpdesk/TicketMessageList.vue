@@ -25,15 +25,6 @@
         <div class="chat-bubble__head">
           <span class="chat-bubble__author">{{ authorLabel(msg) }}</span>
           <n-tag
-            v-if="msg.visibility === 'internal'"
-            size="tiny"
-            :bordered="false"
-            type="warning"
-            class="chat-bubble__note"
-          >
-            {{ t('helpdesk.internalNote') }}
-          </n-tag>
-          <n-tag
             v-if="msg.source === 'email'"
             size="tiny"
             :bordered="false"
@@ -173,7 +164,6 @@ function bubbleClass(msg: HelpdeskMessage): string {
   const cls: string[] = []
   if (isOut(msg)) cls.push('chat-bubble--out')
   else cls.push('chat-bubble--in')
-  if (msg.visibility === 'internal') cls.push('chat-bubble--internal')
   return cls.join(' ')
 }
 
@@ -272,11 +262,6 @@ function formatDate(iso: string): string {
   background: var(--n-color-target, rgba(24, 160, 88, 0.08));
   border-top-right-radius: 4px;
 }
-.chat-bubble--internal {
-  border-style: dashed;
-  background: rgba(255, 159, 27, 0.08);
-  border-color: rgba(255, 159, 27, 0.4);
-}
 .chat-bubble__head {
   display: flex;
   align-items: center;
@@ -291,7 +276,6 @@ function formatDate(iso: string): string {
 .chat-bubble__author {
   font-weight: 600;
 }
-.chat-bubble__note,
 .chat-bubble__src {
   flex: 0 0 auto;
 }

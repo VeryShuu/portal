@@ -2,7 +2,7 @@
 
 Создание тикета и списочное чтение «своих» тикетов. Инвариант первого
 сообщения (ТЗ §4.3.1): при создании всегда создаётся первая запись в
-``helpdesk_messages`` (``direction=inbound``, ``visibility=public``), а поля
+``helpdesk_messages`` (``direction=inbound``), а поля
 ``helpdesk_tickets.description`` дублируют её текст для быстрых списков и
 поиска.
 """
@@ -83,7 +83,6 @@ async def create_ticket(
         author_email=user.email,
         author_name=user.full_name,
         direction="inbound",
-        visibility="public",
         body_text=payload.description,
         # ``body_html`` = ``description_html`` (sanitized в роутере): письмо
         # агентам (``render_new_ticket_agent_email``) читает ``first_message.body_html``
@@ -267,8 +266,7 @@ async def fetch_ticket_for_user(
     user_id: uuid.UUID,
 ) -> HelpdeskTicket | None:
     """Свой тикет с сообщениями. Фильтр по ``requester_user_id`` — основа ACL
-    «только свои» (ТЗ §4.5); ``internal``-сообщения отсекаются на уровне
-    сериализации (не здесь). Вложения сообщений подгружаем eagerly, иначе
+    «только свои» (ТЗ §4.5). Вложения сообщений подгружаем eagerly, иначе
     async-доступ к relationship в mapper'е поднимет MissingGreenlet."""
     from app.models.helpdesk import HelpdeskMessage
 
@@ -414,9 +412,9 @@ def _agent_filter_conditions(
 async def fetch_ticket_for_agent(
     db: AsyncSession, *, ticket_id: uuid.UUID
 ) -> HelpdeskTicket | None:
-    """Тикет для агентского view — все сообщения (включая internal),
-    assignee и requester. Вложения сообщений подгружаем eagerly для
-    сериализации (async-доступ к lazy relationship поднимает MissingGreenlet)."""
+    """Тикет для агентского view — все сообщения, assignee и requester.
+    Вложения сообщений подгружаем eagerly для сериализации (async-доступ к
+    lazy relationship поднимает MissingGreenlet)."""
     from app.models.helpdesk import HelpdeskMessage
 
     res = await db.execute(

@@ -84,11 +84,9 @@ class TestCreateTicket:
             real_db_session, ticket_id=ticket.id, user_id=ticket.requester_user_id
         )
         assert full is not None
-        public = [m for m in full.messages if m.visibility != "internal"]
-        assert len(public) == 1
-        first = public[0]
+        assert len(full.messages) == 1
+        first = full.messages[0]
         assert first.direction == "inbound"
-        assert first.visibility == "public"
         assert first.source == "web"
         assert first.body_text == ticket.description
         assert first.author_user_id == ticket.requester_user_id
@@ -196,7 +194,6 @@ class TestFetchTicketForUser:
         assert full.id == ticket.id
         # Публичный таймлайн содержит первое сообщение.
         assert len(full.messages) == 1
-        assert full.messages[0].visibility == "public"
 
     async def test_foreign_ticket_returns_none(self, real_db_session, real_user, ticket_of_editor):
         """ACL на уровне сервиса: чужой тикет → None (роутер сделает 404)."""
@@ -233,7 +230,6 @@ class TestAddRequesterReply:
             files=[],
         )
         assert msg.direction == "inbound"
-        assert msg.visibility == "public"
         assert msg.body_text == "Дополнение от клиента"
 
     async def test_reply_reopens_pending(self, real_db_session, real_user, ticket):
@@ -322,10 +318,9 @@ class TestResolveRequesterUser:
 class TestAgentReadState:
     """Контракт «непрочитанности» для агента.
 
-    Непрочитанное = публичное входящее сообщение (``direction='inbound'``,
-    ``visibility='public'`` — ответ заявителя) новее ``last_seen_at`` агента.
-    Ответы других агентов и свои собственные, а также internal-заметки, НЕ
-    считаются (агент их видел/писал).
+    Непрочитанное = входящее сообщение (``direction='inbound'`` — ответ
+    заявителя) новее ``last_seen_at`` агента. Ответы других агентов и свои
+    собственные НЕ считаются (агент их видел/писал).
 
     Эти тесты требуют реальной БД (SQLAlchemy EXISTS/UPSERT на живом PostgreSQL)
     — unit-моки не доказали бы корректность SQL-конструкции.
@@ -406,7 +401,6 @@ class TestAgentReadState:
                 author_email=real_editor.email,
                 author_name=real_editor.full_name,
                 direction="outbound",
-                visibility="public",
                 body_text="ответ агента",
                 source="web",
             )
@@ -417,37 +411,6 @@ class TestAgentReadState:
             real_db_session, ticket_id=ticket.id, user_id=real_admin.id
         )
         assert unread is False, "ответ агента не должен делать тикет непрочитанным"
-
-    async def test_internal_note_does_not_make_unread(self, real_db_session, ticket, real_admin):
-        """Internal-заметка (``visibility='internal'``) НЕ делает тикет
-        непрочитанным — это служебная активность, не требующая «прочтения»."""
-        from app.models.helpdesk import HelpdeskMessage
-        from app.services.helpdesk import reads as reads_svc
-
-        await reads_svc.mark_ticket_seen(
-            real_db_session, ticket_id=ticket.id, user_id=real_admin.id
-        )
-        await real_db_session.commit()
-        # Internal-заметка (direction=inbound — формально «входящее», но
-        # visibility=internal — служебное; контракт учитывает обе оси).
-        real_db_session.add(
-            HelpdeskMessage(
-                ticket_id=ticket.id,
-                author_user_id=real_admin.id,
-                author_email=real_admin.email,
-                author_name=real_admin.full_name,
-                direction="inbound",
-                visibility="internal",
-                body_text="внутренняя заметка",
-                source="web",
-            )
-        )
-        await real_db_session.commit()
-
-        unread = await reads_svc.has_unread_requester_messages(
-            real_db_session, ticket_id=ticket.id, user_id=real_admin.id
-        )
-        assert unread is False, "internal-заметка не должна делать тикет непрочитанным"
 
     async def test_read_state_is_per_agent(self, real_db_session, ticket, real_admin, real_editor):
         """Read-state per-user: один агент прочитал — для другого тикет всё

@@ -1,7 +1,7 @@
 """Adding messages to a ticket thread (Helpdesk Этап 2).
 
-Ответ инициатора — всегда ``direction=inbound`` и ``visibility=public``
-(внутренние заметки и outbound-ответы агентов появляются на этапе 3).
+Ответ инициатора — всегда ``direction=inbound``
+(outbound-ответы агентов появляются на этапе 3).
 Согласно ТЗ §4.2.1, ответ клиента переводит тикет:
 
 * ``pending`` → ``open`` (клиент «проснулся» — ждём агента);
@@ -23,7 +23,7 @@ from sqlalchemy.orm import selectinload
 from app.core.sanitize import sanitize_html
 from app.models.helpdesk import HelpdeskMessage, HelpdeskTicket
 from app.models.user import User
-from app.schemas.helpdesk import HelpdeskVisibility, MessageCreateIn
+from app.schemas.helpdesk import MessageCreateIn
 
 # Статусы, из которых ответ клиента реопенит тикет в ``open`` (ТЗ §4.2.1).
 # ``closed`` реопенится отдельно — только в окне HELPDESK_REOPEN_WINDOW_DAYS
@@ -107,7 +107,6 @@ async def add_requester_reply(
         author_email=user.email,
         author_name=user.full_name,
         direction="inbound",
-        visibility="public",
         body_text=payload.body_text,
         body_html=payload.body_html,
         source="web",
@@ -175,39 +174,33 @@ async def add_agent_reply(
     support_domain: str | None = None,
     cc: list[dict[str, str | None]] | None = None,
 ) -> HelpdeskMessage:
-    """Ответ агента — ``direction=outbound``. ``visibility`` из payload:
-    ``public`` (виден клиенту, переводит тикет в ``pending`` и уйдёт в
-    email_outbox при наличии ``support_domain``) или ``internal`` (заметка
-    агентов, статус не меняет, на email не уходит). ``files`` (опционально,
-    Этап 4) — локальные вложения к ответу.
+    """Ответ агента — ``direction=outbound``, переводит тикет в ``pending`` и
+    уйдёт в ``email_outbox`` при наличии ``support_domain``. ``files``
+    (опционально, Этап 4) — локальные вложения к ответу.
 
     ``support_domain`` — домен из ``helpdesk_mailbox_settings.support_address``;
-    если передан и ответ публичный, генерируется канонический ``email_message_id``
-    (ТЗ §1.3.3, §5.2) и сохраняется в сообщении для threading.
+    если передан, генерируется канонический ``email_message_id`` (ТЗ §1.3.3,
+    §5.2) и сохраняется в сообщении для threading.
 
     ``cc`` (опционально, миграция 083) — список ``{"email", "name"}`` адресатов
     в копии, если агент включил «Ответить всем». Сохраняется в сообщении и
     прокидывается в outbox-продюсером (``enqueue_reply_outbound``) для заголовка
-    ``Cc`` исходящего письма. Для ``internal``-заметки игнорируется — заметка
-    никуда не уходит по email.
+    ``Cc`` исходящего письма.
 
-    При первом публичном ответе без assignee — агент назначает себя
-    (ТЗ §4.2.1: «если нет assignee — назначить текущего агента»).
+    При первом ответе без assignee — агент назначает себя (ТЗ §4.2.1: «если
+    нет assignee — назначить текущего агента»).
 
     Внимание (outbox-инвариант, AGENTS.md): функция НЕ делает ``db.commit()`` —
-    только ``flush``. Caller обязан поставить outbox-запись (если ответ публичный)
-    в той же транзакции и сделать единый ``commit``. Раньше commit был здесь, а
-    outbox — отдельным commit в роутере, что нарушало инвариант (сбой второго
-    commit терял письмо заявителю при сохранённом ответе)."""
+    только ``flush``. Caller обязан поставить outbox-запись в той же транзакции
+    и сделать единый ``commit``. Раньше commit был здесь, а outbox — отдельным
+    commit в роутере, что нарушало инвариант (сбой второго commit терял письмо
+    заявителю при сохранённом ответе)."""
     from app.services.helpdesk.lifecycle import agent_outbound_reply
 
     now = datetime.now(UTC)
-    is_public = payload.visibility == HelpdeskVisibility.public
 
     email_message_id = (
-        _make_outbound_message_id(ticket.number, support_domain)
-        if is_public and support_domain
-        else None
+        _make_outbound_message_id(ticket.number, support_domain) if support_domain else None
     )
 
     message = HelpdeskMessage(
@@ -216,14 +209,12 @@ async def add_agent_reply(
         author_email=agent.email,
         author_name=agent.full_name,
         direction="outbound",
-        visibility=payload.visibility,
         body_text=payload.body_text,
         body_html=payload.body_html,
         source="web",
         email_message_id=email_message_id,
         created_at=now,
-        # Cc только для публичных ответов (internal-заметка никуда не уходит).
-        cc=cc if (is_public and cc) else None,
+        cc=cc or None,
     )
     db.add(message)
     await db.flush()  # нужен message.id/email_message_id для вложений и outbox
@@ -233,14 +224,13 @@ async def add_agent_reply(
 
         await upload_attachments(db, ticket=ticket, message_id=message.id, files=files, actor=agent)
 
-    if is_public:
-        # Публичный ответ → pending (ждём клиента). First public reply без
-        # assignee → авто-назначение текущего агента.
-        if ticket.assignee_user_id is None:
-            ticket.assignee_user_id = agent.id
-            ticket.assigned_at = now
-        result = agent_outbound_reply(ticket.status)
-        ticket.status = result.status
+    # Ответ → pending (ждём клиента). First reply без assignee →
+    # авто-назначение текущего агента.
+    if ticket.assignee_user_id is None:
+        ticket.assignee_user_id = agent.id
+        ticket.assigned_at = now
+    result = agent_outbound_reply(ticket.status)
+    ticket.status = result.status
 
     ticket.last_activity_at = now
 

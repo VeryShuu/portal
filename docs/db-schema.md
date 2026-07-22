@@ -1359,7 +1359,7 @@ tsvector + GIN на tickets/messages), `079` (упразднён статус `r
 | Таблица | Назначение |
 |---|---|
 | `helpdesk_tickets` | Заявка: `number` (BIGINT IDENTITY), subject/description, status (`new`/`open`/`pending`/`closed`), source (`email`/`web`), requester (user_id NULL для гостя + email/name-снимок), assignee, `search_tsvector` (FTS 078). Партиционированный архив — `helpdesk_tickets_archive` (jsonb-снимок). |
-| `helpdesk_messages` | Сообщения переписки: `direction` (`inbound`/`outbound`), `visibility` (`public`/`internal`), `body_text` + `body_html`, `email_message_id` (для threading), `body_tsvector` (FTS 078). |
+| `helpdesk_messages` | Сообщения переписки: `direction` (`inbound`/`outbound`), `body_text` + `body_html`, `email_message_id` (для threading), `body_tsvector` (FTS 078). |
 | `helpdesk_attachments` | Вложения: путь на FS, MIME, `is_inline`/`content_id` (077, для inline `cid:` картинок). ФС — `/data/helpdesk/TKT-{number}/`. |
 | `helpdesk_agents` | Справочник агентов поддержки (`user_id` UNIQUE) — **отдельная** сущность от `users.role`, проверяется через `require_helpdesk_agent` (admin — суперсет). |
 | `helpdesk_email_log` | Идемпотентность IMAP-фетчера (Message-ID → processed_at), anti-loop. |

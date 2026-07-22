@@ -4,7 +4,6 @@
 - ``TicketCreateIn`` — обязательность и лимиты длины subject/description;
 - ``TicketStatusIn`` — только agent-settable статусы (``new``/``archived``
   запрещены — это не статусы, которые выставляют вручную);
-- ``MessageCreateIn`` — default ``visibility=public``;
 - ``HelpdeskMailboxSettingsIn`` — write-only пароль (опционален при update),
   границы ``poll_interval_seconds`` (30–600), email-длина;
 - значения StrEnum.
@@ -21,7 +20,6 @@ from app.schemas.helpdesk import (
     HelpdeskMailboxSettingsIn,
     HelpdeskSource,
     HelpdeskStatus,
-    HelpdeskVisibility,
     MessageCreateIn,
     TicketCreateIn,
     TicketStatusIn,
@@ -67,13 +65,9 @@ class TestTicketStatusIn:
 
 
 class TestMessageCreateIn:
-    def test_defaults_to_public(self) -> None:
+    def test_valid(self) -> None:
         m = MessageCreateIn(body_text="Ответ")
-        assert m.visibility == HelpdeskVisibility.public
-
-    def test_internal_allowed(self) -> None:
-        m = MessageCreateIn(body_text="Заметка", visibility=HelpdeskVisibility.internal)
-        assert m.visibility == HelpdeskVisibility.internal
+        assert m.body_text == "Ответ"
 
     def test_body_required(self) -> None:
         with pytest.raises(ValidationError):
@@ -138,6 +132,3 @@ class TestEnumValues:
 
     def test_source_values(self) -> None:
         assert {s.value for s in HelpdeskSource} == {"email", "web"}
-
-    def test_visibility_values(self) -> None:
-        assert {v.value for v in HelpdeskVisibility} == {"public", "internal"}

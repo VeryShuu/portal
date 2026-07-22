@@ -1,5 +1,5 @@
 <!-- AUTO-GENERATED — do not edit manually. Run: cd backend && python -m scripts.generate_db_schema_doc --output ../docs/db-schema.generated.md -->
-<!-- Generated: 2026-07-19 20:38 UTC -->
+<!-- Generated: 2026-07-22 14:37 UTC -->
 
 # Database Schema (auto-generated)
 
@@ -22,6 +22,7 @@
 - [`helpdesk_agents`](#helpdesk-agents)
 - [`helpdesk_attachments`](#helpdesk-attachments)
 - [`helpdesk_digest_settings`](#helpdesk-digest-settings)
+- [`helpdesk_draft_attachments`](#helpdesk-draft-attachments)
 - [`helpdesk_email_log`](#helpdesk-email-log)
 - [`helpdesk_mailbox_settings`](#helpdesk-mailbox-settings)
 - [`helpdesk_max_bot_settings`](#helpdesk-max-bot-settings)
@@ -98,6 +99,7 @@ erDiagram
     helpdesk_attachments ||--o{ helpdesk_messages : "FK message_id"
     helpdesk_attachments ||--o{ users : "FK uploaded_by_user_id"
     helpdesk_digest_settings ||--o{ users : "FK updated_by_user_id"
+    helpdesk_draft_attachments ||--o{ users : "FK uploaded_by_user_id"
     helpdesk_email_log ||--o{ helpdesk_tickets : "FK ticket_id"
     helpdesk_email_log ||--o{ helpdesk_messages : "FK message_db_id"
     helpdesk_mailbox_settings ||--o{ users : "FK updated_by_user_id"
@@ -260,8 +262,8 @@ erDiagram
 
 | Name | Type | Definition |
 |------|------|------------|
-| `ck_feedback_category` | CHECK | `category IN ('bug','suggestion','other')` |
 | `ck_feedback_status` | CHECK | `status IN ('open','in_progress','closed')` |
+| `ck_feedback_category` | CHECK | `category IN ('bug','suggestion','other')` |
 
 ### Indexes
 
@@ -354,9 +356,9 @@ erDiagram
 
 | Name | Type | Definition |
 |------|------|------------|
-| `uq_file_folder_perm_folder_subject` | UNIQUE | `folder_id`, `subject_id` |
 | `ck_file_folder_perm_permission` | CHECK | `permission IN ('viewer', 'editor', 'manager')` |
 | `ck_file_folder_perm_subject_type` | CHECK | `subject_type IN ('user', 'group')` |
+| `uq_file_folder_perm_folder_subject` | UNIQUE | `folder_id`, `subject_id` |
 
 ### Indexes
 
@@ -575,6 +577,45 @@ Singleton row (``id = 1``) holding the daily digest email schedule.
 
 ---
 
+## `helpdesk_draft_attachments`
+
+Temporary inline-image uploaded through the ticket **creation** form,
+    before the ticket exists (chicken-and-egg: ``POST /tickets/{id}/inline-media``
+    needs a ``ticket_id``).
+
+    On ``create_ticket``, :func:`backfill_draft_images` moves the file to the
+    ticket's permanent ``TKT-{number}/inline/`` folder, rewrites ``<img src>``
+    to a stable inline-media URL, and deletes this row — all in the ticket
+    creation transaction. Rows whose draft was never backfilled (user abandoned
+    the form) are purged by the ``cleanup_expired_drafts`` cron after
+    ``HELPDESK_DRAFT_TTL_HOURS``.
+
+    Only metadata lives here; the bytes are on disk at
+    ``/data/helpdesk/drafts/usr-{user_id}/{filename}``. No relationships —
+    drafts are ephemeral, the FK to ``users`` is solely for ``ON DELETE CASCADE``
+    cleanup on account deletion.
+
+### Columns
+
+| Column | Type | Nullable | PK | FK | Unique | Default | Comment |
+|--------|------|----------|----|----|--------|---------|---------|
+| `id` | `UUID` |  | ✓ |  |  | `gen_random_uuid()` |  |
+| `uploaded_by_user_id` | `UUID` |  |  | `users.id` |  |  |  |
+| `filename` | `VARCHAR(500)` |  |  |  |  |  |  |
+| `original_name` | `VARCHAR(500)` |  |  |  |  |  |  |
+| `content_type` | `VARCHAR(255)` |  |  |  |  |  |  |
+| `size_bytes` | `BIGINT` |  |  |  |  |  |  |
+| `created_at` | `TIMESTAMP WITH TIME ZONE` |  |  |  |  | `NOW()` |  |
+
+### Indexes
+
+| Name | Columns | Unique |
+|------|---------|--------|
+| `ix_helpdesk_draft_attachments_created` | `created_at` |  |
+| `ix_helpdesk_draft_attachments_user` | `uploaded_by_user_id` |  |
+
+---
+
 ## `helpdesk_email_log`
 
 Idempotency log for IMAP ingress — keyed by the incoming ``Message-ID``
@@ -670,9 +711,8 @@ Singleton row (``id = 1``) holding the MAX-messenger bot configuration
 
 ## `helpdesk_messages`
 
-A single message in a ticket thread — public (visible to the requester)
-    or internal (agent-only note), inbound (from the requester) or outbound
-    (from an agent).
+A single message in a ticket thread — inbound (from the requester) or
+    outbound (from an agent).
 
 ### Columns
 
@@ -684,10 +724,10 @@ A single message in a ticket thread — public (visible to the requester)
 | `author_email` | `VARCHAR(320)` |  |  |  |  |  |  |
 | `author_name` | `VARCHAR(255)` | ✓ |  |  |  |  |  |
 | `direction` | `VARCHAR(10)` |  |  |  |  |  |  |
-| `visibility` | `VARCHAR(10)` |  |  |  |  | `'public'` |  |
 | `body_text` | `TEXT` |  |  |  |  |  |  |
 | `body_html` | `TEXT` | ✓ |  |  |  |  |  |
-| `body_tsvector` | `TSVECTOR` | ✓ |  |  |  | Computed(<sqlalchemy.sql.elements.TextClause object at 0x7902a2d6be60>, persisted=True) |  |
+| `body_tsvector` | `TSVECTOR` | ✓ |  |  |  | Computed(<sqlalchemy.sql.elements.TextClause object at 0x70ca80e12840>, persisted=True) |  |
+| `cc` | `JSONB` | ✓ |  |  |  |  |  |
 | `source` | `VARCHAR(20)` |  |  |  |  |  |  |
 | `email_message_id` | `VARCHAR(998)` | ✓ |  |  |  |  |  |
 | `in_reply_to` | `VARCHAR(998)` | ✓ |  |  |  |  |  |
@@ -716,11 +756,10 @@ A single message in a ticket thread — public (visible to the requester)
 Per-agent read-state marker: «когда этот агент последний раз видел тикет».
 
     Подсветка непрочитанных заявок в инбоксе агента (миграция 080). Тикет
-    «непрочитан» для агента, если существует публичное входящее сообщение
-    (``direction='inbound'``, ``visibility='public'`` — ответ заявителя) с
+    «непрочитан» для агента, если существует входящее сообщение
+    (``direction='inbound'`` — ответ заявителя) с
     ``created_at > COALESCE(last_seen_at, '-infinity')``. Ответы других агентов
-    и свои собственные НЕ считаются (агент и так их видел — он их писал);
-    internal-заметки НЕ считаются (это служебная активность).
+    и свои собственные НЕ считаются (агент и так их видел — он их писал).
 
     Одна строка на пару ``ticket_id`` × ``user_id`` (UNIQUE-индекс), UPSERT
     через ``ON CONFLICT`` при открытии карточки агента. ``ON DELETE CASCADE``
@@ -786,7 +825,7 @@ A support request: ``new → open → pending → closed``.
 | `references_archived_ticket_number` | `BIGINT` | ✓ |  |  |  |  |  |
 | `created_at` | `TIMESTAMP WITH TIME ZONE` |  |  |  |  | `NOW()` |  |
 | `updated_at` | `TIMESTAMP WITH TIME ZONE` |  |  |  |  | `NOW()` |  |
-| `search_tsvector` | `TSVECTOR` | ✓ |  |  |  | Computed(<sqlalchemy.sql.elements.TextClause object at 0x7902a2d6a090>, persisted=True) |  |
+| `search_tsvector` | `TSVECTOR` | ✓ |  |  |  | Computed(<sqlalchemy.sql.elements.TextClause object at 0x70ca80e10ad0>, persisted=True) |  |
 
 ### Constraints
 
@@ -941,9 +980,9 @@ Read-only archive of closed tickets (partitioned by ``closed_at``).
 
 | Name | Type | Definition |
 |------|------|------------|
-| `ck_kb_art_perm_subject_type` | CHECK | `subject_type IN ('user', 'group')` |
-| `ck_kb_art_perm_permission` | CHECK | `permission IN ('viewer', 'editor', 'manager')` |
 | `uq_kb_art_perm_article_subject` | UNIQUE | `article_id`, `subject_id` |
+| `ck_kb_art_perm_permission` | CHECK | `permission IN ('viewer', 'editor', 'manager')` |
+| `ck_kb_art_perm_subject_type` | CHECK | `subject_type IN ('user', 'group')` |
 
 ### Indexes
 
@@ -1017,7 +1056,7 @@ Read-only archive of closed tickets (partitioned by ``closed_at``).
 | `title` | `VARCHAR(500)` |  |  |  |  |  |  |
 | `body` | `TEXT` |  |  |  |  | `` |  |
 | `inherit_permissions` | `BOOLEAN` |  |  |  |  | `True` |  |
-| `body_tsvector` | `TSVECTOR` | ✓ |  |  |  | Computed(<sqlalchemy.sql.elements.TextClause object at 0x7902a2a6a9f0>, persisted=True) |  |
+| `body_tsvector` | `TSVECTOR` | ✓ |  |  |  | Computed(<sqlalchemy.sql.elements.TextClause object at 0x70ca80c620c0>, persisted=True) |  |
 | `status` | `VARCHAR(20)` |  |  |  |  | `draft` |  |
 | `version` | `INTEGER` |  |  |  |  | `1` |  |
 | `view_count` | `INTEGER` |  |  |  |  | `0` |  |
@@ -1169,8 +1208,8 @@ Read-only archive of closed tickets (partitioned by ``closed_at``).
 
 | Name | Type | Definition |
 |------|------|------------|
-| `uq_kb_tags_name` | UNIQUE | `name` |
 | `uq_kb_tags_slug` | UNIQUE | `slug` |
+| `uq_kb_tags_name` | UNIQUE | `name` |
 
 ### Relationships
 
@@ -1367,7 +1406,7 @@ Transactional outbox for outbound messenger notifications (mirror of
 | `id` | `UUID` |  | ✓ |  |  | `gen_random_uuid()` |  |
 | `title` | `VARCHAR(500)` |  |  |  |  |  |  |
 | `body` | `TEXT` |  |  |  |  | `` |  |
-| `body_tsvector` | `TSVECTOR` | ✓ |  |  |  | Computed(<sqlalchemy.sql.elements.TextClause object at 0x7902a295d550>, persisted=True) |  |
+| `body_tsvector` | `TSVECTOR` | ✓ |  |  |  | Computed(<sqlalchemy.sql.elements.TextClause object at 0x70ca80b4cce0>, persisted=True) |  |
 | `status` | `VARCHAR(20)` |  |  |  |  | `draft` |  |
 | `is_pinned` | `BOOLEAN` |  |  |  |  | `False` |  |
 | `categories` | `VARCHAR(100)[]` |  |  |  |  | `{}` |  |
@@ -1396,10 +1435,10 @@ Transactional outbox for outbound messenger notifications (mirror of
 
 | Name | Type | Definition |
 |------|------|------------|
-| `ck_news_cover_focal_y_range` | CHECK | `cover_focal_y IS NULL OR (cover_focal_y BETWEEN 0 AND 100)` |
 | `ck_news_cover_focal_zoom_range` | CHECK | `cover_focal_zoom IS NULL OR (cover_focal_zoom BETWEEN 100 AND 300)` |
 | `ck_news_status` | CHECK | `status IN ('draft', 'published', 'archived')` |
 | `ck_news_cover_focal_x_range` | CHECK | `cover_focal_x IS NULL OR (cover_focal_x BETWEEN 0 AND 100)` |
+| `ck_news_cover_focal_y_range` | CHECK | `cover_focal_y IS NULL OR (cover_focal_y BETWEEN 0 AND 100)` |
 
 ### Indexes
 
@@ -1675,8 +1714,8 @@ Transactional outbox for outbound messenger notifications (mirror of
 
 | Name | Type | Definition |
 |------|------|------------|
-| `ck_news_polls_results_visibility` | CHECK | `results_visibility IN ('always', 'after_vote', 'after_close', 'only_admin_editor')` |
 | `` | UNIQUE | `news_id` |
+| `ck_news_polls_results_visibility` | CHECK | `results_visibility IN ('always', 'after_vote', 'after_close', 'only_admin_editor')` |
 
 ### Relationships
 
@@ -1864,9 +1903,9 @@ Transactional outbox for outbound messenger notifications (mirror of
 
 | Name | Type | Definition |
 |------|------|------------|
+| `ck_photo_folder_perm_subject_type` | CHECK | `subject_type IN ('user', 'group')` |
 | `ck_photo_folder_perm_permission` | CHECK | `permission IN ('viewer', 'uploader', 'manager')` |
 | `uq_photo_folder_perm_folder_subject` | UNIQUE | `folder_id`, `subject_type`, `subject_id` |
-| `ck_photo_folder_perm_subject_type` | CHECK | `subject_type IN ('user', 'group')` |
 
 ### Indexes
 
@@ -2175,11 +2214,11 @@ Transactional outbox for outbound messenger notifications (mirror of
 
 | Name | Type | Definition |
 |------|------|------------|
-| `ck_users_auth_source` | CHECK | `auth_source IN ('keycloak', 'local')` |
-| `uq_users_keycloak_id` | UNIQUE | `keycloak_id` |
 | `ck_users_role` | CHECK | `role IN ('reader', 'editor', 'admin')` |
 | `ck_users_presence_status` | CHECK | `presence_status IN ('office', 'remote', 'vacation')` |
 | `ck_users_lang` | CHECK | `lang IN ('ru', 'en')` |
+| `ck_users_auth_source` | CHECK | `auth_source IN ('keycloak', 'local')` |
+| `uq_users_keycloak_id` | UNIQUE | `keycloak_id` |
 
 ### Indexes
 

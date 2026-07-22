@@ -75,7 +75,7 @@ const stubs = {
   TicketInfoCard: { template: '<div class="ticket-info" />', props: ['ticket'] },
   TicketMessageList: { template: '<div class="ticket-messages" />', props: ['messages'] },
   TicketReplyForm: {
-    template: '<button class="reply-form" @click="$emit(\'submit\', { body_html: \'<p>текст</p>\', visibility: \'public\', files: [] })" :disabled="loading">Ответить</button>',
+    template: '<button class="reply-form" @click="$emit(\'submit\', { body_html: \'<p>текст</p>\', files: [] })" :disabled="loading">Ответить</button>',
     props: ['loading', 'ticketId'],
     emits: ['submit'],
   },

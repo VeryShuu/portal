@@ -37,11 +37,6 @@ class HelpdeskDirection(StrEnum):
     outbound = "outbound"
 
 
-class HelpdeskVisibility(StrEnum):
-    public = "public"
-    internal = "internal"
-
-
 # ---------------------------------------------------------------------------
 # Tickets
 # ---------------------------------------------------------------------------
@@ -136,7 +131,7 @@ class MarkTicketReadOut(BaseModel):
 
 
 class TicketOut(BaseModel):
-    """Публичная карточка для инициатора (без internal-сообщений)."""
+    """Карточка тикета для инициатора."""
 
     id: uuid.UUID
     number: int
@@ -155,8 +150,8 @@ class TicketOut(BaseModel):
 
 
 class TicketAgentOut(TicketOut):
-    """Расширенная карточка для агентов/админов: видны internal-сообщения и
-    служебные поля (assignee, closed_at, archived-reference)."""
+    """Расширенная карточка для агентов/админов: служебные поля (assignee,
+    closed_at, archived-reference)."""
 
     requester_user_id: uuid.UUID | None = None
     requester_email: str
@@ -216,9 +211,7 @@ class ParticipantOut(BaseModel):
 
 
 class MessageCreateIn(BaseModel):
-    """Тело ответа. ``visibility`` по умолчанию ``public`` (для инициатора
-    доступен только этот путь); ``internal`` — заметка агента (не уходит на
-    email, не видна инициатору).
+    """Тело ответа.
 
     ``body_text`` допускает пустую строку — rich-редактор может прислать
     сообщение, состоящее только из картинки (``<img>`` без текста), и
@@ -229,7 +222,6 @@ class MessageCreateIn(BaseModel):
 
     body_text: str = Field(min_length=0, max_length=20000)
     body_html: str | None = Field(default=None, max_length=50000)
-    visibility: HelpdeskVisibility = HelpdeskVisibility.public
 
 
 class AttachmentOut(BaseModel):
@@ -250,7 +242,6 @@ class AttachmentOut(BaseModel):
 class MessageOut(BaseModel):
     id: uuid.UUID
     direction: HelpdeskDirection
-    visibility: HelpdeskVisibility
     source: HelpdeskSource
     author_email: str
     author_name: str | None = None

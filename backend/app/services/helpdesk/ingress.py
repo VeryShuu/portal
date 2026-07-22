@@ -513,7 +513,6 @@ def _build_inbound_helpdesk_message(
         author_email=headers["sender_email"],
         author_name=headers["sender_name"],
         direction="inbound",
-        visibility="public",
         body_text=body_text,
         body_html=body_html,
         source="email",

@@ -1,8 +1,8 @@
 """Ticket endpoints for the Helpdesk module (Этапы 2–3).
 
 Две зоны прав:
-* Инициатор (``CurrentUser``) — ``/tickets/my*`` и ``POST /tickets``.
-  ``internal``-сообщения и чужие тикеты отсекаются (ACL «только свои»).
+* Инициатор (``CurrentUser``) — ``/tickets/my*`` и ``POST /tickets``. Чужие
+  тикеты отсекаются (ACL «только свои»).
 * Агент/админ (``HelpdeskAgentDep``) — ``/tickets``, ``/tickets/{id}`` и
   действия assign/take/status/reopen/message. Видят все сообщения.
 
@@ -34,7 +34,6 @@ from app.models.helpdesk import HelpdeskTicket
 from app.schemas.helpdesk import (
     AgentOptionListOut,
     AgentOptionOut,
-    HelpdeskVisibility,
     MarkTicketReadOut,
     MessageCreateIn,
     MessageOut,
@@ -557,7 +556,7 @@ async def mark_ticket_read(
     "/tickets/{ticket_id}/messages",
     response_model=MessageOut,
     status_code=status.HTTP_201_CREATED,
-    summary="Ответ агента (public/internal)",
+    summary="Ответ агента",
 )
 async def add_agent_message(
     ticket_id: uuid.UUID,
@@ -566,7 +565,6 @@ async def add_agent_message(
     redis: RedisDep,
     body_text: str = Form(default="", max_length=20000),
     body_html: str = Form(default="", max_length=50000),
-    visibility: str = Form(default="public"),
     # Cc — повторяющееся Form-поле (``cc=a@x&cc=b@y``), опциональное. Агент
     # включает «Ответить всем» → фронт шлёт список email'ов участников. Лимит
     # 20 — защита от злоупотребления; ``_normalize_cc_emails`` ниже выкидывает
@@ -584,11 +582,10 @@ async def add_agent_message(
     payload = MessageCreateIn(
         body_text=norm_text,
         body_html=norm_html,
-        visibility=HelpdeskVisibility(visibility),
     )
     # Mailbox settings: нужен support_domain для генерации Message-ID и
     # формирования исходящего письма. Mailbox может быть не настроен — тогда
-    # публичный ответ создаётся, но email не отправляется (только in-app).
+    # ответ создаётся, но email не отправляется (только in-app).
     mailbox = await outbound_service.load_mailbox(db)
     support_domain = outbound_service.support_domain(mailbox)
     # Cc нормализуется здесь (а не в сервисе): валидация — ответственность
@@ -610,12 +607,11 @@ async def add_agent_message(
         cc=cc_normalized or None,
     )
     if (
-        payload.visibility == HelpdeskVisibility.public
         # Outbox email (только если mailbox сконфигурирован) — ставится в ту же
         # транзакцию, что и ответ (outbox-инвариант AGENTS.md). Сбой enqueue
         # откатывает ответ (агент видит 500, повторяет) — это сознательно: иначе
         # письмо заявителю терялось при сохранённом ответе. Не best-effort.
-        and mailbox is not None
+        mailbox is not None
         and support_domain
         and message.email_message_id
     ):
@@ -624,13 +620,12 @@ async def add_agent_message(
         )
     # Единый commit: ответ агента + outbox-запись (если есть) — атомарно.
     await db.commit()
-    if payload.visibility == HelpdeskVisibility.public:
-        await _try_notify(
-            notifications_service.notify_agent_reply(
-                db, redis, ticket=ticket, body_preview=message.body_text
-            ),
-            context="agent_reply",
-        )
+    await _try_notify(
+        notifications_service.notify_agent_reply(
+            db, redis, ticket=ticket, body_preview=message.body_text
+        ),
+        context="agent_reply",
+    )
     await push_audit_event(
         redis,
         event_type="helpdesk.message_added",
@@ -638,7 +633,7 @@ async def add_agent_message(
         user_email=agent.email,
         resource_type="helpdesk_ticket",
         resource_id=str(ticket.id),
-        metadata={"visibility": message.visibility, "direction": message.direction},
+        metadata={"direction": message.direction},
     )
     return message_to_out(message)
 

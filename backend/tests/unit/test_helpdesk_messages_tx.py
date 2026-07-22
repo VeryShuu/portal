@@ -26,7 +26,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from app.schemas.helpdesk import HelpdeskVisibility, MessageCreateIn
+from app.schemas.helpdesk import MessageCreateIn
 from app.services.helpdesk.messages import (
     add_agent_reply,
     add_requester_reply,
@@ -79,7 +79,7 @@ async def test_add_agent_reply_does_not_commit() -> None:
         db,
         ticket=ticket,
         agent=agent,
-        payload=MessageCreateIn(body_text="ответ", visibility=HelpdeskVisibility("public")),
+        payload=MessageCreateIn(body_text="ответ"),
         files=[],
         support_domain="example.com",
     )
@@ -87,26 +87,6 @@ async def test_add_agent_reply_does_not_commit() -> None:
     db.commit.assert_not_awaited()
     # Но flush — да (нужен message.id для outbox/вложений).
     db.flush.assert_awaited()
-
-
-@pytest.mark.asyncio
-async def test_add_agent_reply_internal_also_no_commit() -> None:
-    """Internal-заметка (без outbox) — тоже без commit в сервисе. Роутер всё
-    равно делает единый commit для согласованности контракта."""
-    db = _make_db()
-    ticket = _ticket(status="open")
-    agent = _user()
-
-    await add_agent_reply(
-        db,
-        ticket=ticket,
-        agent=agent,
-        payload=MessageCreateIn(body_text="заметка", visibility=HelpdeskVisibility("internal")),
-        files=[],
-        support_domain="example.com",
-    )
-
-    db.commit.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -174,7 +154,6 @@ async def test_add_requester_reply_commits_and_forces_inbound_public() -> None:
     assert ticket.status == "new"  # new не входит в _REQUESTER_REOPEN_STATUSES
     assert ticket.last_activity_at is not None
     assert msg.direction == "inbound"
-    assert msg.visibility == "public"
     assert msg.source == "web"
     assert msg.author_user_id == user.id
 

@@ -3183,7 +3183,7 @@ Soft-delete объекта.
 | `GET` | `/tickets/counts` | `{active: N}` — тикеты, назначенные агенту, в new/open/pending (для бейджа «Инбокс поддержки») |
 | `GET` | `/users/search` | Поиск пользователя по справочнику (Keycloak) для CC-селектора «Ответить всем» (`?q=`, `?limit=`). `[{user_id, full_name, email}]`. `<3 символов` → `[]`. Доступ: любой авторизованный (parent-router gate `require_helpdesk_module`). Симметрично `meetings/participants/search`, но helpdesk-принадлежный. |
 | `GET` | `/tickets/{id}` | Карточка (`TicketAgentOut`, все сообщения + служебные поля + `requester_profile`) |
-| `POST` | `/tickets/{id}/messages` | Ответ (`Form`: `body_text`, `body_html?`, `visibility`, `files[]`). `public` → `pending` + outbound email через outbox. |
+| `POST` | `/tickets/{id}/messages` | Ответ (`Form`: `body_text`, `body_html?`, `files[]`) → `pending` + outbound email через outbox. |
 | `POST` | `/tickets/{id}/inline-media` | Загрузка inline-картинки для TipTap-редактора ответа (`multipart`, поле `file`) → `{url, filename}` |
 | `GET` | `/tickets/{id}/inline-media/{filename}` | Отдача inline-картинки (nginx `X-Accel-Redirect`, `no-store`+`nosniff`) |
 | `POST` | `/tickets/{id}/assign` | Назначить (`assignee_user_id`) |

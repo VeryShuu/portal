@@ -1,17 +1,14 @@
 """Agent read-state for helpdesk tickets (миграция 080).
 
 Подсветка непрочитанных заявок в инбоксе агента: тикет «непрочитан» для агента,
-если существует публичное входящее сообщение (ответ заявителя) новее, чем
+если существует входящее сообщение (ответ заявителя) новее, чем
 ``last_seen_at`` этого агента на тикете.
 
 Контракт «непрочитанности» (фиксирован решением владельца):
-* учитываются только ``HelpdeskMessage`` с ``direction='inbound'`` И
-  ``visibility='public'`` — то есть ответы заявителя (через веб-форму или
-  email-ingress);
+* учитываются только ``HelpdeskMessage`` с ``direction='inbound'`` — то есть
+  ответы заявителя (через веб-форму или email-ingress);
 * ответы других агентов (``direction='outbound'``) и свои собственные НЕ
-  считаются — агент и так их видел;
-* internal-заметки (``visibility='internal'``) НЕ считаются — это служебная
-  активность, заявителю не видна и не требует «прочтения» агентом.
+  считаются — агент и так их видел.
 
 Точка «прочитано» — открытие карточки тикета агентом: ``POST /tickets/{id}/read``
 вызывает :func:`mark_ticket_seen` (UPSERT ``last_seen_at = NOW()``).
@@ -33,13 +30,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.helpdesk import HelpdeskMessage, HelpdeskTicket, HelpdeskTicketRead
 
-# Константы контракта «непрочитанности» — публичные сообщения (без internal-
-# заметок, которые видны только агентам). Вынесены, чтобы тесты и запросы
-# ссылались на единый источник истины (защита от регрессии — например,
-# случайного учёта internal-заметок).
+# Константы контракта «непрочитанности». Вынесены, чтобы тесты и запросы
+# ссылались на единый источник истины (защита от регрессии).
 INBOUND_DIRECTION = "inbound"  # от заявителя (для агентского unread-контракта)
 OUTBOUND_DIRECTION = "outbound"  # от агента (для заявительского unread-контракта)
-PUBLIC_VISIBILITY = "public"
 
 # Sentinel «никогда не видел»: ``datetime`` через ``func.coalesce`` передаётся
 # как типизированный bind-parameter TIMESTAMPTZ (а не VARCHAR, как было с
@@ -101,8 +95,8 @@ async def has_unread_requester_messages(
     заявителя). Для заявителя передавайте ``direction='outbound'`` (ответы
     агентов) — зеркальная семантика «что считать непрочитанным».
 
-    ``True`` если существует публичное сообщение (``visibility='public'``)
-    указанного направления с ``created_at > COALESCE(last_seen_at, EPOCH)``.
+    ``True`` если существует сообщение указанного направления с
+    ``created_at > COALESCE(last_seen_at, EPOCH)``.
     Если строки read нет — берётся ``EPOCH_SENTINEL`` (т.е. **любое** сообщение
     делает тикет непрочитанным, даже месячной давности — пользователь его
     действительно не открывал в этом UI).
@@ -127,7 +121,6 @@ async def has_unread_requester_messages(
         .where(
             HelpdeskMessage.ticket_id == ticket_id,
             HelpdeskMessage.direction == direction,
-            HelpdeskMessage.visibility == PUBLIC_VISIBILITY,
             HelpdeskMessage.created_at > func.coalesce(last_seen_subq, EPOCH_SENTINEL),
         )
         .exists()
@@ -173,7 +166,7 @@ async def enrich_with_unread(
         .where(HelpdeskTicketRead.ticket_id == HelpdeskMessage.ticket_id)
         .scalar_subquery()
     )
-    # Для каждого ticket_id: True если COUNT(inbound-public, созданных после
+    # Для каждого ticket_id: True если COUNT(inbound, созданных после
     # last_seen_at) > 0. Используем COUNT + GROUP BY + фильтр, чтобы получить
     # ровно map {ticket_id: bool} одним запросом.
     stmt = (
@@ -184,7 +177,6 @@ async def enrich_with_unread(
         .where(
             HelpdeskMessage.ticket_id.in_(ticket_ids),
             HelpdeskMessage.direction == direction,
-            HelpdeskMessage.visibility == PUBLIC_VISIBILITY,
             HelpdeskMessage.created_at > func.coalesce(last_seen_subq, EPOCH_SENTINEL),
         )
         .group_by(HelpdeskMessage.ticket_id)
@@ -199,7 +191,7 @@ async def enrich_with_unread(
         tid = row[0]
         unread_ticket_ids.add(tid)
 
-    # Тикеты без новых inbound-public сообщений → False. Возвращаем map для
-    # ВСЕХ входных тикетов, чтобы сериализатор делал простой ``map[t.id]`` без
+    # Тикеты без новых inbound сообщений → False. Возвращаем map для ВСЕХ
+    # входных тикетов, чтобы сериализатор делал простой ``map[t.id]`` без
     # обработки KeyError для прочитанных тикетов.
     return {tid: (tid in unread_ticket_ids) for tid in ticket_ids}

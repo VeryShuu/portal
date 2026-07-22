@@ -159,9 +159,8 @@ class HelpdeskTicket(Base):
 
 
 class HelpdeskMessage(Base):
-    """A single message in a ticket thread — public (visible to the requester)
-    or internal (agent-only note), inbound (from the requester) or outbound
-    (from an agent)."""
+    """A single message in a ticket thread — inbound (from the requester) or
+    outbound (from an agent)."""
 
     __tablename__ = "helpdesk_messages"
     __table_args__ = (
@@ -190,9 +189,6 @@ class HelpdeskMessage(Base):
     author_email: Mapped[str] = mapped_column(String(320), nullable=False)
     author_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     direction: Mapped[str] = mapped_column(String(10), nullable=False)
-    visibility: Mapped[str] = mapped_column(
-        String(10), nullable=False, server_default=sql_text("'public'")
-    )
     body_text: Mapped[str] = mapped_column(Text, nullable=False)
     body_html: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Полнотекстовый поиск по телу ответа (миграция 078): generated STORED
@@ -594,11 +590,10 @@ class HelpdeskTicketRead(Base):
     """Per-agent read-state marker: «когда этот агент последний раз видел тикет».
 
     Подсветка непрочитанных заявок в инбоксе агента (миграция 080). Тикет
-    «непрочитан» для агента, если существует публичное входящее сообщение
-    (``direction='inbound'``, ``visibility='public'`` — ответ заявителя) с
+    «непрочитан» для агента, если существует входящее сообщение
+    (``direction='inbound'`` — ответ заявителя) с
     ``created_at > COALESCE(last_seen_at, '-infinity')``. Ответы других агентов
-    и свои собственные НЕ считаются (агент и так их видел — он их писал);
-    internal-заметки НЕ считаются (это служебная активность).
+    и свои собственные НЕ считаются (агент и так их видел — он их писал).
 
     Одна строка на пару ``ticket_id`` × ``user_id`` (UNIQUE-индекс), UPSERT
     через ``ON CONFLICT`` при открытии карточки агента. ``ON DELETE CASCADE``

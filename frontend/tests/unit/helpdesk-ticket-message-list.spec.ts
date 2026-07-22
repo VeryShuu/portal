@@ -13,14 +13,12 @@ const i18n = createI18n({
   messages: {
     ru: {
       helpdesk: {
-        internalNote: 'Внутренняя заметка',
         sources: { email: 'Email' },
         ccLabel: 'Копия',
       },
     },
     en: {
       helpdesk: {
-        internalNote: 'Internal note',
         sources: { email: 'Email' },
         ccLabel: 'Cc',
       },
@@ -30,7 +28,6 @@ const i18n = createI18n({
 
 const baseMsg = {
   id: 'm1',
-  visibility: 'public' as const,
   source: 'web' as const,
   author_email: 'client@company.local',
   author_name: 'Иван Петров',
@@ -111,14 +108,6 @@ describe('TicketMessageList — chat UI', () => {
     ])
     expect(wrapper.html()).not.toContain('<script>')
     expect(wrapper.find('.chat-bubble__body').text()).toContain('текст')
-  })
-
-  it('shows internal-note tag for internal visibility', () => {
-    const wrapper = mountList([
-      makeMsg({ visibility: 'internal', direction: 'outbound' }),
-    ])
-    expect(wrapper.find('.chat-bubble--internal').exists()).toBe(true)
-    expect(wrapper.find('.chat-bubble__note').exists()).toBe(true)
   })
 
   it('shows email source tag for email messages', () => {

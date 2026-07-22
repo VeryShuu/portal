@@ -42,19 +42,6 @@
             {{ t('helpdesk.attachFiles') }}
           </n-button>
         </n-upload>
-        <n-radio-group
-          v-if="agentMode"
-          v-model:value="visibility"
-          size="small"
-          class="ticket-reply__visibility"
-        >
-          <n-radio-button value="public">
-            {{ t('helpdesk.visibilityPublic') }}
-          </n-radio-button>
-          <n-radio-button value="internal">
-            {{ t('helpdesk.visibilityInternal') }}
-          </n-radio-button>
-        </n-radio-group>
       </div>
       <n-button
         type="primary"
@@ -71,7 +58,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { NButton, NUpload, NIcon, NRadioGroup, NRadioButton, NCheckbox } from 'naive-ui'
+import { NButton, NUpload, NIcon, NCheckbox } from 'naive-ui'
 import { AttachOutline } from '@vicons/ionicons5'
 import type { UploadFileInfo } from 'naive-ui'
 import RichEditor from '../RichEditor.vue'
@@ -80,7 +67,7 @@ import { mdUnsafe as md } from '../../utils/markdown'
 import type { HelpdeskParticipant } from '../../api/helpdesk'
 
 const props = defineProps<{
-  /** Агентский режим: показывает переключатель public/internal. */
+  /** Агентский режим: показывает блок «Ответить всем» (Cc). */
   agentMode?: boolean
   loading?: boolean
   /** ID тикета — для upload-endpoint inline-картинок rich-редактора. */
@@ -95,7 +82,6 @@ const emit = defineEmits<{
    *  cc — список email'ов в копии (только при включённом «Ответить всем»). */
   submit: [payload: {
     body_html: string
-    visibility: 'public' | 'internal'
     files: File[]
     cc?: string[]
   }]
@@ -106,7 +92,6 @@ const { t } = useI18n()
 // RichEditor (TipTap) отдаёт markdown через tiptap-markdown. Храним его, а на
 // submit рендерим в HTML (markdown-it, как в news/kb) — бэк хранит только HTML.
 const markdown = ref('')
-const visibility = ref<'public' | 'internal'>('public')
 const fileList = ref<UploadFileInfo[]>([])
 
 // «Ответить всем» (миграция 083): чекбокс раскрывает селектор получателей Cc.
@@ -157,7 +142,7 @@ function onSubmit() {
     replyAll.value && ccRecipients.value.length > 0
       ? ccRecipients.value.map((r) => r.email)
       : undefined
-  emit('submit', { body_html: bodyHtml, visibility: visibility.value, files, cc })
+  emit('submit', { body_html: bodyHtml, files, cc })
   // Сброс после отправки (родитель управляет loading; успех — очистка).
   markdown.value = ''
   fileList.value = []
@@ -197,8 +182,5 @@ function onSubmit() {
   display: flex;
   align-items: center;
   gap: 16px;
-}
-.ticket-reply__visibility {
-  margin-left: 8px;
 }
 </style>

@@ -504,11 +504,6 @@
             },
             "title": "Files",
             "type": "array"
-          },
-          "visibility": {
-            "default": "public",
-            "title": "Visibility",
-            "type": "string"
           }
         },
         "title": "Body_add_agent_message_api_v1_helpdesk_tickets__ticket_id__messages_post",
@@ -5266,14 +5261,6 @@
         "title": "HelpdeskUserOption",
         "type": "object"
       },
-      "HelpdeskVisibility": {
-        "enum": [
-          "public",
-          "internal"
-        ],
-        "title": "HelpdeskVisibility",
-        "type": "string"
-      },
       "ImportReport": {
         "properties": {
           "created": {
@@ -6687,15 +6674,11 @@
           },
           "source": {
             "$ref": "#/components/schemas/HelpdeskSource"
-          },
-          "visibility": {
-            "$ref": "#/components/schemas/HelpdeskVisibility"
           }
         },
         "required": [
           "id",
           "direction",
-          "visibility",
           "source",
           "author_email",
           "body_text",
@@ -11610,7 +11593,7 @@
         "type": "object"
       },
       "TicketAgentOut": {
-        "description": "Расширенная карточка для агентов/админов: видны internal-сообщения и\nслужебные поля (assignee, closed_at, archived-reference).",
+        "description": "Расширенная карточка для агентов/админов: служебные поля (assignee,\nclosed_at, archived-reference).",
         "properties": {
           "assigned_at": {
             "anyOf": [
@@ -11961,7 +11944,7 @@
         "type": "object"
       },
       "TicketOut": {
-        "description": "Публичная карточка для инициатора (без internal-сообщений).",
+        "description": "Карточка тикета для инициатора.",
         "properties": {
           "assignee_name": {
             "anyOf": [
@@ -23703,7 +23686,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Ответ агента (public/internal)",
+        "summary": "Ответ агента",
         "tags": [
           "helpdesk"
         ]

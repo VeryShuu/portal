@@ -1,11 +1,4 @@
-"""Shared schema mappers for the helpdesk API package.
-
-Сериализаторы отделяют «публичное» представление (для инициатора — без
-``internal``-сообщений) от служебных полей. Здесь же — принципиальный
-ACL-фильтр: сообщения c ``visibility='internal'`` никогда не попадают в
-ответ инициатору (ТЗ §3.2, §4.5), даже если по какой-то причине оказались в
-загруженной коллекции.
-"""
+"""Shared schema mappers for the helpdesk API package."""
 
 from __future__ import annotations
 
@@ -18,7 +11,6 @@ from app.schemas.helpdesk import (
     HelpdeskDirection,
     HelpdeskSource,
     HelpdeskStatus,
-    HelpdeskVisibility,
     MessageOut,
     ParticipantOut,
     RequesterProfileOut,
@@ -36,15 +28,9 @@ __all__ = [
 ]
 
 
-def _public_messages(messages: list[HelpdeskMessage]) -> list[HelpdeskMessage]:
-    """Только публичные сообщения (ACL-фильтр для инициатора)."""
-    return [m for m in messages if m.visibility != HelpdeskVisibility.internal.value]
-
-
 def _attachments(msg: HelpdeskMessage) -> list[AttachmentOut]:
-    """Вложения сообщения. ``internal``-сообщения для инициатора уже
-    отфильтрованы выше (``_public_messages``), поэтому здесь просто
-    сериализуем то, что загружено через ``selectin`` relationship.
+    """Вложения сообщения: сериализуем то, что загружено через ``selectin``
+    relationship.
 
     **Inline-картинки исключаются** (``is_inline=True``): они сохранены в БД
     как attachment (для ACL/скачивания), но в теле сообщения уже рендерятся
@@ -91,7 +77,6 @@ def message_to_out(msg: HelpdeskMessage) -> MessageOut:
     return MessageOut(
         id=msg.id,
         direction=HelpdeskDirection(msg.direction),
-        visibility=HelpdeskVisibility(msg.visibility),
         source=HelpdeskSource(msg.source),
         author_email=msg.author_email,
         author_name=msg.author_name,
@@ -190,12 +175,10 @@ def ticket_to_list_out(ticket: HelpdeskTicket, *, unread: bool | None = None) ->
 def ticket_to_out(
     ticket: HelpdeskTicket,
     *,
-    requester_view: bool = True,
     requester_profile: RequesterProfileOut | None = None,
 ) -> TicketOut:
-    """Карточка тикета. При ``requester_view=True`` (по умолчанию) internal-сообщения
-    отсекаются — это безопасный путь инициатора."""
-    messages = _public_messages(ticket.messages) if requester_view else list(ticket.messages)
+    """Карточка тикета."""
+    messages = list(ticket.messages)
     return TicketOut(
         id=ticket.id,
         number=ticket.number,
@@ -273,8 +256,8 @@ def ticket_to_agent_out(
     *,
     requester_profile: RequesterProfileOut | None = None,
 ) -> TicketAgentOut:
-    """Карточка для агентов/админов: видны все сообщения (включая internal)
-    и служебные поля."""
+    """Карточка для агентов/админов: служебные поля (assignee, closed_at,
+    archived-reference)."""
     return TicketAgentOut(
         id=ticket.id,
         number=ticket.number,

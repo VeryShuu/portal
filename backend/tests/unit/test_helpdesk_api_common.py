@@ -1,9 +1,7 @@
-"""Unit-тесты чистых функций helpdesk API (mappers + ACL-фильтр).
+"""Unit-тесты чистых функций helpdesk API (mappers).
 
 Не требуют БД: оперируют in-memory объектами моделей, построенными через
-полифабрику-подобные хелперы. Главный проверяемый инвариант Этапа 2 —
-``internal``-сообщения никогда не попадают в публичное представление тикета
-(ТЗ §3.2, §4.5), даже если оказались в загруженной коллекции.
+полифабрику-подобные хелперы.
 """
 
 from __future__ import annotations
@@ -24,7 +22,6 @@ from app.models.user import User
 def _msg(
     *,
     direction: str = "inbound",
-    visibility: str = "public",
     body_text: str = "текст",
     attachments: list[HelpdeskAttachment] | None = None,
 ) -> HelpdeskMessage:
@@ -34,7 +31,6 @@ def _msg(
         author_email="user@portal.local",
         author_name="User",
         direction=direction,
-        visibility=visibility,
         body_text=body_text,
         source="web",
         created_at=datetime.now(UTC),
@@ -60,46 +56,16 @@ def _ticket(messages: list[HelpdeskMessage]) -> HelpdeskTicket:
     )
 
 
-class TestPublicAclFilter:
-    def test_internal_messages_excluded_for_requester(self) -> None:
-        ticket = _ticket(
-            [
-                _msg(visibility="public", body_text="видно"),
-                _msg(visibility="internal", body_text="секрет"),
-                _msg(visibility="public", body_text="тоже видно"),
-            ]
-        )
-        out = ticket_to_out(ticket, requester_view=True)
-        bodies = [m.body_text for m in out.messages]
-        assert bodies == ["видно", "тоже видно"]
-
-    def test_internal_messages_kept_in_agent_view(self) -> None:
-        ticket = _ticket(
-            [
-                _msg(visibility="public"),
-                _msg(visibility="internal", body_text="секрет"),
-            ]
-        )
-        out = ticket_to_out(ticket, requester_view=False)
-        assert len(out.messages) == 2
-
-    def test_empty_messages(self) -> None:
-        out = ticket_to_out(_ticket([]), requester_view=True)
-        assert out.messages == []
-
-    def test_internal_never_leaks_even_with_single_message(self) -> None:
-        ticket = _ticket([_msg(visibility="internal")])
-        out = ticket_to_out(ticket, requester_view=True)
-        assert out.messages == []
-
-
 class TestMessageMapper:
     def test_basic_mapping(self) -> None:
-        m = _msg(direction="outbound", visibility="internal", body_text="н")
+        m = _msg(direction="outbound", body_text="н")
         out = message_to_out(m)
         assert out.direction.value == "outbound"
-        assert out.visibility.value == "internal"
         assert out.body_text == "н"
+
+    def test_empty_messages(self) -> None:
+        out = ticket_to_out(_ticket([]))
+        assert out.messages == []
 
     def test_status_enum_coercion(self) -> None:
         # Статус хранится строкой; mapper переводит в StrEnum.
@@ -209,7 +175,7 @@ class TestAttachmentsMapping:
         """Сквозной путь: attachments сообщения попадают в TicketOut (requester)."""
         att = self._att("report.xlsx")
         ticket = _ticket([_msg(attachments=[att])])
-        out = ticket_to_out(ticket, requester_view=True)
+        out = ticket_to_out(ticket)
         assert out.messages[0].attachments[0].original_name == "report.xlsx"
 
     def test_inline_attachments_excluded_from_message_out(self) -> None:
@@ -242,7 +208,7 @@ class TestAttachmentsMapping:
                 )
             ]
         )
-        out = ticket_to_out(ticket, requester_view=True)
+        out = ticket_to_out(ticket)
         assert [a.original_name for a in out.messages[0].attachments] == ["doc.pdf"]
 
 
@@ -320,12 +286,12 @@ class TestTicketOutRequesterProfile:
     """Профиль заявителя должен попадать в TicketOut/TicketAgentOut при передаче."""
 
     def test_ticket_to_out_without_profile(self) -> None:
-        out = ticket_to_out(_ticket([]), requester_view=True)
+        out = ticket_to_out(_ticket([]))
         assert out.requester_profile is None
 
     def test_ticket_to_out_with_profile(self) -> None:
         profile = build_requester_profile(_user(attributes={"city": "Москва"}))
         assert profile is not None
-        out = ticket_to_out(_ticket([]), requester_view=True, requester_profile=profile)
+        out = ticket_to_out(_ticket([]), requester_profile=profile)
         assert out.requester_profile is not None
         assert out.requester_profile.city == "Москва"

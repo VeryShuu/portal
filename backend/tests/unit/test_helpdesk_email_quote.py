@@ -230,7 +230,6 @@ class TestRoundTripWithHistory:
             body_text="Не работает VPN",
             body_html=None,
             direction="inbound",
-            visibility="public",
             author_name="Заявитель",
             author_email="c@x.test",
             created_at=datetime(2026, 6, 30, 10, 0),

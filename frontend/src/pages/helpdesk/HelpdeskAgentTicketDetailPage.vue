@@ -188,7 +188,6 @@ function onReopen() {
 
 async function onReply(payload: {
   body_html: string
-  visibility: 'public' | 'internal'
   files: File[]
   cc?: string[]
 }) {
@@ -196,7 +195,7 @@ async function onReply(payload: {
   try {
     await replyAgentTicket(
       ticketId,
-      { body_html: payload.body_html, visibility: payload.visibility, cc: payload.cc },
+      { body_html: payload.body_html, cc: payload.cc },
       payload.files,
     )
     message.success(t('helpdesk.replySent'))

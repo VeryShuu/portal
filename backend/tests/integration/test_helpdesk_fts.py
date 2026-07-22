@@ -60,14 +60,12 @@ def _make_message(
     ticket_id: uuid.UUID,
     body_text: str,
     direction: str = "inbound",
-    visibility: str = "public",
 ) -> HelpdeskMessage:
     return HelpdeskMessage(
         ticket_id=ticket_id,
         author_email="user@portal.local",
         author_name="Тест",
         direction=direction,
-        visibility=visibility,
         body_text=body_text,
         source="web",
     )
@@ -183,25 +181,6 @@ class TestFtsSearchInReplies:
         await real_db_session.flush()
 
         matched = await _fetch_matched_ids(real_db_session, "vpn")
-        assert t.id in matched
-
-    async def test_internal_note_is_searched(self, real_db_session):
-        """Internal-заметки (visibility=internal) тоже участвуют в поиске —
-        агент должен находить свои внутренние комментарии."""
-        t = _make_ticket(subject="Заявка", description="что-то")
-        real_db_session.add(t)
-        await real_db_session.flush()
-        real_db_session.add(
-            _make_message(
-                ticket_id=t.id,
-                body_text="Согласовать с руководителем отдела",
-                visibility="internal",
-                direction="outbound",
-            )
-        )
-        await real_db_session.flush()
-
-        matched = await _fetch_matched_ids(real_db_session, "руководитель")
         assert t.id in matched
 
 

@@ -27,7 +27,6 @@ def _msg(
     *,
     text: str = "Предыдущее сообщение заявителя",
     direction: str = "inbound",
-    visibility: str = "public",
     created_at: datetime | None = None,
 ) -> Any:
     return SimpleNamespace(
@@ -35,7 +34,6 @@ def _msg(
         body_text=text,
         body_html=None,
         direction=direction,
-        visibility=visibility,
         author_name="Заявитель",
         author_email="client@company.local",
         created_at=created_at or datetime(2026, 6, 30, 10, 0),
@@ -49,7 +47,6 @@ def _current_message() -> Any:
         body_text="Ответ агентa.",
         body_html="<p>Ответ агентa.</p>",
         direction="outbound",
-        visibility="public",
         author_name="Агент",
         author_email="portal@company.local",
         created_at=datetime(2026, 7, 1, 12, 0),
@@ -156,24 +153,6 @@ class TestTryEnqueueOutbound:
         assert REPLY_MARKER_TOKEN not in body_text
         assert REPLY_MARKER_TOKEN not in body_html
 
-    async def test_internal_notes_excluded_from_history(self) -> None:
-        """Internal-заметки не попадают в исходящее письмо заявителю."""
-        note = _msg(text="Секретная заметка", visibility="internal")
-        prior = _msg(text="Публичный вопрос")
-        current = _current_message()
-        ticket = _ticket(messages=[note, prior])
-        db = _make_db()
-
-        with patch(
-            "app.services.helpdesk.outbound.enqueue_outbox_email", new=AsyncMock()
-        ) as enqueue:
-            await enqueue_reply_outbound(db, ticket=ticket, message=current, mailbox=_mailbox())
-
-        assert enqueue.await_args is not None
-        body_text = enqueue.await_args.kwargs["body_text"]
-        assert "Секретная заметка" not in body_text
-        assert "Публичный вопрос" in body_text
-
     async def test_subject_and_to_email(self) -> None:
         prior = _msg()
         current = _current_message()
@@ -278,7 +257,6 @@ class TestTryEnqueueOutbound:
             body_text="Текст </pre><script>alert(1)</script>",
             body_html=None,
             direction="outbound",
-            visibility="public",
             author_name="Агент",
             author_email="portal@company.local",
             created_at=datetime(2026, 7, 1, 12, 0),

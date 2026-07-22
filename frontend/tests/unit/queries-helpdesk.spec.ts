@@ -219,7 +219,7 @@ describe('src/queries/helpdesk', () => {
     useReplyAgentTicketMutation('t1')
     const m = capturedMutations[capturedMutations.length - 1]
     mockReplyAgentTicket.mockResolvedValueOnce({})
-    const dto = { body_text: 'b', visibility: 'public' as const }
+    const dto = { body_text: 'b' }
     await m.mutationFn({ dto, files: [] })
     expect(mockReplyAgentTicket).toHaveBeenCalledWith('t1', dto, [])
     await m.onSuccess()

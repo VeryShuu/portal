@@ -5,12 +5,10 @@ import { api, apiUpload } from './index'
 export type HelpdeskStatus = 'new' | 'open' | 'pending' | 'closed'
 export type HelpdeskSource = 'email' | 'web'
 export type HelpdeskDirection = 'inbound' | 'outbound'
-export type HelpdeskVisibility = 'public' | 'internal'
 
 export interface HelpdeskMessage {
   id: string
   direction: HelpdeskDirection
-  visibility: HelpdeskVisibility
   source: HelpdeskSource
   author_email: string
   author_name: string | null
@@ -194,7 +192,6 @@ export interface HelpdeskMessageCreateDto {
   body_text?: string
   /** HTML из rich-редактора (TipTap). Основной формат хранения. */
   body_html?: string | null
-  visibility?: HelpdeskVisibility
   /**
    * Cc — адресаты в копии (только для агентского ответа, «Ответить всем»,
    * миграция 083). Массив голых email'ов; бэк нормализует (lowercase, дедуп,
@@ -225,7 +222,6 @@ export function replyAgentTicket(
   const fd = new FormData()
   if (dto.body_text != null) fd.append('body_text', dto.body_text)
   if (dto.body_html != null) fd.append('body_html', dto.body_html)
-  if (dto.visibility) fd.append('visibility', dto.visibility)
   // Cc — повторяющееся Form-поле (``cc=a@x&cc=b@y``), миграция 083. Бэк
   // нормализует: выкидывает support_address/агента/requester, дедуп, лимит 20.
   for (const email of dto.cc ?? []) fd.append('cc', email)
