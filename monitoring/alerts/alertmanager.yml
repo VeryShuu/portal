@@ -1,82 +1,87 @@
-# Reference Alertmanager configuration — STUB.
+# Alertmanager configuration — email-доставка алертов админам.
 #
-# Реальные receivers (email/Slack/Telegram/PagerDuty) настраивает команда под
-# свою инфраструктуру. Здесь — структура с placeholder-ами и routing-логикой.
+# SMTP-relay: Alertmanager шлёт напрямую на корпоративный Postfix/relay,
+# адрес которого задаётся через env-переменные (overlay compose передаёт их
+# из .env / окружения). Это НЕ использует portal email_outbox намеренно:
+# Alertmanager должен уметь уведомить даже когда упал backend/worker —
+# поэтому независимый SMTP-путь критичен.
+#
+# Конфигурация env-переменных (задаются в .env или окружении запуска):
+#   ALERT_SMTP_HOST       — хост SMTP-relay (напр. mail.corp.local)
+#   ALERT_SMTP_PORT       — порт (25 / 587 / 465)
+#   ALERT_SMTP_FROM       — адрес отправителя (напр. portal-alerts@corp.local)
+#   ALERT_ADMINS_EMAIL    — список получателей через запятую
+#   ALERT_SMTP_USER       — username для auth (пусто = без auth)
+#   ALERT_SMTP_PASSWORD   — password для auth (пусто = без auth)
+#
+# При пустых ALERT_ADMINS_EMAIL/ALERT_SMTP_HOST — email не уходит (приёмник
+# null), алерты видны только в UI Alertmanager. Это допустимо для отладки.
 #
 # Проверка конфига:
 #   docker compose -f monitoring/docker-compose.monitoring.yml run --rm alertmanager \
 #     amtool check-config /etc/alertmanager/alertmanager.yml
-#
-# Тест отправки алерта (после запуска):
-#   amtool alert add PortalBackendDown alertmanager=http://localhost:9093 \
-#     severity=critical 'description=test alert'
 
 global:
-  # SMTP- Relay для email-receivers (если используется).
-  # Настройте под свою инфраструктуру. Параметры можно вынести в env.
-  smtp_smarthost: "localhost:25"
-  smtp_from: "portal-alerts@mage.ru"
+  # SMTP-relay. Дефолты задаёт overlay-compose (через ${VAR:-default}), сюда
+  # приходят уже раскрытые значения. ${VAR} без дефолта → Alertmanager при
+  # пустой переменной подставит пустую строку (email-приёмник станет no-op).
+  smtp_smarthost: "${ALERT_SMTP_HOST}:${ALERT_SMTP_PORT}"
+  smtp_from: "${ALERT_SMTP_FROM}"
   smtp_hello: "portal-monitoring"
+  smtp_auth_username: "${ALERT_SMTP_USER}"
+  smtp_auth_password: "${ALERT_SMTP_PASSWORD}"
+  # smtp_require_tls авто: true при порте 587/465, false при 25 (plaintext LAN).
   # resolve_timeout — сколько ждать, прежде чем считать алерт resolved,
   # если Prometheus перестал слать updates (например, при его рестарте).
   resolve_timeout: 5m
 
 # Дерево routing'а: severity → конкретный receiver.
-# Top-level route применяется ко всем алертам, подпути — фильтруют по labels.
 route:
-  receiver: default-webhook
+  receiver: admins-email
   group_by: ["alertname", "service", "severity"]
   group_wait: 30s        # первый алерт в группе ждём 30с, потом шлём
   group_interval: 5m     # интервал между обновлениями группы
   repeat_interval: 4h    # повторно слать ту же группу не чаще 4ч
   routes:
-    # Critical → отдельный канал, без дедупликации.
+    # Critical → без дедупликации, повтор каждые 30 мин (будит быстрее).
     - matchers:
         - severity = critical
-      receiver: critical-webhook
+      receiver: admins-email
       group_wait: 0s
-      repeat_interval: 1h
+      repeat_interval: 30m
 
-    # Warning → основной канал с группировкой.
-    - matchers:
-        - severity = warning
-      receiver: default-webhook
+    # Warning → основной канал с группировкой (наследуется от top-level).
 
-    # Info → только архивируем, не будим.
+    # Info → гасим (storage-growth и т.п. — не будим).
     - matchers:
         - severity = info
       receiver: info-null
 
-# Receivers — placeholders. Заменить на реальные webhook/email/etc.
-# Шаблон показывает как именно подключить разные transport'ы.
 receivers:
-  # Default — webhook на внутренний endpoint (например, MAX-мессенджер бот).
-  - name: default-webhook
-    webhook_configs:
-      - url: "http://localhost:5001/alertmanager"
+  # Основной приёмник — email админам. Список через запятую в ALERT_ADMINS_EMAIL.
+  # При пустой переменной Alertmanager использует пустой список → письмо не уйдёт,
+  # но алерт останется в UI (видно через /api/v2/alerts).
+  - name: admins-email
+    email_configs:
+      - to: "${ALERT_ADMINS_EMAIL}"
         send_resolved: true
+        headers:
+          Subject: '{% raw %}{{ .Status | toUpper }}: {{ .CommonLabels.alertname }} ({{ .CommonLabels.service }}){% endraw %}'
+        # Тело письма — Go-template (Alertmanager использует text/template).
+        html: |
+          <h2>{{ .CommonLabels.alertname }}</h2>
+          <p><b>Состояние:</b> {{ .Status }} · <b>Severity:</b> {{ .CommonLabels.severity }}</p>
+          <p>{{ range .Alerts }}{{ .Annotations.summary }}<br>
+          {{ .Annotations.description }}<br>
+          <i>Firing since:</i> {{ .StartsAt.Format "2006-01-02 15:04:05" }}<br>
+          <i>Labels:</i> {{ range .Labels.SortedPairs }}{{ .Name }}={{ .Value }} {{ end }}<br>{{ end }}</p>
 
-  # Critical — отдельный канал (звонок/PG-реплика).
-  - name: critical-webhook
-    webhook_configs:
-      - url: "http://localhost:5001/alertmanager/critical"
-        send_resolved: true
-    # + email-реплика для архива (раскомментировать и настроить smtp_smarthost):
-    # email_configs:
-    #   - to: "oncall@mage.ru"
-    #     send_resolved: true
-    #     headers:
-    #       Subject: 'CRITICAL: {{ .CommonLabels.alertname }}'
-
-  # Info — заглушка (drop на полпути). Удобно для storage-growth и т.п.
+  # Info — заглушка (drop). Удобно для storage-growth-алертов.
   - name: info-null
-    webhook_configs:
-      - url: "http://localhost:5001/alertmanager/info"
-        send_resolved: false
 
 # Inhibition — подавление «дочерних» алертов, когда родительский firing.
-# Пример: если PortalBackendDown — гасим все PortalHighErrorRate/PortalHighLatency
-# (они всё равно не имеют смысла без живого бэкенда).
+# Пример: если PortalBackendDown — гасим PortalHighErrorRate/PortalHighLatency
+# (они не имеют смысла без живого бэкенда).
 inhibit_rules:
   - source_matchers:
       - alertname = PortalBackendDown

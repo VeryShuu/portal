@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import asyncio
+import uuid
 
 from fastapi import APIRouter
 from pydantic import BaseModel
@@ -25,6 +26,7 @@ from app.api.modules import (
     load_modules_shared,
     photos_module_out,
 )
+from app.core.database import AsyncSessionLocal
 from app.core.logging import get_logger
 from app.core.system_config import (
     GalleryLinksOut,
@@ -82,12 +84,46 @@ def _build_branding() -> BrandingSettingsOut:
     )
 
 
+async def _is_helpdesk_agent(user_id: uuid.UUID, role: str | None) -> bool:
+    """Проверяет членство пользователя в ``helpdesk_agents``.
+
+    Админ — суперсет агента (см. ``require_helpdesk_agent`` в deps.py).
+    Открывает **собственную** сессию: bootstrap запускает несколько DB-задач
+    в ``asyncio.gather``, а одна ``AsyncSession`` запрещает конкурентный доступ
+    (SQLAlchemy ISCE) — поэтому каждая DB-задача работает в изолированной
+    сессии, как в ``app/api/health.py``.
+    """
+    if role == "admin":
+        return True
+    from app.models.helpdesk import HelpdeskAgent
+
+    async with AsyncSessionLocal() as session:
+        res = await session.execute(
+            select(HelpdeskAgent.user_id).where(HelpdeskAgent.user_id == user_id)
+        )
+        return res.first() is not None
+
+
+async def _fetch_unread_count(user_id: uuid.UUID) -> int:
+    """Счётчик непрочитанных уведомлений в собственной сессии (см. _is_helpdesk_agent)."""
+    async with AsyncSessionLocal() as session:
+        return await get_unread_count(session, user_id)
+
+
 @router.get("/bootstrap", response_model=BootstrapOut, summary="Bootstrap данные для SPA")
 async def bootstrap(
     user: CurrentUser,
     db: DbDep,
     redis: RedisDep,
 ) -> BootstrapOut:
+    # NB: ``db`` (request-scoped AsyncSession) НЕ используется для параллельных
+    # DB-чтений ниже — SQLAlchemy запрещает конкурентные операции на одной
+    # async-сессии (ISCE), что проявлялось как плавающий
+    # ``bootstrap.is_helpdesk_agent_failed`` (лог продакшена). Каждая DB-задача
+    # открывает собственную сессию через ``_is_helpdesk_agent`` /
+    # ``_fetch_unread_count``. ``db`` остаётся в сигнатуре, т.к. его получение
+    # запускает транзакцию и даёт CurrentUser через ту же сессию.
+
     async def _get_modules() -> AllModuleSettingsOut:
         m = await load_modules_shared(redis)
         return AllModuleSettingsOut(
@@ -108,25 +144,11 @@ async def bootstrap(
             video_gallery_url=s.video_gallery_url or None,
         )
 
-    async def _get_unread_count() -> int:
-        return await get_unread_count(db, user.id)
-
-    async def _get_is_helpdesk_agent() -> bool:
-        # Админ — суперсет агента (см. require_helpdesk_agent в deps.py).
-        if user.role == "admin":
-            return True
-        from app.models.helpdesk import HelpdeskAgent
-
-        res = await db.execute(
-            select(HelpdeskAgent.user_id).where(HelpdeskAgent.user_id == user.id)
-        )
-        return res.first() is not None
-
     modules_res, gallery_res, unread_res, is_agent_res = await asyncio.gather(
         _get_modules(),
         _get_gallery_links(),
-        _get_unread_count(),
-        _get_is_helpdesk_agent(),
+        _fetch_unread_count(user.id),
+        _is_helpdesk_agent(user.id, user.role),
         return_exceptions=True,
     )
 

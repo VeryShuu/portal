@@ -1,0 +1,23 @@
+# Auto-provisioned Loki datasource for Grafana.
+# Загружается при старте — ручная настройка UI не требуется.
+# http://docs.grafana.org/administration/provisioning/#data-sources
+
+apiVersion: 1
+
+datasources:
+  - name: Loki
+    type: loki
+    access: proxy
+    uid: loki               # фиксированный UID — на него ссылаются дашборды
+    url: http://loki:3100   # внутри сети portal_internal
+    isDefault: false        # Prometheus остаётся default (метрики чаще нужны)
+    editable: true
+    jsonData:
+      maxLines: 1000        # лимит строк на запрос — защита от перегрузки UI
+      # Связь метрик и логов по request_id: клик по точке графика в Grafana
+      # открывает связанные логи с тем же request_id.
+      derivedFields:
+        - datasourceUid: prometheus
+          matcherRegex: "request_id=(\\w+)"
+          name: RequestID
+          url: "$${__value.raw}"

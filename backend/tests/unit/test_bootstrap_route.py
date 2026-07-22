@@ -132,7 +132,8 @@ class TestBootstrapRoute:
                     )
                 ),
             ),
-            patch("app.api.bootstrap.get_unread_count", AsyncMock(return_value=3)),
+            patch("app.api.bootstrap._fetch_unread_count", AsyncMock(return_value=3)),
+            patch("app.api.bootstrap._is_helpdesk_agent", AsyncMock(return_value=False)),
             patch("app.api.bootstrap._build_branding", return_value=branding),
         ):
             async with httpx.AsyncClient(
@@ -175,7 +176,8 @@ class TestBootstrapRoute:
                     )
                 ),
             ),
-            patch("app.api.bootstrap.get_unread_count", AsyncMock(return_value=0)),
+            patch("app.api.bootstrap._fetch_unread_count", AsyncMock(return_value=0)),
+            patch("app.api.bootstrap._is_helpdesk_agent", AsyncMock(return_value=False)),
             patch("app.api.bootstrap._build_branding", return_value=branding),
         ):
             async with httpx.AsyncClient(
@@ -210,7 +212,8 @@ class TestBootstrapRoute:
                 "app.api.bootstrap.load_system_settings_shared",
                 AsyncMock(side_effect=Exception("redis down")),
             ),
-            patch("app.api.bootstrap.get_unread_count", AsyncMock(return_value=0)),
+            patch("app.api.bootstrap._fetch_unread_count", AsyncMock(return_value=0)),
+            patch("app.api.bootstrap._is_helpdesk_agent", AsyncMock(return_value=False)),
             patch("app.api.bootstrap._build_branding", return_value=branding),
         ):
             async with httpx.AsyncClient(
@@ -253,8 +256,9 @@ class TestBootstrapRoute:
                 ),
             ),
             patch(
-                "app.api.bootstrap.get_unread_count", AsyncMock(side_effect=Exception("db error"))
+                "app.api.bootstrap._fetch_unread_count", AsyncMock(side_effect=Exception("db error"))
             ),
+            patch("app.api.bootstrap._is_helpdesk_agent", AsyncMock(return_value=False)),
             patch("app.api.bootstrap._build_branding", return_value=branding),
         ):
             async with httpx.AsyncClient(
@@ -295,7 +299,8 @@ class TestBootstrapRoute:
                     )
                 ),
             ),
-            patch("app.api.bootstrap.get_unread_count", AsyncMock(return_value=0)),
+            patch("app.api.bootstrap._fetch_unread_count", AsyncMock(return_value=0)),
+            patch("app.api.bootstrap._is_helpdesk_agent", AsyncMock(return_value=False)),
             patch("asyncio.to_thread", AsyncMock(side_effect=Exception("disk error"))),
         ):
             async with httpx.AsyncClient(
@@ -304,3 +309,110 @@ class TestBootstrapRoute:
                 r = await ac.get("/bootstrap")
 
         assert r.status_code == 200
+
+    # --- Характеризующие тесты ISCE-фикса (bootstrap.is_helpdesk_agent_failed) ---
+
+    @pytest.mark.asyncio
+    async def test_is_helpdesk_agent_admin_returns_true_without_db(self):
+        """Админ — суперсет агента: флаг True без обращения к БД (раньший SELECT не нужен)."""
+        from app.api.bootstrap import _is_helpdesk_agent
+
+        result = await _is_helpdesk_agent(uuid.uuid4(), role="admin")
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_bootstrap_helpdesk_agent_flag_propagated(self):
+        """is_helpdesk_agent=True от _is_helpdesk_agent доходит в ответ (раньше терялся из-за ISCE)."""
+        import httpx
+
+        user = _make_user()
+        user.role = "editor"  # не admin → идёт через _is_helpdesk_agent
+        db = AsyncMock()
+        redis = AsyncMock()
+        app = _build_app(user, db, redis)
+
+        branding = _make_branding_out()
+        with (
+            patch(
+                "app.api.bootstrap.load_modules_shared",
+                AsyncMock(
+                    return_value=MagicMock(
+                        nextcloud=MagicMock(enabled=False),
+                        photos=MagicMock(),
+                    )
+                ),
+            ),
+            patch(
+                "app.api.bootstrap.load_system_settings_shared",
+                AsyncMock(
+                    return_value=MagicMock(
+                        photo_gallery_url=None,
+                        photo_gallery_mode="external",
+                        photo_gallery_new_tab=False,
+                        video_gallery_url=None,
+                    )
+                ),
+            ),
+            patch("app.api.bootstrap._fetch_unread_count", AsyncMock(return_value=0)),
+            patch("app.api.bootstrap._is_helpdesk_agent", AsyncMock(return_value=True)),
+            patch("app.api.bootstrap._build_branding", return_value=branding),
+        ):
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app), base_url="http://test"
+            ) as ac:
+                r = await ac.get("/bootstrap")
+
+        assert r.status_code == 200
+        assert r.json()["is_helpdesk_agent"] is True
+
+    @pytest.mark.asyncio
+    async def test_bootstrap_db_tasks_use_separate_sessions_not_request_db(self):
+        """DB-задачи открывают собственные сессии, а НЕ request-scoped ``db``.
+
+        Раньше _get_unread_count и _get_is_helpdesk_agent делили одну AsyncSession
+        в asyncio.gather → SQLAlchemy ISCE («concurrent operations are not
+        permitted»). Теперь каждая открывает свою через AsyncSessionLocal. Этот
+        тест фиксирует, что request-db вообще не вызывается для этих задач.
+        """
+        import httpx
+
+        user = _make_user()
+        db = AsyncMock(name="request_db")
+        redis = AsyncMock()
+        app = _build_app(user, db, redis)
+
+        branding = _make_branding_out()
+        with (
+            patch(
+                "app.api.bootstrap.load_modules_shared",
+                AsyncMock(
+                    return_value=MagicMock(
+                        nextcloud=MagicMock(enabled=False),
+                        photos=MagicMock(),
+                    )
+                ),
+            ),
+            patch(
+                "app.api.bootstrap.load_system_settings_shared",
+                AsyncMock(
+                    return_value=MagicMock(
+                        photo_gallery_url=None,
+                        photo_gallery_mode="external",
+                        photo_gallery_new_tab=False,
+                        video_gallery_url=None,
+                    )
+                ),
+            ),
+            patch("app.api.bootstrap._fetch_unread_count", AsyncMock(return_value=5)),
+            patch("app.api.bootstrap._is_helpdesk_agent", AsyncMock(return_value=True)),
+            patch("app.api.bootstrap._build_branding", return_value=branding),
+        ):
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app), base_url="http://test"
+            ) as ac:
+                r = await ac.get("/bootstrap")
+
+        assert r.status_code == 200
+        # request-db НЕ использовался для DB-задач bootstrap (ключевое условие
+        # отсутствия ISCE: конкурентный доступ к одной сессии невозможен).
+        db.execute.assert_not_called()

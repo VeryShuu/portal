@@ -8,6 +8,7 @@ datasources:
   - name: Prometheus
     type: prometheus
     access: proxy
+    uid: prometheus           # фиксированный UID — на него ссылается Loki derivedFields
     url: http://prometheus:9090   # внутри сети portal_internal
     isDefault: true
     editable: true

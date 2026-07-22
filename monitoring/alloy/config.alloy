@@ -1,0 +1,130 @@
+// ===========================================================================
+// Reference Alloy configuration — сбор Docker-логов портала → Loki.
+// ===========================================================================
+//
+// Паттерн: discovery.docker находит контейнеры через Docker socket, Alloy
+// attach'ится к их stdout/stderr и push'ит лог-линии в Loki. Это рекомендованный
+// Grafana способ (Promtail-наследник): ноль per-service конфигурации, новые
+// контейнеры подхватываются автоматически.
+//
+// Что попадает: всё, что контейнеры пишут в stdout/stderr. Для портала это
+//   - portal-backend / portal-worker — JSON от structlog (service/level/...)
+//   - portal-nginx — JSON access-log (json_combined, есть request_id)
+//   - прочие (postgres/redis/...) — plain text, только container_name
+// nginx.conf уже направляет access.log → /dev/stdout, error.log → /dev/stderr
+// (симлинки, проверено) — отдельный mount /var/log/nginx НЕ нужен.
+//
+// Лейбл-стратегия (low-cardinality, см. ADR-044):
+//   container (имя контейнера), service (из structlog), level, stream.
+//   request_id/job_id — НЕ лейблы (high-cardinality), ищутся через LogQL |json.
+//
+// Документация: https://grafana.com/docs/alloy/latest/
+
+// ---------------------------------------------------------------------------
+// 1. Discovery — находим целевые контейнеры.
+// ---------------------------------------------------------------------------
+discovery.docker "portal" {
+	host = "unix:///var/run/docker.sock"
+	// Все контейнеры портала имеют имя portal-* (Compose project = portal).
+	filter {
+		name   = "name"
+		values = ["portal-*"]
+	}
+	refresh_interval = "60s"
+}
+
+// ---------------------------------------------------------------------------
+// 2. Relabel — нормализуем метки из discovery в Loki-лейблы.
+// ---------------------------------------------------------------------------
+// Docker сообщает имя контейнера как "/portal-backend-1" — убираем ведущий
+// слеш, кладём в лейбл `container`. Остальные discovery-метки (image, compose
+// service) доступны как __meta_docker_container_* при необходимости.
+discovery.relabel "portal" {
+	targets = discovery.docker.portal.targets
+
+	rule {
+		source_labels = ["__meta_docker_container_name"]
+		regex         = "/(.*)"
+		target_label  = "container"
+	}
+
+	// Образ — полезный лейбл для различения backend/worker/nginx (низкая
+	// кардинальность, несколько значений).
+	rule {
+		source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+		target_label  = "compose_service"
+	}
+}
+
+// ---------------------------------------------------------------------------
+// 3. Источник логов — attach к stdout/stderr найденных контейнеров.
+// ---------------------------------------------------------------------------
+loki.source.docker "portal" {
+	host          = "unix:///var/run/docker.sock"
+	targets       = discovery.relabel.portal.output
+	relabel_rules = discovery.relabel.portal.rules
+	forward_to    = [loki.process.portal.receiver]
+}
+
+// ---------------------------------------------------------------------------
+// 4. Обработка — парсим JSON, добавляем лейблы.
+// ---------------------------------------------------------------------------
+// Docker driver оборачивает каждую строку: {"log":"<inner>","stream":"stdout"}
+// stage.docker распаковывает envelope, выставляет лейбл `stream`.
+// Затем для JSON-логов (structlog/nginx) извлекаем service/level — это даёт
+// возможность фильтровать в LogQL: {service="portal-backend", level="error"}.
+loki.process "portal" {
+	// Распаковка docker json-file envelope → выставляет stream-лейбл,
+	// содержимое строки становится "сырым" для следующих stage.
+	stage.docker { }
+
+	// Парсим inner как JSON. Для plain-text логов (postgres/redis) поля просто
+	// не появятся — строка пройдёт как есть.
+	stage.json {
+		expressions = {
+			service    = "service", // structlog: portal-backend|portal-worker
+			level      = "level",   // structlog: info|warning|error|...
+			event      = "event",   // structlog: event-key (для поиска)
+			request_id = "request_id",
+			// nginx json_combined (поле "time" — тоже timestamp):
+			status = "status",
+			uri    = "uri",
+		}
+	}
+
+	// Метка времени. structlog → "timestamp" (ISO-8601 UTC); nginx → "time".
+	// Loki берёт первое успешно распарсенное; при неудаче — время приёма.
+	stage.timestamp {
+		source = "timestamp"
+		format = "RFC3339Nano"
+	}
+
+	// Низкокардинальные лейблы. service/level — несколько десятков значений
+	// максимум (portal-backend/portal-worker × info|warning|error|critical).
+	stage.labels {
+		values = {
+			service = "service",
+			level   = "level",
+		}
+	}
+
+	forward_to = [loki.write.default.receiver]
+}
+
+// ---------------------------------------------------------------------------
+// 5. Запись в Loki.
+// ---------------------------------------------------------------------------
+loki.write "default" {
+	endpoint {
+		url = "http://loki:3100/loki/api/v1/push"
+	}
+
+	external_labels = {
+		cluster = "portal",
+	}
+}
+
+// ---------------------------------------------------------------------------
+// 6. Self-metrics Alloy (опционально скрейпится Prometheus).
+// ---------------------------------------------------------------------------
+prometheus.exporter.self "alloy" { }

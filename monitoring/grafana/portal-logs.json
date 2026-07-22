@@ -1,0 +1,288 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {"type": "grafana", "uid": "-- Grafana --"},
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "description": "Логи портала из Loki: ошибки, объём по сервисам/уровням, медленные запросы и 5xx nginx, корреляция по request_id.",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "datasource": {"type": "loki", "uid": "loki"},
+      "fieldConfig": {"defaults": {}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+      "id": 1,
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "prettifyLogMessage": false,
+        "showCommonLabels": false,
+        "showLabels": false,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      },
+      "targets": [
+        {
+          "datasource": {"type": "loki", "uid": "loki"},
+          "editorMode": "builder",
+          "expr": "{service=~\"portal-backend|portal-worker\", level=~\"error|critical\"}",
+          "queryType": "instant",
+          "refId": "A",
+          "maxLines": 100
+        }
+      ],
+      "title": "Ошибки backend/worker (level=error|critical)",
+      "type": "logs"
+    },
+    {
+      "datasource": {"type": "loki", "uid": "loki"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {"legend": false, "tooltip": false, "viz": false},
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {"type": "linear"},
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {"group": "A", "mode": "none"},
+            "thresholdsStyle": {"mode": "off"}
+          },
+          "mappings": [],
+          "thresholds": {"mode": "absolute", "steps": []},
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+      "id": 2,
+      "options": {
+        "legend": {"calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom", "showLegend": true},
+        "tooltip": {"mode": "single", "sort": "none"}
+      },
+      "targets": [
+        {
+          "datasource": {"type": "loki", "uid": "loki"},
+          "editorMode": "code",
+          "expr": "sum by (service) (count_over_time({service=~\"portal-.*\"}[$__range]))",
+          "legendFormat": "{{service}}",
+          "queryType": "instant",
+          "refId": "A"
+        }
+      ],
+      "title": "Объём логов по сервисам",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "loki", "uid": "loki"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 50,
+            "lineWidth": 1,
+            "pointSize": 5,
+            "showPoints": "never",
+            "stacking": {"group": "A", "mode": "normal"}
+          },
+          "unit": "short"
+        },
+        "overrides": [
+          {"matcher": {"id": "byName", "options": "error"}, "properties": [{"id": "color", "value": {"mode": "fixed", "fixedColor": "red"}}]},
+          {"matcher": {"id": "byName", "options": "critical"}, "properties": [{"id": "color", "value": {"mode": "fixed", "fixedColor": "dark-red"}}]},
+          {"matcher": {"id": "byName", "options": "warning"}, "properties": [{"id": "color", "value": {"mode": "fixed", "fixedColor": "orange"}}]},
+          {"matcher": {"id": "byName", "options": "info"}, "properties": [{"id": "color", "value": {"mode": "fixed", "fixedColor": "green"}}]},
+          {"matcher": {"id": "byName", "options": "debug"}, "properties": [{"id": "color", "value": {"mode": "fixed", "fixedColor": "blue"}}]}
+        ]
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+      "id": 3,
+      "options": {
+        "legend": {"calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom", "showLegend": true},
+        "tooltip": {"mode": "single", "sort": "none"}
+      },
+      "targets": [
+        {
+          "datasource": {"type": "loki", "uid": "loki"},
+          "editorMode": "code",
+          "expr": "sum by (level) (count_over_time({service=~\"portal-.*\"}[$__interval]))",
+          "legendFormat": "{{level}}",
+          "queryType": "instant",
+          "refId": "A"
+        }
+      ],
+      "title": "Объём логов по уровню (stacked)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "loki", "uid": "loki"},
+      "fieldConfig": {"defaults": {}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+      "id": 4,
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "prettifyLogMessage": false,
+        "showLabels": false,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      },
+      "targets": [
+        {
+          "datasource": {"type": "loki", "uid": "loki"},
+          "editorMode": "code",
+          "expr": "{container=\"portal-nginx-1\"} | json | request_time > 2",
+          "queryType": "instant",
+          "refId": "A",
+          "maxLines": 50
+        }
+      ],
+      "title": "Медленные запросы nginx (request_time > 2s)",
+      "type": "logs"
+    },
+    {
+      "datasource": {"type": "loki", "uid": "loki"},
+      "fieldConfig": {"defaults": {}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16},
+      "id": 5,
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "showLabels": false,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      },
+      "targets": [
+        {
+          "datasource": {"type": "loki", "uid": "loki"},
+          "editorMode": "code",
+          "expr": "{container=\"portal-nginx-1\"} | json | status >= 500",
+          "queryType": "instant",
+          "refId": "A",
+          "maxLines": 50
+        }
+      ],
+      "title": "5xx ошибки nginx",
+      "type": "logs"
+    },
+    {
+      "datasource": {"type": "loki", "uid": "loki"},
+      "fieldConfig": {"defaults": {}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16},
+      "id": 6,
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "showLabels": false,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      },
+      "targets": [
+        {
+          "datasource": {"type": "loki", "uid": "loki"},
+          "editorMode": "code",
+          "expr": "{service=\"portal-worker\"} | json | logger =~ \".*audit.*\"",
+          "queryType": "instant",
+          "refId": "A",
+          "maxLines": 50
+        }
+      ],
+      "title": "Audit-pipeline события (worker, logger~audit)",
+      "type": "logs"
+    },
+    {
+      "datasource": {"type": "loki", "uid": "loki"},
+      "fieldConfig": {"defaults": {}, "overrides": []},
+      "gridPos": {"h": 10, "w": 24, "x": 0, "y": 24},
+      "id": 7,
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "showCommonLabels": true,
+        "showLabels": true,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      },
+      "targets": [
+        {
+          "datasource": {"type": "loki", "uid": "loki"},
+          "editorMode": "code",
+          "expr": "{container=~\"portal-.*\"} | json | request_id=\"$request_id\"",
+          "queryType": "instant",
+          "refId": "A",
+          "maxLines": 500
+        }
+      ],
+      "title": "Трассировка по request_id (все сервисы)",
+      "type": "logs"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["portal", "logs"],
+  "templating": {
+    "list": [
+      {
+        "current": {"text": "", "value": ""},
+        "datasource": {"type": "loki", "uid": "loki"},
+        "definition": "label_values({container=\"portal-nginx-1\"} | json | status >= 400, request_id)",
+        "hide": 0,
+        "includeAll": false,
+        "label": "request_id",
+        "multi": false,
+        "name": "request_id",
+        "options": [],
+        "query": {
+          "label": "request_id",
+          "query": "label_values({container=\"portal-nginx-1\" | json | status >= 400}, request_id)",
+          "type": "lucene",
+          "datasource": {"type": "loki", "uid": "loki"},
+          "refId": "Loki-variable-query"
+        },
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 0,
+        "type": "query",
+        "allValue": "*"
+      }
+    ]
+  },
+  "time": {"from": "now-6h", "to": "now"},
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Portal — Logs",
+  "uid": "portal-logs",
+  "version": 1,
+  "weekStart": ""
+}

@@ -1,14 +1,15 @@
-# Docker Compose overlay для observability-стека (Prometheus + Alertmanager + Grafana).
+# Docker Compose overlay для observability-стека
+# (Prometheus + Alertmanager + Grafana + Loki + Alloy).
 #
 # НЕ подключается автоматически к основному docker-compose.yml — это overlay,
-# который поднимается явно через `-f`. Так тяжёлые образы (≈500 МБ суммарно)
+# который поднимается явно через `-f`. Так тяжёлые образы (~900 МБ суммарно)
 # не тащатся в базовый деплой портала.
 #
-# Запуск (полный observability-стек):
+# Запуск (полный observability-стек — метрики + логи + алерты + UI):
 #   docker compose \
 #     -f docker-compose.yml \
 #     -f monitoring/docker-compose.monitoring.yml \
-#     up -d prometheus alertmanager grafana
+#     up -d prometheus alertmanager grafana loki alloy
 #
 # Запуск с scrape-токеном (если metrics_token задан в system.json):
 #   PORTAL_METRICS_TOKEN="$(jq -r .metrics_token // empty system_data/settings/system.json)" \
@@ -19,11 +20,17 @@
 #
 # Сервисы подключаются к существующей сети `portal_internal` (объявлена в
 # основном docker-compose.yml), поэтому видят `backend`, `redis`, `postgres`.
+# Alloy дополнительно монтирует Docker socket (read-only) для discovery
+# контейнеров и attach к их stdout/stderr.
 #
 # Volumes (данные переживают restart):
 #   - prometheus-data      — TSDB (≈30 дней retention по умолчанию)
 #   - alertmanager-data    — state алертов (silences, notifications)
 #   - grafana-data         — пользователи, дашборды (правленные через UI)
+#   - loki-data            — чанки логов (retention 30d, compactor чистит)
+#
+# UI (на хосте, проброшены на 127.0.0.1 — через SSH-туннель или reverse-proxy):
+#   Prometheus :9090  Alertmanager :9093  Grafana :3000  Loki :3100  Alloy :12345
 
 services:
   prometheus:
@@ -42,7 +49,9 @@ services:
       - "--web.enable-lifecycle"   # позволяет POST /-/reload без restart
     volumes:
       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - ./monitoring/alerts:/etc/prometheus/rules:ro
+      # Только alert-rules (portal.yml), НЕ alertmanager.yml — это config
+      # alertmanager-сервиса, для Prometheus это невалидный rules-файл.
+      - ./monitoring/alerts/portal.yml:/etc/prometheus/rules/portal.yml:ro
       - prometheus-data:/prometheus
     ports:
       - "127.0.0.1:9090:9090"     # только localhost — пробрасывать наружу через reverse-proxy
@@ -68,6 +77,15 @@ services:
     command:
       - "--config.file=/etc/alertmanager/alertmanager.yml"
       - "--storage.path=/alertmanager"
+    # SMTP-параметры для email-receivers (см. alertmanager.yml). Пустые по
+    # умолчанию → алерты видны только в UI, без доставки. Задать в .env.
+    environment:
+      ALERT_SMTP_HOST: ${ALERT_SMTP_HOST:-}
+      ALERT_SMTP_PORT: ${ALERT_SMTP_PORT:-25}
+      ALERT_SMTP_FROM: ${ALERT_SMTP_FROM:-portal-alerts@localhost}
+      ALERT_SMTP_USER: ${ALERT_SMTP_USER:-}
+      ALERT_SMTP_PASSWORD: ${ALERT_SMTP_PASSWORD:-}
+      ALERT_ADMINS_EMAIL: ${ALERT_ADMINS_EMAIL:-}
     volumes:
       - ./monitoring/alerts/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
       - alertmanager-data:/alertmanager
@@ -94,9 +112,77 @@ services:
       # Provisioning — datasources и dashboards загружаются при старте.
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./monitoring/grafana/portal-overview.json:/var/lib/grafana/dashboards/portal-overview.json:ro
+      - ./monitoring/grafana/portal-logs.json:/var/lib/grafana/dashboards/portal-logs.json:ro
       - grafana-data:/var/lib/grafana
     ports:
       - "127.0.0.1:3000:3000"
+    networks:
+      - internal
+    logging: *default-logging
+
+  # ---------------------------------------------------------------------
+  # Loki — централизованное хранилище логов. Приём push от Alloy на :3100.
+  # Single-binary (monolith) — достаточно для ~300 сотрудников. Retention 30d.
+  # ---------------------------------------------------------------------
+  loki:
+    image: grafana/loki:3.7.3
+    container_name: portal-loki
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    command:
+      - "-config.file=/etc/loki/config.yml"
+    volumes:
+      - ./monitoring/loki/config.yml:/etc/loki/config.yml:ro
+      - loki-data:/loki
+    ports:
+      - "127.0.0.1:3100:3100"
+    # NB: с Loki 3.6.0 busybox убран из образа — wget/curl недоступны,
+    # встроенный HTTP-healthcheck (/ready) сделать нечем (upstream issue
+    # grafana/loki#20149). Готовность обеспечивается restart: unless-stopped;
+    # ручная проверка: curl http://localhost:3100/ready с хоста.
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1g
+    networks:
+      - internal
+    logging: *default-logging
+
+  # ---------------------------------------------------------------------
+  # Alloy — сборщик логов. Discovery через Docker socket, attach к stdout/
+  # stderr контейнеров portal-*, push в Loki. Заменяет Promtail (maintenance).
+  # ---------------------------------------------------------------------
+  alloy:
+    image: grafana/alloy:1.18.0
+    container_name: portal-alloy
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    command:
+      - "run"
+      - "/etc/alloy/config.alloy"
+      - "--server.http.listen-addr=0.0.0.0:12345"
+      - "--stability.level=generally-available"
+    volumes:
+      - ./monitoring/alloy/config.alloy:/etc/alloy/config.alloy:ro
+      # Docker socket — discovery контейнеров + attach к stdout/stderr.
+      # Read-only: discovery + attach работают на чтение; alloy не управляет
+      # контейнерами (не start/stop), только читает логи.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    ports:
+      - "127.0.0.1:12345:12345"   # Alloy UI — inspect pipeline, debugging
+    depends_on:
+      - loki    # без service_healthy — у Loki нет встроенного healthcheck (см. выше)
+    # NB: образ alloy не содержит wget/curl (upstream #477) — встроенный
+    # healthcheck невозможен. Готовность: restart + ручная проверка
+    # http://localhost:12345/-/ready с хоста.
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512m
     networks:
       - internal
     logging: *default-logging
@@ -105,6 +191,7 @@ volumes:
   prometheus-data:
   alertmanager-data:
   grafana-data:
+  loki-data:
 
 networks:
   internal:

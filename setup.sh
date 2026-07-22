@@ -235,6 +235,26 @@ setup_env() {
     HTTP_PORT=$(ask  "HTTP порт             HTTP_PORT"  "80")
     HTTPS_PORT=$(ask "HTTPS порт            HTTPS_PORT" "443")
 
+    # ── Observability (опционально) ────────────────────────────────────────────
+    h2 "Observability (Grafana + алерты)"
+    echo -e "  ${DIM}Параметры для observability-overlay (monitoring/docker-compose.monitoring.yml).${RESET}"
+    echo -e "  ${DIM}Overlay НЕ подключается к прод-стеку автоматически — его поднимают явно.${RESET}"
+    echo -e "  ${DIM}Grafana admin-пароль. SMTP для алертов — можно пропустить (Enter).${RESET}"
+    echo
+    GRAFANA_ADMIN_PASSWORD=$(gen_or_ask "Grafana admin пароль  GRAFANA_ADMIN_PASSWORD")
+    echo
+    echo -e "  ${DIM}SMTP-relay для доставки алертов админам. Пусто = алерты только в UI.${RESET}"
+    ALERT_SMTP_HOST=$(ask "SMTP host             ALERT_SMTP_HOST"  "")
+    if [[ -n "$ALERT_SMTP_HOST" ]]; then
+        ALERT_SMTP_PORT=$(ask "SMTP port             ALERT_SMTP_PORT"  "25")
+        ALERT_SMTP_FROM=$(ask "SMTP From             ALERT_SMTP_FROM"  "portal-alerts@${ALERT_SMTP_HOST}")
+        ALERT_ADMINS_EMAIL=$(ask "Email админов         ALERT_ADMINS_EMAIL"  "")
+        ALERT_SMTP_USER=$(ask "SMTP user (опц.)      ALERT_SMTP_USER"  "")
+        [[ -n "$ALERT_SMTP_USER" ]] && ALERT_SMTP_PASSWORD=$(ask_secret "SMTP password         ALERT_SMTP_PASSWORD") || ALERT_SMTP_PASSWORD=""
+    else
+        ALERT_SMTP_PORT="" ALERT_SMTP_FROM="" ALERT_ADMINS_EMAIL="" ALERT_SMTP_USER="" ALERT_SMTP_PASSWORD=""
+    fi
+
     # ── Запись .env ─────────────────────────────────────────────────────────────
     local POSTGRES_PASSWORD_ENC REDIS_PASSWORD_ENC
     POSTGRES_PASSWORD_ENC=$(encode_url "$POSTGRES_PASSWORD")
@@ -280,6 +300,19 @@ ADMIN_PASSWORD_RESET_ON_START=false
 SCREENSHOT_SERVICE_SECRET='${SCREENSHOT_SERVICE_SECRET}'
 # (опционально) Allowlist origin'ов для endpoint /screenshot (защита от SSRF).
 # SCREENSHOT_ALLOWED_ORIGINS=https://portal.company.local
+
+# === Observability (overlay monitoring/docker-compose.monitoring.yml) ===
+# Используется только при явном поднятии overlay (не в базовом прод-деплое).
+GRAFANA_ADMIN_USER=admin
+GRAFANA_ADMIN_PASSWORD='${GRAFANA_ADMIN_PASSWORD}'
+PORTAL_METRICS_TOKEN=
+# SMTP для доставки алертов админам (Alertmanager → email). Пусто = алерты только в UI.
+ALERT_SMTP_HOST=${ALERT_SMTP_HOST}
+ALERT_SMTP_PORT=${ALERT_SMTP_PORT}
+ALERT_SMTP_FROM=${ALERT_SMTP_FROM}
+ALERT_ADMINS_EMAIL=${ALERT_ADMINS_EMAIL}
+ALERT_SMTP_USER=${ALERT_SMTP_USER}
+ALERT_SMTP_PASSWORD='${ALERT_SMTP_PASSWORD}'
 EOF
 
     chmod 600 .env
