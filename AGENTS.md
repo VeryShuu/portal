@@ -105,6 +105,7 @@
 |---|---|
 | Поднять всё (prod-like) | `docker compose up -d` |
 | Поднять dev | `docker compose -f docker-compose.dev.yml up -d` |
+| Поднять мониторинг (overlay) | `./setup.sh` → пункт 10 (Grafana :3000 + Loki + Prometheus + Alloy) |
 | Посмотреть логи backend | `docker compose logs -f backend` |
 | Создать новую миграцию | `docker compose exec backend alembic revision --autogenerate -m "description"` |
 
@@ -119,6 +120,7 @@
    - Работа с БД → `docs/db-schema.md`
    - Новый/изменённый API → `docs/api-contracts.md`
    - Изменение прав доступа → `docs/roles-matrix.md`
+   - Логирование/метрики/мониторинг/alerting → `docs/monitoring.md` + `monitoring/README.md` (ADR-044)
    - Спорное архитектурное решение → `docs/adr.md`
 3. Не меняй API-контракты без явного подтверждения
 
@@ -191,6 +193,8 @@
 **Backend:** Python 3.12 · **FastAPI** · SQLAlchemy 2.x async + Alembic · **ARQ** (workers) · **fastapi-limiter** (не slowapi) · httpx · structlog · python-magic · **nh3** · Pytest + Testcontainers
 
 **Infra:** PostgreSQL 16 · Redis 7 · Nginx · Docker Compose · GitHub Actions · **Keycloak** (IdP) · **Nextcloud** (files) · **Collabora Online** (editor) · Postfix (SMTP)
+
+**Observability** (опциональный overlay `monitoring/`, не в базовом compose): **Grafana** (UI) · **Loki** (логи) · **Prometheus** (метрики) · **Alloy** (сборщик Docker-логов) · **Alertmanager** (email-алерты). Запуск: `setup.sh` → пункт 10. Подробности: `docs/monitoring.md` §7-9, ADR-044.
 
 ---
 
@@ -326,6 +330,7 @@ portal/
 ├── nginx/                     ← Dockerfile, Dockerfile.config (sidecar), templates/, render-config.sh
 ├── postgres/                  ← Dockerfile с hunspell-ru словарями
 ├── system_data/               ← runtime-данные (volume): nginx/, nginx_conf/, certs/, secrets/, settings/
+├── monitoring/                ← observability-overlay (Grafana+Loki+Prometheus+Alloy+Alertmanager); НЕ в базовом compose, поднимается `setup.sh` → пункт 10 (ADR-044)
 ├── docker-compose.yml         ← все сервисы; docker-compose.dev.yml / docker-compose.staging.yml — overlay-конфиги
 ├── setup.sh                   ← первичная настройка
 └── openapi.json               ← OpenAPI 3.1 (генерируется: cd backend && python -m scripts.export_openapi)
@@ -401,6 +406,7 @@ Chromium вынесен из бэкенда в `screenshot-service/` (aiohttp + 
 2. `docs/api-contracts.md` — контракты (не меняй без обсуждения)
 3. `docs/adr.md` — ADR (архитектурные решения и их обоснование)
 4. `docs/roles-matrix.md` — матрица прав (не решай самостоятельно кто что видит)
+5. `docs/monitoring.md` + `monitoring/README.md` — observability (метрики/логи/alerting; ADR-044)
 
 ---
 

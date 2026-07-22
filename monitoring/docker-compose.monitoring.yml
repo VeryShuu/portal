@@ -54,13 +54,14 @@ services:
       - ./monitoring/alerts/portal.yml:/etc/prometheus/rules/portal.yml:ro
       - prometheus-data:/prometheus
     ports:
-      - "127.0.0.1:9090:9090"     # только localhost — пробрасывать наружу через reverse-proxy
+      - "9090:9090"               # 0.0.0.0 — для доступа из Windows в WSL2
     environment:
       # Подставляется в prometheus.yml::scrape_configs.authorization.credentials.
       # Пустая строка → /metrics открыт (закрытый периметр/VPN).
       PORTAL_METRICS_TOKEN: ${PORTAL_METRICS_TOKEN:-}
     networks:
       - internal
+      - external
     logging: &default-logging
       driver: json-file
       options:
@@ -90,9 +91,10 @@ services:
       - ./monitoring/alerts/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
       - alertmanager-data:/alertmanager
     ports:
-      - "127.0.0.1:9093:9093"
+      - "9093:9093"               # 0.0.0.0 — доступ из Windows в WSL2
     networks:
       - internal
+      - external
     logging: *default-logging
 
   grafana:
@@ -115,9 +117,10 @@ services:
       - ./monitoring/grafana/portal-logs.json:/var/lib/grafana/dashboards/portal-logs.json:ro
       - grafana-data:/var/lib/grafana
     ports:
-      - "127.0.0.1:3000:3000"
+      - "3000:3000"               # 0.0.0.0 — доступ из Windows в WSL2
     networks:
       - internal
+      - external
     logging: *default-logging
 
   # ---------------------------------------------------------------------
@@ -136,7 +139,7 @@ services:
       - ./monitoring/loki/config.yml:/etc/loki/config.yml:ro
       - loki-data:/loki
     ports:
-      - "127.0.0.1:3100:3100"
+      - "3100:3100"               # 0.0.0.0 — доступ из Windows в WSL2 (обычно через Grafana)
     # NB: с Loki 3.6.0 busybox убран из образа — wget/curl недоступны,
     # встроенный HTTP-healthcheck (/ready) сделать нечем (upstream issue
     # grafana/loki#20149). Готовность обеспечивается restart: unless-stopped;
@@ -148,6 +151,7 @@ services:
           memory: 1g
     networks:
       - internal
+      - external
     logging: *default-logging
 
   # ---------------------------------------------------------------------
@@ -172,7 +176,7 @@ services:
       # контейнерами (не start/stop), только читает логи.
       - /var/run/docker.sock:/var/run/docker.sock:ro
     ports:
-      - "127.0.0.1:12345:12345"   # Alloy UI — inspect pipeline, debugging
+      - "12345:12345"             # 0.0.0.0 — Alloy UI (inspect pipeline, debugging)
     depends_on:
       - loki    # без service_healthy — у Loki нет встроенного healthcheck (см. выше)
     # NB: образ alloy не содержит wget/curl (upstream #477) — встроенный
@@ -185,6 +189,7 @@ services:
           memory: 512m
     networks:
       - internal
+      - external
     logging: *default-logging
 
 volumes:
@@ -197,3 +202,6 @@ networks:
   internal:
     external: true
     name: portal_internal
+  external:
+    external: true
+    name: portal_external

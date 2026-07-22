@@ -37,6 +37,7 @@
 | Интеграции | Keycloak (OIDC), Nextcloud (WebDAV + Collabora WOPI), Postfix |
 | PDF/скриншоты | screenshot-service (Playwright/Chromium, отдельный контейнер) |
 | Инфраструктура | Docker Compose, Nginx, GitHub Actions |
+| Observability | Grafana + Loki + Prometheus + Alloy + Alertmanager (overlay `monitoring/`, ADR-044) |
 | Тесты | Pytest + pytest-asyncio + Testcontainers, Vitest, Playwright, k6 |
 
 ---
@@ -68,6 +69,16 @@ docker compose up -d --build
 
 Первый вход: `ADMIN_EMAIL` / `ADMIN_PASSWORD` из `.env`. **Смените пароль сразу через профиль.**
 Остальные настройки (Keycloak, SMTP, TLS, лимиты) — в **Admin UI → Администрирование**.
+
+#### Мониторинг (опционально)
+
+Observability-стек (Grafana + Loki + Prometheus + Alloy + Alertmanager) — отдельный overlay, не входит в базовый деплой. Поднимается поверх работающего портала:
+
+```bash
+bash setup.sh          # → выбрать пункт 10 «Запустить мониторинг»
+```
+
+После старта: Grafana — `http://localhost:3000` (admin / `GRAFANA_ADMIN_PASSWORD` из `.env`). Дашборды «Portal — Logs» (централизованные логи) и «Portal — Overview» (метрики) провижн автоматически. Подробности: `docs/monitoring.md`, `monitoring/README.md`, ADR-044.
 
 ---
 

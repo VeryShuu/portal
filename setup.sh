@@ -1344,6 +1344,7 @@ start_monitoring() {
         else
             echo -e "  ${DIM}Логин admin / пароль из .env::GRAFANA_ADMIN_PASSWORD${RESET}"
         fi
+        echo -e "  ${DIM}Доступ из Windows (WSL2): тот же URL или http://localhost:3000${RESET}"
     else
         echo -e "  ${YELLOW}Grafana:${RESET}        http://${server_addr}:3000 ${YELLOW}(ещё стартует — открой через ~30 c)${RESET}"
     fi
@@ -1362,9 +1363,11 @@ start_monitoring() {
         warn "Loki ещё стартует — логи появятся в дашборде через ~30 c."
     fi
     echo
-    echo -e "  ${BOLD}Остановка мониторинга:${RESET}"
-    echo -e "  ${DIM}docker compose -f docker-compose.yml -f monitoring/docker-compose.monitoring.yml down${RESET}"
-    echo -e "  ${DIM}(данные Grafana/Loki/Prometheus сохраняются в named volumes).${RESET}"
+    echo -e "  ${BOLD}Остановка мониторинга (без остановки портала):${RESET}"
+    echo -e "  ${DIM}docker compose -f docker-compose.yml -f monitoring/docker-compose.monitoring.yml \${RESET}"
+    echo -e "  ${DIM}    stop prometheus alertmanager grafana loki alloy${RESET}"
+    echo -e "  ${DIM}(ВНИМАНИЕ: 'down' вместо 'stop' остановит ВЕСЬ стек портала — оба compose-f.${RESET}"
+    echo -e "  ${DIM} данные Grafana/Loki/Prometheus сохраняются в named volumes при любом варианте.)${RESET}"
     echo
 }
 
