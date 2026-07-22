@@ -59,9 +59,11 @@ UI (на хосте, проброшены на `127.0.0.1` — через SSH-т
 
 ## Настройка scrape-токена
 
-Backend защищает `/metrics` заголовком `X-Metrics-Token` (см. `docs/monitoring.md`
-§3, `middleware/metrics.py::_require_metrics_token`). Если токен задан в
-`/data/settings/system.json::metrics_token`, передаём через env:
+Backend защищает `/metrics` токеном из `system.json::metrics_token` (см.
+`docs/monitoring.md` §3, `middleware/metrics.py::_require_metrics_token`),
+принимаемым через `Authorization: Bearer` (этот путь настраивает Prometheus)
+**или** `X-Metrics-Token` (для ad-hoc `curl`). Если токен задан, передаём
+через env:
 
 ```bash
 PORTAL_METRICS_TOKEN="$(jq -r .metrics_token // empty system_data/settings/system.json)" \

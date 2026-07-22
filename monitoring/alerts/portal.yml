@@ -10,7 +10,7 @@
 #   portal_audit_queue_depth                   — gauge (Redis audit_queue)
 #   portal_audit_processing_depth              — gauge (Redis audit_processing)
 #   portal_audit_events_pushed_total           — counter (rate push)
-#   portal_sse_connections                     — gauge
+#   portal_sse_connections                     — gauge (open SSE streams)
 #   portal_active_users_last_1h                — gauge
 #   up{job="portal"}                           — scrape success
 #
@@ -141,6 +141,20 @@ groups:
         annotations:
           summary: "Высокая p99-латентность (handler={{ $labels.handler }})"
           description: "p99 latency > 5s для handler={{ $labels.handler }} в течение 5 мин. Возможные причины: медленный SQL-запрос, блокировки БД, нехватка соединений пула."
+
+      # SSE-соединения (уведомления) — portal_sse_connections, обновляется
+      # раз в 30с из Redis ZSET sse:global. При ~300 юзеров норма — десятки
+      # открытых стримов. > 500 устойчиво — явный признак утечки: браузеры не
+      # закрывают EventSource (вкладки-зомби, обрыв сети без reconnect-логики).
+      - alert: PortalSSEConnectionsHigh
+        expr: portal_sse_connections > 500
+        for: 10m
+        labels:
+          severity: warning
+          service: portal-backend
+        annotations:
+          summary: "Аномальный рост SSE-соединений ({{ $value }})"
+          description: "Открыто > 500 SSE-стримов уведомлений уже 10 мин. Норма для ~300 юзеров — десятки. Вероятна утечка: незакрытые EventSource в браузерах, вкладки-зомби или обрывы сети без корректного reconnect. Проверить ZSET sse:global в Redis и логику закрытия стримов в frontend."
 
       # Фото-хранилище > 100 ГБ — порог для планирования расширения.
       # Низкий priority, чисто информационный.

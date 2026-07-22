@@ -1307,7 +1307,7 @@ ADR-035 ввёл silent refresh по таймеру + retry-on-401. Endpoint `PO
 **Контекст:**
 Портал экспортировал Prometheus-метрики (`/metrics`), но consumer-стороны (централизованные логи, просмотр, alerting) не было: логи жили только в `docker logs` по контейнерам, алерты — только через Sentry (который не использовался и не планировался, SaaS-форма недопустима по политике интранет/VPN, self-hosted Sentry избыточно тяжёл). Требовалось: единый просмотр логов и метрик, alerting на проблемы (5xx, рост очереди аудита, падение воркера), всё offline-capable (интранет).
 
-Слой логирования уже был подготовлен: structlog (`[./backend/app/core/logging.py](../backend/app/core/logging.py)`) отдаёт JSON в production, с contextvars (`request_id`, `service`), redaction секретов/PII — формат нативно совместим с Loki/ELK. `x-logging` anchor (`docker-compose.yml`, ADR-041) использует docker json-file driver с ротацией 50М×5; nginx пишет access-log в `/dev/stdout` через симлинк. Reference-стек Prometheus + Alertmanager + Grafana уже существовал в `monitoring/` (сессия от 2026-07-21, wip `observability-remediation.md`) как overlay.
+Слой логирования уже был подготовлен: structlog (`[./backend/app/core/logging.py](../backend/app/core/logging.py)`) отдаёт JSON в production, с contextvars (`request_id`, `service`), redaction секретов/PII — формат нативно совместим с Loki/ELK. `x-logging` anchor (`docker-compose.yml`, ADR-041) использует docker json-file driver с ротацией 50М×5; nginx пишет access-log в `/dev/stdout` через симлинк. Reference-стек Prometheus + Alertmanager + Grafana уже существовал в `monitoring/` (сессия от 2026-07-21) как overlay.
 
 **Решение:**
 

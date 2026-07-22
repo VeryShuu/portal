@@ -12,13 +12,34 @@ from app.worker.tasks.metrics import METRICS_SNAPSHOT_KEY
 logger = get_logger(__name__)
 
 
-async def _require_metrics_token(x_metrics_token: str = Header(default="")) -> None:
+async def _require_metrics_token(
+    x_metrics_token: str = Header(default=""),
+    authorization: str = Header(default=""),
+) -> None:
+    """Validate the scrape token protecting ``/metrics``.
+
+    Accepts the token via either of two headers (both checked, either suffices):
+
+    * ``Authorization: Bearer <token>`` — canonical Prometheus transport
+      (``prometheus.yml::scrape_configs.authorization.credentials`` sends this).
+    * ``X-Metrics-Token: <token>`` — legacy/custom header, convenient for
+      ad-hoc ``curl`` checks and operator scripts.
+
+    If ``system.json::metrics_token`` is empty, ``/metrics`` is open (closed
+    perimeter/VPN assumption). When set, a wrong/missing token → 403.
+    """
     from app.core.system_config import load_system_settings
 
     tok = load_system_settings().metrics_token
     if not tok:
         return
-    if not secrets.compare_digest(x_metrics_token, tok):
+
+    bearer = ""
+    if authorization.lower().startswith("bearer "):
+        bearer = authorization[7:]
+
+    provided = bearer or x_metrics_token
+    if not provided or not secrets.compare_digest(provided, tok):
         raise HTTPException(status_code=403, detail="Forbidden")
 
 

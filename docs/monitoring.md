@@ -69,10 +69,21 @@
 
 ### Токен-защита
 
-Заголовок `X-Metrics-Token` сверяется с `system.json::metrics_token` через
-`secrets.compare_digest` (constant-time). Если токен **не задан** — эндпоинт
-открыт (удобно для закрытого периметра/VPN); если задан — без верного заголовка
-`403`. Prometheus настраивается слать токен в scrape-конфиге.
+Backend принимает токен через **любой из двух заголовков** (любого достаточно):
+
+- `Authorization: Bearer <token>` — **канонический транспорт Prometheus**
+  (`prometheus.yml::scrape_configs.authorization.credentials` шлёт именно его);
+- `X-Metrics-Token: <token>` — legacy/ручной заголовок, удобен для ad-hoc `curl`
+  и операторских скриптов.
+
+Схема `Bearer` регистронечувствительна. Сверка — `secrets.compare_digest`
+(constant-time). Если токен **не задан** в `system.json::metrics_token` —
+эндпоинт открыт (допустимо в закрытом периметре/VPN); если задан — без верного
+заголовка `403`.
+
+> **Важно:** ранее backend принимал только `X-Metrics-Token`, а Prometheus шлёт
+> `Authorization: Bearer` — при заданном токене scrape падал в 403 и бросал
+> ложный `PortalBackendDown` при живом портале. Теперь оба заголовка валидны.
 
 ### Кастомные метрики (cross-process snapshot)
 
@@ -81,7 +92,7 @@
 `portal_audit_processing_depth`, `portal_active_users_last_1h`,
 `portal_photo_storage_bytes`, `portal_kb_articles_total{status}`,
 `portal_news_published_total{status}`, `portal_users_total{auth_source}` и
-счётчики вроде `portal_arq_jobs_enqueued_total`).
+счётчик `portal_audit_events_pushed_total{event_type}`).
 
 Загвоздка: значения этих гейджей знает **воркер**, а scrape приходит в **API**.
 Поэтому:
@@ -221,6 +232,7 @@ UI Alertmanager. Переменные задаются в `.env` (см. `.env.ex
 | `PortalAuditFlushStuck` | 🟡 warning | `portal_audit_processing_depth > 0` 10 мин | Батч взят, но не закоммичен — БД-связность / deadlock |
 | `PortalWorkerStale` | 🟡 warning | gauge не менялся 3 мин | ARQ-cron не выполняется — воркер скорее всего мёртв |
 | `PortalHighLatencyP99` | 🟡 warning | p99 latency > 5s | Медленный SQL / блокировки / нехватка пула |
+| `PortalSSEConnectionsHigh` | 🟡 warning | `portal_sse_connections > 500` 10 мин | Утечка SSE-стримов (незакрытые EventSource, вкладки-зомби) |
 | `PortalPhotoStorageHigh` | 🔵 info | `/data/photos > 100 ГБ` | Планировать ёмкость |
 
 > `PortalArqJobsFailing` (на `portal_arq_jobs_failed_total`) удалён: счётчики
@@ -233,8 +245,11 @@ email-receivers через SMTP-relay (см. §7 «Email-доставка але
 ### Грабли reference-стека
 
 - **Scrape-токен через env.** `PORTAL_METRICS_TOKEN` подставляется в
-  `prometheus.yml` (`${...}` раскрытие compose-ом при `up`). **Не хардкодить**
-  токен в YAML и **не коммитить**.
+  `prometheus.yml::authorization.credentials` — Prometheus шлёт его как
+  `Authorization: Bearer <token>` (канонический транспорт). Backend также
+  принимает legacy-заголовок `X-Metrics-Token` (для ad-hoc `curl`). Раскрытие
+  `${...}` делает compose при `up`. **Не хардкодить** токен в YAML и **не
+  коммитить**. Пустой токен → `/metrics` открыт (закрытый периметр/VPN).
 - **`for:` ≥ 2 мин** на все алерты — даёт лагу cross-process snapshot (≤30с) и
   отдельным всплескам 5xx settle'нуться без будоражащего alerting'а.
 - **Inhibition**: `PortalBackendDown` глушит все остальные `service=portal-backend`

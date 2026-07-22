@@ -66,7 +66,7 @@ receivers:
       - to: "${ALERT_ADMINS_EMAIL}"
         send_resolved: true
         headers:
-          Subject: '{% raw %}{{ .Status | toUpper }}: {{ .CommonLabels.alertname }} ({{ .CommonLabels.service }}){% endraw %}'
+          Subject: '{{ .Status | toUpper }}: {{ .CommonLabels.alertname }} ({{ .CommonLabels.service }})'
         # Тело письма — Go-template (Alertmanager использует text/template).
         html: |
           <h2>{{ .CommonLabels.alertname }}</h2>

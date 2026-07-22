@@ -1,11 +1,11 @@
 {
     "schema_version": 2,
-    "commit": "99a52d630d313e87d8fdd9bb5084d399f17e51ad",
-    "indexed_at": "2026-07-22T19:14:25Z",
+    "commit": "e7ba117ed7f79db41cea45982649e127b5d5c7bf",
+    "indexed_at": "2026-07-22T20:00:22Z",
     "project": "portal",
-    "nodes": 22151,
-    "edges": 109651,
-    "original_size": 55836672,
-    "compressed_size": 11912902,
+    "nodes": 22167,
+    "edges": 109767,
+    "original_size": 55771136,
+    "compressed_size": 11920674,
     "compression_level": 3
 }

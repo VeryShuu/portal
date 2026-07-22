@@ -4,10 +4,11 @@
 #   - portal-backend (`/metrics` на порту 8000 внутри сети portal_internal)
 #   - prometheus (self-scrape для health)
 #
-# Token protection: backend требует заголовок `X-Metrics-Token` если
-# `system.json::metrics_token` задан (см. middleware/metrics.py).
-# Передаём через `authorization.credentials`. Если токен пуст — `/metrics`
-# открыт (допустимо в закрытом периметре/VPN).
+# Token protection: backend сверяет токен с system.json::metrics_token либо
+# через Authorization: Bearer (этот путь — canonical Prometheus transport),
+# либо через заголовок X-Metrics-Token (см. middleware/metrics.py,
+# docs/monitoring.md §3). Здесь используем Bearer — так настраивает Prometheus.
+# Если токен пуст — /metrics открыт (допустимо в закрытом периметре/VPN).
 #
 # Запуск:
 #   PORTAL_METRICS_TOKEN="$(jq -r .metrics_token // empty system_data/settings/system.json)" \
