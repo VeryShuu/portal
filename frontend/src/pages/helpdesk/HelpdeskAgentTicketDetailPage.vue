@@ -65,6 +65,7 @@
                 agent-mode
                 :ticket-id="ticketId"
                 :loading="replying"
+                :participants="ticket.participants"
                 @submit="onReply"
               />
             </n-card>
@@ -76,6 +77,7 @@
               editable
             />
             <RequesterProfileCard :profile="ticket.requester_profile" />
+            <TicketParticipantsCard :participants="ticket.participants ?? []" />
           </aside>
         </div>
       </template>
@@ -94,6 +96,7 @@ import TicketInfoCard from '../../components/helpdesk/TicketInfoCard.vue'
 import TicketMessageList from '../../components/helpdesk/TicketMessageList.vue'
 import TicketReplyForm from '../../components/helpdesk/TicketReplyForm.vue'
 import RequesterProfileCard from '../../components/helpdesk/RequesterProfileCard.vue'
+import TicketParticipantsCard from '../../components/helpdesk/TicketParticipantsCard.vue'
 import {
   fetchAgentTicket,
   takeTicket,
@@ -187,12 +190,13 @@ async function onReply(payload: {
   body_html: string
   visibility: 'public' | 'internal'
   files: File[]
+  cc?: string[]
 }) {
   replying.value = true
   try {
     await replyAgentTicket(
       ticketId,
-      { body_html: payload.body_html, visibility: payload.visibility },
+      { body_html: payload.body_html, visibility: payload.visibility, cc: payload.cc },
       payload.files,
     )
     message.success(t('helpdesk.replySent'))

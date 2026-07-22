@@ -202,6 +202,14 @@ class HelpdeskMessage(Base):
         Computed("to_tsvector('russian_hunspell', coalesce(body_text, ''))", persisted=True),
         nullable=True,
     )
+    # Email Cc — адресаты в копии письма (миграция 083). Формат JSONB:
+    # ``[{"email": "a@x", "name": "Иван"}, ...]``. Для inbound заполняется из
+    # заголовка ``Cc`` входящего письма (``threading.extract_cc``); для outbound
+    # — из формы ответа агента (чекбокс «Ответить всем»). ``None`` для старых
+    # сообщений и для ответов без Cc — сериализатор нормализует в ``[]``.
+    # Участники тикета «в сборе» НЕ хранятся — агрегируются в рантайме в
+    # сериализаторе карточки (по образцу ``build_thread_history``).
+    cc: Mapped[list[dict] | None] = mapped_column(JSONB, nullable=True)
     source: Mapped[str] = mapped_column(String(20), nullable=False)
     email_message_id: Mapped[str | None] = mapped_column(String(998), nullable=True)
     in_reply_to: Mapped[str | None] = mapped_column(String(998), nullable=True)

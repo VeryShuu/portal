@@ -131,6 +131,46 @@ def extract_recipient_token(msg: Message) -> int | None:
     return None
 
 
+def extract_cc(msg: Message, *, exclude: str | None = None) -> list[dict[str, str | None]]:
+    """Список адресатов из заголовка ``Cc`` входящего письма (миграция 083).
+
+    Возвращает ``[{"email": "a@x", "name": "Иван"}, ...]`` — нормализованный,
+    дедуплицированный (по lowercased email). Порядок сохранён (как в письме).
+    ``name`` — декодированный display-name (RFC 2047, как ``decode_mime_header``
+    для ``Subject``/``From``); ``None`` для голого ``user@host`` без имени.
+
+    ``exclude`` — email, который выкинуть из результата (case-insensitive).
+    Используется ingress'ом для отсечения ``support_address``: иначе агент,
+    ответив «всем», отправит копию в ящик поддержки → письмо вернётся в IMAP →
+    петля/дубль тикета (``is_from_self`` сработает на anti-loop, но поддержка
+    в копии своей же переписки — бессмысленно и засоряет инбокс оператора).
+
+    Пустой список, если заголовка ``Cc`` нет или он пустой. ``Bcc`` не парсим —
+    он по определению невидим получателю (RFC 5322), и в письмах заявителя его
+    не бывает в осмысленном виде.
+    """
+    from email.utils import getaddresses
+
+    raw_values = msg.get_all("Cc", [])
+    if not raw_values:
+        return []
+    participants: list[dict[str, str | None]] = []
+    seen: set[str] = set()
+    exclude_lc = (exclude or "").strip().lower()
+    for name, addr in getaddresses(raw_values):
+        email = (addr or "").strip().lower()
+        if not email or "@" not in email:
+            continue
+        if email == exclude_lc:
+            continue
+        if email in seen:
+            continue
+        seen.add(email)
+        decoded_name = (decode_mime_header(name) if name else "").strip()
+        participants.append({"email": email, "name": decoded_name or None})
+    return participants
+
+
 def synthetic_message_id(
     *, mailbox: str, uid: int | str, date: str, sender: str, subject: str, size: int
 ) -> str:

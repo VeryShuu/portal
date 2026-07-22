@@ -6,6 +6,31 @@
       :upload-endpoint="uploadEndpoint"
       class="ticket-reply__editor"
     />
+    <div
+      v-if="agentMode && participants.length > 0"
+      class="ticket-reply__cc-row"
+    >
+      <n-checkbox
+        v-model:checked="replyAll"
+        :disabled="loading"
+        size="small"
+      >
+        {{ t('helpdesk.replyAll') }}
+      </n-checkbox>
+      <n-select
+        v-if="replyAll"
+        v-model:value="ccEmails"
+        multiple
+        filterable
+        tag
+        :options="ccOptions"
+        :placeholder="t('helpdesk.ccPlaceholder')"
+        :max-tag-count="5"
+        size="small"
+        class="ticket-reply__cc-select"
+        :disabled="loading"
+      />
+    </div>
     <div class="ticket-reply__actions">
       <div class="ticket-reply__left">
         <n-upload
@@ -51,13 +76,14 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { NButton, NUpload, NIcon, NRadioGroup, NRadioButton } from 'naive-ui'
+import { NButton, NUpload, NIcon, NRadioGroup, NRadioButton, NCheckbox, NSelect } from 'naive-ui'
 import { AttachOutline } from '@vicons/ionicons5'
 import type { UploadFileInfo } from 'naive-ui'
 import RichEditor from '../RichEditor.vue'
 import { mdUnsafe as md } from '../../utils/markdown'
+import type { HelpdeskParticipant } from '../../api/helpdesk'
 
 const props = defineProps<{
   /** Агентский режим: показывает переключатель public/internal. */
@@ -65,11 +91,20 @@ const props = defineProps<{
   loading?: boolean
   /** ID тикета — для upload-endpoint inline-картинок rich-редактора. */
   ticketId: string
+  /** Участники тикета (requester + Cc + авторы сообщений). Источник для
+   *  pre-fill чекбокса «Ответить всем» (миграция 083). Только агентский view. */
+  participants?: HelpdeskParticipant[]
 }>()
 
 const emit = defineEmits<{
-  /** body_html — отрендеренный из markdown (TipTap) HTML; plain бэк деривит сам. */
-  submit: [payload: { body_html: string; visibility: 'public' | 'internal'; files: File[] }]
+  /** body_html — отрендеренный из markdown (TipTap) HTML; plain бэк деривит сам.
+   *  cc — список email'ов в копии (только при включённом «Ответить всем»). */
+  submit: [payload: {
+    body_html: string
+    visibility: 'public' | 'internal'
+    files: File[]
+    cc?: string[]
+  }]
 }>()
 
 const { t } = useI18n()
@@ -79,6 +114,39 @@ const { t } = useI18n()
 const markdown = ref('')
 const visibility = ref<'public' | 'internal'>('public')
 const fileList = ref<UploadFileInfo[]>([])
+
+// «Ответить всем» (миграция 083): чекбокс раскрывает редактируемый список Cc.
+// По умолчанию выключен — чтобы агент осознанно подтвердил получателей (Cc —
+// attacker-controlled из inbound email; отправка только по явному действию).
+const replyAll = ref(false)
+// Список email'ов в копии. Изначально pre-fill из участников тикета (минус
+// requester — он в To; support_address/агента выкинет бэк на нормализации).
+// ``tag`` в n-select позволяет добавить произвольный email (нет в адресной книге).
+const ccEmails = ref<string[]>([])
+
+const participants = computed(() => props.participants ?? [])
+
+// Опции для n-select: участники тикета (кроме requester — он уже в To).
+const ccOptions = computed(() =>
+  participants.value
+    .filter((p) => !p.is_requester)
+    .map((p) => ({
+      label: p.name ? `${p.name} (${p.email})` : p.email,
+      value: p.email,
+    })),
+)
+
+// При включении чекбокса — pre-fill из участников (минус requester). При
+// выключении — очистка (на случай повторного включения берём свежий список).
+watch(replyAll, (on) => {
+  if (on) {
+    ccEmails.value = participants.value
+      .filter((p) => !p.is_requester)
+      .map((p) => p.email)
+  } else {
+    ccEmails.value = []
+  }
+})
 
 // Upload-endpoint для inline-картинок: зависит от ticketId (передаётся родителем).
 const uploadEndpoint = computed(
@@ -96,10 +164,15 @@ function onSubmit() {
   const files = (fileList.value ?? [])
     .map((f) => f.file)
     .filter((f): f is File => !!f)
-  emit('submit', { body_html: bodyHtml, visibility: visibility.value, files })
+  // Cc передаём только при включённом чекбоксе (иначе undefined — бэк не
+  // получит поле ``cc`` в FormData, создаст ответ без копии).
+  const cc = replyAll.value && ccEmails.value.length > 0 ? ccEmails.value : undefined
+  emit('submit', { body_html: bodyHtml, visibility: visibility.value, files, cc })
   // Сброс после отправки (родитель управляет loading; успех — очистка).
   markdown.value = ''
   fileList.value = []
+  replyAll.value = false
+  ccEmails.value = []
 }
 </script>
 
@@ -111,6 +184,17 @@ function onSubmit() {
 }
 .ticket-reply__editor {
   width: 100%;
+}
+/* «Ответить всем» (миграция 083): чекбокс + редактируемый список Cc. */
+.ticket-reply__cc-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.ticket-reply__cc-select {
+  flex: 1;
+  min-width: 240px;
 }
 .ticket-reply__actions {
   display: flex;

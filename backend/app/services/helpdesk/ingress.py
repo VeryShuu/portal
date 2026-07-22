@@ -456,12 +456,15 @@ async def _localize_remote_post_commit(
         )
 
 
-def _parse_inbound_headers(msg: Message) -> dict:
+def _parse_inbound_headers(msg: Message, *, support_address: str | None = None) -> dict:
     """Декодирует и нормализует заголовки входящего письма (RFC 2047).
 
     Кириллические Subject/From приходят как ``=?koi8-r?B?...?=`` / ``=?utf-8?B?...?=``
     — без декодирования тема тикета сохранялась бы нечитаемой
     (см. ``threading.decode_mime_header``).
+
+    ``support_address`` используется для отсечения ящика поддержки из ``Cc``
+    (миграция 083): иначе ответ «всем» уйдёт в собственный ящик → петля/дубль.
     """
     subject_raw = threading_utils.decode_mime_header(msg.get("Subject"))
     from_raw = threading_utils.decode_mime_header(msg.get("From"))
@@ -473,6 +476,7 @@ def _parse_inbound_headers(msg: Message) -> dict:
         "recipient_token": threading_utils.extract_recipient_token(msg),
         "sender_email": threading_utils.normalize_email(from_raw),
         "sender_name": threading_utils.extract_display_name(from_raw),
+        "cc": threading_utils.extract_cc(msg, exclude=support_address),
     }
 
 
@@ -515,6 +519,9 @@ def _build_inbound_helpdesk_message(
         source="email",
         email_message_id=message_id,
         in_reply_to=headers["references"][0] if headers["references"] else None,
+        # Cc входящего письма (миграция 083): адресаты в копии. ``support_address``
+        # уже выкинут в ``_parse_inbound_headers`` → здесь без доп. фильтрации.
+        cc=headers.get("cc") or None,
     )
 
 
@@ -582,7 +589,7 @@ async def _ingest_message(
     settings_row: HelpdeskMailboxSettings,
     summary: dict,
 ) -> None:
-    headers = _parse_inbound_headers(msg)
+    headers = _parse_inbound_headers(msg, support_address=settings_row.support_address)
     sender_email = headers["sender_email"]
     references = headers["references"]
     subject_token = headers["subject_token"]

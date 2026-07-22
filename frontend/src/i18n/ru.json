@@ -2584,6 +2584,13 @@
       "open": "В работе",
       "pending": "Ожидание",
       "closed": "Закрыто"
+    },
+    "replyAll": "Ответить всем",
+    "ccLabel": "Копия",
+    "ccPlaceholder": "Добавьте email в копию…",
+    "participants": {
+      "title": "Участники",
+      "requester": "Заявитель"
     }
   }
 }

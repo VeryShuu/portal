@@ -18,7 +18,22 @@ export interface HelpdeskMessage {
   body_text: string
   body_html: string | null
   attachments: HelpdeskAttachmentMeta[]
+  /**
+   * Cc конкретного сообщения (миграция 083): ``[{email, name, is_requester}]``.
+   * Для inbound — из заголовка ``Cc`` входящего письма; для outbound — список,
+   * который агент указал при ответе («Ответить всем»). Пустой массив для
+   * сообщений без копии. В UI — компактный бейдж «Cc: …» под телом (agent-mode).
+   */
+  cc: HelpdeskParticipant[]
   created_at: string
+}
+
+/** Адресат письма (Cc / участник тикета) — миграция 083. */
+export interface HelpdeskParticipant {
+  email: string
+  name: string | null
+  /** ``true`` только в ``ticket.participants`` для автора заявки (подсветка). */
+  is_requester?: boolean
 }
 
 export interface HelpdeskAttachmentMeta {
@@ -80,6 +95,13 @@ export interface HelpdeskTicketDetail extends HelpdeskTicketListItem {
   closed_at?: string | null
   closed_by_user_id?: string | null
   references_archived_ticket_number?: number | null
+  /**
+   * Все участники тикета «в сборе» (миграция 083): requester + все Cc + все
+   * авторы сообщений. Только в агентском view (``fetchAgentTicket``); в
+   * requester-view поле отсутствует (PII-минимизация). Источник для блока
+   * «Участники» в сайдбаре и для pre-fill чекбокса «Ответить всем».
+   */
+  participants?: HelpdeskParticipant[]
 }
 
 export interface HelpdeskInboxParams {
@@ -173,6 +195,12 @@ export interface HelpdeskMessageCreateDto {
   /** HTML из rich-редактора (TipTap). Основной формат хранения. */
   body_html?: string | null
   visibility?: HelpdeskVisibility
+  /**
+   * Cc — адресаты в копии (только для агентского ответа, «Ответить всем»,
+   * миграция 083). Массив голых email'ов; бэк нормализует (lowercase, дедуп,
+   * отсечение support_address/агента/requester). Лимит 20 (422 свыше).
+   */
+  cc?: string[]
 }
 
 /** Ответ инициатора по своему тикету (multipart с вложениями). */
@@ -198,6 +226,9 @@ export function replyAgentTicket(
   if (dto.body_text != null) fd.append('body_text', dto.body_text)
   if (dto.body_html != null) fd.append('body_html', dto.body_html)
   if (dto.visibility) fd.append('visibility', dto.visibility)
+  // Cc — повторяющееся Form-поле (``cc=a@x&cc=b@y``), миграция 083. Бэк
+  // нормализует: выкидывает support_address/агента/requester, дедуп, лимит 20.
+  for (const email of dto.cc ?? []) fd.append('cc', email)
   for (const f of files) fd.append('files', f, f.name)
   return apiUpload<HelpdeskMessage>(`/helpdesk/tickets/${id}/messages`, fd)
 }

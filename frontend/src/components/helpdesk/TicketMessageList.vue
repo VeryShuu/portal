@@ -49,6 +49,16 @@
             <span class="chat-bubble__date">{{ formatDate(msg.created_at) }}</span>
           </span>
         </div>
+        <!-- Cc конкретного сообщения (миграция 083): только agent-mode (агенту
+             важно видеть, кому ушёл конкретный ответ; заявителю свои же Cc ни к
+             чему). Компактный бейдж «Копия: …» под заголовком пузыря. -->
+        <div
+          v-if="agentMode && msg.cc && msg.cc.length > 0"
+          class="chat-bubble__cc"
+        >
+          <span class="chat-bubble__cc-label">{{ t('helpdesk.ccLabel') }}:</span>
+          <span class="chat-bubble__cc-list">{{ ccList(msg.cc) }}</span>
+        </div>
         <div
           v-if="msg.body_html"
           class="chat-bubble__body"
@@ -171,6 +181,11 @@ function authorLabel(msg: HelpdeskMessage): string {
   return msg.author_name ?? msg.author_email
 }
 
+/** Список адресатов Cc одной строкой для бейджа (миграция 083). */
+function ccList(cc: HelpdeskMessage['cc']): string {
+  return cc.map((p) => p.name ?? p.email).join(', ')
+}
+
 function initials(msg: HelpdeskMessage): string {
   const name = (msg.author_name ?? msg.author_email ?? '').trim()
   if (!name) return '?'
@@ -288,6 +303,25 @@ function formatDate(iso: string): string {
 }
 .chat-bubble__email {
   font-style: italic;
+}
+/* Бейдж Cc (миграция 083): компактная строка под заголовком пузыря. */
+.chat-bubble__cc {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 4px;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  background: rgba(0, 0, 0, 0.03);
+  border-radius: 6px;
+  padding: 2px 8px;
+}
+.chat-bubble__cc-label {
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+.chat-bubble__cc-list {
+  word-break: break-all;
 }
 .chat-bubble__body {
   font-size: 14px;

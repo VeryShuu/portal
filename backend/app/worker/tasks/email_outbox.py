@@ -503,8 +503,8 @@ def _apply_helpdesk_headers(
 ) -> None:
     """Канонические заголовки на корневую часть (ТЗ §1.3.3/§5.2).
 
-    Subject, From, To, Date, Message-ID, In-Reply-To, References, Reply-To — все
-    проходят через ``_sanitize_header`` (защита от CRLF-injection, ТЗ H-4).
+    Subject, From, To, Date, Message-ID, In-Reply-To, References, Reply-To, Cc —
+    все проходят через ``_sanitize_header`` (защита от CRLF-injection, ТЗ H-4).
     """
     outer["Subject"] = subject
     outer["From"] = from_address
@@ -520,6 +520,37 @@ def _apply_helpdesk_headers(
     if references:
         outer["References"] = _sanitize_header(" ".join(references))
     outer["Reply-To"] = reply_to_address
+    # Cc («ответить всем», миграция 083): ставится только если агент явно включил
+    # чекбокс и добавил получателей в форме ответа. ``formataddr`` корректно
+    # оформляет ``Name <a@x>``; голый email — без угловых скобок. Каждый адрес
+    # санизируется повторно (defense-in-depth: продюсер уже стрипал, но
+    # outbox-payload мог быть изменён вручную в БД).
+    cc_header = _format_cc_header(payload.get("cc") or [])
+    if cc_header:
+        outer["Cc"] = _sanitize_header(cc_header)
+
+
+def _format_cc_header(cc: list) -> str:
+    """Собрать значение заголовка ``Cc`` из списка участников.
+
+    ``[{"email": "a@x", "name": "Иван"}, {"email": "b@y", "name": None}]`` →
+    ``"Иван <a@x>, b@y"``. Пустая строка для пустого списка — заголовок не
+    ставится (см. ``_apply_helpdesk_headers``). ``formataddr`` корректно
+    экранирует спецсимволы в display-name (RFC 5322: запятые/точки-с-запятой
+    в имени → кавычки).
+    """
+    from email.utils import formataddr
+
+    parts = []
+    for p in cc:
+        if not isinstance(p, dict):
+            continue
+        email = (p.get("email") or "").strip()
+        if not email:
+            continue
+        name = (p.get("name") or "").strip() or None
+        parts.append(formataddr((name, email)))
+    return ", ".join(parts)
 
 
 async def _build_helpdesk_mime(row: dict, cfg: dict) -> MIMEMultipart:
@@ -567,9 +598,7 @@ async def _build_helpdesk_mime(row: dict, cfg: dict) -> MIMEMultipart:
     # email_images.py). Без этой ветки их ``src=/api/v1/.../attachments/{id}``
     # остаётся URL — почтовый клиент cookie не передаёт, картинка не грузится.
     # Здесь — встраиваем как cid: (как rich-картинки), один DB-запрос на все.
-    body_html, att_inline_images = await _embed_helpdesk_attachment_images(
-        body_html, ticket_number
-    )
+    body_html, att_inline_images = await _embed_helpdesk_attachment_images(body_html, ticket_number)
     inline_images.extend(att_inline_images)
 
     subject_original = _sanitize_header(payload.get("subject_original") or "")

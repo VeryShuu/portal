@@ -50,6 +50,30 @@ def _sanitize_header_field(value: str | None) -> str:
     return value.replace("\r", " ").replace("\n", " ").strip()
 
 
+def _sanitize_cc_participants(
+    cc: list[dict[str, str | None]] | None,
+) -> list[dict[str, str | None]]:
+    """Прогнать ``cc`` участников через ``_sanitize_header_field`` (H-4).
+
+    Источник ``cc`` — inbound email (attacker-controlled: любой ``Cc`` во
+    входящем письме) либо форма агента. И email, и name попадут в исходящий
+    заголовок ``Cc`` (через ``formataddr`` в worker'е) → обязаны быть без CR/LF,
+    иначе ``Cc: ...\\r\\nBcc: victim@x`` инжектит заголовок (тот же вектор, что и
+    для ``Subject``/``to_email``).
+    """
+    if not cc:
+        return []
+    cleaned: list[dict[str, str | None]] = []
+    for p in cc:
+        email = _sanitize_header_field(p.get("email") or "")
+        if not email:
+            continue
+        name_raw = p.get("name")
+        name = _sanitize_header_field(name_raw) if name_raw else None
+        cleaned.append({"email": email, "name": name or None})
+    return cleaned
+
+
 def support_domain(mailbox: HelpdeskMailboxSettings | None) -> str | None:
     """Домен из ``support_address`` (часть после ``@``). None, если пуст/невалиден."""
     if mailbox is None:
@@ -129,6 +153,13 @@ async def enqueue_reply_outbound(
     заголовкам почтового клиента (Outlook ``From:/Sent:``, Gmail ``wrote:``) через
     ``strip_quoted_reply``/``strip_quoted_html`` — как в OTRS.
 
+    Cc («ответить всем», миграция 083): список адресатов берётся из
+    ``message.cc`` — это поле агент заполнил в форме ответа (чекбокс «Ответить
+    всем», pre-fill из участников тикета). Прокидывается в ``payload["cc"]`` →
+    worker ставит заголовок ``Cc`` в MIME. ``message.cc`` уже нормализован
+    (lowercased email, без ``support_address``) — здесь только санизация каждого
+    поля через ``_sanitize_cc_participant`` (CRLF-injection, как для ``to_email``).
+
     Без ``commit`` — outbox-запись коммитится единым commit'ом вместе с ответом
     агента в роутере (outbox-инвариант AGENTS.md).
     """
@@ -205,6 +236,9 @@ async def enqueue_reply_outbound(
             "support_domain": domain,
             "support_address": mailbox.support_address,
             "attachments": attachments_meta,
+            # Cc («ответить всем», миграция 083): берётся из message.cc, который
+            # агент заполнил в форме ответа. Worker ставит заголовок ``Cc``.
+            "cc": _sanitize_cc_participants(getattr(message, "cc", None)),
         },
         related_resource_type="helpdesk_ticket",
         related_resource_id=ticket.id,

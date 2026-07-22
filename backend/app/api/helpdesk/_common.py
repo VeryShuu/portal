@@ -20,6 +20,7 @@ from app.schemas.helpdesk import (
     HelpdeskStatus,
     HelpdeskVisibility,
     MessageOut,
+    ParticipantOut,
     RequesterProfileOut,
     TicketAgentOut,
     TicketListItemOut,
@@ -58,6 +59,34 @@ def _attachments(msg: HelpdeskMessage) -> list[AttachmentOut]:
     ]
 
 
+def _cc_participants(msg: HelpdeskMessage) -> list[ParticipantOut]:
+    """Cc конкретного сообщения → ``[ParticipantOut]`` (миграция 083).
+
+    ``msg.cc`` — JSONB ``[{"email","name"}]`` или ``None`` (старые сообщения,
+    ответы без копии). Нормализуем в список схем; ``is_requester`` всегда
+    ``False`` — requester определяется на уровне тикета, не сообщения.
+    """
+    raw = getattr(msg, "cc", None) or []
+    if not isinstance(raw, list):
+        return []
+    out: list[ParticipantOut] = []
+    for p in raw:
+        if not isinstance(p, dict):
+            continue
+        email = p.get("email")
+        if not email or not isinstance(email, str):
+            continue
+        name = p.get("name")
+        out.append(
+            ParticipantOut(
+                email=email,
+                name=name if isinstance(name, str) and name else None,
+                is_requester=False,
+            )
+        )
+    return out
+
+
 def message_to_out(msg: HelpdeskMessage) -> MessageOut:
     return MessageOut(
         id=msg.id,
@@ -70,6 +99,7 @@ def message_to_out(msg: HelpdeskMessage) -> MessageOut:
         body_text=msg.body_text,
         body_html=msg.body_html,
         attachments=_attachments(msg),
+        cc=_cc_participants(msg),
         created_at=msg.created_at,
     )
 
@@ -186,6 +216,58 @@ def _is_owned_by(ticket: HelpdeskTicket | None, user_id: uuid.UUID) -> bool:
     return ticket is not None and ticket.requester_user_id == user_id
 
 
+def _collect_participants(
+    ticket: HelpdeskTicket, *, requester_email: str | None
+) -> list[ParticipantOut]:
+    """Все участники тикета «в сборе» (миграция 083).
+
+    Агрегация одним проходом по сообщениям: ``requester_email`` (всегда первый,
+    помечен ``is_requester=True``) ∪ Cc всех сообщений ∪ ``author_email`` всех
+    сообщений (на случай, если заявитель ответил с другого адреса, или в тред
+    включился третий участник через «ответить всем» извне). Дедупликация — по
+    lowercased email.
+
+    Не хранится в БД (денормализация вредна: Cc-состав меняется, stale-данные
+    привели бы к «ответили не тем»). Источник для блока «Участники» в карточке
+    агента и для pre-fill чекбокса «Ответить всем».
+    """
+    participants: list[ParticipantOut] = []
+    seen: set[str] = set()
+    requester_lc = (requester_email or "").strip().lower()
+
+    def _add(email: str, name: str | None, *, is_requester: bool) -> None:
+        key = email.strip().lower()
+        if not key or "@" not in key or key in seen:
+            return
+        seen.add(key)
+        participants.append(
+            ParticipantOut(
+                email=key,
+                name=(name.strip() if isinstance(name, str) and name.strip() else None),
+                is_requester=is_requester,
+            )
+        )
+
+    # Requester — всегда первым (канонический «To» треда).
+    if requester_lc:
+        _add(requester_email or "", ticket.requester_name, is_requester=True)
+
+    for m in ticket.messages:
+        _add(m.author_email, m.author_name, is_requester=False)
+        raw_cc = getattr(m, "cc", None) or []
+        if isinstance(raw_cc, list):
+            for p in raw_cc:
+                if isinstance(p, dict) and isinstance(p.get("email"), str):
+                    raw_name = p.get("name")
+                    _add(
+                        p["email"],
+                        raw_name if isinstance(raw_name, str) else None,
+                        is_requester=False,
+                    )
+
+    return participants
+
+
 def ticket_to_agent_out(
     ticket: HelpdeskTicket,
     *,
@@ -212,6 +294,7 @@ def ticket_to_agent_out(
         closed_at=ticket.closed_at,
         closed_by_user_id=ticket.closed_by_user_id,
         references_archived_ticket_number=ticket.references_archived_ticket_number,
+        participants=_collect_participants(ticket, requester_email=ticket.requester_email),
         last_activity_at=ticket.last_activity_at,
         created_at=ticket.created_at,
     )

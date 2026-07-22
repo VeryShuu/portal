@@ -173,6 +173,7 @@ async def add_agent_reply(
     payload: MessageCreateIn,
     files: list | None = None,
     support_domain: str | None = None,
+    cc: list[dict[str, str | None]] | None = None,
 ) -> HelpdeskMessage:
     """Ответ агента — ``direction=outbound``. ``visibility`` из payload:
     ``public`` (виден клиенту, переводит тикет в ``pending`` и уйдёт в
@@ -184,14 +185,20 @@ async def add_agent_reply(
     если передан и ответ публичный, генерируется канонический ``email_message_id``
     (ТЗ §1.3.3, §5.2) и сохраняется в сообщении для threading.
 
+    ``cc`` (опционально, миграция 083) — список ``{"email", "name"}`` адресатов
+    в копии, если агент включил «Ответить всем». Сохраняется в сообщении и
+    прокидывается в outbox-продюсером (``enqueue_reply_outbound``) для заголовка
+    ``Cc`` исходящего письма. Для ``internal``-заметки игнорируется — заметка
+    никуда не уходит по email.
+
     При первом публичном ответе без assignee — агент назначает себя
     (ТЗ §4.2.1: «если нет assignee — назначить текущего агента»).
 
     Внимание (outbox-инвариант, AGENTS.md): функция НЕ делает ``db.commit()`` —
-    только ``flush``. Caller обязан поставить outbox-запись (если ответ
-    публичный) в той же транзакции и сделать единый ``commit``. Раньше commit
-    был здесь, а outbox — отдельным commit в роутере, что нарушало инвариант
-    (сбой второго commit терял письмо заявителю при сохранённом ответе)."""
+    только ``flush``. Caller обязан поставить outbox-запись (если ответ публичный)
+    в той же транзакции и сделать единый ``commit``. Раньше commit был здесь, а
+    outbox — отдельным commit в роутере, что нарушало инвариант (сбой второго
+    commit терял письмо заявителю при сохранённом ответе)."""
     from app.services.helpdesk.lifecycle import agent_outbound_reply
 
     now = datetime.now(UTC)
@@ -215,6 +222,8 @@ async def add_agent_reply(
         source="web",
         email_message_id=email_message_id,
         created_at=now,
+        # Cc только для публичных ответов (internal-заметка никуда не уходит).
+        cc=cc if (is_public and cc) else None,
     )
     db.add(message)
     await db.flush()  # нужен message.id/email_message_id для вложений и outbox

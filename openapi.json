@@ -488,6 +488,14 @@
             "title": "Body Text",
             "type": "string"
           },
+          "cc": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Cc",
+            "type": "array"
+          },
           "files": {
             "default": [],
             "items": {
@@ -6632,6 +6640,14 @@
             "title": "Body Text",
             "type": "string"
           },
+          "cc": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ParticipantOut"
+            },
+            "title": "Cc",
+            "type": "array"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -8339,6 +8355,36 @@
           "step_id"
         ],
         "title": "OnboardingStepResetViewsOut",
+        "type": "object"
+      },
+      "ParticipantOut": {
+        "description": "Адресат письма: email + опциональное имя.\n\nИсточник для inbound — заголовок ``Cc`` входящего письма (``extract_cc``);\nдля outbound — форма ответа агента (чекбокс «Ответить всем»). В\n``TicketAgentOut.participants`` поле ``is_requester`` отличает автора заявки\nот добавленных в копию (для подсветки в UI).",
+        "properties": {
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "is_requester": {
+            "default": false,
+            "title": "Is Requester",
+            "type": "boolean"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          }
+        },
+        "required": [
+          "email"
+        ],
+        "title": "ParticipantOut",
         "type": "object"
       },
       "PasswordChangeRequest": {
@@ -11642,6 +11688,14 @@
           "number": {
             "title": "Number",
             "type": "integer"
+          },
+          "participants": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ParticipantOut"
+            },
+            "title": "Participants",
+            "type": "array"
           },
           "references_archived_ticket_number": {
             "anyOf": [

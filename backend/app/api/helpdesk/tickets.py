@@ -100,6 +100,61 @@ def _validate_message_body(norm_text: str, norm_html: str | None) -> None:
         )
 
 
+# Лимит адресатов в копии (защита от злоупотребления / ошибочного «ответить
+# всем» по 500-адресному рассылочному письму). 20 — достаточно для реальных
+# рабочих групп; превышение → 422 с понятным сообщением.
+HELPDESK_CC_MAX_RECIPIENTS = 20
+
+
+def _normalize_cc_emails(
+    cc_raw: list[str],
+    *,
+    exclude: set[str],
+    support_address: str | None,
+) -> list[dict[str, str | None]]:
+    """Нормализовать список Cc-адресов из Form-поля в ``[{email, name}]``.
+
+    Операции:
+    * ``strip``/``lower`` каждого адреса; пропуск пустых и без ``@``;
+    * дедупликация (по lowercased email);
+    * отсечение ``exclude`` (email агента — он уже в ``From``; ``requester_email``
+      — он уже в ``To``, не дублируем в Cc) и ``support_address`` (петля — см.
+      ``extract_cc``);
+    * ``name`` — ``None`` (агент вводит голые email'ы через ``n-select``; имя
+      резолвится на стороне получателя по его адресной книге).
+
+    Лимит ``HELPDESK_CC_MAX_RECIPIENTS`` → 422 (явная ошибка, не молчаливое
+    обрезание — агент должен видеть, что список слишком большой).
+    """
+    if not cc_raw:
+        return []
+    exclude_lc = {e.strip().lower() for e in exclude if e}
+    if support_address:
+        exclude_lc.add(support_address.strip().lower())
+
+    result: list[dict[str, str | None]] = []
+    seen: set[str] = set()
+    for entry in cc_raw:
+        # Form-поле может прийти как "Иван <a@x>" или голый "a@x". Берём адрес.
+        email = entry.strip().lower()
+        if "<" in email and ">" in email:
+            inner = email.rsplit("<", 1)[-1].split(">", 1)[0].strip()
+            email = inner
+        if not email or "@" not in email:
+            continue
+        if email in exclude_lc or email in seen:
+            continue
+        seen.add(email)
+        result.append({"email": email, "name": None})
+
+    if len(result) > HELPDESK_CC_MAX_RECIPIENTS:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"Too many Cc recipients (max {HELPDESK_CC_MAX_RECIPIENTS})",
+        )
+    return result
+
+
 @router.post(
     "/tickets",
     response_model=TicketOut,
@@ -512,6 +567,11 @@ async def add_agent_message(
     body_text: str = Form(default="", max_length=20000),
     body_html: str = Form(default="", max_length=50000),
     visibility: str = Form(default="public"),
+    # Cc — повторяющееся Form-поле (``cc=a@x&cc=b@y``), опциональное. Агент
+    # включает «Ответить всем» → фронт шлёт список email'ов участников. Лимит
+    # 20 — защита от злоупотребления; ``_normalize_cc_emails`` ниже выкидывает
+    # support_address (петля) и email самого агента.
+    cc: list[str] = Form(default=[]),
     files: list[UploadFile] = File(default=[]),
 ) -> MessageOut:
     ticket = await _load_agent_ticket(db, ticket_id)
@@ -531,6 +591,15 @@ async def add_agent_message(
     # публичный ответ создаётся, но email не отправляется (только in-app).
     mailbox = await outbound_service.load_mailbox(db)
     support_domain = outbound_service.support_domain(mailbox)
+    # Cc нормализуется здесь (а не в сервисе): валидация — ответственность
+    # роутера (как ``_validate_message_body``). Сервис ``add_agent_reply``
+    # получает уже чистый список ``[{email, name}]``. ``support_address`` и
+    # email агента выкидываем (петля / дублирование To).
+    cc_normalized = _normalize_cc_emails(
+        cc,
+        exclude={agent.email, ticket.requester_email},
+        support_address=mailbox.support_address if mailbox else None,
+    )
     message = await messages_service.add_agent_reply(
         db,
         ticket=ticket,
@@ -538,6 +607,7 @@ async def add_agent_message(
         payload=payload,
         files=files,
         support_domain=support_domain,
+        cc=cc_normalized or None,
     )
     if (
         payload.visibility == HelpdeskVisibility.public

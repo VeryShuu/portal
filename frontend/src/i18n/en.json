@@ -2584,6 +2584,13 @@
       "open": "Open",
       "pending": "Pending",
       "closed": "Closed"
+    },
+    "replyAll": "Reply all",
+    "ccLabel": "Cc",
+    "ccPlaceholder": "Add email to Cc…",
+    "participants": {
+      "title": "Participants",
+      "requester": "Requester"
     }
   }
 }

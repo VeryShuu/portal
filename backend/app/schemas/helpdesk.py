@@ -166,6 +166,12 @@ class TicketAgentOut(TicketOut):
     closed_at: datetime | None = None
     closed_by_user_id: uuid.UUID | None = None
     references_archived_ticket_number: int | None = None
+    # Все участники тикета «в сборе» (миграция 083): requester + все Cc + все
+    # авторы сообщений. Агрегируется в рантайме в ``ticket_to_agent_out`` (один
+    # проход по сообщениям) — не хранится в БД. Источник для чекбокса «Ответить
+    # всем» в форме ответа агента и для блока «Участники» в сайдбаре карточки.
+    # Только агентский view (PII-минимизация: заявителю чужие Cc не показываем).
+    participants: list[ParticipantOut] = []
 
 
 class TicketListOut(BaseModel):
@@ -183,6 +189,25 @@ class TicketCountsOut(BaseModel):
     только форма ответа."""
 
     active: int
+
+
+# ---------------------------------------------------------------------------
+# Email participants (Cc) — миграция 083
+# ---------------------------------------------------------------------------
+
+
+class ParticipantOut(BaseModel):
+    """Адресат письма: email + опциональное имя.
+
+    Источник для inbound — заголовок ``Cc`` входящего письма (``extract_cc``);
+    для outbound — форма ответа агента (чекбокс «Ответить всем»). В
+    ``TicketAgentOut.participants`` поле ``is_requester`` отличает автора заявки
+    от добавленных в копию (для подсветки в UI).
+    """
+
+    email: str
+    name: str | None = None
+    is_requester: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -233,6 +258,11 @@ class MessageOut(BaseModel):
     body_text: str
     body_html: str | None = None
     attachments: list[AttachmentOut] = []
+    # Cc конкретного сообщения (миграция 083). Для inbound — из заголовка ``Cc``
+    # входящего письма; для outbound — список, который агент указал при ответе.
+    # ``None``/``[]`` для сообщений без копии (большинство). В UI показывается
+    # компактным бейджем «Cc: a, b» под телом сообщения (только agent-mode).
+    cc: list[ParticipantOut] = []
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)

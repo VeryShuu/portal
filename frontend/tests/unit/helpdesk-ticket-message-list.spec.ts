@@ -11,8 +11,20 @@ const i18n = createI18n({
   missingWarn: false,
   fallbackWarn: false,
   messages: {
-    ru: { helpdesk: { internalNote: 'Внутренняя заметка', sources: { email: 'Email' } } },
-    en: { helpdesk: { internalNote: 'Internal note', sources: { email: 'Email' } } },
+    ru: {
+      helpdesk: {
+        internalNote: 'Внутренняя заметка',
+        sources: { email: 'Email' },
+        ccLabel: 'Копия',
+      },
+    },
+    en: {
+      helpdesk: {
+        internalNote: 'Internal note',
+        sources: { email: 'Email' },
+        ccLabel: 'Cc',
+      },
+    },
   },
 })
 
@@ -26,6 +38,7 @@ const baseMsg = {
   body_text: 'Привет',
   body_html: null,
   attachments: [],
+  cc: [],
   created_at: '2026-07-01T10:00:00Z',
 }
 
@@ -154,5 +167,40 @@ describe('TicketMessageList — chat UI', () => {
     const c2 = w2.find('.chat-row__avatar').attributes('style') || ''
     expect(c1).toContain('background')
     expect(c1).toBe(c2) // детерминированно
+  })
+
+  // ── Cc-бейдж (миграция 083) ────────────────────────────────────────────────
+  it('shows cc badge in agent mode when message has cc', () => {
+    const wrapper = mountList(
+      [
+        makeMsg({
+          direction: 'outbound',
+          cc: [
+            { email: 'a@x.local', name: 'Иван' },
+            { email: 'b@y.local', name: null },
+          ],
+        }),
+      ],
+      true,
+    )
+    const cc = wrapper.find('.chat-bubble__cc')
+    expect(cc.exists()).toBe(true)
+    // Имя первого, email второго (нет имени → fallback на email).
+    expect(cc.text()).toContain('Иван')
+    expect(cc.text()).toContain('b@y.local')
+  })
+
+  it('hides cc badge when cc is empty', () => {
+    const wrapper = mountList([makeMsg({ cc: [] })], true)
+    expect(wrapper.find('.chat-bubble__cc').exists()).toBe(false)
+  })
+
+  it('hides cc badge in requester (non-agent) mode even with cc', () => {
+    // PII-минимизация: заявителю свои же Cc видеть ни к чему.
+    const wrapper = mountList(
+      [makeMsg({ cc: [{ email: 'a@x.local', name: null }] })],
+      false,
+    )
+    expect(wrapper.find('.chat-bubble__cc').exists()).toBe(false)
   })
 })
