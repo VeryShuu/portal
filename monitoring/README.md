@@ -1,103 +1,146 @@
 # Observability stack — reference configs
 
-Reference конфигурация Prometheus + Alertmanager + Grafana для портала.
+Reference конфигурация полного observability-стека для портала:
+**Prometheus + Alertmanager + Grafana + Loki + Alloy**.
 **Не** подключена к основному `docker-compose.yml` — поднимается отдельным
-overlay, чтобы не тащить тяжёлые образы в базовый деплой.
+overlay, чтобы не тащить тяжёлые образы (~900 МБ суммарно) в базовый деплой.
 
 > **Подробности:** `../docs/monitoring.md` (backend-экспорт метрик, токен-защита
-> `/metrics`, cross-process snapshot). Этот каталог — **consumer-сторона**:
-> scrape-конфиг, alerting-правила, дашборд.
+> `/metrics`, cross-process snapshot, централизованные логи §9). Этот каталог —
+> **consumer-сторона**: scrape-конфиг, сбор логов, alerting-правила, дашборды.
+> **Обоснование выбора:** ADR-044 (Loki vs ELK, Alloy vs Promtail, overlay-подход).
 
 ## Структура
 
 ```
 monitoring/
-├── README.md                          ← этот файл
-├── prometheus.yml                     ← scrape-конфиг (portal-backend + self)
+├── README.md                              ← этот файл
+├── prometheus.yml                         ← scrape-конфиг (portal-backend + self)
+├── loki/
+│   └── config.yml                         ← single-binary Loki (retention 30d, compactor)
+├── alloy/
+│   └── config.alloy                       ← сбор Docker-логов → Loki (discovery + JSON)
 ├── alerts/
-│   ├── portal.yml                     ← alerting rules (PromQL)
-│   └── alertmanager.yml               ← routing (webhook/email placeholders)
+│   ├── portal.yml                         ← alerting rules (PromQL)
+│   └── alertmanager.yml                   ← routing + email-receivers (SMTP-relay)
 ├── grafana/
-│   ├── portal-overview.json           ← дашборд (RED + audit queue + worker)
+│   ├── portal-overview.json               ← дашборд метрик (RED + audit + worker)
+│   ├── portal-logs.json                   ← дашборд логов (ошибки, объём, request_id)
 │   └── provisioning/
-│       ├── datasources/prometheus.yml ← auto-provision Prometheus datasource
-│       └── dashboards/portal.yml      ← auto-provision dashboard из JSON
-└── docker-compose.monitoring.yml      ← overlay для `docker compose -f ...`
+│       ├── datasources/
+│       │   ├── prometheus.yml             ← auto-provision Prometheus (uid=prometheus)
+│       │   └── loki.yml                   ← auto-provision Loki (uid=loki)
+│       └── dashboards/portal.yml          ← auto-provision дашбордов из JSON
+└── docker-compose.monitoring.yml          ← overlay для `docker compose -f ...`
 ```
 
-## Запуск (overlay)
+## Запуск (полный стек — метрики + логи + алерты + UI)
 
 ```bash
 docker compose \
   -f docker-compose.yml \
   -f monitoring/docker-compose.monitoring.yml \
-  up -d prometheus alertmanager grafana
+  up -d prometheus alertmanager grafana loki alloy
 ```
 
 Сервисы подключаются к сети `portal_internal` (см. основной `docker-compose.yml`),
-поэтому видят `backend` и друг друга. `/metrics` портала скрапится как
-`http://backend:8000/metrics`.
+поэтому видят `backend`, `redis`, `postgres` и друг друга. Alloy дополнительно
+монтирует Docker socket (read-only) для discovery контейнеров и attach к stdout/stderr.
+
+UI (на хосте, проброшены на `127.0.0.1` — через SSH-туннель или reverse-proxy):
+
+| Сервис | Порт | Назначение |
+|---|---|---|
+| Grafana | `:3000` | Единый UI: метрики + логи. admin/`GRAFANA_ADMIN_PASSWORD` |
+| Prometheus | `:9090` | Метрики: targets, query (PromQL), alert state |
+| Alertmanager | `:9093` | Состояние алертов, silences, тест отправки |
+| Loki | `:3100` | API логов (обычно через Grafana, напрямую — для отладки) |
+| Alloy | `:12345` | UI pipeline сборщика (inspect tailers, debugging) |
 
 ## Настройка scrape-токена
 
 Backend защищает `/metrics` заголовком `X-Metrics-Token` (см. `docs/monitoring.md`
 §3, `middleware/metrics.py::_require_metrics_token`). Если токен задан в
-`/data/settings/system.json::metrics_token`, прописываем его в
-`prometheus.yml::authorization.credentials` (или `bearer_token`). **Не
-коммитить реальный токен в git** — использовать env-переменную:
-
-```yaml
-# prometheus.yml
-scrape_configs:
-  - job_name: "portal"
-    scheme: http
-    metrics_path: /metrics
-    authorization:
-      type: Bearer
-      credentials: ${PORTAL_METRICS_TOKEN}  # пусто = /metrics открыт (закрытый периметр)
-    static_configs:
-      - targets: ["backend:8000"]
-```
-
-Запуск с токеном:
+`/data/settings/system.json::metrics_token`, передаём через env:
 
 ```bash
-PORTAL_METRICS_TOKEN="$(jq -r .metrics_token // empty /data/settings/system.json)" \
+PORTAL_METRICS_TOKEN="$(jq -r .metrics_token // empty system_data/settings/system.json)" \
   docker compose -f docker-compose.yml -f monitoring/docker-compose.monitoring.yml up -d prometheus
+```
+
+Пустой токен → `/metrics` открыт (допустимо в закрытом периметре/VPN).
+
+## Email-доставка алертов
+
+`alertmanager.yml` шлёт алерты админам через **прямой SMTP-relay** (env-параметризуемые
+`${ALERT_SMTP_*}`), независимый от portal `email_outbox` — критично: алерты уходят
+даже при падении backend/worker. Переменные задаются в `.env` (см. `.env.example`,
+секция Observability). При пустом `ALERT_SMTP_HOST` алерты видны только в UI Alertmanager.
+
+Тест отправки алерта:
+```bash
+amtool alert add PortalBackendDown alertmanager=http://localhost:9093 \
+  severity=critical 'description=test alert'
+```
+
+## Примеры LogQL-запросов (в Grafana → Explore → Loki)
+
+```logql
+# Ошибки backend/worker за последний час
+{service=~"portal-backend|portal-worker", level=~"error|critical"}
+
+# Сквозная трассировка по request_id (nginx-access ↔ backend-request)
+{container=~"portal-.*"} | json | request_id="<id>"
+
+# Медленные запросы nginx (> 2с)
+{container="portal-nginx-1"} | json | request_time > 2
+
+# 5xx ошибки nginx
+{container="portal-nginx-1"} | json | status >= 500
 ```
 
 ## Проверка конфигов
 
 ```bash
-# Prometheus (нужен установленный promtool, либо через docker):
+# Overlay compose:
+docker compose -f docker-compose.yml -f monitoring/docker-compose.monitoring.yml config --quiet
+
+# Prometheus (нужен promtool):
 docker compose -f monitoring/docker-compose.monitoring.yml run --rm prometheus \
   promtool check config /etc/prometheus/prometheus.yml
-
-# Alertmanager:
-docker compose -f monitoring/docker-compose.monitoring.yml run --rm alertmanager \
-  amtool check-config /etc/alertmanager/alertmanager.yml
 
 # Alert rules (PromQL-синтаксис):
 docker compose -f monitoring/docker-compose.monitoring.yml run --rm prometheus \
   promtool check rules /etc/prometheus/rules/portal.yml
+
+# Alertmanager:
+docker run --rm -v ./monitoring/alerts/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro \
+  -e ALERT_SMTP_HOST=localhost -e ALERT_SMTP_PORT=25 -e ALERT_SMTP_FROM=a@b \
+  -e ALERT_ADMINS_EMAIL=c@d --entrypoint amtool prom/alertmanager:v0.27.0 \
+  check-config /etc/alertmanager/alertmanager.yml
+
+# Alloy (River-синтаксис):
+docker run --rm -v ./monitoring/alloy/config.alloy:/etc/alloy/config.alloy:ro \
+  --entrypoint alloy grafana/alloy:1.18.0 fmt --test /etc/alloy/config.alloy
 ```
 
 ## Грабли
 
+- **Loki 3.6+ и Alloy не содержат `wget`/`curl`** (busybox убран, upstream
+  issues grafana/loki#20149, grafana/alloy#477). Встроенный HTTP-healthcheck
+  невозможен — убран. Готовность: `restart` + ручная проверка с хоста.
 - **Cross-process snapshot:** гейджи `portal_audit_queue_depth`,
-  `portal_audit_processing_depth`, `portal_active_users_last_1h` и т.п.
-  обновляются ARQ-cron'ом `refresh_custom_metrics` раз в 30с → пишутся в Redis
+  `portal_audit_processing_depth`, `portal_active_users_last_1h` обновляются
+  ARQ-cron'ом `refresh_custom_metrics` раз в 30с → пишутся в Redis
   `metrics:snapshot` → подтягиваются в API-process при scrape. Лаг ≤30с —
   поэтому все алерты на эти гейджи имеют `for: 5m` минимум.
-- **Гейджи без воркера "замерзают".** Если `portal-worker` не запущен,
+- **Гейджи без воркера «замерзают».** Если `portal-worker` не запущен,
   `metrics:snapshot` не обновляется → кастомные метрики показывают
-  устаревшие значения. Алерт `PortalWorkerDown` поймает это по отсутствию
-  `arq:heartbeat` (TTL 90с в Redis, обновляется cron'ом каждые 30с).
+  устаревшие значения. Алерт `PortalWorkerStale` поймает это по отсутствию
+  изменений gauge за 3 мин.
+- **`request_id` — НЕ Loki-лейбл** (high-cardinality). Лейблы только `service`,
+  `level`, `container`, `compose_service`. Поиск request_id через LogQL `| json`.
 - **`/health` и `/ready` исключены** из RED-метрик (см. `middleware/metrics.py`),
   поэтому в Prometheus их не видно — это нормально, они для оркестратора.
-- **`alertmanager.yml` — заглушка.** Реальные receivers (email/Slack/Telegram)
-  настраивает команда под свою инфраструктуру. Шаблон в `alerts/alertmanager.yml`
-  показывает структуру.
-- **Grafana provisions без пароля** (admin/admin при первом старте — сменить!).
-  Для закрытого периметра допустимо; для публичного деплоя — настроить OAuth
-  или reverse-proxy auth.
+- **Фиксированные UID datasource** (`uid: loki`, `uid: prometheus`) обязательны —
+  без них Grafana генерирует случайные UID, дашборды не находят datasource'ы.

@@ -2,10 +2,10 @@
 
 > **Когда читать:** спорное/новое архитектурное решение — нужен контекст и обоснование «почему так».
 > **Ключевой код:** зависит от ADR (ссылки на файлы внутри каждого решения).
-> **ADR:** активные 001–042; отменённые/заменённые — `adr-archive.md`.
+> **ADR:** активные 001–044; отменённые/заменённые — `adr-archive.md`.
 
 > Корпоративный интранет-портал
-> Последнее обновление: июнь 2026 (ADR-035 — silent refresh; ADR-036 — auto-SSO; ADR-037 — bootstrap env / runtime system.json; ADR-038 — виджет «Время в городах» + Open-Meteo; ADR-039 — nginx sidecar + inotify; ADR-040 — сетевая топология Docker; ADR-041 — стратегия логирования; ADR-042 — stable session_id при /auth/refresh)
+> Последнее обновление: июль 2026 (ADR-043 — fastapi-limiter + starlette 1.x monkey-patch; ADR-044 — observability-стек Grafana + Loki + Prometheus + Alloy, удаление Sentry)
 
 Каждый ADR описывает одно архитектурное решение: контекст, альтернативы, выбор и обоснование.
 
@@ -53,6 +53,8 @@
 - [ADR-040: Сетевая топология Docker — internal vs external сети](#adr-040-сетевая-топология-docker--internal-vs-external-сети)
 - [ADR-041: Стратегия логирования — json-file driver и ротация](#adr-041-стратегия-логирования--json-file-driver-и-ротация)
 - [ADR-042: Stable session_id при /auth/refresh — мультитаб-устойчивый silent refresh (июнь 2026)](#adr-042-stable-session_id-при-authrefresh--мультитаб-устойчивый-silent-refresh-июнь-2026)
+- [ADR-043: fastapi-limiter 0.1.6 + starlette 1.x — monkey-patch совместимости (июль 2026)](#adr-043-fastapi-limiter-016--starlette-1x--monkey-patch-совместимости-июль-2026)
+- [ADR-044: Observability-стек — Grafana + Loki + Prometheus + Alloy, удаление Sentry (июль 2026)](#adr-044-observability-стек--grafana--loki--prometheus--alloy-удаление-sentry-июль-2026)
 
 ---
 
@@ -1295,3 +1297,64 @@ ADR-035 ввёл silent refresh по таймеру + retry-on-401. Endpoint `PO
 - **Заменить `fastapi-limiter` на другое решение** — отложено: требует рефакторинга всех rate-limited endpoints (8 модулей), отдельная задача.
 
 **Тесты:** `backend/tests/unit/test_limiter.py::test_patched_call_*` (6 тестов) — покрывают все ветки патча: skip-маршрута-без-path, methods-None, custom identifier/callback, NoScriptError-reload (регрессия на багфикс №4), default callback при блокировке, Exception при redis=None. Покрытие модуля 50%→**93%**. Все тесты вызывают `patched_call` напрямую, обходя session-fixture stub.
+
+---
+
+## ADR-044: Observability-стек — Grafana + Loki + Prometheus + Alloy, удаление Sentry (июль 2026)
+
+**Статус:** Принято
+
+**Контекст:**
+Портал экспортировал Prometheus-метрики (`/metrics`), но consumer-стороны (централизованные логи, просмотр, alerting) не было: логи жили только в `docker logs` по контейнерам, алерты — только через Sentry (который не использовался и не планировался, SaaS-форма недопустима по политике интранет/VPN, self-hosted Sentry избыточно тяжёл). Требовалось: единый просмотр логов и метрик, alerting на проблемы (5xx, рост очереди аудита, падение воркера), всё offline-capable (интранет).
+
+Слой логирования уже был подготовлен: structlog (`[./backend/app/core/logging.py](../backend/app/core/logging.py)`) отдаёт JSON в production, с contextvars (`request_id`, `service`), redaction секретов/PII — формат нативно совместим с Loki/ELK. `x-logging` anchor (`docker-compose.yml`, ADR-041) использует docker json-file driver с ротацией 50М×5; nginx пишет access-log в `/dev/stdout` через симлинк. Reference-стек Prometheus + Alertmanager + Grafana уже существовал в `monitoring/` (сессия от 2026-07-21, wip `observability-remediation.md`) как overlay.
+
+**Решение:**
+
+Расширить существующий overlay `monitoring/docker-compose.monitoring.yml` до полного observability-стека (5 сервисов), **не трогая базовый `docker-compose.yml`**:
+
+```
+portal internal-сеть (network internal: true)
+  ├─ backend/worker ──stdout(JSON structlog)──┐
+  ├─ nginx ──stdout(JSON json_combined)───────┼──► alloy ──► loki ──┐
+  └─ backend ──/metrics──────────────────────────► prometheus ──────┼──► grafana (:3000, 127.0.0.1)
+                                                                    └──► alertmanager (:9093) ──► email
+```
+
+1. **Loki 3.7.3** (`monitoring/loki/config.yml`) — single-binary, retention 30d, compactor. `auth_enabled: false` (закрытый периметр `portal_internal`). Volume `loki-data`.
+2. **Alloy 1.18.0** (`monitoring/alloy/config.alloy`) — `loki.source.docker` через Docker socket discovery контейнеров `portal-*`, `stage.docker` + `stage.json` парсинг structlog/nginx. Лейблы `service`/`level` (low-cardinality); `request_id` — **не лейбл** (high-cardinality), ищется через LogQL `| json | request_id="..."`.
+3. **Grafana datasource Loki** (`provisioning/datasources/loki.yml`, `uid: loki`) + дашборд `portal-logs.json` (7 панелей: ошибки backend/worker, объём по сервисам/уровням, медленные запросы nginx, 5xx, audit-pipeline, трассировка по `request_id`).
+4. **Alertmanager** (`alerts/alertmanager.yml`) — email-receivers через прямой SMTP-relay (env-параметризуемые `${ALERT_SMTP_*}`), независимый от portal email_outbox (критично: алерты уходят даже при падении backend).
+5. **Удаление Sentry** — полностью вычищен (см. коммит сессии 1): `sentry-sdk` убран из зависимостей, `core/sentry.py` удалён, `sentry_dsn` убран из `SystemSettings`, секция из Admin UI и i18n удалена. Ошибки теперь идут через structlog `logger.exception(...)` → Loki.
+
+Запуск:
+```bash
+docker compose -f docker-compose.yml -f monitoring/docker-compose.monitoring.yml \
+  up -d prometheus alertmanager grafana loki alloy
+```
+
+**Альтернативы и почему отклонены:**
+- **ELK / OpenSearch + Kibana** — отклонено: Elasticsearch прожорлив (~3–4 ГБ RAM), Elastic License 2.0 не чистый OSS. Оверкилл для ~300 юзеров. Loki индексирует только лейблы → лёгкий.
+- **Graylog** — отклонено: требует OpenSearch + MongoDB, лишние движки.
+- **Promtail вместо Alloy** — отклонено: Promtail в maintenance, Alloy — текущий активный проект Grafana (замена).
+- **Перевод `x-logging` anchor на `loki` driver** — отклонено: ломает `docker logs`, риск для prod. Alloy читает поверх json-file driver, переиспользуя существующую ротацию (ADR-041).
+- **Self-hosted Sentry** — отклонено: ~20 сервисов (Kafka, PostgreSQL, Redis, ClickHouse), заметно тяжелее всей Grafana-связки.
+- **Включение obs-стека в базовый compose** — отклонено: наследуем решение из wip-плана (reference-конфиги в `monitoring/`, тяжёлые образы ~900 МБ не тащатся в базовый деплой).
+
+**Грабли (важно!):**
+1. **Loki 3.6+ и Alloy не содержат `wget`/`curl`** (busybox убран, upstream issues grafana/loki#20149, grafana/alloy#477). Встроенный HTTP-healthcheck (`/ready`, `/-/ready`) сделать нечем. Решение: healthcheck убран у обоих, готовность через `restart: unless-stopped` + ручная проверка с хоста.
+2. **`${VAR:default}` синтаксис НЕ работает в alertmanager.yml** — Alertmanager (Go) раскрывает только `${VAR}` без дефолта. Дефолты задаются в overlay compose через `${ALERT_SMTP_HOST:-}`.
+3. **Фиксированные UID datasource обязательны** (`uid: loki`, `uid: prometheus`) — без них Grafana генерирует случайные UID, дашборды не находят свои datasource'ы.
+4. **Alloy `loki.write.endpoint` не имеет `batchwait`/`batchsize`** (это Promtail-атрибуты) — значения по умолчанию разумны (1 МБ/1с).
+5. **Mount `alerts/` в prometheus `rules/` ломает Prometheus** — он пытается парсить `alertmanager.yml` как rules-файл и падает. Развели на файловый mount `portal.yml`.
+6. **`single_binary` поле удалено в Loki 3.x** (было в 2.x) — вызывает `field single_binary not found` при парсинге. Single-binary теперь режим по умолчанию.
+
+**Тесты:** smoke-тест на живом портале (сессия 2) — Loki `/ready → ready`, Alloy discovery находит все 10 контейнеров, structlog/nginx JSON парсится (service/level/request_id/status), сквозная корреляция nginx-access ↔ backend-request по `request_id`, Prometheus scrape `up`, Grafana автозагружает 2 datasource + 2 дашборда. `amtool check-config` SUCCESS, `alloy fmt --test` + semantic run OK.
+
+**Последствия:**
+- Логи централизованы в Loki (retention 30d), просмотр через Grafana (LogQL), больше не нужно `docker logs | grep`.
+- Алерты (5xx, audit backlog, worker down) доставляются email админам через независимый SMTP-relay.
+- Sentry полностью убран — меньше зависимостей, проще стек, нет внешнего phone-home.
+- +~500–650 МБ RAM к overlay (Loki ~400 МБ, Alloy ~150 МБ), базовый compose не затронут.
+- Архитектурно готово к добавлению трейсинга (Tempo) — отдельным overlay, Grafana уже есть.
+
