@@ -117,7 +117,7 @@ services:
       - ./monitoring/grafana/portal-logs.json:/var/lib/grafana/dashboards/portal-logs.json:ro
       - grafana-data:/var/lib/grafana
     ports:
-      - "3000:3000"               # 0.0.0.0 — доступ из Windows в WSL2
+      - "3001:3000"               # 0.0.0.0 — доступ из Windows в WSL2
     networks:
       - internal
       - external
