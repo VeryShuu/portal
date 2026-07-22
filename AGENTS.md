@@ -188,7 +188,7 @@
 
 **Frontend:** Vue 3 + TypeScript + Vite · **Naive UI** (не PrimeVue/Vuetify) · Pinia · Vue Router 4 · **TanStack Query + ofetch** · vue-i18n v9 · **TipTap v2** · контент — Markdown · DOMPurify · Vitest + Playwright
 
-**Backend:** Python 3.12 · **FastAPI** · SQLAlchemy 2.x async + Alembic · **ARQ** (workers) · **fastapi-limiter** (не slowapi) · httpx · structlog · Sentry · python-magic · **nh3** · Pytest + Testcontainers
+**Backend:** Python 3.12 · **FastAPI** · SQLAlchemy 2.x async + Alembic · **ARQ** (workers) · **fastapi-limiter** (не slowapi) · httpx · structlog · python-magic · **nh3** · Pytest + Testcontainers
 
 **Infra:** PostgreSQL 16 · Redis 7 · Nginx · Docker Compose · GitHub Actions · **Keycloak** (IdP) · **Nextcloud** (files) · **Collabora Online** (editor) · Postfix (SMTP)
 
@@ -312,7 +312,7 @@ portal/
 │   └── api/types.gen.d.ts     ← auto-gen из openapi.json (в .gitignore)
 ├── backend/app/
 │   ├── api/                   ← роутеры (files/, kb/, photos/, helpdesk/, auth/ — подпакеты; news, users, ...)
-│   ├── core/                  ← config, database, security, limiter, logging, metrics, sentry, system_config, secret_crypto, ...
+│   ├── core/                  ← config, database, security, limiter, logging, metrics, system_config, secret_crypto, ...
 │   ├── middleware/            ← csrf, idempotency, session, security_headers, ...
 │   ├── models/                ← SQLAlchemy models (files, kb, links, news, notification, photos, helpdesk, email_outbox, user, ...)
 │   ├── schemas/               ← Pydantic schemas
@@ -354,7 +354,7 @@ Chromium вынесен из бэкенда в `screenshot-service/` (aiohttp + 
 
 ### Конфигурация: bootstrap (env) vs runtime (JSON) — ADR-037
 - **Bootstrap** (`app/core/config.py::Settings`): `DATABASE_URL`, `REDIS_URL`, `SECRET_KEY`, `POSTGRES_PASSWORD`, `REDIS_PASSWORD`, `ADMIN_EMAIL/PASSWORD`, `LOCAL_AUTH_ENABLED`, `SCREENSHOT_SERVICE_SECRET`, DB pool tunables. Полный список — `.env.example`.
-- **Runtime** (`/data/settings/system.json`, `SystemSettings`): управляется через Admin UI без рестарта — upload limits, `allowed_cidr`, `log_level`, `sentry_dsn`, `nextcloud_url`, `nc_service_app_password`, и др.
+- **Runtime** (`/data/settings/system.json`, `SystemSettings`): управляется через Admin UI без рестарта — upload limits, `allowed_cidr`, `log_level`, `nextcloud_url`, `nc_service_app_password`, и др.
 - **Keycloak** (`/data/secrets/keycloak-settings.json`): только Admin UI → «Keycloak». Никакого env-fallback.
 - При первом старте `migrate_env_to_system_settings()` создаёт `system.json` из легаси env-переменных автоматически.
 
@@ -386,7 +386,7 @@ Chromium вынесен из бэкенда в `screenshot-service/` (aiohttp + 
 - Ключи: dot-notation (`kb.article.save`). Проверка: `npm run i18n:check`.
 
 ### Безопасность
-- Не логировать токены, пароли, персональные данные (Sentry `scrub_sensitive` в `app/core/sentry.py`)
+- Не логировать токены, пароли, персональные данные (редакция секретов и PII в `app/core/logging.py`: `redact_secrets_processor`, `mask_pii_processor`)
 - Роли — `Depends(require_role("editor"))`, данные — Pydantic, SQL — bind-параметры
 - JWT issuer валидируется в `parse_jwt_claims` (issuer=`{keycloak_url}/realms/{realm}`)
 - Rate limit `/auth/local/login`: IP (5/15min) + email-хеш (10/15min) через `fastapi-limiter`

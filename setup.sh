@@ -513,7 +513,6 @@ DEVEOF
 # - тестовый стенд, максимально приближённый к production;
 # - публикует Postgres/Redis наружу для дампов и интеграционных прогонов;
 # - снижает потребление памяти Redis (staging-нагрузка < prod);
-# - подключает sentry environment=staging;
 # - публикует backend на 8000 для прямых curl/k6/zap прогонов мимо nginx;
 # - уровень и формат логирования управляются через Admin UI → Мониторинг → Логирование
 #   (для staging обычно ставят DEBUG + JSON всегда);
@@ -538,12 +537,10 @@ services:
       - "127.0.0.1:8000:8000"
     environment:
       ENVIRONMENT: staging
-      SENTRY_ENVIRONMENT: staging
 
   worker:
     environment:
       ENVIRONMENT: staging
-      SENTRY_ENVIRONMENT: staging
 
   nginx:
     ports:

@@ -1,5 +1,5 @@
 <!-- AUTO-GENERATED — do not edit manually. Run: cd backend && python -m scripts.generate_api_contracts_doc --output ../docs/api-contracts.generated.md -->
-<!-- Generated: 2026-07-22 14:37 UTC -->
+<!-- Generated: 2026-07-22 16:54 UTC -->
 
 # API Contracts (auto-generated)
 
@@ -593,11 +593,11 @@ Content-Type: `application/json` — schema: `CreateBookmarkRequest`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `group_name` | any |  |  |
-| `resource_id` | any |  |  |
-| `resource_type` | any |  |  |
 | `title` | string | ✓ |  |
 | `url` | string | ✓ |  |
+| `resource_type` | any |  |  |
+| `resource_id` | any |  |  |
+| `group_name` | any |  |  |
 
 **Responses**
 
@@ -839,15 +839,15 @@ Content-Type: `application/json` — schema: `BrandingSettings`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `accent_color` | string |  |  |
-| `banner_enabled` | boolean |  |  |
-| `banner_expires_at` | any |  |  |
-| `banner_text` | string |  |  |
-| `banner_type` | string |  |  |
-| `logo_hidden` | boolean |  |  |
 | `portal_name` | string |  |  |
 | `portal_tagline` | string |  |  |
+| `accent_color` | string |  |  |
 | `welcome_subtitle` | string |  |  |
+| `banner_enabled` | boolean |  |  |
+| `banner_text` | string |  |  |
+| `banner_type` | string |  |  |
+| `banner_expires_at` | any |  |  |
+| `logo_hidden` | boolean |  |  |
 
 **Responses**
 
@@ -895,13 +895,13 @@ Content-Type: `application/json` — schema: `EmailSettingsIn`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `from_address` | string |  |  |
 | `host` | string |  |  |
-| `password` | any |  | Pass null or '***' to keep existing password; pass '' to clear; pass new value to update |
 | `port` | integer |  |  |
-| `use_starttls` | boolean |  |  |
-| `use_tls` | boolean |  |  |
+| `from_address` | string |  |  |
 | `username` | string |  |  |
+| `password` | any |  | Pass null or '***' to keep existing password; pass '' to clear; pass new value to update |
+| `use_tls` | boolean |  |  |
+| `use_starttls` | boolean |  |  |
 
 **Responses**
 
@@ -1014,14 +1014,14 @@ Content-Type: `application/json` — schema: `CreateDirectoryRequest`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `channels` | array of `DirectoryChannel` |  |  |
-| `description` | any |  |  |
-| `enabled` | boolean |  |  |
-| `field_schema` | array of `DirectoryField` |  |  |
-| `icon` | any |  |  |
-| `label_en` | any |  |  |
-| `label_ru` | string | ✓ |  |
 | `slug` | string | ✓ |  |
+| `label_ru` | string | ✓ |  |
+| `label_en` | any |  |  |
+| `icon` | any |  |  |
+| `description` | any |  |  |
+| `field_schema` | array of `DirectoryField` |  |  |
+| `channels` | array of `DirectoryChannel` |  |  |
+| `enabled` | boolean |  |  |
 | `sort_order` | integer |  |  |
 
 **Responses**
@@ -1048,13 +1048,13 @@ Content-Type: `application/json` — schema: `UpdateDirectoryRequest`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `channels` | any |  |  |
-| `description` | any |  |  |
-| `enabled` | any |  |  |
-| `field_schema` | any |  |  |
-| `icon` | any |  |  |
-| `label_en` | any |  |  |
 | `label_ru` | any |  |  |
+| `label_en` | any |  |  |
+| `icon` | any |  |  |
+| `description` | any |  |  |
+| `field_schema` | any |  |  |
+| `channels` | any |  |  |
+| `enabled` | any |  |  |
 | `sort_order` | any |  |  |
 
 **Responses**
@@ -1120,12 +1120,12 @@ Content-Type: `application/json` — schema: `CreateEntryRequest`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `attributes` | object |  |  |
-| `contacts` | array of `ContactInput` |  |  |
-| `folder_id` | any |  |  |
 | `name` | string | ✓ |  |
+| `folder_id` | any |  |  |
+| `attributes` | object |  |  |
 | `note` | any |  |  |
 | `sort_order` | integer |  |  |
+| `contacts` | array of `ContactInput` |  |  |
 
 **Responses**
 
@@ -1197,12 +1197,12 @@ Content-Type: `application/json` — schema: `UpdateEntryRequest`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `attributes` | any |  |  |
-| `contacts` | any |  |  |
-| `folder_id` | any |  |  |
 | `name` | any |  |  |
+| `folder_id` | any |  |  |
+| `attributes` | any |  |  |
 | `note` | any |  |  |
 | `sort_order` | any |  |  |
+| `contacts` | any |  |  |
 
 **Responses**
 
@@ -1699,9 +1699,9 @@ Content-Type: `application/json` — schema: `CreateFolderRequest`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `description` | any |  |  |
 | `name` | string | ✓ |  |
 | `parent_id` | any |  |  |
+| `description` | any |  |  |
 
 **Responses**
 
@@ -1745,8 +1745,8 @@ Content-Type: `application/json` — schema: `app__schemas__files__UpdateFolderR
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `description` | any |  |  |
 | `name` | any |  |  |
+| `description` | any |  |  |
 
 **Responses**
 
@@ -1864,11 +1864,11 @@ Content-Type: `application/json` — schema: `CreateFileShareRequest`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `expires_in_days` | any |  |  |
-| `permission` | string | ✓ |  |
+| `subject_type` | string | ✓ |  |
 | `subject_id` | string | ✓ |  |
 | `subject_name` | string | ✓ |  |
-| `subject_type` | string | ✓ |  |
+| `permission` | string | ✓ |  |
+| `expires_in_days` | any |  |  |
 
 **Responses**
 
@@ -1958,10 +1958,10 @@ Content-Type: `application/json` — schema: `app__schemas__files__GrantPermissi
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `permission` | string | ✓ |  |
+| `subject_type` | string | ✓ |  |
 | `subject_id` | string | ✓ |  |
 | `subject_name` | string | ✓ |  |
-| `subject_type` | string | ✓ |  |
+| `permission` | string | ✓ |  |
 
 **Responses**
 
@@ -2235,8 +2235,8 @@ Content-Type: `application/json` — schema: `AgentIn`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `notify_new` | boolean |  |  |
 | `user_id` | string | ✓ |  |
+| `notify_new` | boolean |  |  |
 
 **Responses**
 
@@ -2262,8 +2262,8 @@ Content-Type: `application/json` — schema: `AgentIn`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `notify_new` | boolean |  |  |
 | `user_id` | string | ✓ |  |
+| `notify_new` | boolean |  |  |
 
 **Responses**
 
@@ -2384,10 +2384,10 @@ Content-Type: `application/json` — schema: `HelpdeskDigestSettingsIn`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
+| `enabled` | boolean |  |  |
 | `digest_hour` | integer |  |  |
 | `digest_minute` | integer |  |  |
 | `digest_schedule` | string |  |  |
-| `enabled` | boolean |  |  |
 
 **Responses**
 
@@ -2429,14 +2429,14 @@ Content-Type: `application/json` — schema: `HelpdeskMailboxSettingsIn`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `delete_after_fetch` | boolean |  |  |
-| `imap_folder` | string |  |  |
 | `imap_host` | string | ✓ |  |
-| `imap_password` | any |  |  |
 | `imap_port` | integer |  |  |
-| `imap_use_ssl` | boolean |  |  |
 | `imap_username` | string | ✓ |  |
+| `imap_password` | any |  |  |
+| `imap_use_ssl` | boolean |  |  |
+| `imap_folder` | string |  |  |
 | `poll_interval_seconds` | integer |  |  |
+| `delete_after_fetch` | boolean |  |  |
 | `support_address` | `app__schemas__helpdesk__Email__1` | ✓ |  |
 | `support_reply_to` | any |  |  |
 
@@ -2505,9 +2505,9 @@ Content-Type: `application/json` — schema: `HelpdeskMaxBotSettingsIn`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
+| `enabled` | boolean |  |  |
 | `bot_token` | any |  |  |
 | `chat_id` | any |  |  |
-| `enabled` | boolean |  |  |
 
 **Responses**
 
@@ -2591,10 +2591,10 @@ Content-Type: `multipart/form-data` — schema: `Body_create_ticket_api_v1_helpd
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
+| `subject` | string | ✓ |  |
 | `description` | string |  |  |
 | `description_html` | string |  |  |
 | `files` | array of string |  |  |
-| `subject` | string | ✓ |  |
 
 **Responses**
 
@@ -2739,8 +2739,8 @@ Content-Type: `multipart/form-data` — schema: `Body_add_my_message_api_v1_help
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `body_html` | string |  |  |
 | `body_text` | string |  |  |
+| `body_html` | string |  |  |
 | `files` | array of string |  |  |
 
 **Responses**
@@ -2886,8 +2886,8 @@ Content-Type: `multipart/form-data` — schema: `Body_add_agent_message_api_v1_h
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `body_html` | string |  |  |
 | `body_text` | string |  |  |
+| `body_html` | string |  |  |
 | `cc` | array of string |  |  |
 | `files` | array of string |  |  |
 
@@ -3042,8 +3042,8 @@ Content-Type: `application/json` — schema: `KeycloakSettingsIn`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `keycloak_realm` | string |  |  |
 | `keycloak_url` | string |  |  |
+| `keycloak_realm` | string |  |  |
 | `oidc_client_id` | string |  |  |
 | `oidc_client_secret` | any |  | Pass null or '***' to keep existing; new value to update |
 | `sync_client_id` | string |  |  |
@@ -3164,11 +3164,11 @@ Content-Type: `application/json` — schema: `CreateArticleRequest`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `body` | string |  |  |
 | `section_id` | any |  |  |
+| `title` | string | ✓ |  |
+| `body` | string |  |  |
 | `status` | string |  |  |
 | `tags` | array of string |  |  |
-| `title` | string | ✓ |  |
 
 **Responses**
 
@@ -3238,13 +3238,13 @@ Content-Type: `application/json` — schema: `UpdateArticleRequest`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
+| `title` | any |  |  |
 | `body` | any |  |  |
-| `change_comment` | any |  |  |
 | `section_id` | any |  |  |
 | `status` | any |  |  |
 | `tags` | any |  |  |
-| `title` | any |  |  |
 | `version` | integer | ✓ | Текущая версия статьи (оптимистичная блокировка) |
+| `change_comment` | any |  |  |
 
 **Responses**
 
@@ -3353,8 +3353,8 @@ Content-Type: `application/json` — schema: `DraftSaveRequest`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `body` | any |  |  |
 | `title` | any |  |  |
+| `body` | any |  |  |
 | `version` | integer | ✓ | Текущая версия статьи (оптимистичная блокировка) |
 
 **Responses**
@@ -3594,10 +3594,10 @@ Content-Type: `application/json` — schema: `SetPermissionRequest`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `permission` | string | ✓ |  |
+| `subject_type` | string | ✓ |  |
 | `subject_id` | string | ✓ |  |
 | `subject_name` | string | ✓ |  |
-| `subject_type` | string | ✓ |  |
+| `permission` | string | ✓ |  |
 
 **Responses**
 
@@ -3898,10 +3898,10 @@ Content-Type: `application/json` — schema: `CreateSectionRequest`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `description` | any |  |  |
-| `parent_id` | any |  |  |
-| `sort_order` | integer |  |  |
 | `title` | string | ✓ |  |
+| `parent_id` | any |  |  |
+| `description` | any |  |  |
+| `sort_order` | integer |  |  |
 
 **Responses**
 
@@ -3927,10 +3927,10 @@ Content-Type: `application/json` — schema: `UpdateSectionRequest`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `description` | any |  |  |
-| `parent_id` | any |  |  |
-| `sort_order` | any |  |  |
 | `title` | any |  |  |
+| `parent_id` | any |  |  |
+| `description` | any |  |  |
+| `sort_order` | any |  |  |
 
 **Responses**
 
@@ -4036,10 +4036,10 @@ Content-Type: `application/json` — schema: `SetPermissionRequest`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `permission` | string | ✓ |  |
+| `subject_type` | string | ✓ |  |
 | `subject_id` | string | ✓ |  |
 | `subject_name` | string | ✓ |  |
-| `subject_type` | string | ✓ |  |
+| `permission` | string | ✓ |  |
 
 **Responses**
 
@@ -4241,16 +4241,16 @@ Content-Type: `application/json` — schema: `CreateLinkRequest`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `category` | any |  |  |
-| `description` | any |  |  |
-| `icon_url` | any |  |  |
-| `is_active` | boolean |  |  |
-| `kb_url` | any |  |  |
-| `show_on_home` | boolean |  |  |
-| `sort_order` | integer |  |  |
-| `supports_sso` | boolean |  |  |
 | `title` | string | ✓ |  |
 | `url` | string | ✓ |  |
+| `icon_url` | any |  |  |
+| `description` | any |  |  |
+| `category` | any |  |  |
+| `sort_order` | integer |  |  |
+| `supports_sso` | boolean |  |  |
+| `is_active` | boolean |  |  |
+| `show_on_home` | boolean |  |  |
+| `kb_url` | any |  |  |
 
 **Responses**
 
@@ -4319,16 +4319,16 @@ Content-Type: `application/json` — schema: `UpdateLinkRequest`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `category` | any |  |  |
-| `description` | any |  |  |
-| `icon_url` | any |  |  |
-| `is_active` | any |  |  |
-| `kb_url` | any |  |  |
-| `show_on_home` | any |  |  |
-| `sort_order` | any |  |  |
-| `supports_sso` | any |  |  |
 | `title` | any |  |  |
 | `url` | any |  |  |
+| `icon_url` | any |  |  |
+| `description` | any |  |  |
+| `category` | any |  |  |
+| `sort_order` | any |  |  |
+| `supports_sso` | any |  |  |
+| `is_active` | any |  |  |
+| `show_on_home` | any |  |  |
+| `kb_url` | any |  |  |
 
 **Responses**
 
@@ -4489,9 +4489,9 @@ Content-Type: `application/json` — schema: `CreateMailingRecipientRequest`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
+| `name` | string | ✓ |  |
 | `email` | string | ✓ |  |
 | `label` | any |  |  |
-| `name` | string | ✓ |  |
 
 **Responses**
 
@@ -4517,9 +4517,9 @@ Content-Type: `application/json` — schema: `UpdateMailingRecipientRequest`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
+| `name` | any |  |  |
 | `email` | any |  |  |
 | `label` | any |  |  |
-| `name` | any |  |  |
 
 **Responses**
 
@@ -4590,13 +4590,13 @@ Content-Type: `application/json` — schema: `BookingCreate`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
+| `title` | string | ✓ |  |
 | `description` | any |  |  |
+| `start_time` | string | ✓ |  |
 | `end_time` | string | ✓ |  |
+| `room_ids` | array of string | ✓ |  |
 | `invited_users` | array of `InvitedUser` |  |  |
 | `recurrence` | any |  |  |
-| `room_ids` | array of string | ✓ |  |
-| `start_time` | string | ✓ |  |
-| `title` | string | ✓ |  |
 
 **Responses**
 
@@ -4660,13 +4660,13 @@ Content-Type: `application/json` — schema: `BookingUpdate`
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `apply_to` | string |  |  |
+| `title` | any |  |  |
 | `description` | any |  |  |
+| `start_time` | any |  |  |
 | `end_time` | any |  |  |
+| `room_ids` | any |  |  |
 | `invited_users` | any |  |  |
 | `recurrence` | any |  |  |
-| `room_ids` | any |  |  |
-| `start_time` | any |  |  |
-| `title` | any |  |  |
 
 **Responses**
 
@@ -4752,12 +4752,12 @@ Content-Type: `application/json` — schema: `RoomCreate`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `email` | any |  |  |
-| `kind` | string |  |  |
-| `link` | any |  |  |
 | `name` | string | ✓ |  |
-| `sort_order` | integer |  |  |
+| `kind` | string |  |  |
+| `email` | any |  |  |
+| `link` | any |  |  |
 | `timezone` | string |  |  |
+| `sort_order` | integer |  |  |
 
 **Responses**
 
@@ -4801,13 +4801,13 @@ Content-Type: `application/json` — schema: `RoomUpdate`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `email` | any |  |  |
-| `is_active` | any |  |  |
-| `kind` | any |  |  |
-| `link` | any |  |  |
 | `name` | any |  |  |
-| `sort_order` | any |  |  |
+| `kind` | any |  |  |
+| `email` | any |  |  |
+| `link` | any |  |  |
 | `timezone` | any |  |  |
+| `sort_order` | any |  |  |
+| `is_active` | any |  |  |
 
 **Responses**
 
@@ -4851,12 +4851,12 @@ Content-Type: `application/json` — schema: `SeriesUpdate`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `description` | any |  |  |
-| `end_time` | any |  |  |
-| `invited_users` | any |  |  |
-| `room_ids` | any |  |  |
-| `start_time` | any |  |  |
 | `title` | any |  |  |
+| `description` | any |  |  |
+| `invited_users` | any |  |  |
+| `start_time` | any |  |  |
+| `end_time` | any |  |  |
+| `room_ids` | any |  |  |
 
 **Responses**
 
@@ -4988,9 +4988,9 @@ Content-Type: `application/json` — schema: `MeetingsModuleIn`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `calendar_end_hour` | integer |  |  |
-| `calendar_start_hour` | integer |  |  |
 | `enabled` | boolean |  |  |
+| `calendar_start_hour` | integer |  |  |
+| `calendar_end_hour` | integer |  |  |
 | `max_recurrence_horizon_days` | integer |  |  |
 | `min_search_chars` | integer |  |  |
 
@@ -5042,12 +5042,12 @@ Content-Type: `application/json` — schema: `PhotosModuleIn`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `allowed_mime` | array of string |  |  |
 | `enabled` | boolean |  |  |
-| `max_share_ttl_days` | integer |  |  |
-| `max_size_mb` | integer |  |  |
-| `strip_gps` | boolean |  |  |
 | `widget_limit` | integer |  |  |
+| `max_size_mb` | integer |  |  |
+| `allowed_mime` | array of string |  |  |
+| `strip_gps` | boolean |  |  |
+| `max_share_ttl_days` | integer |  |  |
 
 **Responses**
 
@@ -5178,18 +5178,18 @@ Content-Type: `application/json` — schema: `CreateNewsRequest`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `archive_at` | any |  |  |
+| `title` | string | ✓ |  |
 | `body` | string |  |  |
+| `status` | string |  |  |
+| `is_pinned` | boolean |  |  |
 | `categories` | array of string |  |  |
+| `target_departments` | any |  |  |
+| `target_roles` | any |  |  |
+| `publish_at` | any |  |  |
+| `archive_at` | any |  |  |
 | `cover_focal_x` | any |  |  |
 | `cover_focal_y` | any |  |  |
 | `cover_focal_zoom` | any |  |  |
-| `is_pinned` | boolean |  |  |
-| `publish_at` | any |  |  |
-| `status` | string |  |  |
-| `target_departments` | any |  |  |
-| `target_roles` | any |  |  |
-| `title` | string | ✓ |  |
 
 **Responses**
 
@@ -5269,19 +5269,19 @@ Content-Type: `application/json` — schema: `UpdateNewsRequest`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `archive_at` | any |  |  |
+| `title` | any |  |  |
 | `body` | any |  |  |
+| `status` | any |  |  |
+| `is_pinned` | any |  |  |
 | `categories` | any |  |  |
+| `target_departments` | any |  |  |
+| `target_roles` | any |  |  |
+| `publish_at` | any |  |  |
+| `archive_at` | any |  |  |
+| `published_at` | any |  |  |
 | `cover_focal_x` | any |  |  |
 | `cover_focal_y` | any |  |  |
 | `cover_focal_zoom` | any |  |  |
-| `is_pinned` | any |  |  |
-| `publish_at` | any |  |  |
-| `published_at` | any |  |  |
-| `status` | any |  |  |
-| `target_departments` | any |  |  |
-| `target_roles` | any |  |  |
-| `title` | any |  |  |
 
 **Responses**
 
@@ -5543,19 +5543,19 @@ Content-Type: `application/json` — schema: `UpdateNewsRequest`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `archive_at` | any |  |  |
+| `title` | any |  |  |
 | `body` | any |  |  |
+| `status` | any |  |  |
+| `is_pinned` | any |  |  |
 | `categories` | any |  |  |
+| `target_departments` | any |  |  |
+| `target_roles` | any |  |  |
+| `publish_at` | any |  |  |
+| `archive_at` | any |  |  |
+| `published_at` | any |  |  |
 | `cover_focal_x` | any |  |  |
 | `cover_focal_y` | any |  |  |
 | `cover_focal_zoom` | any |  |  |
-| `is_pinned` | any |  |  |
-| `publish_at` | any |  |  |
-| `published_at` | any |  |  |
-| `status` | any |  |  |
-| `target_departments` | any |  |  |
-| `target_roles` | any |  |  |
-| `title` | any |  |  |
 
 **Responses**
 
@@ -5821,11 +5821,11 @@ Content-Type: `application/json` — schema: `CreateNewsPollRequest`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `allow_revote` | boolean |  |  |
-| `closes_at` | any |  |  |
 | `is_anonymous` | boolean |  |  |
-| `questions` | array of `CreateNewsPollQuestion` | ✓ |  |
+| `allow_revote` | boolean |  |  |
 | `results_visibility` | string |  |  |
+| `closes_at` | any |  |  |
+| `questions` | array of `CreateNewsPollQuestion` | ✓ |  |
 
 **Responses**
 
@@ -5851,11 +5851,11 @@ Content-Type: `application/json` — schema: `UpdateNewsPollRequest`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `allow_revote` | any |  |  |
-| `closes_at` | any |  |  |
 | `is_anonymous` | any |  |  |
-| `questions` | any |  |  |
+| `allow_revote` | any |  |  |
 | `results_visibility` | any |  |  |
+| `closes_at` | any |  |  |
+| `questions` | any |  |  |
 
 **Responses**
 
@@ -6034,8 +6034,8 @@ Content-Type: `application/json` — schema: `NewsShareEmailRequest`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `message` | any |  |  |
 | `recipient_ids` | array of string | ✓ |  |
+| `message` | any |  |  |
 
 **Responses**
 
@@ -6099,8 +6099,8 @@ Content-Type: `application/json` — schema: `CategoryIn`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `color` | string |  |  |
 | `name` | string | ✓ |  |
+| `color` | string |  |  |
 
 **Responses**
 
@@ -6356,9 +6356,9 @@ Content-Type: `application/json` — schema: `CreateFolderRequest`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `description` | any |  |  |
 | `name` | string | ✓ |  |
 | `parent_id` | any |  |  |
+| `description` | any |  |  |
 
 **Responses**
 
@@ -6436,9 +6436,9 @@ Content-Type: `application/json` — schema: `app__schemas__photos__UpdateFolder
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `cover_photo_id` | any |  |  |
-| `description` | any |  |  |
 | `name` | any |  |  |
+| `description` | any |  |  |
+| `cover_photo_id` | any |  |  |
 | `parent_id` | any |  |  |
 
 **Responses**
@@ -6501,10 +6501,10 @@ Content-Type: `application/json` — schema: `app__schemas__photos__GrantPermiss
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `permission` | string | ✓ |  |
+| `subject_type` | string | ✓ |  |
 | `subject_id` | string | ✓ |  |
 | `subject_name` | string | ✓ |  |
-| `subject_type` | string | ✓ |  |
+| `permission` | string | ✓ |  |
 
 **Responses**
 
@@ -7353,14 +7353,14 @@ Content-Type: `application/json` — schema: `SignatureSettingsIn`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `attr_city` | string |  |  |
-| `attr_mobile` | string |  |  |
-| `attr_office_phone` | string |  |  |
 | `cities` | array of `SignatureCity` | ✓ |  |
-| `company_url` | string | ✓ |  |
-| `logo_base_url` | string | ✓ |  |
 | `office_phones` | array of string | ✓ |  |
 | `support_email` | string | ✓ |  |
+| `company_url` | string | ✓ |  |
+| `logo_base_url` | string | ✓ |  |
+| `attr_mobile` | string |  |  |
+| `attr_office_phone` | string |  |  |
+| `attr_city` | string |  |  |
 
 **Responses**
 
@@ -7402,16 +7402,16 @@ Content-Type: `application/json` — schema: `SignatureGenerateRequest`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `city_id` | integer | ✓ |  |
-| `device` | string |  |  |
-| `email` | string | ✓ |  |
-| `extension` | any |  |  |
-| `language` | string |  |  |
-| `mobile_phone` | any |  |  |
 | `name` | string | ✓ |  |
-| `office_phone` | any |  |  |
-| `position` | string | ✓ |  |
 | `surname` | string | ✓ |  |
+| `position` | string | ✓ |  |
+| `language` | string |  |  |
+| `device` | string |  |  |
+| `city_id` | integer | ✓ |  |
+| `office_phone` | any |  |  |
+| `extension` | any |  |  |
+| `mobile_phone` | any |  |  |
+| `email` | string | ✓ |  |
 
 **Responses**
 
@@ -7436,16 +7436,16 @@ Content-Type: `application/json` — schema: `SignatureGenerateRequest`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `city_id` | integer | ✓ |  |
-| `device` | string |  |  |
-| `email` | string | ✓ |  |
-| `extension` | any |  |  |
-| `language` | string |  |  |
-| `mobile_phone` | any |  |  |
 | `name` | string | ✓ |  |
-| `office_phone` | any |  |  |
-| `position` | string | ✓ |  |
 | `surname` | string | ✓ |  |
+| `position` | string | ✓ |  |
+| `language` | string |  |  |
+| `device` | string |  |  |
+| `city_id` | integer | ✓ |  |
+| `office_phone` | any |  |  |
+| `extension` | any |  |  |
+| `mobile_phone` | any |  |  |
+| `email` | string | ✓ |  |
 
 **Responses**
 
@@ -7525,37 +7525,36 @@ Content-Type: `application/json` — schema: `SystemSettingsIn`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
+| `portal_base_url` | string |  |  |
+| `nextcloud_url` | string |  |  |
+| `nc_user_id_field` | string |  |  |
+| `nc_service_username` | string |  |  |
+| `nc_files_root` | string |  |  |
+| `max_upload_size_mb` | integer |  |  |
 | `allowed_cidr` | string |  |  |
-| `arq_max_jobs` | integer |  |  |
+| `prometheus_metrics_enabled` | boolean |  |  |
+| `news_attachment_max_size_mb` | integer |  |  |
+| `kb_media_max_size_mb` | integer |  |  |
 | `kb_attachment_max_size_mb` | integer |  |  |
 | `kb_import_max_size_mb` | integer |  |  |
-| `kb_media_max_size_mb` | integer |  |  |
 | `kb_trash_retention_days` | integer |  |  |
-| `log_force_json` | any |  |  |
 | `log_level` | string |  |  |
+| `log_force_json` | any |  |  |
 | `log_slow_request_ms` | integer |  |  |
-| `max_upload_size_mb` | integer |  |  |
-| `metrics_token` | any |  | Pass null or '***' to keep existing; new value to update; '' to clear |
-| `nc_files_root` | string |  |  |
-| `nc_service_app_password` | any |  | Pass null or '***' to keep existing; new value to update; '' to clear |
-| `nc_service_username` | string |  |  |
-| `nc_user_id_field` | string |  |  |
-| `news_attachment_max_size_mb` | integer |  |  |
-| `nextcloud_url` | string |  |  |
+| `timezone` | string |  |  |
+| `arq_max_jobs` | integer |  |  |
+| `photo_gallery_url` | string |  |  |
+| `photo_gallery_mode` | string |  |  |
+| `photo_gallery_new_tab` | boolean |  |  |
+| `video_gallery_url` | string |  |  |
+| `sse_max_connections_per_user` | integer |  |  |
+| `sse_max_connections_global` | integer |  |  |
+| `phone_extract_regex` | string |  |  |
 | `onboarding_enabled` | boolean |  |  |
 | `onboarding_reset_trigger` | string |  |  |
 | `onboarding_steps` | any |  |  |
-| `phone_extract_regex` | string |  |  |
-| `photo_gallery_mode` | string |  |  |
-| `photo_gallery_new_tab` | boolean |  |  |
-| `photo_gallery_url` | string |  |  |
-| `portal_base_url` | string |  |  |
-| `prometheus_metrics_enabled` | boolean |  |  |
-| `sentry_dsn` | any |  | Pass null or '***' to keep existing; new value to update; '' to clear |
-| `sse_max_connections_global` | integer |  |  |
-| `sse_max_connections_per_user` | integer |  |  |
-| `timezone` | string |  |  |
-| `video_gallery_url` | string |  |  |
+| `nc_service_app_password` | any |  | Pass null or '***' to keep existing; new value to update; '' to clear |
+| `metrics_token` | any |  | Pass null or '***' to keep existing; new value to update; '' to clear |
 
 **Responses**
 
@@ -7582,36 +7581,35 @@ Content-Type: `application/json` — schema: `SystemSettingsPatch`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
+| `portal_base_url` | any |  |  |
+| `nextcloud_url` | any |  |  |
+| `nc_user_id_field` | any |  |  |
+| `nc_service_username` | any |  |  |
+| `nc_files_root` | any |  |  |
+| `max_upload_size_mb` | any |  |  |
 | `allowed_cidr` | any |  |  |
-| `arq_max_jobs` | any |  |  |
+| `prometheus_metrics_enabled` | any |  |  |
+| `news_attachment_max_size_mb` | any |  |  |
+| `kb_media_max_size_mb` | any |  |  |
 | `kb_attachment_max_size_mb` | any |  |  |
 | `kb_import_max_size_mb` | any |  |  |
-| `kb_media_max_size_mb` | any |  |  |
 | `kb_trash_retention_days` | any |  |  |
-| `log_force_json` | any |  |  |
 | `log_level` | any |  |  |
+| `log_force_json` | any |  |  |
 | `log_slow_request_ms` | any |  |  |
-| `max_upload_size_mb` | any |  |  |
-| `metrics_token` | any |  | Pass null or '***' to keep existing; new value to update; '' to clear |
-| `nc_files_root` | any |  |  |
-| `nc_service_app_password` | any |  | Pass null or '***' to keep existing; new value to update; '' to clear |
-| `nc_service_username` | any |  |  |
-| `nc_user_id_field` | any |  |  |
-| `news_attachment_max_size_mb` | any |  |  |
-| `nextcloud_url` | any |  |  |
-| `onboarding_enabled` | any |  |  |
-| `onboarding_steps` | any |  |  |
-| `phone_extract_regex` | any |  |  |
+| `timezone` | any |  |  |
+| `arq_max_jobs` | any |  |  |
+| `photo_gallery_url` | any |  |  |
 | `photo_gallery_mode` | any |  |  |
 | `photo_gallery_new_tab` | any |  |  |
-| `photo_gallery_url` | any |  |  |
-| `portal_base_url` | any |  |  |
-| `prometheus_metrics_enabled` | any |  |  |
-| `sentry_dsn` | any |  | Pass null or '***' to keep existing; new value to update; '' to clear |
-| `sse_max_connections_global` | any |  |  |
-| `sse_max_connections_per_user` | any |  |  |
-| `timezone` | any |  |  |
 | `video_gallery_url` | any |  |  |
+| `sse_max_connections_per_user` | any |  |  |
+| `sse_max_connections_global` | any |  |  |
+| `phone_extract_regex` | any |  |  |
+| `onboarding_enabled` | any |  |  |
+| `onboarding_steps` | any |  |  |
+| `nc_service_app_password` | any |  | Pass null or '***' to keep existing; new value to update; '' to clear |
+| `metrics_token` | any |  | Pass null or '***' to keep existing; new value to update; '' to clear |
 
 **Responses**
 
@@ -7833,11 +7831,11 @@ Content-Type: `application/json` — schema: `CreateUserAttributeMappingRequest`
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `attr_key` | string | ✓ |  |
+| `label_ru` | string | ✓ |  |
+| `label_en` | any |  |  |
+| `sort_order` | integer |  |  |
 | `enabled` | boolean |  |  |
 | `is_full_name_source` | boolean |  |  |
-| `label_en` | any |  |  |
-| `label_ru` | string | ✓ |  |
-| `sort_order` | integer |  |  |
 
 **Responses**
 
@@ -7897,11 +7895,11 @@ Content-Type: `application/json` — schema: `UpdateUserAttributeMappingRequest`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
+| `label_ru` | any |  |  |
+| `label_en` | any |  |  |
+| `sort_order` | any |  |  |
 | `enabled` | any |  |  |
 | `is_full_name_source` | any |  |  |
-| `label_en` | any |  |  |
-| `label_ru` | any |  |  |
-| `sort_order` | any |  |  |
 
 **Responses**
 
@@ -8018,8 +8016,8 @@ Content-Type: `application/json` — schema: `StaffOrderUpdate`
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `departments` | array of string |  |  |
-| `hidden_user_ids` | array of string |  |  |
 | `users` | array of `StaffOrderUserItem` |  |  |
+| `hidden_user_ids` | array of string |  |  |
 
 **Responses**
 
@@ -8124,10 +8122,10 @@ Content-Type: `application/json` — schema: `AdminPatchProfileRequest`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `department` | any |  |  |
 | `full_name` | any |  |  |
-| `phone` | any |  |  |
+| `department` | any |  |  |
 | `position` | any |  |  |
+| `phone` | any |  |  |
 
 **Responses**
 
@@ -8313,10 +8311,10 @@ Content-Type: `application/json` — schema: `PatchProfileRequest`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
+| `presence_status` | any |  |  |
 | `lang` | any |  |  |
 | `notify_email` | any |  |  |
 | `notify_inapp` | any |  |  |
-| `presence_status` | any |  |  |
 
 **Responses**
 

@@ -427,7 +427,6 @@ class TestSystemSettingsPatch:
         assert p.portal_base_url is None
         assert p.nextcloud_url is None
         assert p.nc_service_app_password is None
-        assert p.sentry_dsn is None
         assert p.metrics_token is None
         assert p.video_gallery_url is None
 
@@ -1058,7 +1057,6 @@ class TestApplySettings:
         set_level = MagicMock()
         nc_invalidate = AsyncMock()
         emit_audit = AsyncMock()
-        sentry_init = MagicMock()
 
         monkeypatch.setattr(mod, "_save_system_settings", save)
         monkeypatch.setattr(mod, "bump_version", bump)
@@ -1067,9 +1065,6 @@ class TestApplySettings:
         monkeypatch.setattr(ncmod, "invalidate_nc_service", nc_invalidate)
         monkeypatch.setattr(_ss, "_emit_audit", emit_audit)
         monkeypatch.setattr(cfg, "get_settings", lambda: SimpleNamespace(environment="test"))
-
-        sentry_stub = SimpleNamespace(init=sentry_init)
-        monkeypatch.setitem(__import__("sys").modules, "sentry_sdk", sentry_stub)
 
         admin = SimpleNamespace(id=_uuid.uuid4())
         redis = MagicMock()
@@ -1080,7 +1075,6 @@ class TestApplySettings:
             set_level=set_level,
             nc_invalidate=nc_invalidate,
             emit_audit=emit_audit,
-            sentry_init=sentry_init,
             admin=admin,
             redis=redis,
             contextlib=contextlib,
@@ -1101,23 +1095,10 @@ class TestApplySettings:
 
         m.save.assert_called_once_with(s)
         m.bump.assert_awaited_once()
-        m.sentry_init.assert_not_called()
         m.set_level.assert_not_called()
         m.tz.assert_not_called()
         m.nc_invalidate.assert_not_awaited()
         assert self._audit_sections(m.emit_audit) == []
-
-    @pytest.mark.asyncio
-    async def test_sentry_change_reinits_and_marks_observability(self, monkeypatch):
-        from app.core.system_config import SystemSettings
-
-        mod, m = self._patches(monkeypatch)
-        current = SystemSettings(sentry_dsn="")
-        updated = SystemSettings(sentry_dsn="https://k@sentry.io/1")
-        await mod._apply_settings(current, updated, m.admin, m.redis)
-
-        m.sentry_init.assert_called_once()
-        assert "observability" in self._audit_sections(m.emit_audit)
 
     @pytest.mark.asyncio
     async def test_log_level_change_applies_and_marks_observability(self, monkeypatch):

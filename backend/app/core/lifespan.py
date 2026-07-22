@@ -2,7 +2,6 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager, suppress
 
 import asyncpg
-import sentry_sdk
 from arq import create_pool as arq_create_pool
 from arq.connections import RedisSettings
 from fastapi import FastAPI
@@ -75,8 +74,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             await get_nc_service().ensure_root()
     except Exception as nc_err:
         logger.warning("nc.ensure_root_skipped", error=str(nc_err))
-        with suppress(Exception):
-            sentry_sdk.capture_exception(nc_err, tags={"startup_degraded": "nextcloud"})
 
     app.state.audit_partitions_ok = False
     try:
@@ -91,8 +88,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         app.state.audit_partitions_ok = True
     except Exception as part_err:
         logger.warning("audit.startup_partitions_failed", error=str(part_err))
-        with suppress(Exception):
-            sentry_sdk.capture_exception(part_err, tags={"startup_degraded": "audit_partitions"})
 
     try:
         yield

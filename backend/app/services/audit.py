@@ -56,12 +56,6 @@ async def push_audit_event(
             error_type=type(exc).__name__,
             event_type=event_type,
         )
-        try:
-            import sentry_sdk
-
-            sentry_sdk.capture_exception(exc)
-        except Exception as exc2:  # pragma: no cover
-            logger.debug("audit.push_sentry_capture_failed", error=str(exc2))
 
 
 AuditEmitter = Callable[..., Awaitable[None]]

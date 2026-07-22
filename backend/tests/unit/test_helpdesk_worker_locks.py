@@ -275,7 +275,7 @@ class TestEmailDomainMasking:
     """H-11: ``_email_domain`` маскирует email для логов (``u***@domain``).
     Полный адрес — PII, в info-лог ``token_sender_mismatch`` попадают только
     домен + первый символ local-part (диагностика расхождения sender/requester
-    без утечки адресов в access-логи/Sentry)."""
+    без утечки адресов в логи)."""
 
     def test_masks_local_part(self) -> None:
         assert _email_domain("alice@company.local") == "a***@company.local"

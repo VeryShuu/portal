@@ -56,18 +56,6 @@ users_total = Gauge(
 
 # --- counters (incremented inline by application code) ---------------------
 
-arq_jobs_enqueued = Counter(
-    "portal_arq_jobs_enqueued_total",
-    "ARQ jobs enqueued by function name.",
-    labelnames=("function",),
-)
-
-arq_jobs_failed = Counter(
-    "portal_arq_jobs_failed_total",
-    "ARQ jobs that raised an exception.",
-    labelnames=("function",),
-)
-
 audit_events_pushed = Counter(
     "portal_audit_events_pushed_total",
     "Audit events pushed to the Redis queue.",

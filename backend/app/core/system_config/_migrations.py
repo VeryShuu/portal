@@ -22,7 +22,6 @@ _LEGACY_ENV_MAP: dict[str, str] = {
     "ALLOWED_CIDR": "allowed_cidr",
     "PROMETHEUS_METRICS_ENABLED": "prometheus_metrics_enabled",
     "METRICS_TOKEN": "metrics_token",
-    "SENTRY_DSN": "sentry_dsn",
     "LOG_LEVEL": "log_level",
     "LOG_FORCE_JSON": "log_force_json",
     "LOG_SLOW_REQUEST_MS": "log_slow_request_ms",

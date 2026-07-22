@@ -89,7 +89,7 @@ cp .env.example .env
 После первого запуска войти через `/auth/local` под bootstrap-админом и в Admin UI настроить:
 - **Keycloak** (URL, realm, client_id, client_secret, sync-credentials) — раздел «Keycloak».
 - **Nextcloud** (URL, service username, app password, files root) — раздел «Модули → Nextcloud».
-- **Системные** (`PORTAL_BASE_URL`, `MAX_UPLOAD_SIZE_MB`, `ALLOWED_CIDR`, SMTP, `SENTRY_DSN`, `METRICS_TOKEN`, `LOG_LEVEL`, `PROMETHEUS_METRICS_ENABLED`, `ARQ_MAX_JOBS`) — раздел «Системные».
+- **Системные** (`PORTAL_BASE_URL`, `MAX_UPLOAD_SIZE_MB`, `ALLOWED_CIDR`, SMTP, `METRICS_TOKEN`, `LOG_LEVEL`, `PROMETHEUS_METRICS_ENABLED`, `ARQ_MAX_JOBS`) — раздел «Системные».
 
 Все эти параметры хранятся в `/data/settings/system.json` и `/data/secrets/keycloak-settings.json` и меняются без рестарта контейнеров.
 
@@ -188,7 +188,6 @@ docker compose exec -T postgres \
 
 - **Prometheus**: scrape `https://<portal-host>/metrics` (если выставлен `METRICS_TOKEN` —
   передать через `authorization: Bearer ...`).
-- **Sentry**: задать `SENTRY_DSN` в `.env`.
 - **Логи**: structlog → JSON в stdout → docker logs → агрегатор (Loki/ELK/Vector).
 - Уровень `WARN+` отправлять в дежурный канал.
 

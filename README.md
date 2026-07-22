@@ -86,7 +86,7 @@ docker compose -f docker-compose.yml -f docker-compose.staging.yml up -d --build
 - PostgreSQL и Redis доступны снаружи (5432, 6379) — для дампов и интеграционных тестов
 - Backend открыт на порту 8000 (для curl/k6/ZAP)
 - Nginx слушает 8080/8443 вместо 80/443
-- Логирование: уровень DEBUG, JSON-формат, `SENTRY_ENVIRONMENT=staging`
+- Логирование: уровень DEBUG, JSON-формат, `ENVIRONMENT=staging`
 
 ---
 

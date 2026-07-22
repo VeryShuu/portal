@@ -275,7 +275,7 @@ PY
 |------|-----------|-------|
 | Внутренняя сеть / VPN | пользователь, портал, Keycloak, Nextcloud, Collabora | всё |
 | DMZ | reverse proxy / WAF (опционально) | портал, Keycloak, NC |
-| Internet | только Sentry, корпоративный SMTP relay | — |
+| Internet | корпоративный SMTP relay | — |
 
 Nginx портала режет всё вне `system_data/nginx_conf/allowlist.conf` (CIDR
 из Admin UI). Прямой доступ к backend (`:8000`) и Postgres/Redis в prod
@@ -311,4 +311,4 @@ Nginx портала режет всё вне `system_data/nginx_conf/allowlist.
 - [ ] Прогон `load/smoke.js` через staging — checks > 99%.
 - [ ] OWASP ZAP baseline (`security/zap-scan.sh`) — нет High alerts.
 - [ ] Backup-расписание настроено (см. `docs/deploy.md` §7).
-- [ ] Sentry DSN задан, `/metrics` собирается Prometheus.
+- [ ] `/metrics` собирается Prometheus, логи — в Loki.

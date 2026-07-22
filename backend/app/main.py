@@ -2,7 +2,6 @@ import os
 from contextlib import suppress
 from pathlib import Path
 
-import sentry_sdk
 from fastapi import FastAPI
 
 from app.core.config import get_settings
@@ -11,7 +10,6 @@ from app.core.lifespan import lifespan
 # Побочный эффект импорта: патчит RateLimiter.__call__ для starlette 1.x.
 from app.core.limiter import _patch_rate_limiter_for_starlette1  # noqa: F401
 from app.core.logging import configure_logging, get_logger
-from app.core.sentry import scrub_sensitive
 from app.core.system_config import load_system_settings, migrate_env_to_system_settings
 
 settings = get_settings()
@@ -28,16 +26,6 @@ configure_logging(
     force_json=_sys_startup.log_force_json,
 )
 logger = get_logger(__name__)
-
-_sentry_dsn = _sys_startup.sentry_dsn
-if _sentry_dsn:
-    sentry_sdk.init(
-        dsn=_sentry_dsn,
-        before_send=scrub_sensitive,  # type: ignore[arg-type]
-        environment=settings.environment,
-        traces_sample_rate=0.1,
-        profiles_sample_rate=0.05,
-    )
 
 app = FastAPI(
     title="Корпоративный портал",

@@ -32,7 +32,6 @@ dependencies = [
     "redis[hiredis]>=5.0.0",
     "arq>=0.26.0",
     "structlog>=24.1.0",
-    "sentry-sdk[fastapi]>=2.3.0",
     "prometheus-fastapi-instrumentator>=7.0.0,<9.0",
     "fastapi-limiter==0.1.6",
     "nh3>=0.2.14",

@@ -159,7 +159,6 @@ def test_legacy_runtime_fields_removed(monkeypatch):
         "allowed_cidr",
         "prometheus_metrics_enabled",
         "metrics_token",
-        "sentry_dsn",
         "log_level",
         "log_force_json",
         "log_slow_request_ms",

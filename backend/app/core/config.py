@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     level tunables that cannot be hot-reloaded (DB pool sizing).
 
     Runtime-mutable application settings (URLs, upload limits, allowed CIDR,
-    log level/format, Sentry DSN, Prometheus, etc.) live in
+    log level/format, Prometheus, etc.) live in
     `app.core.system_config.SystemSettings` and are managed via the Admin UI.
     See ADR-037 for the rationale.
     """

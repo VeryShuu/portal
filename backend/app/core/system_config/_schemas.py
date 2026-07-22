@@ -107,16 +107,11 @@ class _SystemSettingsBase(BaseModel):
 
 class SystemSettings(_SystemSettingsBase):
     nc_service_app_password: str = Field(default="")
-    sentry_dsn: str = Field(default="")
     metrics_token: str = Field(default="")
 
 
 class SystemSettingsIn(_SystemSettingsBase):
     nc_service_app_password: str | None = Field(
-        default=None,
-        description="Pass null or '***' to keep existing; new value to update; '' to clear",
-    )
-    sentry_dsn: str | None = Field(
         default=None,
         description="Pass null or '***' to keep existing; new value to update; '' to clear",
     )
@@ -173,10 +168,6 @@ class SystemSettingsPatch(BaseModel):
         default=None,
         description="Pass null or '***' to keep existing; new value to update; '' to clear",
     )
-    sentry_dsn: str | None = Field(
-        default=None,
-        description="Pass null or '***' to keep existing; new value to update; '' to clear",
-    )
     metrics_token: str | None = Field(
         default=None,
         description="Pass null or '***' to keep existing; new value to update; '' to clear",
@@ -223,7 +214,6 @@ class SystemSettingsOut(BaseModel):
     kb_attachment_max_size_mb: int
     log_level: str
     timezone: str
-    sentry_dsn_set: bool
     log_force_json: bool | None
     log_slow_request_ms: int
     arq_max_jobs: int

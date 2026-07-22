@@ -1025,12 +1025,12 @@ Backend хранит сессию в Redis с `SESSION_TTL = 8h` и расшир
 **Контекст:**
 До этой правки часть параметров одновременно объявлялась и в `Settings` (Pydantic, читается из `.env`), и в `SystemSettings` (`/data/settings/system.json`, управляется через Admin UI). Это приводило к нескольким проблемам:
 - ручное «слияние» при старте через цепочки `value or settings.X` — каждый call-site должен помнить про fallback;
-- две правды для `portal_base_url`, `max_upload_size_mb`, `allowed_cidr`, `log_level`, `sentry_dsn`, `prometheus_metrics_enabled`, `arq_max_jobs`, `nc_files_root` и др.; админ менял значение в UI, а после рестарта оно перезатиралось из env;
+- две правды для `portal_base_url`, `max_upload_size_mb`, `allowed_cidr`, `log_level`, `prometheus_metrics_enabled`, `arq_max_jobs`, `nc_files_root` и др.; админ менял значение в UI, а после рестарта оно перезатиралось из env;
 - `.env.example` разрастался; новый параметр приходилось добавлять в три места (Settings, SystemSettings, .env.example).
 
 **Решение:**
 1. **Bootstrap (env, `app/core/config.py::Settings`)** — только то, что нужно ДО первой загрузки `system.json`: `DATABASE_URL`, `REDIS_URL`, `SECRET_KEY`, `KEYCLOAK_*`, `ADMIN_EMAIL/PASSWORD`, `LOCAL_AUTH_ENABLED`, `SCREENSHOT_SERVICE_*`, `DB_ECHO/POOL_*`, `ENVIRONMENT`. Меняется редеплоем.
-2. **Runtime (JSON, `app/core/system_config/_schemas.py::SystemSettings`)** — всё остальное: `portal_base_url`, `*_max_size_mb`, `allowed_cidr`, `log_level`/`log_force_json`/`log_slow_request_ms`, `sentry_dsn`, `prometheus_metrics_enabled`/`metrics_token`, `arq_max_jobs`, `nc_files_root`/`nc_service_username`, `nextcloud_url`/`nc_service_app_password`. Меняется через Admin UI без рестарта.
+2. **Runtime (JSON, `app/core/system_config/_schemas.py::SystemSettings`)** — всё остальное: `portal_base_url`, `*_max_size_mb`, `allowed_cidr`, `log_level`/`log_force_json`/`log_slow_request_ms`, `prometheus_metrics_enabled`/`metrics_token`, `arq_max_jobs`, `nc_files_root`/`nc_service_username`, `nextcloud_url`/`nc_service_app_password`. Меняется через Admin UI без рестарта.
 3. **Однократная миграция:** `migrate_env_to_system_settings()` запускается на старте бэкенда и воркера ДО первого `load_system_settings()`. Если `/data/settings/system.json` отсутствует и в окружении присутствуют легаси-переменные из `_LEGACY_ENV_MAP` — формирует `SystemSettings(**kwargs)` и сохраняет файл атомарно. Идемпотентна: на втором запуске JSON уже есть → no-op.
 4. **Deprecation warning:** если `system.json` существует, но легаси-переменные всё равно установлены, пишется `config.deprecated_env_vars_ignored` (warning) — оператор должен удалить их из `.env`.
 5. **Все call-sites очищены** от паттерна `runtime_value or settings.legacy_value`. Источник один — `load_system_settings()`.

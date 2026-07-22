@@ -50,7 +50,6 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
 import httpx
-import sentry_sdk
 from redis.asyncio import Redis
 
 from app.core.logging import get_logger
@@ -171,15 +170,14 @@ async def delete_temp_share(
         async with httpx.AsyncClient(timeout=httpx.Timeout(10.0)) as client:
             r = await client.delete(url, headers=headers, params={"format": "json"})
         if r.status_code not in (200, 404):
-            logger.warning("nc.fed_share_delete_failed", status=r.status_code, share_id=share_id)
-            sentry_sdk.capture_message(
-                f"nc_federation: failed to delete NC share {share_id} — status {r.status_code}. "
-                "Orphan share may remain in Nextcloud.",
-                level="warning",
+            logger.warning(
+                "nc.fed_share_delete_failed",
+                status=r.status_code,
+                share_id=share_id,
+                note="orphan share may remain in Nextcloud",
             )
     except Exception as exc:
         logger.warning("nc.fed_share_delete_error", share_id=share_id, error=str(exc))
-        sentry_sdk.capture_exception(exc)
 
 
 async def request_initiator_direct_url(

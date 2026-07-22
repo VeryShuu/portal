@@ -1,24 +1,24 @@
 # Мониторинг и наблюдаемость
 
-> **Когда читать:** Нужно понять health/readiness-пробы, как устроен `/metrics` для Prometheus (включая токен-защиту и кастомные гейджи), heartbeat воркера, а также runtime-настройки наблюдаемости из Admin UI (вкладка «Мониторинг»: метрики, уровень логирования, Sentry, лимит ARQ).
-> **Ключевой код:** `./backend/app/api/health.py`, `./backend/app/middleware/metrics.py`, `./backend/app/core/metrics.py`, `./backend/app/worker/tasks/metrics.py`, `./backend/app/core/sentry.py`, `./backend/app/api/system_settings/_settings.py`, `./frontend/src/pages/admin/tabs/MonitoringTab.vue`. **Reference-стек alerting/Grafana:** `./monitoring/`.
+> **Когда читать:** Нужно понять health/readiness-пробы, как устроен `/metrics` для Prometheus (включая токен-защиту и кастомные гейджи), heartbeat воркера, а также runtime-настройки наблюдаемости из Admin UI (вкладка «Мониторинг»: метрики, уровень логирования, лимит ARQ).
+> **Ключевой код:** `./backend/app/api/health.py`, `./backend/app/middleware/metrics.py`, `./backend/app/core/metrics.py`, `./backend/app/worker/tasks/metrics.py`, `./backend/app/api/system_settings/_settings.py`, `./frontend/src/pages/admin/tabs/MonitoringTab.vue`. **Reference-стек alerting/Grafana:** `./monitoring/`.
 > **ADR:** 037 (bootstrap env vs runtime JSON). См. также `./deploy.md`, `./audit.md`.
 
 ---
 
 ## 1. Обзор
 
-Наблюдаемость портала состоит из четырёх слоёв:
+Наблюдаемость портала состоит из трёх слоёв (метрики, логи, health-пробы)
+плюс reference-стек alerting/Grafana/Loki в `./monitoring/`:
 
 | Слой | Что даёт | Точка входа |
 |---|---|---|
 | **Health-пробы** | Liveness/readiness для оркестратора и nginx | `GET /health`, `GET /ready` |
 | **Метрики** | Prometheus-экспорт (RED-метрики + кастомные гейджи) | `GET /metrics` |
 | **Логи** | Структурные логи (structlog), уровень и формат — runtime | `system.json` |
-| **Ошибки** | Трейсинг исключений с PII-скрабингом | Sentry (`sentry_dsn`) |
 
-Все runtime-параметры (вкл/выкл метрик, токен, уровень логов, ARQ max jobs,
-Sentry DSN) меняются **без рестарта** через Admin UI и хранятся в
+Все runtime-параметры (вкл/выкл метрик, токен, уровень логов, ARQ max jobs)
+меняются **без рестарта** через Admin UI и хранятся в
 `/data/settings/system.json` (`SystemSettings`, ADR-037). Бутстрап-параметры
 (`DATABASE_URL`, `REDIS_URL` и т.п.) остаются в env.
 
@@ -122,19 +122,13 @@ structlog (`./backend/app/core/logging.py`, обязательно
 | `log_slow_request_ms` | Порог, выше которого запрос логируется как «медленный» |
 
 Токены/пароли/PII в логи не пишутся (политика безопасности `../AGENTS.md`).
+Ошибки и исключения логируются через structlog (`logger.exception(...)` с
+полным traceback в JSON) — отдельного error-tracking-сервиса (Sentry и т.п.)
+нет, centralized-сбор логов обеспечивает Loki из reference-стека (§7).
 
 ---
 
-## 5. Sentry
-
-Инициализация — `./backend/app/core/sentry.py`. DSN берётся из
-`system.json::sentry_dsn` (runtime). PII вычищается перед отправкой хуком
-`scrub_sensitive(event, hint)` (`before_send`) — токены/куки/пароли не уходят во
-внешний сервис. Пустой DSN = Sentry выключен.
-
----
-
-## 6. Admin-вкладка «Мониторинг»
+## 5. Admin-вкладка «Мониторинг»
 
 `./frontend/src/pages/admin/tabs/MonitoringTab.vue` (`AdminPage` → группа
 «логи»/«система»). Тонкий редактор подмножества `SystemSettings`; сохранение —
@@ -148,9 +142,8 @@ structlog (`./backend/app/core/logging.py`, обязательно
 | **Prometheus** | `prometheus_metrics_enabled`, `metrics_token` |
 | **Логирование** | `log_level`, `log_slow_request_ms`, `log_force_json` |
 | **Воркер** | `arq_max_jobs` |
-| **Sentry** | `sentry_dsn` |
 
-**Семантика секрет-полей** (`metrics_token`, `sentry_dsn`): на `GET` возвращается
+**Семантика секрет-полей** (`metrics_token`): на `GET` возвращается
 только флаг `*_set` (значение не отдаётся); при `PATCH` `null`/пусто → оставить
 как есть, новое значение → задать. i18n-ключи — `admin.monitoring.*`
 (`ru.json` мастер + `en.json`).
@@ -203,7 +196,7 @@ UI (на хосте, прокинут на `127.0.0.1`): Prometheus — `:9090`,
 | Alert | Severity | Условие | Что значит |
 |---|---|---|---|
 | `PortalBackendDown` | 🔴 critical | `up{job="portal"} == 0` 1 мин | Prometheus не получает `/metrics` — backend упал или завис |
-| `PortalHighErrorRate` | 🔴 critical | 5xx > 5% при rate > 3/мин | Системная деградация, смотреть Sentry |
+| `PortalHighErrorRate` | 🔴 critical | 5xx > 5% при rate > 3/мин | Системная деградация, смотреть логи backend + дашборд Grafana |
 | `PortalAuditQueueBacklog` | 🟡 warning | `portal_audit_queue_depth > 1000` 5 мин | ARQ-воркер не успевает flush'ить (или мёртв) |
 | `PortalAuditFlushStuck` | 🟡 warning | `portal_audit_processing_depth > 0` 10 мин | Батч взят, но не закоммичен — БД-связность / deadlock |
 | `PortalWorkerStale` | 🟡 warning | gauge не менялся 3 мин | ARQ-cron не выполняется — воркер скорее всего мёртв |
@@ -239,7 +232,7 @@ UI (на хосте, прокинут на `127.0.0.1`): Prometheus — `:9090`,
 - **`mime_detection=fallback` не фейлит readiness** — это сигнал «libmagic
   недоступен, используется запасной детектор», а не отказ.
 - **Не логируйте секреты.** Любое новое поле с токеном/паролем должно
-  отдаваться наружу только флагом `*_set`, как `metrics_token`/`sentry_dsn`.
+  отдаваться наружу только флагом `*_set`, как `metrics_token`.
 - **`/health` и `/ready` без префикса** `/api/v1` и без auth — учитывайте при
   настройке allowlist/nginx.
 - **Nginx access-log содержит `request_id`.** `system_data/nginx/nginx.conf`

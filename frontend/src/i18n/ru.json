@@ -873,10 +873,6 @@
       "logSlowRequestMs": "Порог медленного запроса (мс)",
       "arqMaxJobs": "Одновременных задач в worker",
       "arqMaxJobsHint": "Применяется при следующем запуске worker-контейнера.",
-      "sentryDsn": "Sentry DSN",
-      "sentryDsnKeep": "DSN сохранён — оставьте пустым, чтобы не менять",
-      "sentryDsnPlaceholder": "https://key{'@'}sentry.io/project-id",
-      "sentryDsnHint": "URL для трекинга ошибок в Sentry. Пусто — Sentry выключен. Применяется после перезапуска.",
       "logForceJson": "Формат логов",
       "logForceJsonAuto": "Auto (по умолчанию)",
       "logForceJsonJson": "JSON всегда",
@@ -949,13 +945,7 @@
       "workerSection": "Worker / Очередь задач",
       "workerSectionHint": "Настройки фонового worker-процесса, выполняющего асинхронные задачи (email, синхронизация, экспорт и т.д.).",
       "arqMaxJobs": "Одновременных задач в worker",
-      "arqMaxJobsHint": "Максимальное число задач, выполняемых параллельно в worker-контейнере. Увеличение ускоряет обработку очереди, но повышает нагрузку на CPU и память. Применяется при следующем запуске worker-контейнера.",
-      "sentrySection": "Sentry (трекинг ошибок)",
-      "sentrySectionHint": "Интеграция с Sentry для автоматического сбора исключений и ошибок приложения. При пустом DSN Sentry отключён.",
-      "sentryDsn": "Sentry DSN",
-      "sentryDsnKeep": "DSN сохранён — оставьте пустым, чтобы не менять",
-      "sentryDsnPlaceholder": "https://key{'@'}sentry.io/project-id",
-      "sentryDsnHint": "URL проекта Sentry для трекинга ошибок. Найдите его в настройках проекта Sentry: Settings → Projects → <проект> → Client Keys (DSN). Применяется немедленно — Sentry SDK переинициализируется при сохранении."
+      "arqMaxJobsHint": "Максимальное число задач, выполняемых параллельно в worker-контейнере. Увеличение ускоряет обработку очереди, но повышает нагрузку на CPU и память. Применяется при следующем запуске worker-контейнера."
     },
     "email": {
       "tab": "Email",

@@ -95,7 +95,6 @@ def _to_out(s: SystemSettings) -> SystemSettingsOut:
         kb_attachment_max_size_mb=s.kb_attachment_max_size_mb,
         log_level=s.log_level,
         timezone=s.timezone,
-        sentry_dsn_set=bool(s.sentry_dsn),
         log_force_json=s.log_force_json,
         log_slow_request_ms=s.log_slow_request_ms,
         arq_max_jobs=s.arq_max_jobs,

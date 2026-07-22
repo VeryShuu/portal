@@ -48,7 +48,6 @@ export interface AdminSystemSettings {
   kb_attachment_max_size_mb: number
   log_level: string
   timezone: string
-  sentry_dsn_set: boolean
   log_force_json: boolean | null
   log_slow_request_ms: number
   arq_max_jobs: number

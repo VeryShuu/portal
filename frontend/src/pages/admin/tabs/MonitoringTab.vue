@@ -117,43 +117,6 @@
     </div>
 
     <div class="branding-section">
-      <div class="branding-section__title">
-        {{ t('admin.monitoring.sentrySection') }}
-      </div>
-      <div class="branding-section__hint">
-        {{ t('admin.monitoring.sentrySectionHint') }}
-      </div>
-      <n-form
-        :model="form"
-        label-placement="top"
-      >
-        <input
-          type="text"
-          autocomplete="username"
-          aria-label="username"
-          style="display:none"
-        >
-        <div class="branding-fields">
-          <n-form-item
-            :label="t('admin.monitoring.sentryDsn')"
-            style="margin-bottom:0"
-          >
-            <n-input
-              v-model:value="form.sentry_dsn"
-              type="password"
-              show-password-on="click"
-              :placeholder="settings?.sentry_dsn_set ? t('admin.monitoring.sentryDsnKeep') : t('admin.monitoring.sentryDsnPlaceholder')"
-              :input-props="{ autocomplete: 'new-password' }"
-            />
-          </n-form-item>
-          <div style="font-size:12px;color:var(--color-text-secondary)">
-            {{ t('admin.monitoring.sentryDsnHint') }}
-          </div>
-        </div>
-      </n-form>
-    </div>
-
-    <div class="branding-section">
       <div class="email-actions">
         <n-button
           type="primary"
@@ -196,7 +159,6 @@ interface SysSettingsOut {
   kb_attachment_max_size_mb: number
   log_level: string
   timezone: string
-  sentry_dsn_set: boolean
   log_force_json: boolean | null
   log_slow_request_ms: number
   arq_max_jobs: number
@@ -240,7 +202,6 @@ const form = ref({
   log_force_json: 'null',
   log_slow_request_ms: 1000,
   arq_max_jobs: 10,
-  sentry_dsn: '',
 })
 
 const { data: settingsData, isError: settingsLoadFailed } = useSystemSettingsQuery()
@@ -254,7 +215,6 @@ watch(settingsData, (data) => {
     form.value.log_force_json = logForceJsonToStr(data.log_force_json)
     form.value.log_slow_request_ms = data.log_slow_request_ms
     form.value.arq_max_jobs = data.arq_max_jobs
-    form.value.sentry_dsn = ''
     loadError.value = false
   }
 }, { immediate: true })
@@ -279,10 +239,8 @@ async function save() {
         log_force_json: logForceJsonFromStr(form.value.log_force_json),
         log_slow_request_ms: form.value.log_slow_request_ms,
         arq_max_jobs: form.value.arq_max_jobs,
-        sentry_dsn: form.value.sentry_dsn || null,
       },
     })
-    form.value.sentry_dsn = ''
     form.value.metrics_token = ''
     qc.invalidateQueries({ queryKey: queryKeys.admin.systemSettings() })
     message.success(t('admin.monitoring.saved'))

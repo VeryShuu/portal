@@ -12,7 +12,6 @@ from app.api import system_settings as _ss
 from app.api.deps import AdminDep, RedisDep
 from app.core.cache_version import bump_version
 from app.core.logging import get_logger
-from app.core.sentry import scrub_sensitive
 from app.core.system_config import (
     _CACHE_VERSION_KEY,
     _LOG_LEVELS,
@@ -39,21 +38,6 @@ async def get_system_settings(_: AdminDep, redis: RedisDep) -> SystemSettingsOut
     return _to_out(await load_system_settings_shared(redis))
 
 
-def _reinit_sentry(updated: SystemSettings) -> None:
-    import sentry_sdk
-
-    from app.core.config import get_settings as _gs
-
-    app_settings = _gs()
-    sentry_sdk.init(
-        dsn=updated.sentry_dsn,
-        before_send=scrub_sensitive,  # type: ignore[arg-type]
-        environment=app_settings.environment,
-        traces_sample_rate=0.1,
-        profiles_sample_rate=0.05,
-    )
-
-
 def _nextcloud_changed(current: SystemSettings, updated: SystemSettings) -> bool:
     return (
         updated.nextcloud_url != current.nextcloud_url
@@ -71,9 +55,6 @@ async def _reconfigure_subsystems(current: SystemSettings, updated: SystemSettin
     atomically) and TLS files in /data/certs/; it reloads on its own, so the
     backend does not regenerate or trigger a reload here.
     """
-    if updated.sentry_dsn != current.sentry_dsn:
-        _reinit_sentry(updated)
-
     if updated.log_level != current.log_level:
         from app.core.logging import set_log_level
 
@@ -122,7 +103,6 @@ _AUDIT_SECTION_FIELDS: tuple[tuple[str, tuple[str, ...]], ...] = (
             "log_level",
             "log_force_json",
             "log_slow_request_ms",
-            "sentry_dsn",
             "prometheus_metrics_enabled",
             "arq_max_jobs",
         ),
@@ -150,9 +130,9 @@ async def _apply_settings(
 
     Common implementation shared by PUT (full update) and PATCH (partial
     update) handlers. Compares against *current* to decide which subsystems
-    must be reconfigured (sentry, nginx, log level, timezone, Nextcloud
-    cache), invalidates the cached settings version and writes the audit
-    record describing which sections changed.
+    must be reconfigured (log level, timezone, Nextcloud cache), invalidates
+    the cached settings version and writes the audit record describing which
+    sections changed.
     """
     _save_system_settings(updated)
     await bump_version(redis, _CACHE_VERSION_KEY)
@@ -259,7 +239,6 @@ def _build_updated_settings(
         body.nc_service_app_password, current.nc_service_app_password
     )
     kwargs["metrics_token"] = _resolve_secret(body.metrics_token, current.metrics_token)
-    kwargs["sentry_dsn"] = _resolve_secret(body.sentry_dsn, current.sentry_dsn)
     kwargs["log_level"] = _resolve_log_level(body.log_level, current.log_level)
 
     if partial:

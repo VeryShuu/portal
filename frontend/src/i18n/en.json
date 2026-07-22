@@ -873,10 +873,6 @@
       "logSlowRequestMs": "Slow request threshold (ms)",
       "arqMaxJobs": "Concurrent worker jobs",
       "arqMaxJobsHint": "Applied on next worker container restart.",
-      "sentryDsn": "Sentry DSN",
-      "sentryDsnKeep": "DSN saved — leave blank to keep unchanged",
-      "sentryDsnPlaceholder": "https://key{'@'}sentry.io/project-id",
-      "sentryDsnHint": "Sentry error tracking URL. Empty — Sentry disabled. Applied after restart.",
       "logForceJson": "Log format",
       "logForceJsonAuto": "Auto (default)",
       "logForceJsonJson": "Always JSON",
@@ -949,13 +945,7 @@
       "workerSection": "Worker / Task Queue",
       "workerSectionHint": "Settings for the background worker process that handles async tasks (email delivery, sync, export, etc.).",
       "arqMaxJobs": "Concurrent worker jobs",
-      "arqMaxJobsHint": "Maximum number of tasks processed in parallel by the worker container. Higher values speed up queue processing but increase CPU and memory usage. Applied on next worker container restart.",
-      "sentrySection": "Sentry (Error Tracking)",
-      "sentrySectionHint": "Sentry integration for automatic exception and error capture. Leave DSN empty to disable Sentry.",
-      "sentryDsn": "Sentry DSN",
-      "sentryDsnKeep": "DSN saved — leave blank to keep unchanged",
-      "sentryDsnPlaceholder": "https://key{'@'}sentry.io/project-id",
-      "sentryDsnHint": "Sentry project URL for error tracking. Find it in Sentry: Settings → Projects → <project> → Client Keys (DSN). Applied immediately — the Sentry SDK is re-initialized on save."
+      "arqMaxJobsHint": "Maximum number of tasks processed in parallel by the worker container. Higher values speed up queue processing but increase CPU and memory usage. Applied on next worker container restart."
     },
     "email": {
       "tab": "Email",
