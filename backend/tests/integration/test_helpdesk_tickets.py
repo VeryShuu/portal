@@ -93,6 +93,51 @@ class TestCreateTicket:
         assert first.body_text == ticket.description
         assert first.author_user_id == ticket.requester_user_id
 
+    async def test_description_html_persisted_to_ticket_and_first_message(
+        self, real_db_session, real_user
+    ):
+        """Rich-редактор при создании: ``description_html`` сохраняется в тикет
+        и в первое сообщение (``body_html``), чтобы письмо агентам
+        (``render_new_ticket_agent_email`` читает ``first_message.body_html``)
+        и лента портала получали форматирование. Plain ``description`` для FTS
+        сохраняется отдельно. Симметрично ``MessageCreateIn.body_html``."""
+        payload = TicketCreateIn(
+            subject="Не работает VPN",
+            description="Подробности заявки",
+            description_html="<p>Подробности <strong>заявки</strong></p>",
+        )
+        ticket = await tickets_service.create_ticket(
+            real_db_session, user=real_user, payload=payload, files=[]
+        )
+        assert ticket.description_html == "<p>Подробности <strong>заявки</strong></p>"
+        assert ticket.description == "Подробности заявки"
+
+        full = await tickets_service.fetch_ticket_for_user(
+            real_db_session, ticket_id=ticket.id, user_id=real_user.id
+        )
+        assert full is not None
+        first = full.messages[0]
+        assert first.body_html == ticket.description_html
+        # Инвариант: plain-описание = тело первого сообщения (для FTS/email).
+        assert first.body_text == ticket.description
+
+    async def test_description_html_none_keeps_backward_compat(self, real_db_session, real_user):
+        """Старые клиенты (только plain ``description``): ``description_html``
+        остаётся ``None``, инвариант первого сообщения не ломается."""
+        ticket = await tickets_service.create_ticket(
+            real_db_session,
+            user=real_user,
+            payload=TicketCreateIn(subject="Тема", description="Только plain"),
+            files=[],
+        )
+        assert ticket.description_html is None
+        full = await tickets_service.fetch_ticket_for_user(
+            real_db_session, ticket_id=ticket.id, user_id=real_user.id
+        )
+        assert full is not None
+        assert full.messages[0].body_html is None
+        assert full.messages[0].body_text == "Только plain"
+
 
 # ---------------------------------------------------------------------------
 # Список своих + ACL «только свои»

@@ -3165,13 +3165,15 @@ Soft-delete объекта.
 
 | Метод | Путь | Назначение |
 |---|---|---|
-| `POST` | `/tickets` | Создать заявку (`multipart/form-data`: `subject`, `description`, `files[]`). Rate-limit 5/мин. |
+| `POST` | `/tickets` | Создать заявку (`multipart/form-data`: `subject`, `description?`, `description_html?`, `files[]`). С 2026-07: rich-редактор TipTap — `description_html` (sanitized nh3), `description` (plain) optional и деривируется из HTML для FTS/email; валидация «plain ИЛИ html непуст». Обратно-совместим: старые клиенты (только `description`) работают. Rate-limit 5/мин. |
 | `GET` | `/tickets/my` | Свои заявки (`?status`, `?unassigned`, `?assigned`, пагинация); `unread: bool` в каждой строке |
 | `GET` | `/tickets/my/counts` | `{active: N}` — свои тикеты в new/open/pending (для бейджа меню) |
 | `GET` | `/tickets/my/{id}` | Своя заявка с публичными сообщениями + `requester_profile` |
 | `POST` | `/tickets/my/{id}/read` | Отметить прочитанным (снять подсветку ответов агентов) |
 | `POST` | `/tickets/my/{id}/messages` | Ответ (`Form`: `body_text`, `files[]`). Rate-limit 20/мин. |
 | `GET` | `/attachments/{id}` | Скачать вложение (`StreamingResponse`); автор/агент/админ |
+| `POST` | `/draft-attachments` | Draft inline-картинка для формы **создания** заявки (`multipart`: `file`). Возвращает `{url, filename}` — URL вставляется в `description_html`, бэкенд при `create_ticket` переносит файл в `TKT-{number}/inline/` и переписывает `src` на `/tickets/{id}/inline-media/{name}`. ACL: только владелец. Лимит 20 активных/юзер; TTL 24ч (cron cleanup). Rate-limit 20/мин. |
+| `GET` | `/draft-attachments/{id}` | Раздать draft-картинку (через nginx `X-Accel-Redirect`); только владелец, иначе 404. |
 
 ### Агент (`HelpdeskAgentDep`)
 

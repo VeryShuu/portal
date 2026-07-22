@@ -276,13 +276,15 @@ Retry-классификация (отличается от email): 429/5xx/time
 
 | Метод | Путь | Назначение |
 |---|---|---|
-| `POST` | `/tickets` | Создать заявку (`multipart/form-data`: `subject`, `description`, `files[]`). Rate-limit 5/мин. 201. |
+| `POST` | `/tickets` | Создать заявку (`multipart/form-data`: `subject`, `description?`, `description_html?`, `files[]`). С 2026-07: rich-редактор TipTap — `description_html` (sanitized nh3), `description` (plain) optional и деривируется из HTML для FTS/email-plain/list, если пуст; валидация «plain ИЛИ html непуст». Обратно-совместим: старые клиенты (только `description`) работают, `description_html` остаётся `None`. Rate-limit 5/мин. 201. |
 | `GET` | `/tickets/my` | Свои заявки (`?status`, `?unassigned`, `?assigned`, `?limit`, `?offset`). Каждая строка содержит `unread: bool` — есть ли публичные ответы агентов новее `last_seen_at` (заявительский контракт, `direction='outbound'` в `enrich_with_unread`). `unassigned=true` — только тикеты без агента (блок «ожидают принятия»); `assigned=true` — только назначенные (блок «в работе у специалиста»). Взаимоисключающие. |
 | `GET` | `/tickets/my/counts` | Лёгкий count: `{active: N}` — свои тикеты в статусах new/open/pending (для бейджа в меню «Поддержка»). Один `count(*)`, без join'ов. Дешевле list-endpoint'а при polling 60 c. |
 | `GET` | `/tickets/my/{id}` | Своя заявка с **публичными** сообщениями. |
 | `POST` | `/tickets/my/{id}/read` | Отметить свой тикет прочитанным (снять подсветку ответов агентов) — UPSERT `last_seen_at=NOW()`. ACL: только свои (404 для чужих). Без audit/rate-limit. Зеркало агентского `POST /tickets/{id}/read`. |
 | `POST` | `/tickets/my/{id}/messages` | Ответ (`Form`: `body_text`, `files[]`). Всегда `inbound`/`public`. Rate-limit 20/мин. 201. |
 | `GET` | `/attachments/{id}` | Скачать вложение (`StreamingResponse`). ACL: автор/агент/админ. |
+| `POST` | `/draft-attachments` | Draft inline-картинка для формы **создания** заявки (`multipart`: `file`, растровые jpeg/png/gif/webp). Возвращает `{url, filename}` — URL `/draft-attachments/{id}` вставляется в `description_html` rich-редактором. При `create_ticket` бэкенд backfill'ит: переносит файл в `TKT-{number}/inline/`, переписывает `src` на постоянный `/tickets/{id}/inline-media/{name}`, создаёт inline-`HelpdeskAttachment`, удаляет draft-строку (атомарно в той же транзакции). ACL: только владелец. Лимит `HELPDESK_DRAFT_MAX_PER_USER` (20) активных/юзер; TTL `HELPDESK_DRAFT_TTL_HOURS` (24ч) — cron `cleanup_expired_drafts` удаляет orphan-черновики (юзер закрыл форму, не отправив). Rate-limit 20/мин. |
+| `GET` | `/draft-attachments/{id}` | Раздать draft-картинку (nginx `X-Accel-Redirect` в `/internal/helpdesk-media/drafts/usr-{user_id}/`). ACL: только владелец, иначе 404 (не раскрываем существование). |
 
 ### Агент (`HelpdeskAgentDep`)
 
@@ -702,7 +704,12 @@ Cron `send_helpdesk_digest` (см. §10) раз в день шлёт **кажд�
 
 ### Загрузка с вложениями и rich-контентом
 
-Создание заявки и ответы — `multipart/form-data` через `apiUpload` (FormData). Поля формы: `subject`/`description`/`body_text` (+ `body_html`/`visibility` для агента) + `files[]`. **Ответы агента/заявителя** идут через rich-редактор (TipTap): фронт шлёт `body_html` (HTML из markdown), `body_text` опционален (бэк деривит через `normalize_message_bodies`, если пуст — `html_to_plain(sanitize_html(body_html))`). Бэк повторно sanitize'ит `body_html` (nh3) на запись — двойная защита (заявитель неконтролируемая сторона). **Создание заявки** (`TicketCreateModal`) — пока plain `description` + файлы (rich-редактор не подключён: `ticket_id` ещё не существует → media-endpoint недоступен). Скачивание вложения — прямой anchor `:href="/api/v1/helpdesk/attachments/{id}"` с `target="_blank"` (как feedback), бэкенд отдаёт `StreamingResponse`.
+Создание заявки и ответы — `multipart/form-data` через `apiUpload` (FormData). Поля формы: `subject`/`description`/`description_html` (создание) или `body_text`/`body_html`/`visibility` (ответ агента) + `files[]`. **Создание заявки и ответы** идут через rich-редактор (TipTap): фронт рендерит markdown в HTML (`mdUnsafe`, как news/kb) и шлёт `description_html`/`body_html`, `description`/`body_text` опционален (бэк деривит через `normalize_message_bodies`, если пуст — `html_to_plain(sanitize_html(html))`). Бэк повторно sanitize'ит HTML (nh3) на запись — двойная защита (заявитель неконтролируемая сторона). **Inline-картинки в тексте** поддерживаются и при создании заявки, и в ответах:
+
+- **Ответы** (`ticket_id` уже есть): `POST /tickets/{id}/inline-media` → файл в `TKT-{number}/inline/`, URL `/tickets/{id}/inline-media/{name}` в `body_html`.
+- **Создание заявки** (нет `ticket_id` до сохранения): `POST /draft-attachments` → draft-файл в `/data/helpdesk/drafts/usr-{user_id}/`, draft-URL в `description_html`. При `create_ticket` бэкенд **backfill'ит**: переносит файл в `TKT-{number}/inline/`, переписывает `src` на `/tickets/{id}/inline-media/{name}`, создаёт inline-`HelpdeskAttachment`, удаляет draft-строку (атомарно в транзакции создания). Orphan-черновики (юзер закрыл форму) чистит cron `cleanup_expired_drafts` (TTL 24ч, лимит 20/юзер).
+
+Обычные (не-inline) вложения прикрепляются отдельным блоком `n-upload` (`files[]` в форме). Скачивание вложения — прямой anchor `:href="/api/v1/helpdesk/attachments/{id}"` с `target="_blank"` (как feedback), бэкенд отдаёт `StreamingResponse`.
 
 ### i18n
 

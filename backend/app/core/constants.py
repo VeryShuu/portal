@@ -21,6 +21,14 @@ HELPDESK_MAX_TOTAL_INGRESS_MB = 50
 HELPDESK_ARCHIVE_AFTER_DAYS = 14
 HELPDESK_ARCHIVE_FILES_TTL_DAYS = 180
 HELPDESK_REOPEN_WINDOW_DAYS = 7
+# Draft-attachments (inline-картинки в форме создания заявки — нет ticket_id до
+# сохранения, см. ``services/helpdesk/drafts.py``). TTL — сколько неотправленный
+# черновик живёт на диске до очистки cron'ом ``cleanup_expired_drafts``.
+# Лимит активных draft-файлов на юзера — anti-abuse (старые нужно удалить вручную
+# через повторную отправку или дождаться TTL). Период полужизни типового
+# заполнения формы — часы/день, поэтому 24 часа покрывают обед/ночь/выходные.
+HELPDESK_DRAFT_TTL_HOURS = 24
+HELPDESK_DRAFT_MAX_PER_USER = 20
 
 # Локальное хранение вложений (по образцу feedback — /data/feedback/files/).
 # Папка тикета: HELPDESK_FILES_DIR / f"TKT-{number}" / filename.

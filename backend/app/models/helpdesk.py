@@ -273,6 +273,47 @@ class HelpdeskAttachment(Base):
     )
 
 
+class HelpdeskDraftAttachment(Base):
+    """Temporary inline-image uploaded through the ticket **creation** form,
+    before the ticket exists (chicken-and-egg: ``POST /tickets/{id}/inline-media``
+    needs a ``ticket_id``).
+
+    On ``create_ticket``, :func:`backfill_draft_images` moves the file to the
+    ticket's permanent ``TKT-{number}/inline/`` folder, rewrites ``<img src>``
+    to a stable inline-media URL, and deletes this row — all in the ticket
+    creation transaction. Rows whose draft was never backfilled (user abandoned
+    the form) are purged by the ``cleanup_expired_drafts`` cron after
+    ``HELPDESK_DRAFT_TTL_HOURS``.
+
+    Only metadata lives here; the bytes are on disk at
+    ``/data/helpdesk/drafts/usr-{user_id}/{filename}``. No relationships —
+    drafts are ephemeral, the FK to ``users`` is solely for ``ON DELETE CASCADE``
+    cleanup on account deletion.
+    """
+
+    __tablename__ = "helpdesk_draft_attachments"
+    __table_args__ = (
+        Index("ix_helpdesk_draft_attachments_user", "uploaded_by_user_id"),
+        Index("ix_helpdesk_draft_attachments_created", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=sql_text("gen_random_uuid()")
+    )
+    uploaded_by_user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    filename: Mapped[str] = mapped_column(String(500), nullable=False)
+    original_name: Mapped[str] = mapped_column(String(500), nullable=False)
+    content_type: Mapped[str] = mapped_column(String(255), nullable=False)
+    size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=sql_text("NOW()")
+    )
+
+
 class HelpdeskAgent(Base):
     """A support agent — an operational unit, distinct from portal roles
     (``users.role``). Membership in this table is the single source of truth for

@@ -152,6 +152,9 @@ export function fetchAgentTicket(id: string): Promise<HelpdeskTicketDetail> {
 export interface HelpdeskTicketCreateDto {
   subject: string
   description: string
+  /** HTML из rich-редактора (TipTap). Опционально — бэк sanitize'ит (nh3) и
+   *  деривирует plain из него, если ``description`` пуст. */
+  description_html?: string
 }
 
 /** Создание заявки (multipart/form-data с вложениями). */
@@ -159,6 +162,7 @@ export function createMyTicket(dto: HelpdeskTicketCreateDto, files: File[] = [])
   const fd = new FormData()
   fd.append('subject', dto.subject)
   fd.append('description', dto.description)
+  if (dto.description_html) fd.append('description_html', dto.description_html)
   for (const f of files) fd.append('files', f, f.name)
   return apiUpload<HelpdeskTicketDetail>('/helpdesk/tickets', fd)
 }

@@ -1,5 +1,5 @@
 <!-- AUTO-GENERATED — do not edit manually. Run: cd backend && python -m scripts.generate_api_contracts_doc --output ../docs/api-contracts.generated.md -->
-<!-- Generated: 2026-07-19 20:39 UTC -->
+<!-- Generated: 2026-07-22 08:07 UTC -->
 
 # API Contracts (auto-generated)
 
@@ -2308,6 +2308,49 @@ Content-Type: `application/json` — schema: `AgentIn`
 | 200 | Successful Response |  |
 | 422 | Validation Error | `HTTPValidationError` |
 
+### `POST /api/v1/helpdesk/draft-attachments`
+
+**Загрузить inline-картинку для формы создания заявки (draft)**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `portal_session` | cookie | `any` |  |  |
+
+**Request Body**
+
+Content-Type: `multipart/form-data` — schema: `Body_upload_draft_attachment_api_v1_helpdesk_draft_attachments_post`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `file` | string | ✓ |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 201 | Successful Response | `MediaUploadResponse` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `GET /api/v1/helpdesk/draft-attachments/{draft_id}`
+
+**Раздать draft-картинку (через nginx X-Accel-Redirect; только владелец)**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `draft_id` | path | `string` | ✓ |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | any |
+| 422 | Validation Error | `HTTPValidationError` |
+
 ### `GET /api/v1/helpdesk/settings/digest`
 
 **Get Digest Settings**
@@ -2549,7 +2592,8 @@ Content-Type: `multipart/form-data` — schema: `Body_create_ticket_api_v1_helpd
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `subject` | string | ✓ |  |
-| `description` | string | ✓ |  |
+| `description` | string |  |  |
+| `description_html` | string |  |  |
 | `files` | array of string |  |  |
 
 **Responses**
@@ -2557,6 +2601,37 @@ Content-Type: `multipart/form-data` — schema: `Body_create_ticket_api_v1_helpd
 | Status | Description | Schema |
 |--------|-------------|--------|
 | 201 | Successful Response | `TicketOut` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `GET /api/v1/helpdesk/tickets/assignable-agents`
+
+**Активные агенты для смены ответственного (список)**
+
+Все активные helpdesk-агенты (с живым аккаунтом, ``deleted_at IS NULL``)
+для списка смены ответственного в карточке тикета.
+
+Возвращает компактные пункты ``(user_id, full_name, email)`` без флагов
+уведомлений (PII-минимизация: агенту для смены ответственного достаточно
+знать, кому можно передать заявку). Сортировка — по ФИО. На фронте
+рендерится простым списком в popover (без поиска — агентов поддержки
+обычно ~5 человек).
+
+Доступ — любой helpdesk-агент/админ (``HelpdeskAgentDep``): смена
+ответственного доступна любому агенту, а не только админу. Не заменяет
+admin-only ``GET /agents`` (там есть флаги ``notify_new`` и
+admin-управление составом), а даёт агентам минимум данных для операции.
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | `AgentOptionListOut` |
 | 422 | Validation Error | `HTTPValidationError` |
 
 ### `GET /api/v1/helpdesk/tickets/counts`
@@ -2594,6 +2669,7 @@ Content-Type: `multipart/form-data` — schema: `Body_create_ticket_api_v1_helpd
 | `status` | query | `any` |  |  |
 | `unassigned` | query | `boolean` |  |  |
 | `assigned` | query | `boolean` |  |  |
+| `active_only` | query | `boolean` |  |  |
 | `limit` | query | `integer` |  |  |
 | `offset` | query | `integer` |  |  |
 | `portal_session` | cookie | `any` |  |  |

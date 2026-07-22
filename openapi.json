@@ -242,7 +242,7 @@
         "type": "object"
       },
       "AgentOptionListOut": {
-        "description": "Список активных агентов для dropdown'а смены ответственного в карточке\nтикета (агентский endpoint ``GET /tickets/assignable-agents``).",
+        "description": "Список активных агентов для смены ответственного в карточке тикета\n(агентский endpoint ``GET /tickets/assignable-agents``).",
         "properties": {
           "items": {
             "items": {
@@ -264,7 +264,7 @@
         "type": "object"
       },
       "AgentOptionOut": {
-        "description": "Компактный пункт dropdown'а смены ответственного: ``user_id`` + ФИО +\nemail активного helpdesk-агента.\n\nВ отличие от ``AgentOut``, не содержит флагов уведомлений (``notify_new``)\nи служебных меток — агенту для смены ответственного достаточно знать, кому\nможно передать заявку. PII-минимизация: только то, что нужно для dropdown.",
+        "description": "Компактный пункт списка смены ответственного: ``user_id`` + ФИО +\nemail активного helpdesk-агента.\n\nВ отличие от ``AgentOut``, не содержит флагов уведомлений (``notify_new``)\nи служебных меток — агенту для смены ответственного достаточно знать, кому\nможно передать заявку. PII-минимизация: только то, что нужно для списка.\nНа фронте рендерится простым списком в popover (без поиска — агентов\nподдержки обычно ~5 человек).",
         "properties": {
           "email": {
             "title": "Email",
@@ -536,9 +536,15 @@
       "Body_create_ticket_api_v1_helpdesk_tickets_post": {
         "properties": {
           "description": {
+            "default": "",
             "maxLength": 20000,
-            "minLength": 1,
             "title": "Description",
+            "type": "string"
+          },
+          "description_html": {
+            "default": "",
+            "maxLength": 50000,
+            "title": "Description Html",
             "type": "string"
           },
           "files": {
@@ -558,8 +564,7 @@
           }
         },
         "required": [
-          "subject",
-          "description"
+          "subject"
         ],
         "title": "Body_create_ticket_api_v1_helpdesk_tickets_post",
         "type": "object"
@@ -657,6 +662,20 @@
           "file"
         ],
         "title": "Body_upload_avatar_api_v1_users_me_avatar_post",
+        "type": "object"
+      },
+      "Body_upload_draft_attachment_api_v1_helpdesk_draft_attachments_post": {
+        "properties": {
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_upload_draft_attachment_api_v1_helpdesk_draft_attachments_post",
         "type": "object"
       },
       "Body_upload_favicon_api_v1_admin_branding_favicon_post": {
@@ -22063,6 +22082,122 @@
         ]
       }
     },
+    "/api/v1/helpdesk/draft-attachments": {
+      "post": {
+        "operationId": "upload_draft_attachment_api_v1_helpdesk_draft_attachments_post",
+        "parameters": [
+          {
+            "in": "cookie",
+            "name": "portal_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Portal Session"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_draft_attachment_api_v1_helpdesk_draft_attachments_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaUploadResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Загрузить inline-картинку для формы создания заявки (draft)",
+        "tags": [
+          "helpdesk"
+        ]
+      }
+    },
+    "/api/v1/helpdesk/draft-attachments/{draft_id}": {
+      "get": {
+        "operationId": "serve_draft_attachment_api_v1_helpdesk_draft_attachments__draft_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "draft_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Draft Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "portal_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Portal Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Раздать draft-картинку (через nginx X-Accel-Redirect; только владелец)",
+        "tags": [
+          "helpdesk"
+        ]
+      }
+    },
     "/api/v1/helpdesk/settings/digest": {
       "get": {
         "operationId": "get_digest_settings_api_v1_helpdesk_settings_digest_get",
@@ -22712,7 +22847,7 @@
     },
     "/api/v1/helpdesk/tickets/assignable-agents": {
       "get": {
-        "description": "Все активные helpdesk-агенты (с живым аккаунтом, ``deleted_at IS NULL``)\nдля dropdown'а смены ответственного в карточке тикета.\n\nВозвращает компактные пункты ``(user_id, full_name, email)`` без флагов\nуведомлений (PII-минимизация: агенту для смены ответственного достаточно\nзнать, кому можно передать заявку). Сортировка — по ФИО.\n\nДоступ — любой helpdesk-агент/админ (``HelpdeskAgentDep``): смена\nответственного доступна любому агенту, а не только админу. Не заменяет\nadmin-only ``GET /agents`` (там есть флаги ``notify_new`` и\nadmin-управление составом), а даёт агентам минимум данных для операции.",
+        "description": "Все активные helpdesk-агенты (с живым аккаунтом, ``deleted_at IS NULL``)\nдля списка смены ответственного в карточке тикета.\n\nВозвращает компактные пункты ``(user_id, full_name, email)`` без флагов\nуведомлений (PII-минимизация: агенту для смены ответственного достаточно\nзнать, кому можно передать заявку). Сортировка — по ФИО. На фронте\nрендерится простым списком в popover (без поиска — агентов поддержки\nобычно ~5 человек).\n\nДоступ — любой helpdesk-агент/админ (``HelpdeskAgentDep``): смена\nответственного доступна любому агенту, а не только админу. Не заменяет\nadmin-only ``GET /agents`` (там есть флаги ``notify_new`` и\nadmin-управление составом), а даёт агентам минимум данных для операции.",
         "operationId": "list_assignable_agents_api_v1_helpdesk_tickets_assignable_agents_get",
         "parameters": [
           {
@@ -22754,7 +22889,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Активные агенты для смены ответственного (dropdown)",
+        "summary": "Активные агенты для смены ответственного (список)",
         "tags": [
           "helpdesk"
         ]

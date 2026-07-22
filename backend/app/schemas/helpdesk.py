@@ -69,10 +69,23 @@ class RequesterProfileOut(BaseModel):
 
 
 class TicketCreateIn(BaseModel):
-    """Web-форма создания заявки инициатором (без вложений до этапа 4)."""
+    """Web-форма создания заявки инициатором.
+
+    ``description`` — plain-текст (для FTS, email plain-part, списков).
+    ``description_html`` — HTML из rich-редактора (TipTap), опционально; при
+    пустом ``description`` деривируется из HTML через ``html_to_plain``
+    (симметрично ``MessageCreateIn.body_text``/``body_html``). Роутер
+    санитизирует HTML (nh3) перед сохранением — заявитель неконтролируемая
+    сторона, как email-ingress.
+    """
 
     subject: str = Field(min_length=1, max_length=500)
-    description: str = Field(min_length=1, max_length=20000)
+    # ``min_length=0`` (не 1) — rich-редактор может прислать заявку, состоящую
+    # только из картинки/таблицы без пояснительного plain-текста. Валидация
+    # «хоть что-то есть» делается в роутере (plain ИЛИ html), симметрично
+    # ``MessageCreateIn.body_text``.
+    description: str = Field(min_length=0, max_length=20000)
+    description_html: str | None = Field(default=None, max_length=50000)
 
 
 class TicketAssignIn(BaseModel):

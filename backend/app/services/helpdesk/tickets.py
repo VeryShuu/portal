@@ -67,6 +67,7 @@ async def create_ticket(
     ticket = HelpdeskTicket(
         subject=payload.subject,
         description=payload.description,
+        description_html=payload.description_html,
         status="new",
         source="web",
         requester_user_id=user.id,
@@ -84,6 +85,11 @@ async def create_ticket(
         direction="inbound",
         visibility="public",
         body_text=payload.description,
+        # ``body_html`` = ``description_html`` (sanitized в роутере): письмо
+        # агентам (``render_new_ticket_agent_email``) читает ``first_message.body_html``
+        # с fallback на plain — форматирование заявки попадёт в письмо автоматически,
+        # без правок email-кода. В ленте портала рендерится через ``TicketMessageList``.
+        body_html=payload.description_html,
         source="web",
         # Явный ``created_at`` (Python-время) — см. комментарий в
         # ``add_requester_reply``: server_default ``NOW()`` фиксирует
@@ -103,6 +109,28 @@ async def create_ticket(
             files=files,
             actor=user,
         )
+
+    # Backfill inline-картинок из draft-attachments: rich-редактор формы создания
+    # грузит картинки через ``POST /draft-attachments`` (нет ``ticket_id`` до
+    # сохранения) и вставляет draft-URL в ``description_html``. Здесь переносим
+    # файлы в постоянное хранилище ``TKT-{number}/inline/`` и переписываем ``src``
+    # на ``/tickets/{id}/inline-media/{name}`` (serve-endpoint ответов). Мутирует
+    # ``ticket.description_html`` И ``first_message.body_html`` в той же
+    # транзакции (атомарно с созданием тикета). Best-effort: битые/чужие draft'ы
+    # остаются как есть (``src`` не переписывается) — заявка создаётся.
+    if payload.description_html:
+        from app.services.helpdesk.drafts import backfill_draft_images
+
+        new_html = await backfill_draft_images(
+            db,
+            ticket=ticket,
+            message_id=first_message.id,
+            html=payload.description_html,
+            user=user,
+        )
+        if new_html is not None:
+            ticket.description_html = new_html
+            first_message.body_html = new_html
 
     # Email заявителю «заявка зарегистрирована» — только при сконфигурированном
     # mailbox (outbox ``kind=helpdesk``, входит в email-тред тикета). Ставится

@@ -39,6 +39,7 @@ from app.services.helpdesk.digest import (
     send_digests,
     should_send_today,
 )
+from app.services.helpdesk.drafts import cleanup_expired_drafts
 from app.services.helpdesk.ingress import (
     LAST_POLL_KEY,
     POLL_LOCK_KEY,
@@ -74,6 +75,11 @@ PARTITION_LOCK_KEY = "helpdesk:partition:lock"
 PARTITION_LOCK_TTL = 120  # 2 минуты — DDL-операции быстрые.
 CLEANUP_LOCK_KEY = "helpdesk:cleanup:lock"
 CLEANUP_LOCK_TTL = 600  # 10 минут — rmtree по многим папкам может занять время.
+# Отдельный lock для cleanup draft-attachments (orphan-черновики форм создания
+# заявки, не отправленных в течение TTL). FS-операции простые (unlink), но lock
+# дублирован для единообразия с остальным cleanup-семейством и защиты от гонок.
+DRAFT_CLEANUP_LOCK_KEY = "helpdesk:cleanup-drafts:lock"
+DRAFT_CLEANUP_LOCK_TTL = 120  # 2 минуты — unlink'и быстрые.
 
 
 async def _acquire_lock(redis: Redis, key: str, ttl: int) -> str | None:
@@ -228,6 +234,30 @@ async def cleanup_helpdesk_attachments_task(ctx: dict) -> int:
             return await cleanup_archived_files(db)
     finally:
         await _release_lock(redis, CLEANUP_LOCK_KEY, lock_token)
+
+
+async def cleanup_expired_drafts_task(ctx: dict) -> int:
+    """Удалить draft-attachments старше ``HELPDESK_DRAFT_TTL_HOURS``.
+
+    Draft-файлы создаются формой создания заявки (``POST /draft-attachments``);
+    если юзер не отправил заявку (закрыл вкладку, отвлёкся), файлы + строки
+    остаются orphan'ами. Cron чистит их раз в час — симметрично с
+    ``cleanup_helpdesk_attachments_task`` для архивных файлов.
+    """
+    redis = ctx.get("redis")
+    if redis is None or not await _module_enabled(redis):
+        return 0
+    lock_token = await _acquire_lock(redis, DRAFT_CLEANUP_LOCK_KEY, DRAFT_CLEANUP_LOCK_TTL)
+    if lock_token is None:
+        return 0
+    try:
+        async with AsyncSessionLocal() as db:
+            removed = await cleanup_expired_drafts(db)
+            if removed:
+                await db.commit()
+            return removed
+    finally:
+        await _release_lock(redis, DRAFT_CLEANUP_LOCK_KEY, lock_token)
 
 
 # ---------------------------------------------------------------------------

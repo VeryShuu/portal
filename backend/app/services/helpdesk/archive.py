@@ -77,6 +77,11 @@ async def _archive_one(db: AsyncSession, ticket: HelpdeskTicket) -> None:
             "number": ticket.number,
             "subject": ticket.subject,
             "description": ticket.description,
+            # ``description_html`` (rich-редактор TipTap) сохраняется в архив,
+            # иначе форматирование заявки терялось при закрытии (only plain
+            # ``description`` было раньше). ``None`` сериализуется как null —
+            #legacy-заявки без html остаются читаемыми.
+            "description_html": ticket.description_html,
             "status": ticket.status,
             "source": ticket.source,
             "requester_email": ticket.requester_email,
@@ -89,6 +94,9 @@ async def _archive_one(db: AsyncSession, ticket: HelpdeskTicket) -> None:
                 "direction": m.direction,
                 "visibility": m.visibility,
                 "body_text": m.body_text,
+                # ``body_html`` (rich-редактор ответов) — для полноты архива.
+                # Без него форматированные ответы/заметки агентов теряли разметку.
+                "body_html": m.body_html,
                 "author_email": m.author_email,
                 "created_at": m.created_at.isoformat(),
             }

@@ -18,6 +18,7 @@ from app.worker.tasks.email_outbox import cleanup_email_outbox, process_email_ou
 from app.worker.tasks.files import startup_sync_nc_folders
 from app.worker.tasks.helpdesk import (
     archive_closed_tickets_task,
+    cleanup_expired_drafts_task,
     cleanup_helpdesk_attachments_task,
     create_next_helpdesk_archive_partition,
     poll_helpdesk_mailbox,
@@ -190,6 +191,7 @@ class WorkerSettings:
         archive_closed_tickets_task,
         create_next_helpdesk_archive_partition,
         cleanup_helpdesk_attachments_task,
+        cleanup_expired_drafts_task,
         send_helpdesk_digest,
         process_messenger_outbox,
         cleanup_messenger_outbox,
@@ -333,6 +335,15 @@ class WorkerSettings:
         cron(
             "app.worker.tasks.helpdesk.cleanup_helpdesk_attachments_task",
             hour=4,
+            minute=0,
+            second=0,
+        ),
+        # Draft-attachments cleanup: orphan inline-images из не-отправленных форм
+        # создания заявки (старше HELPDESK_DRAFT_TTL_HOURS). Раз в час — TTL 24h,
+        # задержка в удалении не критична, файлы небольшие.
+        cron(
+            "app.worker.tasks.helpdesk.cleanup_expired_drafts_task",
+            hour=5,
             minute=0,
             second=0,
         ),

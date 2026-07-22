@@ -28,6 +28,9 @@ def _make_ticket_row(*, number: int = 1, subject: str = "S") -> SimpleNamespace:
         number=number,
         subject=subject,
         description="d",
+        # ``description_html`` (rich-редактор TipTap) сохраняется в архивный
+        # payload (``_archive_one``). ``None`` — legacy/old-клиенты без html.
+        description_html=None,
         status="closed",
         source="web",
         requester_email="r@example.com",

@@ -24,6 +24,7 @@ from app.worker.tasks.helpdesk import (
     ARCHIVE_LOCK_KEY,
     CLEANUP_LOCK_KEY,
     DIGEST_LOCK_KEY,
+    DRAFT_CLEANUP_LOCK_KEY,
     PARTITION_LOCK_KEY,
     POLL_LOCK_KEY,
     _acquire_lock,
@@ -152,6 +153,80 @@ class TestArchiveFamilyAcquiresLock:
         assert result == 0
         work.assert_not_awaited()
 
+    async def test_draft_cleanup_returns_zero_when_lock_held(self) -> None:
+        """Draft-cleanup берёт ``DRAFT_CLEANUP_LOCK_KEY``: при занятом локе —
+        no-op, не дублирует очистку другого воркера (симметрично archive/cleanup)."""
+        from app.worker.tasks import helpdesk as h
+
+        redis = _fake_redis(set_returns=None)  # lock held
+        ctx = {"redis": redis}
+
+        with (
+            patch.object(h, "_module_enabled", new=AsyncMock(return_value=True)),
+            patch.object(h, "cleanup_expired_drafts", new=AsyncMock(return_value=999)) as work,
+        ):
+            result = await h.cleanup_expired_drafts_task(ctx)
+        assert result == 0
+        work.assert_not_awaited()
+
+    async def test_draft_cleanup_proceeds_when_lock_acquired(self) -> None:
+        """Лок свободен → задача вызывает ``cleanup_expired_drafts`` и коммитит."""
+        from app.worker.tasks import helpdesk as h
+
+        redis = _fake_redis(set_returns=True)
+        ctx = {"redis": redis}
+
+        fake_db = AsyncMock()
+        fake_db.commit = AsyncMock()
+        with (
+            patch.object(h, "_module_enabled", new=AsyncMock(return_value=True)),
+            patch.object(h, "AsyncSessionLocal") as session_cls,
+            patch.object(h, "cleanup_expired_drafts", new=AsyncMock(return_value=5)),
+        ):
+            session_cls.return_value.__aenter__.return_value = fake_db
+            session_cls.return_value.__aexit__.return_value = None
+            result = await h.cleanup_expired_drafts_task(ctx)
+        assert result == 5
+        # ``SET NX EX`` на правильном ключе.
+        assert redis.set.call_args.args[0] == DRAFT_CLEANUP_LOCK_KEY
+        # Removed>0 → commit вызван (орphan-удаление фиксируется).
+        fake_db.commit.assert_awaited_once()
+
+    async def test_draft_cleanup_skips_commit_when_nothing_removed(self) -> None:
+        """Нечего чистить (removed=0) → commit не вызывается лишний раз."""
+        from app.worker.tasks import helpdesk as h
+
+        redis = _fake_redis(set_returns=True)
+        ctx = {"redis": redis}
+
+        fake_db = AsyncMock()
+        fake_db.commit = AsyncMock()
+        with (
+            patch.object(h, "_module_enabled", new=AsyncMock(return_value=True)),
+            patch.object(h, "AsyncSessionLocal") as session_cls,
+            patch.object(h, "cleanup_expired_drafts", new=AsyncMock(return_value=0)),
+        ):
+            session_cls.return_value.__aenter__.return_value = fake_db
+            session_cls.return_value.__aexit__.return_value = None
+            result = await h.cleanup_expired_drafts_task(ctx)
+        assert result == 0
+        fake_db.commit.assert_not_awaited()
+
+    async def test_draft_cleanup_skips_when_module_disabled(self) -> None:
+        """Модуль helpdesk выключен → no-op без работы (как все helpdesk cron)."""
+        from app.worker.tasks import helpdesk as h
+
+        redis = _fake_redis(set_returns=True)
+        ctx = {"redis": redis}
+
+        with (
+            patch.object(h, "_module_enabled", new=AsyncMock(return_value=False)),
+            patch.object(h, "cleanup_expired_drafts", new=AsyncMock()) as work,
+        ):
+            result = await h.cleanup_expired_drafts_task(ctx)
+        assert result == 0
+        work.assert_not_awaited()
+
     async def test_archive_proceeds_when_lock_acquired(self) -> None:
         """Лок свободен → задача берёт его и вызывает сервис."""
         from app.worker.tasks import helpdesk as h
@@ -179,8 +254,9 @@ class TestLockKeys:
             PARTITION_LOCK_KEY,
             CLEANUP_LOCK_KEY,
             DIGEST_LOCK_KEY,
+            DRAFT_CLEANUP_LOCK_KEY,
         }
-        assert len(keys) == 5
+        assert len(keys) == 6
 
     def test_all_prefixed(self) -> None:
         """Все lock-keys под ``helpdesk:*`` namespace (для grep/мониторинга)."""
@@ -190,6 +266,7 @@ class TestLockKeys:
             PARTITION_LOCK_KEY,
             CLEANUP_LOCK_KEY,
             DIGEST_LOCK_KEY,
+            DRAFT_CLEANUP_LOCK_KEY,
         ):
             assert k.startswith("helpdesk:"), f"{k} вне helpdesk-namespace"
 

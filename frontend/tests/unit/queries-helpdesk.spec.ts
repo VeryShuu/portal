@@ -168,6 +168,22 @@ describe('src/queries/helpdesk', () => {
     expect(mockInvalidate).toHaveBeenCalled()
   })
 
+  it('useCreateMyTicketMutation passes description_html through dto (rich editor)', async () => {
+    // Rich-редактор при создании: dto несёт description_html (TipTap → HTML).
+    // Проверяем, что мутация прокидывает его в createMyTicket как есть.
+    const { useCreateMyTicketMutation } = await import('../../src/queries/helpdesk')
+    useCreateMyTicketMutation()
+    const m = capturedMutations[capturedMutations.length - 1]
+    mockCreateMyTicket.mockResolvedValueOnce({})
+    const dto = {
+      subject: 's',
+      description: '# Тема\nтекст',
+      description_html: '<h1>Тема</h1>\n<p>текст</p>',
+    }
+    await m.mutationFn({ dto, files: [] })
+    expect(mockCreateMyTicket).toHaveBeenCalledWith(dto, [])
+  })
+
   it('useReplyMyTicketMutation calls replyMyTicket with id+dto+files', async () => {
     const { useReplyMyTicketMutation } = await import('../../src/queries/helpdesk')
     useReplyMyTicketMutation('t1')

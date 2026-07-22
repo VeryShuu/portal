@@ -112,10 +112,20 @@ async def create_ticket(
     db: DbDep,
     redis: RedisDep,
     subject: str = Form(..., min_length=1, max_length=500),
-    description: str = Form(..., min_length=1, max_length=20000),
+    # ``description`` optional с деривацией из ``description_html`` (симметрично
+    # ``add_my_message``/``add_agent_message``): rich-редактор TipTap шлёт HTML,
+    # plain бэк деривирует сам. Старые клиенты (только plain) работают как прежде.
+    description: str = Form(default="", max_length=20000),
+    description_html: str = Form(default="", max_length=50000),
     files: list[UploadFile] = File(default=[]),
 ) -> TicketOut:
-    payload = TicketCreateIn(subject=subject, description=description)
+    # Нормализация для rich-редактора: sanitize description_html (nh3) + деривация
+    # description (plain) для FTS/email-треда, если фронт прислал только HTML.
+    norm_text: str
+    norm_html: str | None
+    norm_text, norm_html = messages_service.normalize_message_bodies(description, description_html)
+    _validate_message_body(norm_text, norm_html)
+    payload = TicketCreateIn(subject=subject, description=norm_text, description_html=norm_html)
     ticket = await tickets_service.create_ticket(db, user=user, payload=payload, files=files)
     # Первое сообщение тикета (тело заявки для письма агентам). ``create_ticket``
     # возвращает тикет с загруженными сообщениями (``fetch_ticket_for_user``);
