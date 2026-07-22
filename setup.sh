@@ -74,9 +74,13 @@ show_menu() {
     echo -e "  ${BOLD}9.${RESET}  Статус + последние логи"
     echo -e "  ${DIM}     docker compose ps + logs --tail=30 backend.${RESET}"
     echo
+    echo -e "  ${BOLD}10.${RESET} Запустить мониторинг ${DIM}(Grafana + Loki + Prometheus)${RESET}"
+    echo -e "  ${DIM}     Observability-overlay: метрики, централизованные логи, alerting.${RESET}"
+    echo -e "  ${DIM}     Grafana http://<server>:3000 (admin / GRAFANA_ADMIN_PASSWORD).${RESET}"
+    echo
     echo -e "  ${BOLD}0.${RESET}  Выход"
     echo
-    read -r -p "  Выберите [0-9]: " MENU_CHOICE
+    read -r -p "  Выберите [0-10]: " MENU_CHOICE
     echo
 }
 
@@ -1226,6 +1230,144 @@ ops_status() {
     echo
 }
 
+# ─── Observability: запуск Grafana + Loki + Prometheus + Alloy + Alertmanager ──
+# Overlay поднимается поверх основного стека (с обоими -f из корня репозитория),
+# чтобы: (1) пути ./monitoring/... резолвились относительно корня (а не
+# monitoring/ — иначе двойной путь monitoring/monitoring/... ломает mounts),
+# (2) obs-контейнеры присоединились к сети portal_internal и видели backend.
+start_monitoring() {
+    h2 "Мониторинг (observability-overlay)"
+    echo -e "  ${DIM}Grafana + Loki + Prometheus + Alertmanager + Alloy.${RESET}"
+    echo -e "  ${DIM}Запускается как overlay поверх основного стека (оба compose-f из корня).${RESET}"
+    echo
+
+    # Проверка, что основной стек запущен — obs-контейнерам нужна сеть
+    # portal_internal и живой backend для scrape /metrics.
+    if ! docker compose ps --services --filter "status=running" 2>/dev/null \
+         | grep -qE '^(backend|nginx)$'; then
+        warn "Основной стек портала, похоже, не запущен (backend/nginx не найдены)."
+        warn "Observability-overlay требует сеть portal_internal и живой backend для scrape."
+        echo -e "  ${DIM}Сначала запустите портал (пункты 1/2/3), затем мониторинг.${RESET}"
+        echo
+        read -r -p "  Всё равно продолжить? (y/N): " ans
+        [[ "${ans,,}" == "y" ]] || { echo -e "  ${DIM}Отмена.${RESET}"; return 1; }
+    fi
+
+    local overlay="monitoring/docker-compose.monitoring.yml"
+    if [[ ! -f "$overlay" ]]; then
+        err "Overlay $overlay не найден. Запускайте setup.sh из корня репозитория портала."
+        return 1
+    fi
+
+    local grafana_pw
+    grafana_pw=$(load_env_var GRAFANA_ADMIN_PASSWORD "")
+    if [[ -z "$grafana_pw" ]]; then
+        warn "GRAFANA_ADMIN_PASSWORD не задан в .env — Grafana стартует с паролем по умолчанию 'admin'."
+        warn "Смените его сразу после первого входа!"
+        echo
+    fi
+
+    echo -e "  ${BOLD}Запуск observability-overlay...${RESET}"
+    echo
+    # КРИТИЧНО: оба -f из корня. Solo-запуск только overlay ломает пути
+    # (project_directory = папка первого -f) → mount src удваивается до
+    # monitoring/monitoring/... и падает с "not a directory".
+    if ! docker compose \
+            -f docker-compose.yml \
+            -f "$overlay" \
+            up -d prometheus alertmanager grafana loki alloy 2>&1 | sed 's/^/    /'; then
+        err "Не удалось запустить observability-overlay. Проверьте вывод выше."
+        return 1
+    fi
+
+    echo
+    echo -e "  ${BOLD}Ожидание готовности сервисов (до 120 c)...${RESET}"
+    echo
+
+    # Проверяем готовность по HTTP-endpoints. Loki/Alloy не имеют встроенного
+    # healthcheck (busybox убран в образах), поэтому опрашиваем с хоста.
+    # curl может отсутствовать на сервере — используем временный контейнер
+    # в сети portal_internal.
+    local ready_loki=0 ready_prom=0 ready_grafana=0
+    local attempt=0
+    local max_attempts=24  # 24 × 5 c = 120 c
+    while (( attempt < max_attempts )); do
+        attempt=$((attempt + 1))
+        # Loki /ready
+        if (( ready_loki == 0 )); then
+            if docker run --rm --network portal_internal curlimages/curl:latest \
+                   -s --max-time 5 http://loki:3100/ready 2>/dev/null | grep -qi "ready"; then
+                ready_loki=1
+            fi
+        fi
+        # Prometheus /-/ready (отвечает "Prometheus Server is Ready." — case-insensitive)
+        if (( ready_prom == 0 )); then
+            if docker run --rm --network portal_internal curlimages/curl:latest \
+                   -s --max-time 5 http://prometheus:9090/-/ready 2>/dev/null | grep -qi "ready"; then
+                ready_prom=1
+            fi
+        fi
+        # Grafana /api/health
+        if (( ready_grafana == 0 )); then
+            if docker run --rm --network portal_internal curlimages/curl:latest \
+                   -s --max-time 5 http://grafana:3000/api/health 2>/dev/null | grep -qi "ok"; then
+                ready_grafana=1
+            fi
+        fi
+        # Все готовы — выходим раньше
+        if (( ready_loki && ready_prom && ready_grafana )); then
+            break
+        fi
+        printf "\r    Loki=%s  Prometheus=%s  Grafana=%s  (попытка %d/%d)   " \
+            "$([ $ready_loki = 1 ] && echo '✓' || echo '·')" \
+            "$([ $ready_prom = 1 ] && echo '✓' || echo '·')" \
+            "$([ $ready_grafana = 1 ] && echo '✓' || echo '·')" \
+            "$attempt" "$max_attempts"
+        sleep 5
+    done
+    echo
+    echo
+
+    # Определяем адрес сервера для подсказки (внешний IP или hostname).
+    local server_addr
+    server_addr=$(hostname -I 2>/dev/null | awk '{print $1}')
+    [[ -z "$server_addr" ]] && server_addr="<server>"
+
+    echo -e "  ${BOLD}╔══════════════════════════════════════════════╗${RESET}"
+    echo -e "  ${BOLD}║          Мониторинг запущен!                 ║${RESET}"
+    echo -e "  ${BOLD}╚══════════════════════════════════════════════╝${RESET}"
+    echo
+    if (( ready_grafana )); then
+        echo -e "  ${BOLD}Grafana:${RESET}        http://${server_addr}:3000"
+        if [[ -z "$grafana_pw" ]]; then
+            echo -e "  ${DIM}Логин admin / пароль admin (сменить!).${RESET}"
+        else
+            echo -e "  ${DIM}Логин admin / пароль из .env::GRAFANA_ADMIN_PASSWORD${RESET}"
+        fi
+    else
+        echo -e "  ${YELLOW}Grafana:${RESET}        http://${server_addr}:3000 ${YELLOW}(ещё стартует — открой через ~30 c)${RESET}"
+    fi
+    echo
+    echo -e "  ${BOLD}Прочие UI (опционально, для отладки):${RESET}"
+    if (( ready_prom )); then
+        echo -e "  Prometheus:     http://${server_addr}:9090 ${DIM}(метрики, targets, alert state)${RESET}"
+    fi
+    echo -e "  Alertmanager:   http://${server_addr}:9093 ${DIM}(состояние алертов)${RESET}"
+    echo -e "  Loki API:       http://${server_addr}:3100 ${DIM}(обычно через Grafana)${RESET}"
+    echo -e "  Alloy UI:       http://${server_addr}:12345 ${DIM}(pipeline сборщика логов)${RESET}"
+    echo
+    if (( ready_loki )); then
+        ok "Логи портала уже собираются в Loki — открой дашборд «Portal — Logs» в Grafana."
+    else
+        warn "Loki ещё стартует — логи появятся в дашборде через ~30 c."
+    fi
+    echo
+    echo -e "  ${BOLD}Остановка мониторинга:${RESET}"
+    echo -e "  ${DIM}docker compose -f docker-compose.yml -f monitoring/docker-compose.monitoring.yml down${RESET}"
+    echo -e "  ${DIM}(данные Grafana/Loki/Prometheus сохраняются в named volumes).${RESET}"
+    echo
+}
+
 # ─── Точка входа ───────────────────────────────────────────────────────────────
 main() {
     # Неинтерактивный режим для CI: сгенерировать dev/staging compose-оверрайды и выйти.
@@ -1333,6 +1475,9 @@ main() {
             ;;
         9)
             ops_status
+            ;;
+        10)
+            start_monitoring
             ;;
         0)
             echo -e "  Выход."
