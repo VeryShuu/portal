@@ -91,7 +91,16 @@ Backend принимает токен через **любой из двух за
 (`portal_sse_connections`, `portal_audit_queue_depth`,
 `portal_audit_processing_depth`, `portal_worker_last_heartbeat_seconds`
 (unix-timestamp последнего heartbeat'а воркера — основа алерта
-`PortalWorkerDown`, см. §3 «Heartbeat воркера»),
+`PortalWorkerDown`, см. §3 «Heartbeat воркера»), а также
+`portal_db_pool_size{state}` + `portal_db_pool_limit` — насыщение пула
+SQLAlchemy **в самом API-процессе** (in_use = checked out, idle = checked in).
+В отличие от остальных gauge'ов, эти **не гидрируются из Redis-snapshot** — пул
+это per-process состояние, читается напрямую из `engine.pool` при каждом scrape
+(см. ниже врезку). `portal_db_pool_limit` = `db_pool_size + db_max_overflow`
+(дефолт 50); доля насыщения = `portal_db_pool_size{state="in_use"} /
+portal_db_pool_limit` — основа алерта `PortalDBPoolHigh`. Connection leak
+(незакрытая SQLAlchemy-сессия) проявляется здесь раньше, чем в `pg_stat_activity`.
+
 `portal_active_users_last_1h`, `portal_photo_storage_bytes`,
 `portal_kb_articles_total{status}`, `portal_news_published_total{status}`,
 `portal_users_total{auth_source}`, счётчик
@@ -275,7 +284,7 @@ monitoring/
 ├── alloy/
 │   └── config.alloy                   ← сбор Docker-логов → Loki (discovery + JSON)
 ├── alerts/
-│   ├── portal.yml                     ← alerting rules (PromQL) — 35 правил: мета-мониторинг + backend + audit + PG + Redis + host + nginx + ARQ + outbox + probes
+│   ├── portal.yml                     ← alerting rules (PromQL) — 36 правил: мета-мониторинг + backend + audit + PG/пул + Redis + host + nginx + ARQ + outbox + probes
 │   ├── alertmanager.yml               ← шаблон (с ${VAR}) — рендерится в runtime
 │   └── render-alertmanager.sh         ← entrypoint: рендер ${VAR} → /tmp/alertmanager.yml (см. §7 Email-доставка)
 ├── grafana/
@@ -427,7 +436,8 @@ Alertmanager скрейпились и раньше.
 | `PortalHighLatencyP99` | 🟡 warning | p99 latency > 5s | Медленный SQL / блокировки / нехватка пула |
 | `PortalSSEConnectionsHigh` | 🟡 warning | `portal_sse_connections > 500` 10 мин | Утечка SSE-стримов (незакрытые EventSource, вкладки-зомби) |
 | `PortalPhotoStorageHigh` | 🔵 info | `/data/photos > 100 ГБ` | Планировать ёмкость |
-| `PortalPGConnectionsHigh` | 🟡 warning | пул соединений > 80% | Насыщение пула → растёт latency (asyncpg pool / connection leak) |
+| `PortalDBPoolHigh` | 🟡 warning | `portal_db_pool_size{in_use} / portal_db_pool_limit > 80%` 5 мин | Насыщение пула SQLAlchemy **в API-процессе** (connection leak / нехватка `DB_POOL_SIZE`). Проявляется раньше, чем на стороне БД. |
+| `PortalPGConnectionsHigh` | 🟡 warning | `pg_stat_activity` > 80% `max_connections` 5 мин | Активные коннекты к БД насыщены (сторона Postgres) — все клиентские пулы суммарно. Дополняет `PortalDBPoolHigh` (который видит только app-pool). |
 | `PortalPGCacheHitLow` | 🟡 warning | cache hit ratio < 90% | Нехватка shared_buffers или отсутствующие индексы |
 | `PortalPGWraparound` | 🟡 warning | XID возраст > 1.5e9 | autovacuum не справляется — близко к read-only защите |
 | `PortalPGDeadlocks` | 🟡 warning | дедлоки > 0 | Конкурирующие транзакции — баг в коде |

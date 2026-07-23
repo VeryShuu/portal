@@ -26,6 +26,34 @@ async def _noop_next(request):
     return MagicMock()
 
 
+def patch_db_pool(*, checkedout: int = 0, checkedin: int = 0, pool_size: int = 20, max_overflow: int = 30):
+    """Стабает DB pool + settings для /metrics-блока как единый context manager.
+
+    Новый pool-код (middleware/metrics.py) читает engine.pool.checkedout/checkedin
+    и get_settings().db_pool_size/db_max_overflow напрямую — это состояние
+    API-процесса, не из Redis-snapshot. В unit-тестах стабаем, чтобы не зависеть
+    от настоящего engine (он создаётся в module-init, но хрупко на это опираться).
+
+    Использование: ``with patch_db_pool():`` или ``with patch(...), patch_db_pool():``
+    """
+    from contextlib import ExitStack
+
+    fake_pool = MagicMock()
+    fake_pool.checkedout.return_value = checkedout
+    fake_pool.checkedin.return_value = checkedin
+    fake_engine = MagicMock()
+    fake_engine.pool = fake_pool
+
+    fake_settings = MagicMock()
+    fake_settings.db_pool_size = pool_size
+    fake_settings.db_max_overflow = max_overflow
+
+    stack = ExitStack()
+    stack.enter_context(patch("app.core.database.engine", fake_engine))
+    stack.enter_context(patch("app.core.config.get_settings", return_value=fake_settings))
+    return stack
+
+
 class TestHydrateCustomMetrics:
     async def _call(self, request):
         from app.middleware.metrics import hydrate_custom_metrics as _hydrate_custom_metrics
@@ -89,8 +117,11 @@ class TestHydrateCustomMetrics:
         fake_metrics.kb_articles_total = _FakeGauge("kb_articles_total")
         fake_metrics.news_published_total = _FakeGauge("news_published_total")
         fake_metrics.users_total = _FakeGauge("users_total")
+        # DB pool gauges — читаются напрямую из engine, не из snapshot.
+        fake_metrics.db_pool_size = _FakeGauge("db_pool_size")
+        fake_metrics.db_pool_limit = _FakeGauge("db_pool_limit")
 
-        with patch("app.middleware.metrics._metrics_mod", fake_metrics):
+        with patch("app.middleware.metrics._metrics_mod", fake_metrics), patch_db_pool():
             await self._call(req)
 
         assert ("set", 42.0) in gauge_calls["audit_queue_depth"]
@@ -116,8 +147,13 @@ class TestHydrateCustomMetrics:
         fake_metrics.kb_articles_total = MagicMock()
         fake_metrics.news_published_total = MagicMock()
         fake_metrics.users_total = MagicMock()
+        fake_metrics.worker_last_heartbeat = MagicMock()
+        # DB pool gauges — вызываются до Redis-read, нужны явно (иначе auto-MagicMock
+        # тихо съест вызовы и тест не проверит ничего).
+        fake_metrics.db_pool_size = MagicMock()
+        fake_metrics.db_pool_limit = MagicMock()
 
-        with patch("app.middleware.metrics._metrics_mod", fake_metrics):
+        with patch("app.middleware.metrics._metrics_mod", fake_metrics), patch_db_pool():
             await self._call(req)
 
         fake_gauge.set.assert_called_once_with(5.0)
@@ -180,12 +216,15 @@ class TestArqJobsHydration:
             "kb_articles_total",
             "news_published_total",
             "users_total",
+            "worker_last_heartbeat",
+            "db_pool_size",
+            "db_pool_limit",
         ):
             setattr(fake_metrics, attr, MagicMock())
         fake_metrics.arq_jobs_total = _FakeCounter()
         fake_metrics.arq_job_duration = _FakeHistogram()
 
-        with patch("app.middleware.metrics._metrics_mod", fake_metrics):
+        with patch("app.middleware.metrics._metrics_mod", fake_metrics), patch_db_pool():
             await _hydrate(req, _noop_next)
 
         return counter_calls, observe_calls
@@ -274,12 +313,15 @@ class TestOutboxHydration:
             "kb_articles_total",
             "news_published_total",
             "users_total",
+            "worker_last_heartbeat",
+            "db_pool_size",
+            "db_pool_limit",
             "arq_jobs_total",
             "arq_job_duration",
         ):
             setattr(fake_metrics, attr, MagicMock())
 
-        with patch("app.middleware.metrics._metrics_mod", fake_metrics):
+        with patch("app.middleware.metrics._metrics_mod", fake_metrics), patch_db_pool():
             await _hydrate(req, _noop_next)
         return gauge_calls
 
@@ -305,3 +347,87 @@ class TestOutboxHydration:
         assert ("integration", 1.0) in gauge_calls
         assert ("labels", "smtp") in gauge_calls
         assert ("integration", 0.0) in gauge_calls
+
+
+class TestDBPoolHydration:
+    """DB pool gauges читаются напрямую из engine.pool (не из Redis-snapshot).
+
+    Это состояние API-процесса: in_use = checked out, idle = checked in.
+    Порог насыщения алерта PortalDBPoolHigh = in_use / (pool_size + max_overflow).
+    """
+
+    async def _call(self, *, checkedout=0, checkedin=0, pool_size=20, max_overflow=30):
+        from app.middleware.metrics import hydrate_custom_metrics as _hydrate
+
+        # Snapshot пустой — мы тестируем ТОЛЬКО pool-часть (она идёт до Redis).
+        redis = AsyncMock()
+        redis.get = AsyncMock(return_value=None)
+        req = _make_request("/metrics", redis=redis)
+
+        gauge_calls: list[tuple] = []
+
+        class _FakeLabeledGauge:
+            def labels(self, state):
+                gauge_calls.append(("labels", state))
+                return self
+
+            def set(self, val):
+                gauge_calls.append((("pool_size", None), val))
+
+        class _FakeLimitGauge:
+            def set(self, val):
+                gauge_calls.append(("pool_limit", val))
+
+        fake_metrics = MagicMock()
+        fake_metrics.db_pool_size = _FakeLabeledGauge()
+        fake_metrics.db_pool_limit = _FakeLimitGauge()
+
+        with patch("app.middleware.metrics._metrics_mod", fake_metrics), patch_db_pool(
+            checkedout=checkedout, checkedin=checkedin,
+            pool_size=pool_size, max_overflow=max_overflow,
+        ):
+            await _hydrate(req, _noop_next)
+        return gauge_calls
+
+    async def test_pool_gauges_set(self):
+        gauge_calls = await self._call(checkedout=7, checkedin=13, pool_size=20, max_overflow=30)
+        # limit = pool_size + max_overflow = 50
+        assert ("pool_limit", 50) in gauge_calls
+        # in_use / idle values — _FakeLabeledGauge пишет (("pool_size",None), val)
+        assert (("pool_size", None), 7) in gauge_calls  # in_use = checkedout
+        assert (("pool_size", None), 13) in gauge_calls  # idle = checkedin
+        # both states labeled
+        assert ("labels", "in_use") in gauge_calls
+        assert ("labels", "idle") in gauge_calls
+
+    async def test_pool_limit_uses_current_settings(self):
+        # Если admin поднял DB_POOL_SIZE/DB_MAX_OVERFLOW через env, limit меняется.
+        gauge_calls = await self._call(pool_size=50, max_overflow=50)
+        assert ("pool_limit", 100) in gauge_calls
+
+    async def test_pool_read_error_swallowed(self):
+        """engine.pool.checkedout() raises → middleware не падает, /metrics жив."""
+        from app.middleware.metrics import hydrate_custom_metrics as _hydrate
+
+        redis = AsyncMock()
+        redis.get = AsyncMock(return_value=None)
+        req = _make_request("/metrics", redis=redis)
+
+        bad_pool = MagicMock()
+        bad_pool.checkedout.side_effect = RuntimeError("pool not initialized")
+        bad_engine = MagicMock()
+        bad_engine.pool = bad_pool
+
+        # call_next должен быть вызван, исключение проглочено.
+        next_called = False
+
+        async def _check_next(request):
+            nonlocal next_called
+            next_called = True
+            return MagicMock()
+
+        with patch("app.core.database.engine", bad_engine), \
+             patch("app.core.config.get_settings", return_value=MagicMock(db_pool_size=20, db_max_overflow=30)):
+            await _hydrate(req, _check_next)
+
+        assert next_called is True

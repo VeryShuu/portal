@@ -25,6 +25,26 @@ async def hydrate_custom_metrics(
     """Pull the latest snapshot from Redis into Prometheus gauges before scrape."""
     if request.url.path == "/metrics":
         try:
+            # DB pool — per-process state of the API, NOT in the Redis snapshot.
+            # Read directly from the SQLAlchemy engine on each scrape. Lazy import
+            # to avoid import-time coupling (same style as load_system_settings
+            # below). Wrapped in this try/except → never breaks /metrics.
+            from app.core.config import get_settings as _get_settings
+            from app.core.database import engine as _engine
+
+            _cfg = _get_settings()
+            _metrics_mod.db_pool_limit.set(_cfg.db_pool_size + _cfg.db_max_overflow)
+            # checkedout()/checkedin() — methods of QueuePool (AsyncAdaptedQueuePool
+            # proxies them at runtime). SQLAlchemy stubs type engine.pool as the
+            # base Pool which lacks these, hence the ignore (smoke-tested in the
+            # container: type is AsyncAdaptedQueuePool, methods return int).
+            _metrics_mod.db_pool_size.labels(state="in_use").set(
+                _engine.pool.checkedout()  # type: ignore[attr-defined]
+            )
+            _metrics_mod.db_pool_size.labels(state="idle").set(
+                _engine.pool.checkedin()  # type: ignore[attr-defined]
+            )
+
             redis = getattr(request.app.state, "redis", None)
             if redis is not None:
                 raw = await redis.get(METRICS_SNAPSHOT_KEY)

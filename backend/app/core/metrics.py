@@ -33,6 +33,27 @@ worker_last_heartbeat = Gauge(
     "A growing age means the worker is stuck or dead — basis for PortalWorkerDown.",
 )
 
+# --- DB connection pool (SQLAlchemy AsyncAdaptedQueuePool, API process) -----
+# Unlike the gauges above (hydrated from the worker's Redis snapshot), the pool
+# is per-process state of the API. It is read directly from ``engine.pool`` on
+# each /metrics scrape (see middleware/metrics.py), not from Redis.
+#
+# in_use = checked out (a request holds the connection); idle = checked in.
+# Compare in_use to portal_db_pool_limit (= db_pool_size + db_max_overflow) for
+# saturation — a connection leak (unclosed SQLAlchemy session) surfaces here
+# before it shows up in pg_stat_activity.
+db_pool_size = Gauge(
+    "portal_db_pool_size",
+    "SQLAlchemy pool connections in the API process by state "
+    "(in_use = checked out; idle = checked in).",
+    labelnames=("state",),
+)
+db_pool_limit = Gauge(
+    "portal_db_pool_limit",
+    "Max connections the API pool will open (db_pool_size + db_max_overflow). "
+    "Divide portal_db_pool_size{state=\"in_use\"} by this for saturation ratio.",
+)
+
 active_users_1h = Gauge(
     "portal_active_users_last_1h",
     "Distinct users that produced at least one audit event in the last hour.",
