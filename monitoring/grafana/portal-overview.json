@@ -193,7 +193,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(rate(http_requests_total{job=\"portal\", status=~\"5..\"}[5m])) / clamp_min(sum(rate(http_requests_total{job=\"portal\"}[5m])), 1)",
+          "expr": "(sum(rate(http_requests_total{job=\"portal\", status=~\"5..\"}[5m])) / clamp_min(sum(rate(http_requests_total{job=\"portal\"}[5m])), 1)) or vector(0)",
           "refId": "A"
         }
       ],
@@ -837,7 +837,7 @@
               },
               {
                 "color": "yellow",
-                "value": 0
+                "value": 0.001
               },
               {
                 "color": "red",
@@ -877,7 +877,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(rate(portal_arq_jobs_total{status=\"failed\"}[5m])) by (function)",
+          "expr": "sum(rate(portal_arq_jobs_total{status=\"failed\"}[5m])) or vector(0)",
           "legendFormat": "{{function}}",
           "refId": "A"
         }
