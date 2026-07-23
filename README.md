@@ -78,7 +78,7 @@ Observability-стек (Grafana + Loki + Prometheus + Alloy + Alertmanager) — 
 bash setup.sh          # → выбрать пункт 10 «Запустить мониторинг»
 ```
 
-После старта: Grafana — `http://localhost:3000` (admin / admin, принудительная смена при первом входе). Дашборды «Portal — Logs» (централизованные логи) и «Portal — Overview» (метрики) провижн автоматически. Подробности: `docs/monitoring.md`, `monitoring/README.md`, ADR-044.
+После старта: Grafana — `http://localhost:3001` (admin / admin, принудительная смена при первом входе). Дашборды «Portal — Logs» (централизованные логи) и «Portal — Overview» (метрики) провижн автоматически. Подробности: `docs/monitoring.md`, `monitoring/README.md`, ADR-044.
 
 ---
 

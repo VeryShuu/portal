@@ -1317,7 +1317,7 @@ ADR-035 ввёл silent refresh по таймеру + retry-on-401. Endpoint `PO
 portal internal-сеть (network internal: true)
   ├─ backend/worker ──stdout(JSON structlog)──┐
   ├─ nginx ──stdout(JSON json_combined)───────┼──► alloy ──► loki ──┐
-  └─ backend ──/metrics──────────────────────────► prometheus ──────┼──► grafana (:3000, 127.0.0.1)
+  └─ backend ──/metrics──────────────────────────► prometheus ──────┼──► grafana (:3001, 127.0.0.1)
                                                                     └──► alertmanager (:9093) ──► email
 ```
 

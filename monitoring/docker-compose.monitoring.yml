@@ -30,7 +30,7 @@
 #   - loki-data            — чанки логов (retention 30d, compactor чистит)
 #
 # UI (на хосте, проброшены на 127.0.0.1 — через SSH-туннель или reverse-proxy):
-#   Prometheus :9090  Alertmanager :9093  Grafana :3000  Loki :3100  Alloy :12345
+#   Prometheus :9090  Alertmanager :9093  Grafana :3001  Loki :3100  Alloy :12345
 
 services:
   prometheus:
@@ -108,7 +108,7 @@ services:
       # OAuth/auth-proxy — через runtime-настройки Grafana, не через env.
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
       GF_USERS_ALLOW_SIGN_UP: "false"
-      GF_SERVER_ROOT_URL: "http://localhost:3000"
+      GF_SERVER_ROOT_URL: "http://localhost:3001"
       GF_INSTALL_PLUGINS: ""
     volumes:
       # Provisioning — datasources и dashboards загружаются при старте.

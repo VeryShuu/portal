@@ -76,7 +76,7 @@ show_menu() {
     echo
     echo -e "  ${BOLD}10.${RESET} Запустить мониторинг ${DIM}(Grafana + Loki + Prometheus)${RESET}"
     echo -e "  ${DIM}     Observability-overlay: метрики, централизованные логи, alerting.${RESET}"
-    echo -e "  ${DIM}     Grafana http://<server>:3000 (admin / admin, сменить при первом входе).${RESET}"
+    echo -e "  ${DIM}     Grafana http://<server>:3001 (admin / admin, сменить при первом входе).${RESET}"
     echo
     echo -e "  ${BOLD}0.${RESET}  Выход"
     echo
@@ -1330,11 +1330,11 @@ start_monitoring() {
     echo -e "  ${BOLD}╚══════════════════════════════════════════════╝${RESET}"
     echo
     if (( ready_grafana )); then
-        echo -e "  ${BOLD}Grafana:${RESET}        http://${server_addr}:3000"
+        echo -e "  ${BOLD}Grafana:${RESET}        http://${server_addr}:3001"
         echo -e "  ${DIM}Логин admin / пароль admin (принудительная смена при первом входе).${RESET}"
-        echo -e "  ${DIM}Доступ из Windows (WSL2): тот же URL или http://localhost:3000${RESET}"
+        echo -e "  ${DIM}Доступ из Windows (WSL2): тот же URL или http://localhost:3001${RESET}"
     else
-        echo -e "  ${YELLOW}Grafana:${RESET}        http://${server_addr}:3000 ${YELLOW}(ещё стартует — открой через ~30 c)${RESET}"
+        echo -e "  ${YELLOW}Grafana:${RESET}        http://${server_addr}:3001 ${YELLOW}(ещё стартует — открой через ~30 c)${RESET}"
     fi
     echo
     echo -e "  ${BOLD}Прочие UI (опционально, для отладки):${RESET}"

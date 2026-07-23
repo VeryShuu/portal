@@ -105,7 +105,7 @@
 |---|---|
 | Поднять всё (prod-like) | `docker compose up -d` |
 | Поднять dev | `docker compose -f docker-compose.dev.yml up -d` |
-| Поднять мониторинг (overlay) | `./setup.sh` → пункт 10 (Grafana :3000 + Loki + Prometheus + Alloy) |
+| Поднять мониторинг (overlay) | `./setup.sh` → пункт 10 (Grafana :3001 + Loki + Prometheus + Alloy) |
 | Посмотреть логи backend | `docker compose logs -f backend` |
 | Создать новую миграцию | `docker compose exec backend alembic revision --autogenerate -m "description"` |
 
