@@ -105,8 +105,18 @@ portal_db_pool_limit` — основа алерта `PortalDBPoolHigh`. Connecti
 `portal_kb_articles_total{status}`, `portal_news_published_total{status}`,
 `portal_users_total{auth_source}`, счётчик
 `portal_audit_events_pushed_total{event_type}`, а также ARQ-метрики
-`portal_arq_jobs_total{function,status}` и
-`portal_arq_job_duration_seconds{function}`).
+`portal_arq_jobs_total{function,status}` (status ∈ `started`/`succeeded`/
+`timeout`/`failed` — `timeout` отделён от `failed`, см. ниже),
+`portal_arq_job_duration_seconds{function}` и gauge глубины очереди
+`portal_arq_queue_depth` (Redis ZSET `arq:queue`, читается через `ZCARD` —
+основа алерта `PortalArqQueueBacklog`).
+
+> **`timeout` vs `failed`.** Декоратор `track_arq_job` различает их: ARQ
+> оборачивает задачу в `asyncio.wait_for`, и при истечении `timeout` (func-level
+> `timeout=300` и т.п.) поднимается `TimeoutError` → статус `timeout`. Это
+> отличает «медленная задача» (поднимать пул / чинить запрос) от «битая задача»
+> (чинить код). `PortalArqJobFailures` смотрит на `status="failed"`; долю
+> timeout'ов видно отдельной метрикой в дашборде.
 
 ARQ-метрики собирает декоратор `track_arq_job` (`./backend/app/worker/tasks/metrics.py`),
 которым обёрнуты все задачи в `WorkerSettings.functions`. Для каждой задачи
@@ -294,7 +304,7 @@ monitoring/
 ├── alloy/
 │   └── config.alloy                   ← сбор Docker-логов → Loki (discovery + JSON)
 ├── alerts/
-│   ├── portal.yml                     ← alerting rules (PromQL) — 36 правил: мета-мониторинг + backend + audit + PG/пул + Redis + host + nginx + ARQ + outbox + probes
+│   ├── portal.yml                     ← alerting rules (PromQL) — 38 правил: мета-мониторинг + backend + audit + PG/пул + Redis + host/Loki + nginx + ARQ/очередь + outbox + probes
 │   ├── alertmanager.yml               ← шаблон (с ${VAR}) — рендерится в runtime
 │   └── render-alertmanager.sh         ← entrypoint: рендер ${VAR} → /tmp/alertmanager.yml (см. §7 Email-доставка)
 ├── grafana/
@@ -442,10 +452,12 @@ Alertmanager скрейпились и раньше.
 | `PortalAuditPushRateZero` | 🟡 warning | `rate(portal_audit_events_pushed_total[5m]) == 0` 10 мин | События не эмиттятся — сломался `push_audit_event` / Redis down |
 | `PortalWorkerDown` | 🔴 critical | `time() - portal_worker_last_heartbeat_seconds > 120` 1 мин | Воркер не тикает > 2 мин (завис/упал). Прямой датчик на heartbeat-mtime — ловит тихую смерть даже при пустой audit-очереди. См. §3 «Heartbeat воркера». |
 | `PortalWorkerStale` | 🟡 warning | `changes(portal_audit_queue_depth[3m]) == 0` при queue > 0, 5 мин | Вторичный датчик: воркер жив (heartbeat тикает), но `refresh_custom_metrics` завис — event-loop блокирован долгой задачей. |
-| `PortalArqJobFailures` | 🟡 warning | `rate(portal_arq_jobs_total{status="failed"}) > 0.1/s` 5 мин | ARQ-задачи падают — смотреть логи worker, возможно упал upstream |
+| `PortalArqJobFailures` | 🟡 warning | `rate(portal_arq_jobs_total{status="failed"}) > 0.1/s` 5 мин | ARQ-задачи падают — смотреть логи worker, возможно упал upstream. `timeout` отделён от `failed` (см. §3) |
+| `PortalArqQueueBacklog` | 🟡 warning | `portal_arq_queue_depth > 50` 5 мин | Pending-задач в `arq:queue` > 50 — воркер не успевает (медленные/мёртвые задачи) или завис |
 | `PortalHighLatencyP99` | 🟡 warning | p99 latency > 5s | Медленный SQL / блокировки / нехватка пула |
 | `PortalSSEConnectionsHigh` | 🟡 warning | `portal_sse_connections > 500` 10 мин | Утечка SSE-стримов (незакрытые EventSource, вкладки-зомби) |
-| `PortalPhotoStorageHigh` | 🔵 info | `/data/photos > 100 ГБ` | Планировать ёмкость |
+| `PortalPhotoStorageHigh` | 🔵 info | `/data/photos > 100 ГБ` | Планировать ёмкость (виден в дашборде Overview, panel id=14; `info`-алерты не шлются в email — см. ниже) |
+| `PortalLokiStorageHigh` | 🟡 warning | `portal_loki-data` volume > 10 ГБ 30 мин | Loki забивает свой volume (retention 30d или шумные лейблы) — не дотягивая до общего disk-full |
 | `PortalDBPoolHigh` | 🟡 warning | `portal_db_pool_size{in_use} / portal_db_pool_limit > 80%` 5 мин | Насыщение пула SQLAlchemy **в API-процессе** (connection leak / нехватка `DB_POOL_SIZE`). Проявляется раньше, чем на стороне БД. |
 | `PortalPGConnectionsHigh` | 🟡 warning | `pg_stat_activity` > 80% `max_connections` 5 мин | Активные коннекты к БД насыщены (сторона Postgres) — все клиентские пулы суммарно. Дополняет `PortalDBPoolHigh` (который видит только app-pool). |
 | `PortalPGCacheHitLow` | 🟡 warning | cache hit ratio < 90% | Нехватка shared_buffers или отсутствующие индексы |
@@ -473,6 +485,16 @@ Alertmanager скрейпились и раньше.
 
 Полный PromQL и rationale — в самом `portal.yml`. Alertmanager-routing —
 email-receivers через SMTP-relay (см. §7 «Email-доставка алертов»).
+
+> **Info-алерты (`severity=info`) не шлются в email намеренно** — Alertmanager
+> роутит их в `info-null` (drop), чтобы не будить админов из-за ёмкостного
+> планирования (`PortalPhotoStorageHigh`, `PortalPhotoStorageHigh`). Эти алерты
+> **видны через дашборды**: `PortalPhotoStorageHigh` — в Overview, panel id=14
+> «Фото-хранилище (байты)» с теми же порогами; `PortalLokiStorageHigh` — в
+> Storage-дашборде (объём volumes). Это баланс: будить только когда человек
+> должен вмешаться (warning/critical), а инфо-сигналы держать в UI для
+> периодического обзора. Если info-алерт должен стать активным — поднять его
+> `severity` до `warning` в `portal.yml`.
 
 ### Грабли reference-стека
 

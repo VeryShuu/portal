@@ -156,3 +156,12 @@ arq_job_duration = Histogram(
     labelnames=("function",),
     buckets=(0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 120, 300, 600),
 )
+
+# Depth of the ARQ pending-queue (Redis ZSET ``arq:queue``, read via ZCARD in
+# refresh_custom_metrics). A growing depth means the worker is not keeping up
+# (slow/dead jobs, or the worker is down while jobs keep being enqueued) — basis
+# for PortalArqQueueBacklog. Distinct from arq_jobs_total (cumulative processed).
+arq_queue_depth = Gauge(
+    "portal_arq_queue_depth",
+    "Number of jobs pending in the ARQ queue (Redis ZSET arq:queue).",
+)

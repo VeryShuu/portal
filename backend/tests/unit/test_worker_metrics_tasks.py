@@ -73,7 +73,9 @@ class TestRefreshCustomMetrics:
     async def test_returns_snapshot_with_audit_and_sse(self):
         mock_redis = AsyncMock()
         mock_redis.llen = AsyncMock(return_value=5)
-        mock_redis.zcard = AsyncMock(return_value=3)
+        # zcard зовётся дважды: arq:queue (блок #1c, читается РАНЬШЕ) затем
+        # sse:global (блок #2). side_effect даёт разные значения — детерминированно.
+        mock_redis.zcard = AsyncMock(side_effect=[12, 3])  # arq_queue=12, sse=3
         mock_redis.hgetall = AsyncMock(return_value={})
         mock_redis.get = AsyncMock(return_value=b"1700000000")
         mock_redis.set = AsyncMock()
@@ -86,6 +88,7 @@ class TestRefreshCustomMetrics:
         assert result["audit_queue_depth"] == 5
         assert result["audit_processing_depth"] == 5
         assert result["sse_connections"] == 3
+        assert result["arq_queue_depth"] == 12
         assert result["worker_heartbeat_ts"] == 1_700_000_000
         assert "generated_at" in result
 
@@ -391,6 +394,35 @@ class TestTrackArqJob:
             metrics_task.ARQ_JOBS_KEY, "bad_task:started", 1
         )
         pipe.hincrby.assert_any_call(metrics_task.ARQ_JOBS_KEY, "bad_task:failed", 1)
+
+    @pytest.mark.asyncio
+    async def test_timeout_records_timeout_status_and_reraises(self):
+        """TimeoutError (ARQ wait_for expired) → status="timeout", не "failed".
+
+        Отличает «медленная задача» (raise timeout) от «битая задача» (failed).
+        Гидратация в middleware универсальна (rsplit ":" → status="timeout"
+        подхватывается автоматически), поэтому отдельной гидратации не нужно.
+        На Python 3.11+ asyncio.TimeoutError — алиас builtin TimeoutError.
+        """
+        mock_redis = AsyncMock()
+        pipe = AsyncMock()
+        pipe.hincrby = MagicMock(return_value=pipe)
+        pipe.execute = AsyncMock()
+        mock_redis.pipeline = MagicMock(return_value=pipe)
+
+        @metrics_task.track_arq_job
+        async def slow_task(ctx):
+            raise TimeoutError()
+
+        with pytest.raises(TimeoutError):
+            await slow_task({"redis": mock_redis})
+
+        # Терминальный счётчик — именно :timeout, а не :failed.
+        pipe.hincrby.assert_any_call(metrics_task.ARQ_JOBS_KEY, "slow_task:timeout", 1)
+        # :failed НЕ должен был записаться.
+        failed_calls = [c for c in pipe.hincrby.call_args_list
+                        if c.args == (metrics_task.ARQ_JOBS_KEY, "slow_task:failed", 1)]
+        assert not failed_calls
 
     @pytest.mark.asyncio
     async def test_no_redis_does_not_break(self):

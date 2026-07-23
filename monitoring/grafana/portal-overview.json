@@ -2019,6 +2019,76 @@
           "refId": "A"
         }
       ]
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Топ-5 endpoint'ов по доле 5xx-ответов. Детализирует плитку «Error rate (5xx)» — показывает, КАКОЙ именно хендлер генерит ошибки при срабатывании PortalHighErrorRate. Пусто = ошибок нет (норма).",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.01
+              },
+              {
+                "color": "red",
+                "value": 0.05
+              }
+            ]
+          },
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 18,
+        "y": 1
+      },
+      "id": 15,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "name"
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "topk(5,\n  sum(rate(http_requests_total{job=\"portal\", status=~\"5..\"}[5m])) by (handler)\n  / clamp_min(sum(rate(http_requests_total{job=\"portal\"}[5m])) by (handler), 1)\n)",
+          "legendFormat": "__auto",
+          "refId": "A"
+        }
+      ],
+      "title": "Топ-5 хендлеров по error-rate (5xx)",
+      "type": "stat"
     }
   ],
   "refresh": "30s",

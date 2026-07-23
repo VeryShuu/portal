@@ -85,6 +85,7 @@ class TestHydrateCustomMetrics:
             "active_users_1h": 55.0,
             "photo_storage_bytes": 1_000_000.0,
             "worker_heartbeat_ts": 1_700_000_000.0,
+            "arq_queue_depth": 12.0,
             "kb_articles_total": {"published": 10.0, "draft": 2.0},
             "news_published_total": {"published": 20.0},
             "users_total": {"local": 5.0, "keycloak": 50.0},
@@ -114,6 +115,7 @@ class TestHydrateCustomMetrics:
         fake_metrics.active_users_1h = _FakeGauge("active_users_1h")
         fake_metrics.photo_storage_bytes = _FakeGauge("photo_storage_bytes")
         fake_metrics.worker_last_heartbeat = _FakeGauge("worker_last_heartbeat")
+        fake_metrics.arq_queue_depth = _FakeGauge("arq_queue_depth")
         fake_metrics.kb_articles_total = _FakeGauge("kb_articles_total")
         fake_metrics.news_published_total = _FakeGauge("news_published_total")
         fake_metrics.users_total = _FakeGauge("users_total")
@@ -129,6 +131,7 @@ class TestHydrateCustomMetrics:
         assert ("set", 7.0) in gauge_calls["sse_connections"]
         assert ("set", 55.0) in gauge_calls["active_users_1h"]
         assert ("set", 1_000_000.0) in gauge_calls["photo_storage_bytes"]
+        assert ("set", 12.0) in gauge_calls["arq_queue_depth"]
         assert ("set", 1_700_000_000.0) in gauge_calls["worker_last_heartbeat"]
 
     async def test_partial_snapshot_no_error(self):
@@ -148,6 +151,7 @@ class TestHydrateCustomMetrics:
         fake_metrics.news_published_total = MagicMock()
         fake_metrics.users_total = MagicMock()
         fake_metrics.worker_last_heartbeat = MagicMock()
+        fake_metrics.arq_queue_depth = MagicMock()
         # DB pool gauges — вызываются до Redis-read, нужны явно (иначе auto-MagicMock
         # тихо съест вызовы и тест не проверит ничего).
         fake_metrics.db_pool_size = MagicMock()
@@ -217,6 +221,7 @@ class TestArqJobsHydration:
             "news_published_total",
             "users_total",
             "worker_last_heartbeat",
+            "arq_queue_depth",
             "db_pool_size",
             "db_pool_limit",
         ):
@@ -314,6 +319,7 @@ class TestOutboxHydration:
             "news_published_total",
             "users_total",
             "worker_last_heartbeat",
+            "arq_queue_depth",
             "db_pool_size",
             "db_pool_limit",
             "arq_jobs_total",

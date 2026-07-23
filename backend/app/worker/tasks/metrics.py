@@ -37,6 +37,11 @@ WORKER_HEARTBEAT_MTIME_KEY = "arq:heartbeat:mtime"
 WORKER_HEARTBEAT_TTL = 90  # seconds — if not refreshed in 90 s, worker is considered dead
 PHOTOS_ORIGINALS_DIR = Path("/data/photos/originals")
 
+# ARQ stores its pending-queue as a Redis ZSET under this key (arq's
+# ``default_queue_name``; WorkerSettings does not override queue_name). Read via
+# ZCARD in refresh_custom_metrics → portal_arq_queue_depth gauge.
+ARQ_QUEUE_KEY = "arq:queue"
+
 # Redis hashes for ARQ job accounting (cross-process: worker writes, API reads).
 #   ARQ_JOBS_KEY     — {field "{function}:{status}": cumulative count}
 #   ARQ_JOB_TIME_KEY — {field "{function}": [count, sum_ms]} — for histogram.
@@ -55,9 +60,16 @@ def track_arq_job(
     ``portal_arq_jobs_total`` / ``portal_arq_job_duration_seconds`` on each
     scrape (see ``middleware/metrics.py``).
 
-    Records per job: one ``started`` count, one terminal count (``succeeded``
-    or ``failed``), and duration in milliseconds. Exceptions are re-raised
-    so ARQ's own retry/failure handling is unaffected.
+    Records per job: one ``started`` count, one terminal count (``succeeded``,
+    ``timeout`` or ``failed``), and duration in milliseconds. Exceptions are
+    re-raised so ARQ's own retry/failure handling is unaffected.
+
+    ``timeout`` vs ``failed``: ARQ runs the coroutine inside
+    ``asyncio.wait_for(task, timeout_s)``. On timeout it cancels the task and
+    raises ``asyncio.TimeoutError`` (alias of the builtin ``TimeoutError`` on
+    3.11+). We catch it BEFORE ``Exception`` so timeouts get their own status
+    counter — distinct from genuine job failures. This distinguishes "slow job"
+    (raise DB_POOL_SIZE / fix the query) from "broken job" (fix the code).
     """
 
     @functools.wraps(func)
@@ -73,6 +85,13 @@ def track_arq_job(
         status = "succeeded"
         try:
             return await func(ctx, *args, **kwargs)
+        except TimeoutError:
+            # ARQ runs the coroutine inside asyncio.wait_for(task, timeout_s);
+            # on expiry it cancels the task and raises TimeoutError (asyncio.
+            # TimeoutError is an alias of the builtin on 3.11+). We catch it
+            # before Exception so timeouts get their own "timeout" status.
+            status = "timeout"
+            raise
         except Exception:
             status = "failed"
             raise
@@ -133,6 +152,14 @@ async def refresh_custom_metrics(ctx: dict) -> dict:
             snapshot["worker_heartbeat_ts"] = int(mtime)
     except Exception as exc:
         logger.warning("metrics.worker_heartbeat_failed", error=str(exc))
+
+    # 1c. ARQ pending-queue depth. ARQ stores pending jobs in a ZSET (scored by
+    # enqueue time); ZCARD gives the count. Growing depth = worker not keeping
+    # up (slow/dead jobs) while enqueue continues. Basis for PortalArqQueueBacklog.
+    try:
+        snapshot["arq_queue_depth"] = int(await redis.zcard(ARQ_QUEUE_KEY))
+    except Exception as exc:
+        logger.warning("metrics.arq_queue_failed", error=str(exc))
 
     # 2. SSE connections — read from the global tracking key (single ZCARD)
     try:

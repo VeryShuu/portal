@@ -218,10 +218,28 @@ groups:
           summary: "ARQ-воркер: кастомные гейджи застывают"
           description: "Гейдж portal_audit_queue_depth не менялся 3 мин при ненулевой очереди — cron refresh_custom_metrics/flush_audit_queue не выполняется, хотя heartbeat жив. Event-loop возможно блокирован долгой задачей. Проверить логи worker."
 
+      # ARQ pending-queue растёт — воркер не успевает обрабатывать (медленные/
+      # мёртвые задачи), пока новые продолжают enqueue'иться. Норма на портале
+      # — 0; редкие пики (batch фото-загрузки) быстро разбираются. > 50 устойчиво
+      # 5 мин — системная проблема: либо воркер мёртв (но тогда сработает и
+      # PortalWorkerDown), либо задачи зависают (видно по timeout-статусу).
+      - alert: PortalArqQueueBacklog
+        expr: portal_arq_queue_depth > 50
+        for: 5m
+        labels:
+          severity: warning
+          service: portal-worker
+        annotations:
+          summary: "ARQ-очередь растёт ({{ $value }} задач pending)"
+          description: "Pending-задач в arq:queue > 50 уже 5 мин. Воркер не успевает (медленные/мёртвые задачи) или завис. Проверить `docker compose ps worker`, долю timeout'ов (portal_arq_jobs_total{status=\"timeout\"}) и логи worker."
+
       # ARQ job failures — задачи падают и не проходят даже после retry.
       # >0.1/s (≈6/min) failures за 10-мин окно на 5 мин — системная проблема.
       # Метрика portal_arq_jobs_total{status="failed"} гидрируется из Redis
       # (worker → snapshot → API /metrics), см. backend/app/worker/tasks/metrics.py.
+      # Отдельный статус status="timeout" (asyncio.TimeoutError, func timeout) —
+      # отличает «медленная задача» от «битая задача»; если timeout доминирует,
+      # копать в сторону DB_POOL_SIZE / долгих запросов, а не багов кода.
       - alert: PortalArqJobFailures
         expr: sum(rate(portal_arq_jobs_total{status="failed"}[10m])) by (function) > 0.1
         for: 5m
@@ -437,6 +455,22 @@ groups:
         annotations:
           summary: "Мало места на диске: {{ $labels.mountpoint }} (занято {{ $value | humanizePercentage }})"
           description: "Файловая система {{ $labels.mountpoint }} ({{ $labels.device }}) заполнена > 85%. Критично — disk full ломает запись фото/БД/логов. Проверить `docker system df`, старые образы, /data/photos, логи."
+
+      # Loki-volume (named Docker volume portal_loki-data) растёт точечно.
+      # PortalDiskSpaceLow ловит только общую ФС; Loki может забить свой volume,
+      # не дотянув до 85% всего диска. Метрика — от storage-collector sidecar
+      # (portal_storage_docker_volume_bytes). 10 ГБ — щедрый порог для 30d
+      # retention интранет-портала; рост выше = или retention длиннее, чем нужно,
+      # или шумные лейбли/сервисы заливают логи.
+      - alert: PortalLokiStorageHigh
+        expr: portal_storage_docker_volume_bytes{volume="portal_loki-data"} > 10 * 1024 * 1024 * 1024
+        for: 30m
+        labels:
+          severity: warning
+          service: portal-monitoring
+        annotations:
+          summary: "Loki: объём логов большой ({{ $value | humanize1024 }})"
+          description: "Named volume portal_loki-data превысил 10 ГБ. Проверить retention (loki/config.yml retention_period=720h=30d) и шумные лейблы в Alloy. При исчерпании — снизить retention или отфильтровать шумные контейнеры в config.alloy."
 
       # Нагрузка на CPU > 80% на 5 мин — деградация latency для всех сервисов.
       - alert: PortalCPUHigh
