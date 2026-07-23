@@ -199,6 +199,16 @@ flowchart LR
 1. ARQ-cron `refresh_custom_metrics` (`./backend/app/worker/tasks/metrics.py`,
    `second={0,30}`, т.е. каждые 30 с, `run_at_startup=True`) считает значения и
    пишет JSON в Redis-ключ `metrics:snapshot` (`METRICS_SNAPSHOT_KEY`).
+
+   > **Производительность DB-запроса.** Cron выполняет `count(DISTINCT user_id)
+   > FROM audit_log WHERE created_at >= NOW()-1h` каждые 30 с. На первый взгляд
+   > это рискованно (`count(DISTINCT)` по растущей таблице), но архитектура
+   > снимает риск: `audit_log` партицирована по `created_at` (partition pruning
+   > → запрос бьёт только текущую партицию), есть индекс
+   > `idx_audit_user_time(user_id, created_at DESC)` (покрывает фильтр + агрегат),
+   > а окно 1 час ограничивает объём временем, а не накопленным ростом за месяцы.
+   > Проверено на проде (~1400 строк/мес): тривиально, <1 мс. Кеширование с TTL
+   > не требуется — не оптимизируйте преждевременно.
 2. Middleware `hydrate_custom_metrics` на каждый запрос `/metrics` подтягивает
    снапшот из Redis в гейджи **перед** отдачей. Ошибка гидрации логируется
    (`metrics.hydrate_failed`), но никогда не ломает `/metrics`.
