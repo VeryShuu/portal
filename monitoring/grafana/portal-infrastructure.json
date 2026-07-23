@@ -51,7 +51,7 @@
       "id": 2,
       "title": "Использование пула соединений",
       "type": "stat",
-      "description": "Активные соединения / max_connections. > 80% — насыщение, растёт latency.",
+      "description": "Активные подключения к PostgreSQL / max_connections. Норма: < 50%. > 80% — пул насыщен, новые запросы ждут соединение → растёт latency. Проверить connection leak в backend, long-running queries.",
       "gridPos": {
         "h": 6,
         "w": 8,
@@ -119,7 +119,7 @@
       "id": 2,
       "title": "Cache hit ratio",
       "type": "stat",
-      "description": "Доля чтений из кэша (shared_buffers). < 90% — нехватка памяти/индексов.",
+      "description": "Доля чтений, обслуженных из кэша (shared_buffers). Норма: > 95%. < 90% — нехватка памяти (shared_buffers) или отсутствующие индексы → частое чтение с диска.",
       "gridPos": {
         "h": 6,
         "w": 8,
@@ -187,7 +187,7 @@
       "id": 2,
       "title": "XID возраст (топ БД)",
       "type": "stat",
-      "description": "Макс. XID возраст по БД. При ~2e9 — read-only защита (wraparound).",
+      "description": "Максимальный возраст XID по базам. Норма: < 200 млн. > 1.5 млрд — autovacuum не справляется, при ~2 млрд БД перейдёт в read-only (защита от wraparound). Запустить VACUUM FREEZE вручную.",
       "gridPos": {
         "h": 6,
         "w": 8,
@@ -255,7 +255,7 @@
       "id": 3,
       "title": "Размер БД",
       "type": "timeseries",
-      "description": "Размер каждой БД в байтах.",
+      "description": "Размер каждой базы данных (байты). Растёт монотонно. Резкий скачок — массовая вставка или раздутие (vacuum не справляется). > 10 ГБ на portal-БД — проверить pg_repack.",
       "gridPos": {
         "h": 8,
         "w": 24,
@@ -265,7 +265,7 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "palette-classic"
+            "mode": "thresholds"
           },
           "custom": {
             "drawStyle": "line",
@@ -279,12 +279,25 @@
               "mode": "none"
             },
             "thresholdsStyle": {
-              "mode": "off"
+              "mode": "line"
             }
           },
           "thresholds": {
             "mode": "absolute",
-            "steps": []
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 5000000000.0
+              },
+              {
+                "color": "red",
+                "value": 10000000000.0
+              }
+            ]
           },
           "unit": "bytes"
         },
@@ -326,7 +339,7 @@
       "id": 4,
       "title": "Долгие транзакции (max duration, сек)",
       "type": "timeseries",
-      "description": "Самая долгая активная транзакция по БД. Долгие транзакции блокируют vacuum.",
+      "description": "Самая долгая активная транзакция по БД (секунды). Норма: < 60с. > 300с — транзакция висит, блокирует vacuum → раздувание таблиц. Найти и убить.",
       "gridPos": {
         "h": 8,
         "w": 24,
@@ -336,7 +349,7 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "palette-classic"
+            "mode": "thresholds"
           },
           "custom": {
             "drawStyle": "line",
@@ -350,12 +363,25 @@
               "mode": "none"
             },
             "thresholdsStyle": {
-              "mode": "off"
+              "mode": "line"
             }
           },
           "thresholds": {
             "mode": "absolute",
-            "steps": []
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 60
+              },
+              {
+                "color": "red",
+                "value": 300
+              }
+            ]
           },
           "unit": "s"
         },
@@ -397,7 +423,7 @@
       "id": 5,
       "title": "Дедлоки (rate)",
       "type": "timeseries",
-      "description": "Скорость дедлоков. Любой дедлок > 0 — баг в коде (конкурирующие транзакции).",
+      "description": "Скорость взаимных блокировок. Норма: 0. ЛЮБОЙ дедлок > 0 — баг в коде (конкурирующие транзакции берут блокировки в разном порядке).",
       "gridPos": {
         "h": 8,
         "w": 24,
@@ -407,7 +433,7 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "palette-classic"
+            "mode": "thresholds"
           },
           "custom": {
             "drawStyle": "line",
@@ -421,12 +447,25 @@
               "mode": "none"
             },
             "thresholdsStyle": {
-              "mode": "off"
+              "mode": "line"
             }
           },
           "thresholds": {
             "mode": "absolute",
-            "steps": []
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0
+              },
+              {
+                "color": "red",
+                "value": 0.01
+              }
+            ]
           },
           "unit": "ops"
         },
@@ -482,7 +521,7 @@
       "id": 7,
       "title": "Использование памяти",
       "type": "stat",
-      "description": "memory_used / maxmemory. > 90% — близко к eviction-режиму.",
+      "description": "Использовано / maxmemory. Норма: < 70%. > 90% — близко к eviction-режиму. Redis критичен (сессии, SSE, audit, rate-limit) — eviction теряет данные.",
       "gridPos": {
         "h": 6,
         "w": 8,
@@ -550,7 +589,7 @@
       "id": 7,
       "title": "Connected clients",
       "type": "stat",
-      "description": "Активные подключения к Redis. Резкий рост — утечка соединений в backend.",
+      "description": "Активные подключения к Redis. Норма: десятки. Резкий рост — утечка соединений в backend (не закрываются клиенты). Каждое соединение = память.",
       "gridPos": {
         "h": 6,
         "w": 8,
@@ -610,7 +649,7 @@
       "id": 7,
       "title": "Keyspace hit rate",
       "type": "stat",
-      "description": "Доля удачных чтений. < 90% — TTL-ключи истекают быстрее переиспользования.",
+      "description": "Доля удачных чтений ключей. Норма: > 95%. < 90% — TTL-ключи истекают быстрее переиспользования, или данные не помещаются в память.",
       "gridPos": {
         "h": 6,
         "w": 8,
@@ -678,7 +717,7 @@
       "id": 8,
       "title": "Evicted keys (rate)",
       "type": "timeseries",
-      "description": "Ключи удаляемые по политике maxmemory. Должно быть 0 — evictions теряют сессии/audit.",
+      "description": "Ключи, удаляемые Redis по политике maxmemory. Норма: 0. Любое значение > 0 — Redis не хватает памяти, теряются сессии/audit. Увеличить REDIS_MAXMEMORY.",
       "gridPos": {
         "h": 8,
         "w": 24,
@@ -688,7 +727,7 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "palette-classic"
+            "mode": "thresholds"
           },
           "custom": {
             "drawStyle": "line",
@@ -702,12 +741,25 @@
               "mode": "none"
             },
             "thresholdsStyle": {
-              "mode": "off"
+              "mode": "line"
             }
           },
           "thresholds": {
             "mode": "absolute",
-            "steps": []
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0
+              },
+              {
+                "color": "red",
+                "value": 0.17
+              }
+            ]
           },
           "unit": "ops"
         },
@@ -763,7 +815,7 @@
       "id": 10,
       "title": "Заполнение диска (топ mountpoint)",
       "type": "stat",
-      "description": "Самый заполненный mountpoint. /data — фото, критично для disk-full.",
+      "description": "Самый заполненный раздел диска (%). /data — критично: фото, БД, логи. > 85% — опасно (disk full ломает запись). > 90% — срочно чистить (старые образы, логи, фото).",
       "gridPos": {
         "h": 6,
         "w": 8,
@@ -831,7 +883,7 @@
       "id": 10,
       "title": "Свободная RAM",
       "type": "stat",
-      "description": "Доступная RAM. < 10% — риск OOM-kill контейнеров.",
+      "description": "Доступная оперативная память (% от всей). Норма: > 30%. < 10% — риск OOM-kill контейнеров (ядро убивает процессы при нехватке памяти). Проверить memory-limits сервисов.",
       "gridPos": {
         "h": 6,
         "w": 8,
@@ -899,7 +951,7 @@
       "id": 10,
       "title": "Load (1m)",
       "type": "stat",
-      "description": "Load average за 1 мин. Сравнить с числом ядер (`nproc`).",
+      "description": "Load average за 1 минуту. Сравните с числом ядер (nproc): load ≤ ядер — нормально, load > 2× ядер — перегрузка, растёт latency.",
       "gridPos": {
         "h": 6,
         "w": 8,
@@ -959,7 +1011,7 @@
       "id": 11,
       "title": "Заполнение ФС по mountpoints",
       "type": "timeseries",
-      "description": "Заполнение всех точек монтирования. /data — критичен (фото, volumes).",
+      "description": "Заполнение всех точек монтирования (%). /data — критично (фото, БД). > 85% — disk full ломает запись. > 90% — срочно чистить.",
       "gridPos": {
         "h": 8,
         "w": 24,
@@ -969,7 +1021,7 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "palette-classic"
+            "mode": "thresholds"
           },
           "custom": {
             "drawStyle": "line",
@@ -983,12 +1035,25 @@
               "mode": "none"
             },
             "thresholdsStyle": {
-              "mode": "off"
+              "mode": "area"
             }
           },
           "thresholds": {
             "mode": "absolute",
-            "steps": []
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.7
+              },
+              {
+                "color": "red",
+                "value": 0.85
+              }
+            ]
           },
           "unit": "percentunit"
         },
@@ -1030,7 +1095,7 @@
       "id": 12,
       "title": "CPU utilization",
       "type": "timeseries",
-      "description": "Утилизация CPU по ядрам. > 80% — деградация latency.",
+      "description": "Утилизация CPU (%). Норма: < 50% в рабочее время. > 80% — деградация latency. Постоянные 100% — нехватка ядер.",
       "gridPos": {
         "h": 8,
         "w": 24,
@@ -1040,7 +1105,7 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "palette-classic"
+            "mode": "thresholds"
           },
           "custom": {
             "drawStyle": "line",
@@ -1054,12 +1119,25 @@
               "mode": "none"
             },
             "thresholdsStyle": {
-              "mode": "off"
+              "mode": "area"
             }
           },
           "thresholds": {
             "mode": "absolute",
-            "steps": []
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.7
+              },
+              {
+                "color": "red",
+                "value": 0.85
+              }
+            ]
           },
           "unit": "percentunit"
         },
@@ -1101,7 +1179,7 @@
       "id": 13,
       "title": "Disk I/O time (utilization)",
       "type": "timeseries",
-      "description": "Доля времени диска в I/O. Близко к 1.0 — диск перегружен.",
+      "description": "Доля времени диска в I/O (0–1). Близко к 1.0 — диск перегружен, всё тормозит. Проверить тяжёлые запросы БД, активность worker'а.",
       "gridPos": {
         "h": 8,
         "w": 24,
@@ -1111,7 +1189,7 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "palette-classic"
+            "mode": "thresholds"
           },
           "custom": {
             "drawStyle": "line",
@@ -1125,12 +1203,25 @@
               "mode": "none"
             },
             "thresholdsStyle": {
-              "mode": "off"
+              "mode": "area"
             }
           },
           "thresholds": {
             "mode": "absolute",
-            "steps": []
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.7
+              },
+              {
+                "color": "red",
+                "value": 0.9
+              }
+            ]
           },
           "unit": "percentunit"
         },
@@ -1186,7 +1277,7 @@
       "id": 15,
       "title": "Active connections",
       "type": "stat",
-      "description": "Активные соединения nginx. ~300 юзеров — десятки-сотни с keepalive.",
+      "description": "Активные соединения nginx. Норма для ~300 юзеров: десятки-сотни (с учётом keepalive). > 1000 — утечка соединений или аномальный трафик (проверить логи доступа).",
       "gridPos": {
         "h": 6,
         "w": 12,
@@ -1254,7 +1345,7 @@
       "id": 15,
       "title": "Requests rate",
       "type": "stat",
-      "description": "Скорость обработки запросов nginx.",
+      "description": "Скорость обработки запросов nginx (req/s). Коррелирует с активностью пользователей. Резкий скачок — массовое событие или скрейпинг/атака.",
       "gridPos": {
         "h": 6,
         "w": 12,
@@ -1314,7 +1405,7 @@
       "id": 16,
       "title": "Состояния соединений",
       "type": "timeseries",
-      "description": "keepalive-waiting соединения. Растёт без bound — утечка keepalive.",
+      "description": "Nginx-соединения в состоянии waiting (keepalive). Норма: десятки. Аномальный рост без связи с числом юзеров — утечка keepalive.",
       "gridPos": {
         "h": 6,
         "w": 24,
@@ -1324,7 +1415,7 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "palette-classic"
+            "mode": "thresholds"
           },
           "custom": {
             "drawStyle": "line",
@@ -1338,12 +1429,25 @@
               "mode": "none"
             },
             "thresholdsStyle": {
-              "mode": "off"
+              "mode": "line"
             }
           },
           "thresholds": {
             "mode": "absolute",
-            "steps": []
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 500
+              },
+              {
+                "color": "red",
+                "value": 1000
+              }
+            ]
           },
           "unit": "none"
         },
@@ -1395,6 +1499,6 @@
   "timezone": "browser",
   "title": "Portal — Infrastructure",
   "uid": "portal-infra",
-  "version": 2,
+  "version": 3,
   "weekStart": ""
 }

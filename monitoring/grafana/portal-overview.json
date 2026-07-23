@@ -129,7 +129,8 @@
         }
       ],
       "title": "Request rate по endpoints",
-      "type": "timeseries"
+      "type": "timeseries",
+      "description": "Частота входящих HTTP-запросов по endpoint'ам (req/s). Резкие всплески — аномалия трафика. Падение в ноль в рабочее время — признак недоступности портала."
     },
     {
       "datasource": {
@@ -197,7 +198,8 @@
         }
       ],
       "title": "Error rate (5xx)",
-      "type": "stat"
+      "type": "stat",
+      "description": "Доля 5xx-ответов (ошибки сервера) от всех запросов. Норма: < 1%. > 5% при rate > 3/мин — системная проблема, смотреть логи backend."
     },
     {
       "datasource": {
@@ -218,8 +220,12 @@
                 "value": null
               },
               {
-                "color": "red",
+                "color": "yellow",
                 "value": 1
+              },
+              {
+                "color": "red",
+                "value": 5
               }
             ]
           },
@@ -260,7 +266,8 @@
         }
       ],
       "title": "p99 latency",
-      "type": "stat"
+      "type": "stat",
+      "description": "Латентность p99 — 99% запросов укладываются в это время. Норма: < 1с. > 5с — медленный SQL/блокировки/нехватка пула соединений."
     },
     {
       "datasource": {
@@ -270,7 +277,7 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "palette-classic"
+            "mode": "thresholds"
           },
           "custom": {
             "axisCenteredZero": false,
@@ -300,13 +307,26 @@
               "mode": "none"
             },
             "thresholdsStyle": {
-              "mode": "off"
+              "mode": "line"
             }
           },
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
-            "steps": []
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 5
+              }
+            ]
           },
           "unit": "s"
         },
@@ -357,7 +377,8 @@
         }
       ],
       "title": "Latency p50/p99 по endpoints",
-      "type": "timeseries"
+      "type": "timeseries",
+      "description": "Латентность по endpoint'ам: p50 (медиана) и p99. p50 — типичный отклик, p99 — худший из 1%. Растёт — bottleneck на конкретном endpoint (медленный SQL, блокировки БД)."
     },
     {
       "collapsed": false,
@@ -380,7 +401,7 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "palette-classic"
+            "mode": "thresholds"
           },
           "custom": {
             "axisCenteredZero": false,
@@ -410,7 +431,7 @@
               "mode": "none"
             },
             "thresholdsStyle": {
-              "mode": "line"
+              "mode": "area"
             }
           },
           "mappings": [],
@@ -420,6 +441,10 @@
               {
                 "color": "green",
                 "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 100
               },
               {
                 "color": "red",
@@ -476,7 +501,8 @@
         }
       ],
       "title": "Глубина очереди аудита (Redis)",
-      "type": "timeseries"
+      "type": "timeseries",
+      "description": "События аудита, ожидающие записи в БД (буфер Redis→PostgreSQL). Норма: 0–50. > 1000 — ARQ-воркер не успевает flush'ить (упал worker или БД)."
     },
     {
       "datasource": {
@@ -563,7 +589,8 @@
         }
       ],
       "title": "Audit push rate по типам событий",
-      "type": "timeseries"
+      "type": "timeseries",
+      "description": "Скорость поступления событий аудита по типам (login, page_view, и т.д.). Резкое падение в ноль в рабочее время — портал не используется или сломался push."
     },
     {
       "collapsed": false,
@@ -655,7 +682,8 @@
         }
       ],
       "title": "Backend scrape",
-      "type": "stat"
+      "type": "stat",
+      "description": "Статус scrape backend'а Prometheus: 1 = жив (метрики собираются), 0 = недоступен. 0 = backend упал или /metrics не отвечает."
     },
     {
       "datasource": {
@@ -665,7 +693,7 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "thresholds"
+            "mode": "palette-classic"
           },
           "mappings": [],
           "thresholds": {
@@ -718,7 +746,8 @@
         }
       ],
       "title": "Активные юзеры (1ч)",
-      "type": "stat"
+      "type": "stat",
+      "description": "Уникальные пользователи, проявившие активность за последний час (по событиям аудита). Индикатор живого использования портала. Резкое падение — проблема доступа."
     },
     {
       "datasource": {
@@ -740,11 +769,11 @@
               },
               {
                 "color": "yellow",
-                "value": 500
+                "value": 300
               },
               {
                 "color": "red",
-                "value": 1000
+                "value": 500
               }
             ]
           },
@@ -785,7 +814,8 @@
         }
       ],
       "title": "SSE connections",
-      "type": "stat"
+      "type": "stat",
+      "description": "Открытые SSE-стримы уведомлений. Норма для ~300 юзеров — десятки. > 500 — утечка (незакрытые вкладки/EventSource, вкладки-зомби)."
     },
     {
       "datasource": {
@@ -806,8 +836,12 @@
                 "value": null
               },
               {
+                "color": "yellow",
+                "value": 0
+              },
+              {
                 "color": "red",
-                "value": 0.1
+                "value": 0.01
               }
             ]
           },
@@ -850,7 +884,7 @@
       ],
       "title": "ARQ job failures rate",
       "type": "stat",
-      "description": "Частота падений ARQ-задач по функциям. Метрика гидрируется из Redis (worker → snapshot → API /metrics)."
+      "description": "Частота падений фоновых задач (фото/email/outbox) по функциям. Норма: 0. Любое значение > 0 — задача падает, смотреть логи worker (упал SMTP/Nextcloud/БД)."
     },
     {
       "datasource": {
@@ -938,7 +972,7 @@
       ],
       "title": "ARQ jobs enqueued rate",
       "type": "timeseries",
-      "description": "Частота запуска ARQ-задач по функциям (status=started). Счётчик гидрируется из Redis."
+      "description": "Частота запуска фоновых задач. Показывает активность фоновых процессов портала. Резкий рост — массовые операции (импорт фото, рассылка новостей)."
     },
     {
       "collapsed": false,
@@ -1037,7 +1071,8 @@
         }
       ],
       "title": "KB articles по статусам",
-      "type": "timeseries"
+      "type": "timeseries",
+      "description": "Статьи базы знаний по статусам (published/draft). Индикатор наполнения базы знаний."
     },
     {
       "datasource": {
@@ -1123,7 +1158,8 @@
         }
       ],
       "title": "News по статусам",
-      "type": "timeseries"
+      "type": "timeseries",
+      "description": "Новости по статусам (published/draft). Индикатор контентной активности."
     },
     {
       "datasource": {
@@ -1133,7 +1169,7 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "palette-classic"
+            "mode": "thresholds"
           },
           "custom": {
             "axisCenteredZero": false,
@@ -1163,13 +1199,26 @@
               "mode": "none"
             },
             "thresholdsStyle": {
-              "mode": "off"
+              "mode": "line"
             }
           },
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
-            "steps": []
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 50000000000.0
+              },
+              {
+                "color": "red",
+                "value": 100000000000.0
+              }
+            ]
           },
           "unit": "bytes"
         },
@@ -1209,7 +1258,8 @@
         }
       ],
       "title": "Фото-хранилище (байты)",
-      "type": "timeseries"
+      "type": "timeseries",
+      "description": "Объём /data/photos/originals. Растёт монотонно — нужно планировать ёмкость диска. > 100 ГБ — рассмотреть retention/чистку."
     },
     {
       "datasource": {
@@ -1219,7 +1269,7 @@
       "id": 104,
       "title": "ARQ job duration p95",
       "type": "timeseries",
-      "description": "p95 длительность ARQ-задач по функциям (секунды). Гистограмма гидрируется из Redis snapshot.",
+      "description": "p95 длительность фоновых задач по функциям (секунды). Норма: секунды-десятки секунд. Рост — задачи стали медленными (большой объём данных, медленный upstream).",
       "gridPos": {
         "h": 8,
         "w": 24,
@@ -1229,7 +1279,7 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "palette-classic"
+            "mode": "thresholds"
           },
           "custom": {
             "axisLabel": "seconds",
@@ -1244,12 +1294,25 @@
               "mode": "none"
             },
             "thresholdsStyle": {
-              "mode": "off"
+              "mode": "line"
             }
           },
           "thresholds": {
             "mode": "absolute",
-            "steps": []
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 30
+              },
+              {
+                "color": "red",
+                "value": 120
+              }
+            ]
           },
           "unit": "s"
         },
@@ -1301,6 +1364,6 @@
   "timezone": "browser",
   "title": "Portal — Overview",
   "uid": "portal-overview",
-  "version": 2,
+  "version": 3,
   "weekStart": ""
 }
