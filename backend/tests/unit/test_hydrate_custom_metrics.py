@@ -223,3 +223,82 @@ class TestArqJobsHydration:
         # Не должно падать на поле без двоеточия
         counter_calls, _ = await self._call(snap)
         assert ("inc", 2.0) in counter_calls
+
+
+class TestOutboxHydration:
+    """Гидратация outbox-гauges из snapshot."""
+
+    async def _call(self, snap):
+        from app.middleware.metrics import hydrate_custom_metrics as _hydrate
+
+        redis = AsyncMock()
+        redis.get = AsyncMock(return_value=json.dumps(snap))
+        req = _make_request("/metrics", redis=redis)
+
+        gauge_calls: list[tuple] = []
+
+        class _FakeGauge:
+            def set(self, val):
+                gauge_calls.append(("set", val))
+
+        class _FakeIntegrationGauge:
+            def labels(self, integration):
+                gauge_calls.append(("labels", integration))
+                return self
+
+            def set(self, val):
+                gauge_calls.append(("integration", val))
+
+        fake_metrics = MagicMock()
+        # Outbox gauges (no labels)
+        for attr in (
+            "email_outbox_pending",
+            "email_outbox_dlq",
+            "email_outbox_sending_stale",
+            "messenger_outbox_pending",
+            "messenger_outbox_dlq",
+            "messenger_outbox_sending_stale",
+        ):
+            setattr(fake_metrics, attr, _FakeGauge())
+        fake_metrics.integration_up = _FakeIntegrationGauge()
+        # Other gauges used by middleware — safe MagicMock
+        for attr in (
+            "audit_queue_depth",
+            "audit_processing_depth",
+            "sse_connections",
+            "active_users_1h",
+            "photo_storage_bytes",
+            "kb_articles_total",
+            "news_published_total",
+            "users_total",
+            "arq_jobs_total",
+            "arq_job_duration",
+        ):
+            setattr(fake_metrics, attr, MagicMock())
+
+        with patch("app.middleware.metrics._metrics_mod", fake_metrics):
+            await _hydrate(req, _noop_next)
+        return gauge_calls
+
+    async def test_outbox_gauges_set(self):
+        snap = {
+            "email_outbox": {"pending": 4, "dlq": 1, "sending_stale": 0},
+            "messenger_outbox": {"pending": 2, "dlq": 0, "sending_stale": 0},
+        }
+        gauge_calls = await self._call(snap)
+        assert ("set", 4.0) in gauge_calls  # email pending
+        assert ("set", 1.0) in gauge_calls  # email dlq
+        assert ("set", 2.0) in gauge_calls  # messenger pending
+
+    async def test_outbox_absent_no_error(self):
+        # Snapshot без outbox-ключей — не должно падать
+        snap = {"audit_queue_depth": 5}
+        await self._call(snap)  # no exception
+
+    async def test_integration_up_set(self):
+        snap = {"integrations": {"keycloak": 1, "smtp": 0}}
+        gauge_calls = await self._call(snap)
+        assert ("labels", "keycloak") in gauge_calls
+        assert ("integration", 1.0) in gauge_calls
+        assert ("labels", "smtp") in gauge_calls
+        assert ("integration", 0.0) in gauge_calls

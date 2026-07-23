@@ -75,6 +75,11 @@ services:
     environment:
       SCREENSHOT_SERVICE_SECRET: ${SCREENSHOT_SERVICE_SECRET:-}
       SCREENSHOT_ALLOWED_ORIGINS: ${SCREENSHOT_ALLOWED_ORIGINS:-}
+      # Synthetic probe creds — local-auth login (для user-flow мониторинга).
+      # Пусто → probe skip-ается (см. /probe endpoint).
+      PROBE_ADMIN_EMAIL: ${PROBE_ADMIN_EMAIL:-}
+      PROBE_ADMIN_PASSWORD: ${PROBE_ADMIN_PASSWORD:-}
+      PROBE_FRONTEND_URL: ${PROBE_FRONTEND_URL:-http://frontend:80}
     deploy:
       resources:
         limits:

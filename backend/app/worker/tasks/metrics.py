@@ -157,6 +157,39 @@ async def refresh_custom_metrics(ctx: dict) -> dict:
                         "draft": int(row["news_draft"] or 0),
                     }
                     snapshot["active_users_1h"] = int(row["active_1h"] or 0)
+
+                # Outbox health — visibility into email/MAX delivery pipeline.
+                # Без этого копящиеся/DLQ-ящиеся письма невидимы до жалоб юзеров.
+                outbox = await conn.fetchrow(
+                    """
+                    SELECT
+                        (SELECT count(*) FROM email_outbox
+                          WHERE status = 'PENDING')                      AS e_pending,
+                        (SELECT count(*) FROM email_outbox
+                          WHERE status = 'DLQ')                           AS e_dlq,
+                        (SELECT count(*) FROM email_outbox
+                          WHERE status = 'SENDING'
+                            AND updated_at < NOW() - INTERVAL '10 min')  AS e_stale,
+                        (SELECT count(*) FROM messenger_outbox
+                          WHERE status = 'PENDING')                      AS m_pending,
+                        (SELECT count(*) FROM messenger_outbox
+                          WHERE status = 'DLQ')                           AS m_dlq,
+                        (SELECT count(*) FROM messenger_outbox
+                          WHERE status = 'SENDING'
+                            AND updated_at < NOW() - INTERVAL '10 min')  AS m_stale
+                    """
+                )
+                if outbox is not None:
+                    snapshot["email_outbox"] = {
+                        "pending": int(outbox["e_pending"] or 0),
+                        "dlq": int(outbox["e_dlq"] or 0),
+                        "sending_stale": int(outbox["e_stale"] or 0),
+                    }
+                    snapshot["messenger_outbox"] = {
+                        "pending": int(outbox["m_pending"] or 0),
+                        "dlq": int(outbox["m_dlq"] or 0),
+                        "sending_stale": int(outbox["m_stale"] or 0),
+                    }
         except Exception as exc:
             logger.warning("metrics.db_failed", error=str(exc))
 
@@ -184,6 +217,34 @@ async def refresh_custom_metrics(ctx: dict) -> dict:
         }
     except Exception as exc:
         logger.warning("metrics.arq_jobs_failed", error=str(exc))
+
+    # 6. Integration health — probe results written by probe_integrations cron.
+    # Hash maps integration name → "1"/"0"; absent integrations are unconfigured.
+    try:
+        from app.worker.tasks.integration_health import INTEGRATION_HEALTH_KEY
+
+        integ_raw = await redis.hgetall(INTEGRATION_HEALTH_KEY)
+        snapshot["integrations"] = {
+            k.decode() if isinstance(k, bytes) else k: int(v)
+            for k, v in integ_raw.items()
+        }
+    except Exception as exc:
+        logger.warning("metrics.integrations_failed", error=str(exc))
+
+    # 7. Synthetic probes — hash maps "{flow}:ok"/"{flow}:ms" written by
+    # run_synthetic_probe cron. Absent when probe creds are not configured.
+    try:
+        from app.worker.tasks.synthetic_probe import SYNTHETIC_PROBE_KEY
+
+        synth_raw = await redis.hgetall(SYNTHETIC_PROBE_KEY)
+        synth = {
+            k.decode() if isinstance(k, bytes) else k: int(v)
+            for k, v in synth_raw.items()
+        }
+        if synth:
+            snapshot["synthetic_probe"] = synth
+    except Exception as exc:
+        logger.warning("metrics.synthetic_failed", error=str(exc))
 
     # Persist the snapshot for the API process to consume
     try:

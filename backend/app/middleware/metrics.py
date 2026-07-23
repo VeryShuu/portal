@@ -88,6 +88,40 @@ async def hydrate_custom_metrics(
                             )
                         _arq_job_ms_last[f"{prefix}:count"] = cur_count
                         _arq_job_ms_last[f"{prefix}:sum"] = cur_sum
+
+                    # Outbox gauges — plain set() (no labels, cumulative counts).
+                    for kind in ("pending", "dlq", "sending_stale"):
+                        eo = (snap.get("email_outbox") or {})
+                        if kind in eo:
+                            getattr(
+                                _metrics_mod, f"email_outbox_{kind}"
+                            ).set(float(eo[kind]))
+                        mo = (snap.get("messenger_outbox") or {})
+                        if kind in mo:
+                            getattr(
+                                _metrics_mod, f"messenger_outbox_{kind}"
+                            ).set(float(mo[kind]))
+
+                    # Integration probes — 1/0 up/down per integration.
+                    for integration, value in (snap.get("integrations") or {}).items():
+                        _metrics_mod.integration_up.labels(integration=integration).set(
+                            float(value)
+                        )
+
+                    # Synthetic probes — "{flow}:ok"/"{flow}:ms" per flow.
+                    synth = snap.get("synthetic_probe") or {}
+                    flows = {
+                        f[:-3] for f in synth if f.endswith(":ok") or f.endswith(":ms")
+                    }
+                    for flow in flows:
+                        if f"{flow}:ok" in synth:
+                            _metrics_mod.synthetic_probe_up.labels(flow=flow).set(
+                                float(synth[f"{flow}:ok"])
+                            )
+                        if f"{flow}:ms" in synth:
+                            _metrics_mod.synthetic_probe_duration.labels(flow=flow).set(
+                                float(synth[f"{flow}:ms"]) / 1000.0
+                            )
         except Exception as exc:  # pragma: no cover - never break /metrics
             logger.warning(
                 "metrics.hydrate_failed",

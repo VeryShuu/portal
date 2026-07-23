@@ -133,9 +133,18 @@ class TestRefreshCustomMetrics:
             "news_draft": 2,
             "active_1h": 7,
         }
+        mock_outbox = {
+            "e_pending": 4,
+            "e_dlq": 1,
+            "e_stale": 0,
+            "m_pending": 2,
+            "m_dlq": 0,
+            "m_stale": 0,
+        }
 
         mock_conn = AsyncMock()
-        mock_conn.fetchrow = AsyncMock(return_value=mock_row)
+        # Два последовательных fetchrow: основной бизнес-запрос + outbox-запрос.
+        mock_conn.fetchrow = AsyncMock(side_effect=[mock_row, mock_outbox])
 
         mock_pool = MagicMock()
         mock_pool.acquire = MagicMock()
@@ -152,6 +161,8 @@ class TestRefreshCustomMetrics:
         assert result["kb_articles_total"]["published"] == 5
         assert result["news_published_total"]["published"] == 3
         assert result["active_users_1h"] == 7
+        assert result["email_outbox"] == {"pending": 4, "dlq": 1, "sending_stale": 0}
+        assert result["messenger_outbox"] == {"pending": 2, "dlq": 0, "sending_stale": 0}
 
     @pytest.mark.asyncio
     async def test_db_error_swallowed(self):

@@ -285,6 +285,110 @@ def _error(status: int, message: str) -> web.Response:
     )
 
 
+async def run_probe(request: web.Request) -> web.Response:
+    """Synthetic user-flow probe — drives a browser through a named flow.
+
+    Returns JSON ``{ok, elapsed_ms, flow, step_failed?}``. Unlike
+    ``/screenshot`` (which renders arbitrary URLs), this endpoint runs only
+    predefined named flows — it targets the portal's own internal services,
+    so the SSRF allowlist does not apply (service-to-service call).
+
+    Flow ``login_and_load``: navigate to the frontend login page, authenticate
+    via local-auth (POST /api/v1/auth/local/login), assert the SPA shell
+    (``#app``) renders and URL is no longer ``/login``. Credentials come from
+    the ``PROBE_ADMIN_EMAIL`` / ``PROBE_ADMIN_PASSWORD`` env vars (set by the
+    backend worker, defaults empty → probe returns ``configured: false``).
+    """
+    auth_err = _check_secret(request)
+    if auth_err:
+        return auth_err
+
+    try:
+        body = await request.json()
+        flow = body.get("flow", "")
+    except Exception:
+        return _error(400, "invalid JSON body")
+
+    if flow != "login_and_load":
+        return _error(400, f"unknown flow: {flow!r} (supported: login_and_load)")
+
+    admin_email = os.environ.get("PROBE_ADMIN_EMAIL", "")
+    admin_password = os.environ.get("PROBE_ADMIN_PASSWORD", "")
+    frontend_url = os.environ.get("PROBE_FRONTEND_URL", "http://frontend:80")
+
+    if not admin_email or not admin_password:
+        return web.Response(
+            text=json.dumps(
+                {"ok": False, "configured": False, "flow": flow,
+                 "error": "PROBE_ADMIN_EMAIL/PASSWORD not set"}
+            ),
+            content_type="application/json",
+        )
+
+    browser: Browser = request.app["browser"]
+    logger.info("probe.start flow=%s", flow)
+    t0 = time.time()
+    step_failed = None
+    try:
+        context = await browser.new_context(viewport={"width": 1280, "height": 720})
+        try:
+            page = await context.new_page()
+            # 1. Navigate to login page.
+            try:
+                await page.goto(f"{frontend_url}/login", wait_until="domcontentloaded",
+                                timeout=PAGE_TIMEOUT_MS)
+            except Exception:
+                step_failed = "navigate_login"
+                raise
+            # 2. Local-auth login via API (avoid brittle OIDC redirect dance).
+            try:
+                resp = await page.request.post(
+                    f"{frontend_url}/api/v1/auth/local/login",
+                    data={"email": admin_email, "password": admin_password},
+                    timeout=PAGE_TIMEOUT_MS,
+                )
+                if resp.status >= 400:
+                    step_failed = f"login_status_{resp.status}"
+                    raise RuntimeError(f"login returned {resp.status}")
+            except Exception:
+                if step_failed is None:
+                    step_failed = "login_request"
+                raise
+            # 3. Reload + assert SPA shell rendered (session cookie now set).
+            try:
+                await page.goto(frontend_url, wait_until="domcontentloaded",
+                                timeout=PAGE_TIMEOUT_MS)
+                await page.wait_for_selector("#app", timeout=PAGE_TIMEOUT_MS)
+            except Exception:
+                step_failed = step_failed or "assert_app_shell"
+                raise
+            # 4. Assert we're not still on /login (login succeeded).
+            if "/login" in page.url:
+                step_failed = "still_on_login"
+                raise RuntimeError("URL still /login after login")
+        finally:
+            await context.close()
+        elapsed = round((time.time() - t0) * 1000)
+        logger.info("probe.done flow=%s ok=true elapsed_ms=%d", flow, elapsed)
+        return web.Response(
+            text=json.dumps({"ok": True, "configured": True, "flow": flow,
+                             "elapsed_ms": elapsed}),
+            content_type="application/json",
+            headers={"X-Elapsed-Ms": str(elapsed)},
+        )
+    except Exception:
+        elapsed = round((time.time() - t0) * 1000)
+        logger.exception("probe.error flow=%s step=%s", flow, step_failed)
+        return web.Response(
+            text=json.dumps(
+                {"ok": False, "configured": True, "flow": flow,
+                 "elapsed_ms": elapsed, "step_failed": step_failed}
+            ),
+            content_type="application/json",
+            status=200,  # 200 with ok=false — the probe ran, the flow failed
+        )
+
+
 def build_app() -> web.Application:
     app = web.Application()
     app.on_startup.append(_startup)
@@ -293,6 +397,7 @@ def build_app() -> web.Application:
     app.router.add_get("/screenshot", take_screenshot)
     app.router.add_post("/screenshot", take_screenshot)
     app.router.add_post("/pdf", render_pdf)
+    app.router.add_post("/probe", run_probe)
     return app
 
 

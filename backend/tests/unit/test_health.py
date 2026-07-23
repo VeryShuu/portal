@@ -140,3 +140,82 @@ class TestReadyEndpoint:
         assert "checks" in body
         assert "postgres" in body["checks"]
         assert "redis" in body["checks"]
+
+    def test_ready_stays_200_when_keycloak_down(self, client):
+        """Keycloak/SMTP/Collabora down — non-fatal, /ready остаётся 200.
+
+        Логика: портал готов, если DB+Redis живы. Интеграции degraded,
+        но local-auth fallback и контент работают.
+        """
+        from app.core.modules_config import AllModuleSettings
+
+        mock_session = AsyncMock()
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=None)
+        mock_session.execute = AsyncMock(return_value=MagicMock())
+
+        mock_redis = AsyncMock()
+        mock_redis.ping = AsyncMock(return_value=True)
+
+        with (
+            patch("app.api.health.AsyncSessionLocal", return_value=mock_session),
+            patch("app.api.health.get_redis", return_value=mock_redis),
+            patch("app.api.modules.load_modules", return_value=AllModuleSettings()),
+            patch(
+                "app.worker.tasks.integration_health._probe_keycloak",
+                AsyncMock(return_value=False),
+            ),
+            patch(
+                "app.worker.tasks.integration_health._probe_smtp",
+                AsyncMock(return_value=True),
+            ),
+            patch(
+                "app.worker.tasks.integration_health._probe_collabora",
+                AsyncMock(return_value=None),
+            ),
+        ):
+            response = client.get("/ready")
+
+        # /ready остаётся 200 — Keycloak down не делает портал "не готов"
+        assert response.status_code == 200
+        body = response.json()
+        assert body["status"] == "ok"
+        assert body["checks"]["postgres"] == "ok"
+        assert body["checks"]["redis"] == "ok"
+        assert body["checks"]["keycloak"] == "error"
+        assert body["checks"]["smtp"] == "ok"
+
+    def test_ready_includes_integration_status(self, client):
+        """Body содержит per-component status интеграций."""
+        from app.core.modules_config import AllModuleSettings
+
+        mock_session = AsyncMock()
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=None)
+        mock_session.execute = AsyncMock(return_value=MagicMock())
+
+        mock_redis = AsyncMock()
+        mock_redis.ping = AsyncMock(return_value=True)
+
+        with (
+            patch("app.api.health.AsyncSessionLocal", return_value=mock_session),
+            patch("app.api.health.get_redis", return_value=mock_redis),
+            patch("app.api.modules.load_modules", return_value=AllModuleSettings()),
+            patch(
+                "app.worker.tasks.integration_health._probe_keycloak",
+                AsyncMock(return_value=None),
+            ),
+            patch(
+                "app.worker.tasks.integration_health._probe_smtp",
+                AsyncMock(return_value=None),
+            ),
+            patch(
+                "app.worker.tasks.integration_health._probe_collabora",
+                AsyncMock(return_value=None),
+            ),
+        ):
+            response = client.get("/ready")
+
+        body = response.json()["checks"]
+        assert body["keycloak"] == "unconfigured"
+        assert body["smtp"] == "unconfigured"

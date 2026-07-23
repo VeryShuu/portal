@@ -364,3 +364,107 @@ groups:
         annotations:
           summary: "Nginx: много активных соединений ({{ $value }})"
           description: "Active connections nginx > 1000 уже 5 мин. Норма для ~300 юзеров — десятки-сотни (с учётом keepalive). Проверить `nginx -T` keepalive_timeout, логи доступа на аномальный трафик."
+
+  # ===================================================================
+  # Outbox — email и messenger (MAX) рассылки
+  # Без этих алертов копящиеся/DLQ-ящиеся письма невидимы до жалоб юзеров.
+  # ===================================================================
+  - name: portal-outbox
+    interval: 30s
+    rules:
+      # Email outbox растёт — SMTP недоступен или медленный. Обычно PENDING ~0.
+      # > 50 устойчиво = письма не уходят.
+      - alert: PortalEmailOutboxBacklog
+        expr: portal_email_outbox_pending > 50
+        for: 5m
+        labels:
+          severity: warning
+          service: portal-email
+        annotations:
+          summary: "Email outbox растёт ({{ $value }} писем в очереди)"
+          description: "PENDING-писем > 50 уже 5 мин. SMTP недоступен или медленный. Проверить `docker compose logs worker` (email_outbox.dispatch.*), SMTP-настройки (email-settings.json), reachability SMTP-сервера."
+
+      # DLQ накопился — письма безвозвратно потеряны после 6 попыток.
+      # Любое значение > 0 требует разбора (почему упорные ошибки).
+      - alert: PortalEmailOutboxDLQ
+        expr: portal_email_outbox_dlq > 0
+        for: 10m
+        labels:
+          severity: warning
+          service: portal-email
+        annotations:
+          summary: "Email outbox: {{ $value }} писем в DLQ"
+          description: "Письма попали в dead-letter после 6 неудачных попыток. Безвозвратно потеряны. Разобрать через Admin UI (email-outbox) — посмотреть last_error, повторить вручную если нужно."
+
+      # Stale SENDING — worker взял батч, но завис/упал до commit.
+      # requeue_stale_sending лечит, но если повторяется — системная проблема.
+      - alert: PortalEmailOutboxStuck
+        expr: portal_email_outbox_sending_stale > 0
+        for: 10m
+        labels:
+          severity: warning
+          service: portal-email
+        annotations:
+          summary: "Email outbox: {{ $value }} писем застряли в SENDING"
+          description: "Письма в SENDING > 10 мин — worker взял их, но не закоммитил (краш mid-dispatch?). Watchdog requeue_stale_sending должен лечить; если повторяется — проверить логи worker."
+
+      # Messenger outbox (MAX) — аналогично email.
+      - alert: PortalMessengerOutboxBacklog
+        expr: portal_messenger_outbox_pending > 50
+        for: 5m
+        labels:
+          severity: warning
+          service: portal-messenger
+        annotations:
+          summary: "Messenger outbox (MAX) растёт ({{ $value }} сообщений)"
+          description: "PENDING-сообщений MAX > 50 уже 5 мин. MAX API недоступен, неверный токен/chat_id, или rate-limit. Проверить `docker compose logs worker` (messenger_outbox.*), настройки MAX-бота (helpdesk_max_bot_settings)."
+
+      - alert: PortalMessengerOutboxDLQ
+        expr: portal_messenger_outbox_dlq > 0
+        for: 10m
+        labels:
+          severity: warning
+          service: portal-messenger
+        annotations:
+          summary: "Messenger outbox: {{ $value }} сообщений в DLQ"
+          description: "MAX-сообщения в dead-letter после 6 попыток. Разобрать через Admin UI, проверить токен MAX-бота."
+
+  # ===================================================================
+  # Integrations — Keycloak, Nextcloud, SMTP, Collabora probes
+  # probe_integrations cron проверяет каждые 60с. gauge=1(up)/0(down).
+  # Интеграции не сконфигурированы → gauge отсутствует (no data, не алерт).
+  # ===================================================================
+  - name: portal-integrations
+    interval: 30s
+    rules:
+      # Любая сконфигурированная интеграция упала > 3 мин.
+      - alert: PortalIntegrationDown
+        expr: portal_integration_up == 0
+        for: 3m
+        labels:
+          severity: warning
+          service: portal-integration
+        annotations:
+          summary: "Интеграция недоступна: {{ $labels.integration }}"
+          description: "probe_integrations сообщает {{ $labels.integration }} = down уже 3 мин. Проверить: для keycloak — `docker compose logs backend` (keycloak.*), reachability IdP; для nextcloud — NC health (status.php), service account; для smtp — TCP-connect к host:port; для collabora — richdocuments app в NC."
+
+  # ===================================================================
+  # Synthetic — end-to-end user-flow probe (login + SPA load)
+  # run_synthetic_probe cron каждые 5 мин вызывает screenshot-service /probe.
+  # gauge отсутствует (no data) если PROBE_ADMIN_* не заданы — не алерт.
+  # ===================================================================
+  - name: portal-synthetic
+    interval: 30s
+    rules:
+      # Synthetic flow упал 2 цикла подряд (≈10 мин). Ловит regressions
+      # end-to-end: сломанный frontend, auth, routing — то, что инфра-метрики
+      # (backend up, DB up) не видят.
+      - alert: PortalSyntheticProbeFailed
+        expr: portal_synthetic_probe_up == 0
+        for: 10m
+        labels:
+          severity: warning
+          service: portal-synthetic
+        annotations:
+          summary: "Synthetic-проверка user-flow упала"
+          description: "Проба login_and_load (browser login + SPA load) падает > 10 мин. Проверить: frontend доступен (curl http://frontend:80), backend auth endpoint, screenshot-service логи (`docker compose logs screenshot-service`). Смотреть step_failed в логах worker (synthetic.probed)."

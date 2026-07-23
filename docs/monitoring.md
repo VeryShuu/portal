@@ -107,6 +107,25 @@ ARQ-метрики собирает декоратор `track_arq_job` (`./backe
 (кэш `_arq_job_last`). Дашборд Overview показывает failures/started/duration по
 функциям.
 
+**Outbox-метрики** (`portal_email_outbox_pending/dlq/sending_stale`,
+`portal_messenger_outbox_*`) — здоровье рассылок. Без них копящиеся /
+DLQ-ящиеся письма (email + MAX-мессенджер) невидимы до жалоб юзеров.
+`refresh_custom_metrics` считает `count(*) GROUP BY status` для обеих таблиц
+outbox и кладёт в snapshot.
+
+**Integration probes** (`portal_integration_up{integration}`) — Keycloak /
+Nextcloud / SMTP / Collabora. ARQ-cron `probe_integrations` (каждые 60с,
+`./backend/app/worker/tasks/integration_health.py`) проверяет каждую интеграцию
+коротким запросом (OIDC discovery / status.php / TCP-connect / richdocuments),
+результат 1/0 пишет в Redis-хэш `integration:health`. Не сконфигурированные
+интеграции (нет настроек / модуль выключен) → `None` → gauge отсутствует (no data).
+
+**Synthetic probes** (`portal_synthetic_probe_up/duration_seconds{flow}`) —
+end-to-end user-flow через headless-браузер. ARQ-cron `run_synthetic_probe`
+(каждые 5 мин) вызывает screenshot-service `/probe` endpoint, который через
+Playwright логинится (local-auth) и проверяет загрузку SPA. Gated за
+`PROBE_ADMIN_EMAIL/PASSWORD` env (пусто → probe skip-ается).
+
 Загвоздка: значения этих гейджей знает **воркер**, а scrape приходит в **API**.
 Поэтому:
 
@@ -268,6 +287,12 @@ UI Alertmanager. Переменные задаются в `.env` (см. `.env.ex
 | `PortalCPUHigh` | 🟡 warning | CPU > 80% 5 мин | Деградация latency для всех сервисов |
 | `PortalRAMLow` | 🟡 warning | свободная RAM < 10% | Риск OOM-kill контейнеров |
 | `PortalNginxConnectionsHigh` | 🟡 warning | active connections > 1000 | Утечка keepalive или аномальный трафик |
+| `PortalEmailOutboxBacklog` | 🟡 warning | `email_outbox_pending > 50` 5 мин | SMTP недоступен/медленный — письма копятся в очереди |
+| `PortalEmailOutboxDLQ` | 🟡 warning | `email_outbox_dlq > 0` 10 мин | Письма в dead-letter (безвозвратно потеряны) — разобрать |
+| `PortalMessengerOutboxBacklog` | 🟡 warning | `messenger_outbox_pending > 50` 5 мин | MAX API недоступен / неверный токен / rate-limit |
+| `PortalMessengerOutboxDLQ` | 🟡 warning | `messenger_outbox_dlq > 0` 10 мин | MAX-сообщения в dead-letter — разобрать |
+| `PortalIntegrationDown` | 🟡 warning | `portal_integration_up == 0` 3 мин | Keycloak/Nextcloud/SMTP/Collabora упал — смотреть какой в Grafana |
+| `PortalSyntheticProbeFailed` | 🟡 warning | `portal_synthetic_probe_up == 0` 10 мин | End-to-end user-flow сломан (frontend/auth/backend regression) |
 
 > `PortalArqJobFailures` возрождён на корректной метрике `portal_arq_jobs_total{status="failed"}`
 > (гидрируется из Redis через декоратор `track_arq_job`). Прежняя версия на

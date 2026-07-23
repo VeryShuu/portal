@@ -36,6 +36,56 @@ photo_storage_bytes = Gauge(
     "Total bytes stored under /data/photos/originals (refreshed daily).",
 )
 
+# --- outbox gauges (refreshed by ARQ cron, hydrated from Redis snapshot) ---
+# Transactional outbox health: queue depth, DLQ accumulation, stuck-SENDING.
+# Without these, email/MAX delivery failures are invisible until users complain.
+email_outbox_pending = Gauge(
+    "portal_email_outbox_pending",
+    "Email outbox rows in PENDING status (awaiting dispatch).",
+)
+email_outbox_dlq = Gauge(
+    "portal_email_outbox_dlq",
+    "Email outbox rows in DLQ status (exhausted retries, dead-lettered).",
+)
+email_outbox_sending_stale = Gauge(
+    "portal_email_outbox_sending_stale",
+    "Email outbox rows stuck in SENDING > 10 min (worker crash mid-dispatch).",
+)
+messenger_outbox_pending = Gauge(
+    "portal_messenger_outbox_pending",
+    "Messenger outbox (MAX) rows in PENDING status (awaiting dispatch).",
+)
+messenger_outbox_dlq = Gauge(
+    "portal_messenger_outbox_dlq",
+    "Messenger outbox (MAX) rows in DLQ status (exhausted retries).",
+)
+messenger_outbox_sending_stale = Gauge(
+    "portal_messenger_outbox_sending_stale",
+    "Messenger outbox rows stuck in SENDING > 10 min (worker crash mid-dispatch).",
+)
+
+# --- integration health (refreshed by probe_integrations cron) ---
+# 1 = reachable, 0 = down. Gated: only set when the integration is configured.
+integration_up = Gauge(
+    "portal_integration_up",
+    "Integration reachability probe (1 = up, 0 = down).",
+    labelnames=("integration",),
+)
+
+# --- synthetic user-flow probes (refreshed by run_synthetic_probe cron) ---
+# 1 = flow succeeded (login + SPA load), 0 = failed. Gated: absent when
+# PROBE_ADMIN_EMAIL/PASSWORD are not configured.
+synthetic_probe_up = Gauge(
+    "portal_synthetic_probe_up",
+    "Synthetic user-flow probe (1 = ok, 0 = failed).",
+    labelnames=("flow",),
+)
+synthetic_probe_duration = Gauge(
+    "portal_synthetic_probe_duration_seconds",
+    "Synthetic user-flow probe wall-clock duration in seconds.",
+    labelnames=("flow",),
+)
+
 kb_articles_total = Gauge(
     "portal_kb_articles_total",
     "Total non-deleted KB articles by status.",

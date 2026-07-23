@@ -277,6 +277,16 @@ class WorkerSettings:
             run_at_startup=True,
         ),
         cron(
+            "app.worker.tasks.integration_health.probe_integrations",
+            minute=set(range(0, 60, 1)),  # every 60 s
+            second=0,
+        ),
+        cron(
+            "app.worker.tasks.synthetic_probe.run_synthetic_probe",
+            minute=set(range(0, 60, 5)),  # every 5 min
+            second=15,  # offset from integration probe to spread load
+        ),
+        cron(
             "app.worker.tasks.email_outbox.process_email_outbox",
             second={0, 10, 20, 30, 40, 50},
             run_at_startup=True,
