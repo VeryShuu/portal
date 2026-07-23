@@ -298,6 +298,12 @@ async def run_probe(request: web.Request) -> web.Response:
     (``#app``) renders and URL is no longer ``/login``. Credentials come from
     the ``PROBE_ADMIN_EMAIL`` / ``PROBE_ADMIN_PASSWORD`` env vars (set by the
     backend worker, defaults empty → probe returns ``configured: false``).
+
+    The payload may carry ``portal_base_url`` (the external portal URL from
+    runtime SystemSettings). When present, it is sent as the ``Origin`` header
+    on the login POST so the request clears the backend's CSRF Origin-check:
+    the probe otherwise authenticates from an internal DNS name (``frontend``)
+    that does not match ``portal_base_url`` → ``403 CSRF: Origin mismatch``.
     """
     auth_err = _check_secret(request)
     if auth_err:
@@ -312,6 +318,11 @@ async def run_probe(request: web.Request) -> web.Response:
     if flow != "login_and_load":
         return _error(400, f"unknown flow: {flow!r} (supported: login_and_load)")
 
+    # External portal URL — used to spoof Origin on the login POST (CSRF bypass
+    # for the service-to-service probe). Absent when the worker couldn't read
+    # SystemSettings; login will then fail with 403 on CSRF Origin mismatch.
+    portal_base_url = (body.get("portal_base_url") or "").strip()
+
     admin_email = os.environ.get("PROBE_ADMIN_EMAIL", "")
     admin_password = os.environ.get("PROBE_ADMIN_PASSWORD", "")
     frontend_url = os.environ.get("PROBE_FRONTEND_URL", "http://frontend:80")
@@ -323,6 +334,12 @@ async def run_probe(request: web.Request) -> web.Response:
                  "error": "PROBE_ADMIN_EMAIL/PASSWORD not set"}
             ),
             content_type="application/json",
+        )
+
+    if not portal_base_url:
+        logger.warning(
+            "probe.no_portal_base_url flow=%s — login will fail CSRF Origin-check",
+            flow,
         )
 
     browser: Browser = request.app["browser"]
@@ -341,10 +358,17 @@ async def run_probe(request: web.Request) -> web.Response:
                 step_failed = "navigate_login"
                 raise
             # 2. Local-auth login via API (avoid brittle OIDC redirect dance).
+            # Origin is spoofed to portal_base_url so the request passes the
+            # backend CSRF Origin-check (probe reaches backend via the internal
+            # `frontend` DNS name, which differs from the external portal URL).
             try:
+                login_headers: dict[str, str] = {}
+                if portal_base_url:
+                    login_headers["Origin"] = portal_base_url
                 resp = await page.request.post(
                     f"{frontend_url}/api/v1/auth/local/login",
                     data={"email": admin_email, "password": admin_password},
+                    headers=login_headers,
                     timeout=PAGE_TIMEOUT_MS,
                 )
                 if resp.status >= 400:

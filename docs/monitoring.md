@@ -126,6 +126,53 @@ end-to-end user-flow через headless-браузер. ARQ-cron `run_synthetic
 Playwright логинится (local-auth) и проверяет загрузку SPA. Gated за
 `PROBE_ADMIN_EMAIL/PASSWORD` env (пусто → probe skip-ается).
 
+<details>
+<summary><b>Synthetic probes — детали и грабли (развернуть)</b></summary>
+
+В отличие от `integration_up` (который пингует отдельные сервисы) и backend
+`up=1` (процесс отвечает на `/health`), synthetic-проба — единственный датчик,
+доказывающий, что портал **реально работает для пользователя end-to-end**:
+браузер проходит полный путь (логин → отрисовка SPA). Ловит скрытые поломки,
+невидимые для healthcheck'ов: SPA падает белым экраном из-за JS-ошибки, Keycloak
+отвалился и логин невозможен, и т.п.
+
+**Поток `login_and_load`** (4 шага, см. `screenshot-service/main.py::run_probe`):
+1. `navigate_login` — браузер открывает `{PROBE_FRONTEND_URL}/login`.
+2. `login` — POST `/api/v1/auth/local/login` с кредами из `PROBE_ADMIN_*`.
+3. `assert_app_shell` — reload + проверка, что SPA отрисовал `#app`.
+4. `still_on_login` — URL ушёл с `/login` (логин реально сработал).
+
+**Env-переменные** (`.env`):
+
+| Переменная | Назначение | Дефолт |
+|---|---|---|
+| `PROBE_ADMIN_EMAIL` | Логин admin-аккаунта (local-auth). Подойдёт любой admin или отдельный сервисный аккаунт «probe-bot». Пусто → проба skip-ается. | — |
+| `PROBE_ADMIN_PASSWORD` | Пароль к нему. | — |
+| `PROBE_FRONTEND_URL` | URL frontend'а **изнутри** docker-сети. Прод (nginx): `http://frontend:80`. Dev-overlay (Vite): `http://frontend:5173`. | `http://frontend:80` |
+
+**Грабли: CSRF Origin-mismatch.** Проба делает service-to-service запрос через
+внутреннее DNS-имя (`frontend`), а CSRF-middleware проверяет `Origin` против
+внешнего `portal_base_url` (`system.json`). Внутреннее имя ≠ внешний домен →
+`403 CSRF: Origin mismatch`. Решение: worker читает `portal_base_url` из
+SystemSettings и передаёт его в payload `/probe`, а probe проставляет его как
+заголовок `Origin` на login-POST (spoof). Безопасно — probe уже аутентифицирован
+`SCREENSHOT_SERVICE_SECRET` и живёт в доверенной сети. Cookie остаются
+host-scoped (все `set_cookie` без `domain=`), а `page.request` шарит cookie-jar
+с BrowserContext, поэтому reload на шаге 3 автоматически отправит сессию.
+
+**Что значит состояние панели:**
+- **No data** — `PROBE_ADMIN_EMAIL/PASSWORD` не заданы → probe skip-ается.
+- **`0` (красный)** — креды заданы, но flow сломан. Поле `step_failed` в
+  ответе `/probe` указывает шаг: `navigate_login` (frontend недоступен /
+  неверный `PROBE_FRONTEND_URL`), `login_status_403` (CSRF / неверные креды),
+  `assert_app_shell` (SPA не отрисовался), `still_on_login` (логин не сработал).
+- **`1` (зелёный)** — поток работает end-to-end.
+
+**Логи:** `docker logs portal-screenshot-service-1 | grep probe` — детали шагов;
+`docker logs portal-worker-1 | grep synthetic` — запуск cron'а.
+
+</details>
+
 Загвоздка: значения этих гейджей знает **воркер**, а scrape приходит в **API**.
 Поэтому:
 
@@ -334,10 +381,14 @@ email-receivers через SMTP-relay (см. §7 «Email-доставка але
   настройке allowlist/nginx.
 - **Nginx access-log содержит `request_id`.** `system_data/nginx/nginx.conf`
   пишет JSON-access-log с полем `request_id` (берётся из `X-Request-Id`
-  клиента или генерируется nginx'ом). Тот же id проксируется в backend через
+  клиента или генерируется nginx'ом). Тот же id прокисывается в backend через
   `proxy_set_header X-Request-Id` и попадает во все structlog-строки через
   `middleware/logging.py` — сквозная корреляция nginx-access ↔ backend-request.
   Искать по `request_id` в обоих источниках (в Loki — через LogQL, см. §9).
+- **Synthetic-проба в dev-overlay:** frontend поднимается как Vite dev-server
+  на `:5173`, а не nginx на `:80`. Дефолт `PROBE_FRONTEND_URL=http://frontend:80`
+  здесь нерабочий → `step_failed=navigate_login`. Для dev-стека укажите
+  `PROBE_FRONTEND_URL=http://frontend:5173` в `.env`. См. §3 (раздел Synthetic probes).
 
 ---
 

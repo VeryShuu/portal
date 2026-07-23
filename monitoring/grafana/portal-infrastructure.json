@@ -106,7 +106,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(pg_stat_activity_count) / clamp_min(pg_settings_max_connections, 1)",
+          "expr": "sum(pg_stat_activity_count) / clamp_min(max(pg_settings_max_connections), 1)",
           "refId": "A"
         }
       ]

@@ -128,7 +128,7 @@ curl -s -G localhost:9090/api/v1/query --data-urlencode 'query=portal_storage_fo
 
 | Дашборд | UID | Покрытие |
 |---|---|---|
-| Portal — Overview | `portal-overview` | RED backend (rate/errors/latency), audit pipeline, ARQ-задачи (jobs/duration/failures), бизнес-метрики (SSE, активные юзеры, KB/news/photos) |
+| Portal — Overview | `portal-overview` | RED backend (rate/errors/latency), audit pipeline, ARQ-задачи (jobs/duration/failures), бизнес-метрики (SSE, активные юзеры, KB/news/photos), outbox-очереди, integration-probes, **synthetic-пробы** (end-to-end user-flow; см. `docs/monitoring.md` §3) |
 | Portal — Logs | `portal-logs` | Ошибки, slow-nginx, 5xx, трассировка по `request_id` |
 | Portal — Infrastructure | `portal-infra` | PostgreSQL, Redis, Host (диск/CPU/RAM), Nginx — метрики из exporter'ов |
 | Portal — Storage | `portal-storage` | Объёмы: БД + топ таблиц, Redis, папки `/data/*` + `base_data/*`, Docker json-file логи per-container, Loki chunks/WAL, заполнение ФС, Prometheus TSDB vs лимит |

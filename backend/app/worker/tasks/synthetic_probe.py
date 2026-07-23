@@ -3,8 +3,14 @@
 Runs every 5 minutes via ARQ cron. Drives a headless browser through the
 ``login_and_load`` flow (local-auth login + SPA shell assertion) via the
 screenshot-service's Playwright instance. Results go to a Redis hash consumed
-by ``refresh_custom_metrics`` → ``portal_synthetic_probe_ok`` /
+by ``refresh_custom_metrics`` → ``portal_synthetic_probe_up`` /
 ``portal_synthetic_probe_duration_seconds`` gauges.
+
+The worker passes ``portal_base_url`` (read from runtime SystemSettings) in the
+``/probe`` payload: the screenshot-service uses it to spoof the ``Origin``
+header on the login POST so it passes the backend's CSRF Origin-check. Without
+this, the probe logs in from an internal DNS name (``frontend``) that does not
+match the external ``portal_base_url`` the CSRF middleware expects → 403.
 
 Gating: if ``PROBE_ADMIN_EMAIL`` / ``PROBE_ADMIN_PASSWORD`` are not set in the
 worker environment, the probe is skipped (the screenshot-service returns
@@ -38,11 +44,22 @@ async def run_synthetic_probe(ctx: dict) -> dict | None:
     url = f"{base}/probe"
     secret = settings.screenshot_service_secret
 
+    # portal_base_url is forwarded to the screenshot-service so it can spoof the
+    # Origin header on the login POST (CSRF check). Read defensively: a missing
+    # value degrades the probe (login → 403) but must never break the cron.
+    portal_base_url = ""
+    try:
+        from app.core.system_config import load_system_settings
+
+        portal_base_url = load_system_settings().portal_base_url or ""
+    except Exception as exc:  # pragma: no cover - never break the cron
+        logger.warning("synthetic.portal_base_url_failed", error=str(exc))
+
     try:
         async with httpx.AsyncClient(timeout=_PROBE_FLOW_TIMEOUT) as client:
             resp = await client.post(
                 url,
-                json={"flow": "login_and_load"},
+                json={"flow": "login_and_load", "portal_base_url": portal_base_url},
                 headers={"X-Screenshot-Secret": secret},
             )
         data: dict[str, Any] = resp.json()
