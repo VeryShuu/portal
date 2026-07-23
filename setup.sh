@@ -1264,10 +1264,21 @@ start_monitoring() {
     # КРИТИЧНО: оба -f из корня. Solo-запуск только overlay ломает пути
     # (project_directory = папка первого -f) → mount src удваивается до
     # monitoring/monitoring/... и падает с "not a directory".
+    #
+    # Полный список сервисов overlay:
+    #   UI:          prometheus alertmanager grafana loki alloy
+    #   exporter'ы:  postgres-exporter redis-exporter node-exporter nginx-exporter
+    #   sidecar:     storage-collector (build: — пересобирается при правках
+    #                collect.sh/Dockerfile, отсюда --build ниже; для pull-образов no-op)
+    local mon_services=(
+        prometheus alertmanager grafana loki alloy
+        postgres-exporter redis-exporter node-exporter nginx-exporter
+        storage-collector
+    )
     if ! docker compose \
             -f docker-compose.yml \
             -f "$overlay" \
-            up -d prometheus alertmanager grafana loki alloy 2>&1 | sed 's/^/    /'; then
+            up -d --build "${mon_services[@]}" 2>&1 | sed 's/^/    /'; then
         err "Не удалось запустить observability-overlay. Проверьте вывод выше."
         return 1
     fi
@@ -1353,7 +1364,8 @@ start_monitoring() {
     echo
     echo -e "  ${BOLD}Остановка мониторинга (без остановки портала):${RESET}"
     echo -e "  ${DIM}docker compose -f docker-compose.yml -f monitoring/docker-compose.monitoring.yml \${RESET}"
-    echo -e "  ${DIM}    stop prometheus alertmanager grafana loki alloy${RESET}"
+    echo -e "  ${DIM}    stop prometheus alertmanager grafana loki alloy \\${RESET}"
+    echo -e "  ${DIM}    postgres-exporter redis-exporter node-exporter nginx-exporter storage-collector${RESET}"
     echo -e "  ${DIM}(ВНИМАНИЕ: 'down' вместо 'stop' остановит ВЕСЬ стек портала — оба compose-f.${RESET}"
     echo -e "  ${DIM} данные Grafana/Loki/Prometheus сохраняются в named volumes при любом варианте.)${RESET}"
     echo

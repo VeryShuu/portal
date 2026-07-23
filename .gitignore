@@ -68,6 +68,11 @@ docker-compose.test.yml
 # пустые root-owned директории вместо mount-src. Запускать только через setup.sh
 # (пункт 10) или `docker compose -f docker-compose.yml -f monitoring/...`.
 monitoring/monitoring/
+# Runtime-артефакт: storage-collector пишет monitoring/textfile/storage.prom
+# каждые 5 мин (du по папкам /data/* и Docker json-file логам), node-exporter
+# отдаёт его через --collector.textfile. В git — только .gitkeep (чтобы директория
+# существовала); сам .prom генерируется на каждом хосте.
+monitoring/textfile/*.prom
 
 # ===== Logs =====
 *.log
