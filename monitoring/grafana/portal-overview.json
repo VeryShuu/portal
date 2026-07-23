@@ -1458,11 +1458,11 @@
               },
               {
                 "color": "yellow",
-                "value": 0
+                "value": 1
               },
               {
                 "color": "red",
-                "value": 1
+                "value": 5
               }
             ]
           },
@@ -1594,11 +1594,11 @@
               },
               {
                 "color": "yellow",
-                "value": 0
+                "value": 1
               },
               {
                 "color": "red",
-                "value": 1
+                "value": 5
               }
             ]
           },
@@ -1657,16 +1657,12 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "red",
                 "value": null
               },
               {
-                "color": "yellow",
-                "value": 0.5
-              },
-              {
-                "color": "red",
-                "value": 0.5
+                "color": "green",
+                "value": 1
               }
             ]
           },
@@ -1725,16 +1721,12 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "red",
                 "value": null
               },
               {
-                "color": "yellow",
-                "value": 0.5
-              },
-              {
-                "color": "red",
-                "value": 0.5
+                "color": "green",
+                "value": 1
               }
             ]
           },
@@ -1793,16 +1785,12 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "red",
                 "value": null
               },
               {
-                "color": "yellow",
-                "value": 0.5
-              },
-              {
-                "color": "red",
-                "value": 0.5
+                "color": "green",
+                "value": 1
               }
             ]
           },
@@ -1861,16 +1849,12 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "red",
                 "value": null
               },
               {
-                "color": "yellow",
-                "value": 0.5
-              },
-              {
-                "color": "red",
-                "value": 0.5
+                "color": "green",
+                "value": 1
               }
             ]
           },
@@ -1929,16 +1913,12 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "red",
                 "value": null
               },
               {
-                "color": "yellow",
-                "value": 0.5
-              },
-              {
-                "color": "red",
-                "value": 0.5
+                "color": "green",
+                "value": 1
               }
             ]
           },

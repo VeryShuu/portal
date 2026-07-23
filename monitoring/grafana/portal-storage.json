@@ -1072,16 +1072,16 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "red",
                 "value": null
               },
               {
                 "color": "yellow",
-                "value": 5000000000
+                "value": 1000000000
               },
               {
-                "color": "red",
-                "value": 1000000000
+                "color": "green",
+                "value": 5000000000
               }
             ]
           },
