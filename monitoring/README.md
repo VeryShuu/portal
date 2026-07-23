@@ -15,7 +15,7 @@ overlay, чтобы не тащить тяжёлые образы (~900 МБ с�
 ```
 monitoring/
 ├── README.md                              ← этот файл
-├── prometheus.yml                         ← scrape-конфиг (portal-backend + self)
+├── prometheus.yml                         ← scrape-конфиг (portal-backend + self + loki)
 ├── loki/
 │   └── config.yml                         ← single-binary Loki (retention 30d, compactor)
 ├── alloy/
@@ -26,11 +26,18 @@ monitoring/
 ├── grafana/
 │   ├── portal-overview.json               ← дашборд метрик (RED + audit + worker)
 │   ├── portal-logs.json                   ← дашборд логов (ошибки, объём, request_id)
+│   ├── portal-infrastructure.json         ← PostgreSQL, Redis, Host, Nginx (из exporter'ов)
+│   ├── portal-storage.json                ← объёмы хранилища (БД, папки /data, логи, volumes)
 │   └── provisioning/
 │       ├── datasources/
 │       │   ├── prometheus.yml             ← auto-provision Prometheus (uid=prometheus)
 │       │   └── loki.yml                   ← auto-provision Loki (uid=loki)
 │       └── dashboards/portal.yml          ← auto-provision дашбордов из JSON
+├── node-exporter-textfile/                ← sidecar для textfile-collector (см. ниже)
+│   ├── Dockerfile                         ← alpine + jq + tini + crond
+│   ├── collect.sh                         ← du по папкам /data/* и Docker json-file логам
+│   └── crontab                            ← расписание (каждые 5 мин)
+├── textfile/                              ← общий rw-volume: storage-collector пишет, node-exporter читает
 └── docker-compose.monitoring.yml          ← overlay для `docker compose -f ...`
 ```
 
@@ -74,6 +81,49 @@ Nginx отдаёт `stub_status` на `http://nginx:80/stub_status` (тольк�
 `172.16.0.0/12` — внутренний Docker bridge), см. `nginx/templates/proxy_locations.conf.tmpl`.
 `request_time`-перцентили остаются в Loki (JSON access-log), не в stub_status.
 
+### storage-collector (sidecar для объёмов на диске)
+
+node-exporter видит только целую файловую систему (не поддиректории), а
+json-file логи Docker лежат в `/var/lib/docker/containers/*` — вне путей,
+примонтированных к контейнерам портала. Чтобы дашборд **«Portal — Storage»**
+показывал размеры отдельных папок (`/data/photos/originals`, `/data/kb`,
+`base_data/postgres`, …) и объём логов каждого контейнера, добавлен лёгкий
+sidecar `storage-collector`:
+
+- **Образ:** `monitoring/node-exporter-textfile/` (alpine:3.20 + jq + tini,
+  busybox crond). ~10 МБ RAM, не открывает портов.
+- **Как работает:** каждые 5 мин `collect.sh` делает `du -sb` по папкам данных
+  портала (`upload_data/*`, `base_data/*`, `system_data/*`) и суммирует размеры
+  `*-json.log*` каждого контейнера (имя сервиса — из compose-label), результат
+  атомарно пишется в `monitoring/textfile/storage.prom`.
+- **node-exporter** отдаёт этот файл через `--collector.textfile.directory=/textfile`
+  как метрики `portal_storage_folder_bytes`, `portal_storage_docker_logs_bytes`,
+  `portal_storage_docker_volume_bytes`.
+- **Путь портала на хосте** задаётся через env `PORTAL_HOST_PATH` (дефолт
+  `/home/snow/portal`); все пути сбора внутри контейнера — `/host + <path>`,
+  т.к. host-ФС примонтирована read-only в `/host`.
+
+Loki теперь дополнительно скрейпится Prometheus (job `loki` в `prometheus.yml`),
+чтобы дашборд показывал состояние хранилища логов (`loki_ingester_wal_bytes_in_use`,
+`loki_ingester_chunk_stored_bytes_total`, и др.).
+
+Пересборка после правок скрипта/расписания:
+```bash
+docker compose -f docker-compose.yml -f monitoring/docker-compose.monitoring.yml \
+  build storage-collector && \
+docker compose -f docker-compose.yml -f monitoring/docker-compose.monitoring.yml \
+  up -d storage-collector node-exporter
+```
+
+Проверка, что метрики пришли:
+```bash
+# из node-exporter (после первого сбора, ≤5 мин):
+curl -s localhost:9100/metrics | grep '^portal_storage_'
+
+# из Prometheus:
+curl -s -G localhost:9090/api/v1/query --data-urlencode 'query=portal_storage_folder_bytes{folder="upload_data/photos/originals"}'
+```
+
 ### Дашборды Grafana
 
 | Дашборд | UID | Покрытие |
@@ -81,6 +131,7 @@ Nginx отдаёт `stub_status` на `http://nginx:80/stub_status` (тольк�
 | Portal — Overview | `portal-overview` | RED backend (rate/errors/latency), audit pipeline, ARQ-задачи (jobs/duration/failures), бизнес-метрики (SSE, активные юзеры, KB/news/photos) |
 | Portal — Logs | `portal-logs` | Ошибки, slow-nginx, 5xx, трассировка по `request_id` |
 | Portal — Infrastructure | `portal-infra` | PostgreSQL, Redis, Host (диск/CPU/RAM), Nginx — метрики из exporter'ов |
+| Portal — Storage | `portal-storage` | Объёмы: БД + топ таблиц, Redis, папки `/data/*` + `base_data/*`, Docker json-file логи per-container, Loki chunks/WAL, заполнение ФС, Prometheus TSDB vs лимит |
 
 ## Настройка scrape-токена
 

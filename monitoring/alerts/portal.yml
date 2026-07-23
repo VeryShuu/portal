@@ -193,7 +193,7 @@ groups:
       - alert: PortalPGConnectionsHigh
         expr: |
           sum(pg_stat_activity_count)
-          / clamp_min(pg_settings_max_connections{setting="max_connections"}, 1)
+          / clamp_min(pg_settings_max_connections, 1)
           > 0.8
         for: 5m
         labels:
@@ -220,18 +220,19 @@ groups:
           summary: "PostgreSQL: низкий cache hit ratio ({{ $value | humanizePercentage }})"
           description: "Cache hit ratio < 90% при значимом объёме операций. Возможные причины: нехватка shared_buffers, отсутствующие индексы, большие seq-scan'ы. Проверить pg_stat_statements."
 
-      # XID wraparound — критично. При превышении ~1.5e9 БД переходит в
-      # read-only для защиты от wraparound. autovacuum должен держать это
-      # значение низким; если растёт — autovacuum не справляется.
+      # XID wraparound — возраст старейшего незамороженного XID в секундах.
+      # autovacuum должен регулярно замораживать (freeze) старые XID. Если
+      # значение растёт (нет заморозки > 30 дней) — autovacuum не справляется,
+      # близко к read-only защите от wraparound. Метрика в секундах (НЕ XID count).
       - alert: PortalPGWraparound
-        expr: pg_database_xid_age > 1500000000
+        expr: pg_database_wraparound_age_datfrozenxid_seconds > 2592000  # 30 days
         for: 10m
         labels:
           severity: warning
           service: portal-postgres
         annotations:
-          summary: "PostgreSQL: XID возраст большой ({{ $value }})"
-          description: "XID возраст БД {{ $labels.datname }} > 1.5e9 — приближается к wraparound-защите (БД станет read-only при ~2e9). Запустить VACUUM FREEZE вручную, проверить autovacuum."
+          summary: "PostgreSQL: возраст незамороженного XID большой ({{ $value | humanizeDuration }})"
+          description: "Возраст старейшего незамороженного XID в БД {{ $labels.datname }} > 30 дней — autovacuum не замораживает старые транзакции. Запустить VACUUM FREEZE вручную, проверить autovacuum-настройки."
 
       # Дедлоки — всегда баг в коде. Любой дедлок за окно — повод разобраться.
       - alert: PortalPGDeadlocks

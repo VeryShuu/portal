@@ -116,6 +116,7 @@ services:
       - ./monitoring/grafana/portal-overview.json:/var/lib/grafana/dashboards/portal-overview.json:ro
       - ./monitoring/grafana/portal-logs.json:/var/lib/grafana/dashboards/portal-logs.json:ro
       - ./monitoring/grafana/portal-infrastructure.json:/var/lib/grafana/dashboards/portal-infrastructure.json:ro
+      - ./monitoring/grafana/portal-storage.json:/var/lib/grafana/dashboards/portal-storage.json:ro
       - grafana-data:/var/lib/grafana
     ports:
       - "3001:3000"               # 0.0.0.0 — доступ из Windows в WSL2
@@ -201,12 +202,20 @@ services:
 
   # PostgreSQL exporter — пул соединений, cache hit ratio, XID wraparound,
   # размер БД, долгие транзакции, дедлоки.
+  # Дефолтные коллекторы НЕ включают stat_activity/stat_database — поэтому
+  # включаем явно, иначе панели пула/cache/deadlocks показывают "No data".
   postgres-exporter:
     image: prometheuscommunity/postgres-exporter:v0.20.1
     container_name: portal-postgres-exporter
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
+    command:
+      - "--collector.stat_activity"
+      - "--collector.stat_database"
+      - "--collector.database_wraparound"
+      - "--collector.long_running_transactions"
+      - "--collector.stat_bgwriter"
     environment:
       DATA_SOURCE_NAME: postgresql://${POSTGRES_USER:-portal}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-portal}?sslmode=disable
     ports:
@@ -246,10 +255,17 @@ services:
       - "--path.sysfs=/host/sys"
       - "--path.rootfs=/rootfs"
       - "--collector.filesystem.mount-points-exclude=^/(dev|proc|sys|var/lib/docker/.+)($|/)"
+      # Textfile collector — читает *.prom из /textfile, куда пишет sidecar
+      # storage-collector (размеры папок /data/*, Docker json-file логов,
+      # named volumes). См. monitoring/node-exporter-textfile/.
+      - "--collector.textfile"
+      - "--collector.textfile.directory=/textfile"
     volumes:
       - /proc:/host/proc:ro
       - /sys:/host/sys:ro
       - /:/rootfs:ro
+      # Shared с storage-collector: sidecar пишет storage.prom, node-exporter читает.
+      - ./monitoring/textfile:/textfile:ro
     ports:
       - "9100:9100"
     networks:
@@ -272,6 +288,36 @@ services:
     networks:
       - internal
       - external
+    logging: *default-logging
+
+  # ---------------------------------------------------------------------
+  # storage-collector — sidecar для node-exporter textfile collector.
+  # Раз в 5 минут делает du по папкам данных портала (upload_data/*,
+  # base_data/*, system_data/*) и по Docker json-file логам контейнеров,
+  # пишет результат в /textfile/storage.prom. node-exporter отдаёт это как
+  # метрики portal_storage_folder_bytes / portal_storage_docker_logs_bytes /
+  # portal_storage_docker_volume_bytes (см. дашборд «Portal — Storage»).
+  #
+  # НЕ открывает портов. Монтирует /:/host:ro — для du по host-папкам и
+  # чтения config.v2.json контейнеров (имя сервиса по container id).
+  # ---------------------------------------------------------------------
+  storage-collector:
+    build:
+      context: ./monitoring/node-exporter-textfile
+    image: portal-storage-collector:${IMAGE_TAG:-latest}
+    container_name: portal-storage-collector
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      # Абсолютный путь к корню портала НА ХОСТЕ — все пути сбора внутри
+      # контейнера пересчитываются как /host + PORTAL_HOST_PATH.
+      PORTAL_HOST_PATH: ${PORTAL_HOST_PATH:-/home/snow/portal}
+    volumes:
+      - /:/host:ro
+      - ./monitoring/textfile:/textfile
+    networks:
+      - internal
     logging: *default-logging
 
 volumes:

@@ -51,7 +51,7 @@
       "id": 2,
       "title": "Использование пула соединений",
       "type": "stat",
-      "description": "Активные подключения к PostgreSQL / max_connections. Норма: < 50%. > 80% — пул насыщен, новые запросы ждут соединение → растёт latency. Проверить connection leak в backend, long-running queries.",
+      "description": "Активные подключения к PostgreSQL / max_connections. Норма: < 50%. > 80% — пул насыщен, новые запросы ждут соединение → растёт latency.",
       "gridPos": {
         "h": 6,
         "w": 8,
@@ -106,7 +106,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(pg_stat_activity_count) / clamp_min(pg_settings_max_connections{setting=\"max_connections\"}, 1)",
+          "expr": "sum(pg_stat_activity_count) / clamp_min(pg_settings_max_connections, 1)",
           "refId": "A"
         }
       ]
@@ -187,7 +187,7 @@
       "id": 2,
       "title": "XID возраст (топ БД)",
       "type": "stat",
-      "description": "Максимальный возраст XID по базам. Норма: < 200 млн. > 1.5 млрд — autovacuum не справляется, при ~2 млрд БД перейдёт в read-only (защита от wraparound). Запустить VACUUM FREEZE вручную.",
+      "description": "Возраст старейшего незамороженного XID в секундах. Норма: < 7 дней (6e5 с). > 30 дней (2.6e6 с) — autovacuum не замораживает, проверить freeze.",
       "gridPos": {
         "h": 6,
         "w": 8,
@@ -209,11 +209,11 @@
               },
               {
                 "color": "yellow",
-                "value": 1500000000
+                "value": 604800
               },
               {
                 "color": "red",
-                "value": 1800000000
+                "value": 2592000
               }
             ]
           },
@@ -242,7 +242,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "max(pg_database_xid_age)",
+          "expr": "max(pg_database_wraparound_age_datfrozenxid_seconds)",
           "refId": "A"
         }
       ]
@@ -1499,6 +1499,6 @@
   "timezone": "browser",
   "title": "Portal — Infrastructure",
   "uid": "portal-infra",
-  "version": 3,
+  "version": 4,
   "weekStart": ""
 }

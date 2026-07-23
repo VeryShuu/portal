@@ -1,0 +1,61 @@
+# HELP portal_storage_folder_bytes Apparent size of portal data folders on host (bytes).
+# TYPE portal_storage_folder_bytes gauge
+portal_storage_folder_bytes{folder="upload_data/photos/originals"} 182912453
+portal_storage_folder_bytes{folder="upload_data/photos/thumbs"} 20514279
+portal_storage_folder_bytes{folder="upload_data/photos/zips"} 4096
+portal_storage_folder_bytes{folder="upload_data/kb"} 4055659
+portal_storage_folder_bytes{folder="upload_data/feedback"} 154558
+portal_storage_folder_bytes{folder="upload_data/helpdesk"} 2255892
+portal_storage_folder_bytes{folder="upload_data/avatars"} 4096
+portal_storage_folder_bytes{folder="upload_data/news_media"} 10339671
+portal_storage_folder_bytes{folder="upload_data/branding"} 4557
+portal_storage_folder_bytes{folder="upload_data/link_icons"} 14228
+portal_storage_folder_bytes{folder="upload_data/file-icons"} 0
+portal_storage_folder_bytes{folder="base_data/postgres"} 79223542
+portal_storage_folder_bytes{folder="base_data/redis"} 6376255
+portal_storage_folder_bytes{folder="system_data/settings"} 7532
+portal_storage_folder_bytes{folder="system_data/secrets"} 4361
+portal_storage_folder_bytes{folder="system_data/certs"} 4096
+portal_storage_folder_bytes{folder="system_data/nginx"} 9370
+
+# HELP portal_storage_docker_logs_bytes Size of Docker json-file logs per container on host (bytes).
+# TYPE portal_storage_docker_logs_bytes gauge
+portal_storage_docker_logs_bytes{container="postgres"} 10456
+portal_storage_docker_logs_bytes{container="frosty_satoshi"} 13454
+portal_storage_docker_logs_bytes{container="frontend"} 2456
+portal_storage_docker_logs_bytes{container="hardcore_cohen"} 7738
+portal_storage_docker_logs_bytes{container="node-exporter"} 0
+portal_storage_docker_logs_bytes{container="screenshot-service"} 89266
+portal_storage_docker_logs_bytes{container="determined_mclean"} 1462
+portal_storage_docker_logs_bytes{container="stupefied_keldysh"} 73223
+portal_storage_docker_logs_bytes{container="nginx-config"} 222
+portal_storage_docker_logs_bytes{container="prometheus"} 12786
+portal_storage_docker_logs_bytes{container="worker"} 25208985
+portal_storage_docker_logs_bytes{container="backend"} 9294133
+portal_storage_docker_logs_bytes{container="eloquent_tharp"} 73226
+portal_storage_docker_logs_bytes{container="charming_easley"} 11763
+portal_storage_docker_logs_bytes{container="postgres-exporter"} 1231
+portal_storage_docker_logs_bytes{container="optimistic_vaughan"} 7736
+portal_storage_docker_logs_bytes{container="redis"} 32930
+portal_storage_docker_logs_bytes{container="loki"} 0
+portal_storage_docker_logs_bytes{container="grafana"} 0
+portal_storage_docker_logs_bytes{container="nginx"} 247763
+portal_storage_docker_logs_bytes{container="beautiful_montalcini"} 7740
+portal_storage_docker_logs_bytes{container="adoring_mccarthy"} 1460
+portal_storage_docker_logs_bytes{container="competent_roentgen"} 1462
+portal_storage_docker_logs_bytes{container="tender_hoover"} 73226
+portal_storage_docker_logs_bytes{container="fervent_fermi"} 73224
+portal_storage_docker_logs_bytes{container="elated_visvesvaraya"} 1461
+portal_storage_docker_logs_bytes{container="determined_meitner"} 7740
+portal_storage_docker_logs_bytes{container="migrations"} 8714
+portal_storage_docker_logs_bytes{container="modest_jepsen"} 73225
+portal_storage_docker_logs_bytes{container="storage-collector"} 0
+portal_storage_docker_logs_bytes{container="admiring_carver"} 73226
+
+# HELP portal_storage_docker_volume_bytes Apparent size of named Docker volumes on host (bytes).
+# TYPE portal_storage_docker_volume_bytes gauge
+portal_storage_docker_volume_bytes{volume="claude-memory"} 20769
+portal_storage_docker_volume_bytes{volume="portal_alertmanager-data"} 4096
+portal_storage_docker_volume_bytes{volume="portal_grafana-data"} 1327104
+portal_storage_docker_volume_bytes{volume="portal_loki-data"} 11862135
+portal_storage_docker_volume_bytes{volume="portal_prometheus-data"} 34433918
