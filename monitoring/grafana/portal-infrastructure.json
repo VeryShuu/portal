@@ -665,7 +665,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(rate(redis_keyspace_hits_total[5m])) / clamp_min(sum(rate(redis_keyspace_hits_total[5m] + redis_keyspace_misses_total[5m])), 1)",
+          "expr": "sum(rate(redis_keyspace_hits_total[5m])) / clamp_min(sum(rate(redis_keyspace_hits_total[5m])) + sum(rate(redis_keyspace_misses_total[5m])), 1)",
           "refId": "A"
         }
       ]
@@ -818,7 +818,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sort_desc(1 - (node_filesystem_avail_bytes / clamp_min(node_filesystem_size_bytes, 1)))[0]",
+          "expr": "topk(1, 1 - (node_filesystem_avail_bytes / clamp_min(node_filesystem_size_bytes, 1)))",
           "refId": "A"
         }
       ]
@@ -1395,6 +1395,6 @@
   "timezone": "browser",
   "title": "Portal — Infrastructure",
   "uid": "portal-infra",
-  "version": 1,
+  "version": 2,
   "weekStart": ""
 }
