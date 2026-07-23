@@ -104,9 +104,9 @@ services:
     security_opt:
       - no-new-privileges:true
     environment:
-      # Первый запуск: admin/admin. СМЕНИТЬ сразу или настроить OAuth/auth-proxy.
+      # Первый запуск: admin/admin, Grafana сама требует сменить при первом входе.
+      # OAuth/auth-proxy — через runtime-настройки Grafana, не через env.
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
-      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
       GF_USERS_ALLOW_SIGN_UP: "false"
       GF_SERVER_ROOT_URL: "http://localhost:3000"
       GF_INSTALL_PLUGINS: ""
@@ -115,6 +115,7 @@ services:
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./monitoring/grafana/portal-overview.json:/var/lib/grafana/dashboards/portal-overview.json:ro
       - ./monitoring/grafana/portal-logs.json:/var/lib/grafana/dashboards/portal-logs.json:ro
+      - ./monitoring/grafana/portal-infrastructure.json:/var/lib/grafana/dashboards/portal-infrastructure.json:ro
       - grafana-data:/var/lib/grafana
     ports:
       - "3001:3000"               # 0.0.0.0 — доступ из Windows в WSL2
@@ -187,6 +188,87 @@ services:
         limits:
           cpus: "0.5"
           memory: 512m
+    networks:
+      - internal
+      - external
+    logging: *default-logging
+
+  # ---------------------------------------------------------------------
+  # Exporter'ы — инфраструктурные метрики (PostgreSQL, Redis, Host, Nginx).
+  # Подключаются к portal_internal → видят postgres/redis/nginx по DNS.
+  # Секреты (POSTGRES_PASSWORD, REDIS_PASSWORD) интерполируются из .env.
+  # ---------------------------------------------------------------------
+
+  # PostgreSQL exporter — пул соединений, cache hit ratio, XID wraparound,
+  # размер БД, долгие транзакции, дедлоки.
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.20.1
+    container_name: portal-postgres-exporter
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      DATA_SOURCE_NAME: postgresql://${POSTGRES_USER:-portal}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-portal}?sslmode=disable
+    ports:
+      - "9187:9187"
+    networks:
+      - internal
+      - external
+    logging: *default-logging
+
+  # Redis exporter — память/evictions, клиенты, keyspace hit rate, persistence.
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.77.0
+    container_name: portal-redis-exporter
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      REDIS_ADDR: redis://redis:6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    ports:
+      - "9121:9121"
+    networks:
+      - internal
+      - external
+    logging: *default-logging
+
+  # node_exporter — метрики хоста: диск (критично — /data/photos), CPU, RAM, load.
+  # Bind-mount хостовых /proc /sys / через read-only — стандартный паттерн.
+  node-exporter:
+    image: prom/node-exporter:v1.12.1
+    container_name: portal-node-exporter
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    command:
+      - "--path.procfs=/host/proc"
+      - "--path.sysfs=/host/sys"
+      - "--path.rootfs=/rootfs"
+      - "--collector.filesystem.mount-points-exclude=^/(dev|proc|sys|var/lib/docker/.+)($|/)"
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    ports:
+      - "9100:9100"
+    networks:
+      - internal
+      - external
+    logging: *default-logging
+
+  # Nginx exporter — active connections, request rate, reading/writing/waiting.
+  # Скрейпит stub_status (см. nginx/templates/proxy_locations.conf.tmpl).
+  nginx-exporter:
+    image: nginx/nginx-prometheus-exporter:1.4.0
+    container_name: portal-nginx-exporter
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    command:
+      - "-nginx.scrape-uri=http://nginx:80/stub_status"
+    ports:
+      - "9113:9113"
     networks:
       - internal
       - external

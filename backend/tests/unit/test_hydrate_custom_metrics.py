@@ -130,3 +130,96 @@ class TestHydrateCustomMetrics:
         redis.get = AsyncMock(return_value="not valid json{{{")
         req = _make_request("/metrics", redis=redis)
         await self._call(req)
+
+
+class TestArqJobsHydration:
+    """Гидратация ARQ Counter/Histogram из snapshot (delta-increment)."""
+
+    def _reset_state(self):
+        """Сброс module-level state — вызывать явно перед серией вызовов."""
+        import app.middleware.metrics as m
+
+        m._arq_job_last.clear()
+        m._arq_job_ms_last.clear()
+
+    async def _call(self, snap):
+        from app.middleware.metrics import hydrate_custom_metrics as _hydrate
+
+        redis = AsyncMock()
+        redis.get = AsyncMock(return_value=json.dumps(snap))
+        req = _make_request("/metrics", redis=redis)
+
+        counter_calls: list[tuple] = []
+        observe_calls: list[float] = []
+
+        class _FakeCounter:
+            def labels(self, **kw):
+                counter_calls.append(kw)
+                return self
+
+            def inc(self, delta=1.0):
+                counter_calls.append(("inc", delta))
+
+        class _FakeHistogram:
+            def labels(self, **kw):
+                return self
+
+            def observe(self, val):
+                observe_calls.append(val)
+
+        fake_metrics = MagicMock()
+        for attr in (
+            "audit_queue_depth",
+            "audit_processing_depth",
+            "sse_connections",
+            "active_users_1h",
+            "photo_storage_bytes",
+            "kb_articles_total",
+            "news_published_total",
+            "users_total",
+        ):
+            setattr(fake_metrics, attr, MagicMock())
+        fake_metrics.arq_jobs_total = _FakeCounter()
+        fake_metrics.arq_job_duration = _FakeHistogram()
+
+        with patch("app.middleware.metrics._metrics_mod", fake_metrics):
+            await _hydrate(req, _noop_next)
+
+        return counter_calls, observe_calls
+
+    async def test_arq_jobs_delta_increment(self):
+        self._reset_state()
+        snap = {
+            "arq_jobs": {"send_email:succeeded": 5, "send_email:failed": 1},
+            "arq_job_ms": {"send_email:count": 6, "send_email:sum": 6000},
+        }
+        counter_calls, observe_calls = await self._call(snap)
+        assert ("inc", 5.0) in counter_calls
+        assert ("inc", 1.0) in counter_calls
+        # 6 jobs, 6000 ms total → avg 1.0 s per job
+        assert observe_calls == [1.0]
+
+    async def test_arq_jobs_second_snapshot_only_increments_delta(self):
+        self._reset_state()
+        snap1 = {"arq_jobs": {"job:succeeded": 10}, "arq_job_ms": {}}
+        snap2 = {"arq_jobs": {"job:succeeded": 12}, "arq_job_ms": {}}
+        await self._call(snap1)
+        counter_calls, _ = await self._call(snap2)
+        # Дельта = 12 - 10 = 2, не 12
+        assert ("inc", 2.0) in counter_calls
+        assert ("inc", 12.0) not in counter_calls
+
+    async def test_arq_jobs_no_delta_no_increment(self):
+        self._reset_state()
+        snap = {"arq_jobs": {"job:succeeded": 5}, "arq_job_ms": {}}
+        await self._call(snap)
+        # Второй вызов с тем же значением — не должно быть inc
+        counter_calls, _ = await self._call(snap)
+        assert not any(c == "inc" for c in counter_calls)
+
+    async def test_malformed_field_skipped(self):
+        self._reset_state()
+        snap = {"arq_jobs": {"no_colon_here": 5, "good:succeeded": 2}, "arq_job_ms": {}}
+        # Не должно падать на поле без двоеточия
+        counter_calls, _ = await self._call(snap)
+        assert ("inc", 2.0) in counter_calls

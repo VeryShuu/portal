@@ -51,11 +51,36 @@ UI (на хосте, проброшены на `127.0.0.1` — через SSH-т
 
 | Сервис | Порт | Назначение |
 |---|---|---|
-| Grafana | `:3000` | Единый UI: метрики + логи. admin/`GRAFANA_ADMIN_PASSWORD` |
+| Grafana | `:3000` | Единый UI: метрики + логи. admin/admin (смена при первом входе) |
 | Prometheus | `:9090` | Метрики: targets, query (PromQL), alert state |
 | Alertmanager | `:9093` | Состояние алертов, silences, тест отправки |
 | Loki | `:3100` | API логов (обычно через Grafana, напрямую — для отладки) |
 | Alloy | `:12345` | UI pipeline сборщика (inspect tailers, debugging) |
+
+### Exporter'ы (инфраструктурные метрики)
+
+Prometheus скрейпит не только backend, но и 4 exporter'а, подключённых к
+`portal_internal` (видят `postgres`/`redis`/`nginx` по DNS). Секреты
+(`POSTGRES_PASSWORD`, `REDIS_PASSWORD`) интерполируются из `.env` автоматически.
+
+| Exporter | Порт | Источник | Что даёт |
+|---|---|---|---|
+| postgres-exporter | `:9187` | `prometheuscommunity/postgres-exporter:v0.20.1` | Пул соединений, cache hit ratio, XID wraparound, размер БД, долгие транзакции, дедлоки |
+| redis-exporter | `:9121` | `oliver006/redis_exporter:v1.77.0` | Память/evictions, клиенты, keyspace hit rate |
+| node-exporter | `:9100` | `prom/node-exporter:v1.12.1` | Диск (критично — `/data/photos`), CPU, RAM, load |
+| nginx-exporter | `:9113` | `nginx/nginx-prometheus-exporter:1.4.0` | Active connections, request rate (через `stub_status`) |
+
+Nginx отдаёт `stub_status` на `http://nginx:80/stub_status` (только из сети
+`172.16.0.0/12` — внутренний Docker bridge), см. `nginx/templates/proxy_locations.conf.tmpl`.
+`request_time`-перцентили остаются в Loki (JSON access-log), не в stub_status.
+
+### Дашборды Grafana
+
+| Дашборд | UID | Покрытие |
+|---|---|---|
+| Portal — Overview | `portal-overview` | RED backend (rate/errors/latency), audit pipeline, ARQ-задачи (jobs/duration/failures), бизнес-метрики (SSE, активные юзеры, KB/news/photos) |
+| Portal — Logs | `portal-logs` | Ошибки, slow-nginx, 5xx, трассировка по `request_id` |
+| Portal — Infrastructure | `portal-infra` | PostgreSQL, Redis, Host (диск/CPU/RAM), Nginx — метрики из exporter'ов |
 
 ## Настройка scrape-токена
 

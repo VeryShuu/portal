@@ -66,3 +66,50 @@ scrape_configs:
   - job_name: "alertmanager"
     static_configs:
       - targets: ["alertmanager:9093"]
+
+  # -------------------------------------------------------------------
+  # PostgreSQL exporter — пул соединений, cache hit ratio, XID wraparound,
+  # размер БД, долгие транзакции, дедлоки. Данные влияют на RED backend'а.
+  # -------------------------------------------------------------------
+  - job_name: "postgres"
+    scrape_interval: 30s
+    scrape_timeout: 10s
+    static_configs:
+      - targets: ["postgres-exporter:9187"]
+        labels:
+          service: postgres
+
+  # -------------------------------------------------------------------
+  # Redis exporter — память/evictions, клиенты, keyspace hit rate.
+  # Redis критичен: сессии, SSE, audit-очередь, rate-limit, idempotency.
+  # -------------------------------------------------------------------
+  - job_name: "redis"
+    scrape_interval: 30s
+    scrape_timeout: 10s
+    static_configs:
+      - targets: ["redis-exporter:9121"]
+        labels:
+          service: redis
+
+  # -------------------------------------------------------------------
+  # node_exporter — метрики хоста: диск (критично — /data/photos), CPU, RAM.
+  # -------------------------------------------------------------------
+  - job_name: "node"
+    scrape_interval: 30s
+    scrape_timeout: 10s
+    static_configs:
+      - targets: ["node-exporter:9100"]
+        labels:
+          service: host
+
+  # -------------------------------------------------------------------
+  # Nginx exporter — active connections, request rate (stub_status).
+  # request_time-перцентили остаются в Loki (JSON access-log).
+  # -------------------------------------------------------------------
+  - job_name: "nginx"
+    scrape_interval: 30s
+    scrape_timeout: 10s
+    static_configs:
+      - targets: ["nginx-exporter:9113"]
+        labels:
+          service: nginx

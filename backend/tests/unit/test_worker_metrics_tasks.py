@@ -74,6 +74,7 @@ class TestRefreshCustomMetrics:
         mock_redis = AsyncMock()
         mock_redis.llen = AsyncMock(return_value=5)
         mock_redis.zcard = AsyncMock(return_value=3)
+        mock_redis.hgetall = AsyncMock(return_value={})
         mock_redis.set = AsyncMock()
 
         ctx = {"redis": mock_redis}
@@ -91,6 +92,7 @@ class TestRefreshCustomMetrics:
         mock_redis = AsyncMock()
         mock_redis.llen = AsyncMock(side_effect=Exception("redis down"))
         mock_redis.zcard = AsyncMock(return_value=0)
+        mock_redis.hgetall = AsyncMock(return_value={})
         mock_redis.set = AsyncMock()
 
         ctx = {"redis": mock_redis}
@@ -119,6 +121,7 @@ class TestRefreshCustomMetrics:
         mock_redis = AsyncMock()
         mock_redis.llen = AsyncMock(return_value=0)
         mock_redis.zcard = AsyncMock(return_value=0)
+        mock_redis.hgetall = AsyncMock(return_value={})
         mock_redis.set = AsyncMock()
 
         mock_row = {
@@ -155,6 +158,7 @@ class TestRefreshCustomMetrics:
         mock_redis = AsyncMock()
         mock_redis.llen = AsyncMock(return_value=0)
         mock_redis.zcard = AsyncMock(return_value=0)
+        mock_redis.hgetall = AsyncMock(return_value={})
         mock_redis.set = AsyncMock()
 
         mock_pool = MagicMock()
@@ -174,6 +178,7 @@ class TestRefreshCustomMetrics:
         mock_redis = AsyncMock()
         mock_redis.llen = AsyncMock(return_value=0)
         mock_redis.zcard = AsyncMock(return_value=0)
+        mock_redis.hgetall = AsyncMock(return_value={})
         mock_redis.set = AsyncMock()
 
         (tmp_path / "photo.jpg").write_bytes(b"x" * 512)
@@ -189,6 +194,7 @@ class TestRefreshCustomMetrics:
         mock_redis = AsyncMock()
         mock_redis.llen = AsyncMock(return_value=0)
         mock_redis.zcard = AsyncMock(return_value=0)
+        mock_redis.hgetall = AsyncMock(return_value={})
         mock_redis.set = AsyncMock(side_effect=Exception("redis write error"))
 
         ctx = {"redis": mock_redis}
@@ -203,6 +209,7 @@ class TestRefreshCustomMetrics:
         mock_redis = AsyncMock()
         mock_redis.llen = AsyncMock(return_value=2)
         mock_redis.zcard = AsyncMock(return_value=1)
+        mock_redis.hgetall = AsyncMock(return_value={})
         mock_redis.set = AsyncMock()
 
         ctx = {"redis": mock_redis}
@@ -227,3 +234,121 @@ class TestWorkerHeartbeat:
             "1",
             ex=metrics_task.WORKER_HEARTBEAT_TTL,
         )
+
+
+class TestArqJobsSnapshot:
+    """refresh_custom_metrics должен подхватывать ARQ-хэши в snapshot."""
+
+    @pytest.mark.asyncio
+    async def test_arq_jobs_included_in_snapshot(self):
+        mock_redis = AsyncMock()
+        mock_redis.llen = AsyncMock(return_value=0)
+        mock_redis.zcard = AsyncMock(return_value=0)
+        mock_redis.set = AsyncMock()
+        mock_redis.hgetall = AsyncMock(
+            side_effect=[
+                {b"test:succeeded": 5, b"test:failed": 1},  # arq:metrics:jobs
+                {b"test:count": 6, b"test:sum": 12345},  # arq:metrics:job_ms
+            ]
+        )
+
+        ctx = {"redis": mock_redis}
+
+        with patch.object(metrics_task, "PHOTOS_ORIGINALS_DIR", Path("/nonexistent")):
+            result = await metrics_task.refresh_custom_metrics(ctx)
+
+        assert result["arq_jobs"] == {"test:succeeded": 5, "test:failed": 1}
+        assert result["arq_job_ms"] == {"test:count": 6, "test:sum": 12345}
+
+    @pytest.mark.asyncio
+    async def test_arq_jobs_error_swallowed(self):
+        mock_redis = AsyncMock()
+        mock_redis.llen = AsyncMock(return_value=0)
+        mock_redis.zcard = AsyncMock(return_value=0)
+        mock_redis.set = AsyncMock()
+        mock_redis.hgetall = AsyncMock(side_effect=Exception("redis down"))
+
+        ctx = {"redis": mock_redis}
+
+        with patch.object(metrics_task, "PHOTOS_ORIGINALS_DIR", Path("/nonexistent")):
+            result = await metrics_task.refresh_custom_metrics(ctx)
+
+        # ARQ-блок падает, но snapshot всё равно публикуется
+        assert "arq_jobs" not in result
+        assert "generated_at" in result
+
+
+class TestTrackArqJob:
+    """Декоратор track_arq_job: счётчики started/succeeded/failed + duration."""
+
+    @pytest.mark.asyncio
+    async def test_success_records_started_and_succeeded(self):
+        mock_redis = AsyncMock()
+        pipe = AsyncMock()
+        pipe.hincrby = MagicMock(return_value=pipe)
+        pipe.execute = AsyncMock()
+        mock_redis.pipeline = MagicMock(return_value=pipe)
+
+        @metrics_task.track_arq_job
+        async def my_task(ctx):
+            return "ok"
+
+        result = await my_task({"redis": mock_redis})
+        assert result == "ok"
+
+        # started (отдельный hincrby до вызова) + терминальный succeeded (в pipeline)
+        mock_redis.hincrby.assert_awaited_once_with(
+            metrics_task.ARQ_JOBS_KEY, "my_task:started", 1
+        )
+        pipe.hincrby.assert_any_call(metrics_task.ARQ_JOBS_KEY, "my_task:succeeded", 1)
+        pipe.hincrby.assert_any_call(metrics_task.ARQ_JOB_TIME_KEY, "my_task:count", 1)
+
+    @pytest.mark.asyncio
+    async def test_failure_records_failed_and_reraises(self):
+        mock_redis = AsyncMock()
+        pipe = AsyncMock()
+        pipe.hincrby = MagicMock(return_value=pipe)
+        pipe.execute = AsyncMock()
+        mock_redis.pipeline = MagicMock(return_value=pipe)
+
+        @metrics_task.track_arq_job
+        async def bad_task(ctx):
+            raise ValueError("boom")
+
+        with pytest.raises(ValueError):
+            await bad_task({"redis": mock_redis})
+
+        mock_redis.hincrby.assert_awaited_once_with(
+            metrics_task.ARQ_JOBS_KEY, "bad_task:started", 1
+        )
+        pipe.hincrby.assert_any_call(metrics_task.ARQ_JOBS_KEY, "bad_task:failed", 1)
+
+    @pytest.mark.asyncio
+    async def test_no_redis_does_not_break(self):
+        @metrics_task.track_arq_job
+        async def my_task(ctx):
+            return "ok"
+
+        # ctx без redis — декоратор не падает, функция выполняется
+        result = await my_task({})
+        assert result == "ok"
+
+    @pytest.mark.asyncio
+    async def test_redis_write_error_does_not_break_job(self):
+        mock_redis = AsyncMock()
+        mock_redis.hincrby = AsyncMock(side_effect=Exception("redis down"))
+
+        @metrics_task.track_arq_job
+        async def my_task(ctx):
+            return "ok"
+
+        result = await my_task({"redis": mock_redis})
+        assert result == "ok"
+
+    @pytest.mark.asyncio
+    async def test_preserves_function_name(self):
+        @metrics_task.track_arq_job
+        async def do_something_specific(ctx):
+            return None
+
+        assert do_something_specific.__name__ == "do_something_specific"

@@ -91,8 +91,21 @@ Backend принимает токен через **любой из двух за
 (`portal_sse_connections`, `portal_audit_queue_depth`,
 `portal_audit_processing_depth`, `portal_active_users_last_1h`,
 `portal_photo_storage_bytes`, `portal_kb_articles_total{status}`,
-`portal_news_published_total{status}`, `portal_users_total{auth_source}` и
-счётчик `portal_audit_events_pushed_total{event_type}`).
+`portal_news_published_total{status}`, `portal_users_total{auth_source}`,
+счётчик `portal_audit_events_pushed_total{event_type}`, а также ARQ-метрики
+`portal_arq_jobs_total{function,status}` и
+`portal_arq_job_duration_seconds{function}`).
+
+ARQ-метрики собирает декоратор `track_arq_job` (`./backend/app/worker/tasks/metrics.py`),
+которым обёрнуты все задачи в `WorkerSettings.functions`. Для каждой задачи
+записывается: `started`-счётчик (до вызова), терминальный `succeeded`/`failed`
+(в `finally`, исключение пробрасывается дальше — retry-логика ARQ не нарушается)
+и длительность в мс. Записи идут в Redis-хэши `arq:metrics:jobs` /
+`arq:metrics:job_ms` через атомарный `HINCRBY`, затем `refresh_custom_metrics`
+затягивает их в snapshot. Гидрация в API-процессе использует
+**delta-increment** (Prometheus-счётчики не имеют `.set()`) — см. `middleware/metrics.py`
+(кэш `_arq_job_last`). Дашборд Overview показывает failures/started/duration по
+функциям.
 
 Загвоздка: значения этих гейджей знает **воркер**, а scrape приходит в **API**.
 Поэтому:
@@ -174,19 +187,20 @@ Consumer-сторона — scrape, сбор логов, alerting-правила
 ```
 monitoring/
 ├── README.md                          ← детальная инструкция запуска
-├── prometheus.yml                     ← scrape portal-backend (/metrics + token)
+├── prometheus.yml                     ← scrape portal-backend + 4 exporter'а (postgres/redis/node/nginx)
 ├── loki/
 │   └── config.yml                     ← single-binary Loki (retention 30d)
 ├── alloy/
 │   └── config.alloy                   ← сбор Docker-логов → Loki (discovery + JSON)
 ├── alerts/
-│   ├── portal.yml                     ← alerting rules (PromQL)
+│   ├── portal.yml                     ← alerting rules (PromQL) — backend + PG + Redis + host + nginx + ARQ
 │   └── alertmanager.yml               ← routing + email-receivers (SMTP-relay)
 ├── grafana/
-│   ├── portal-overview.json           ← дашборд метрик (RED + audit + worker)
+│   ├── portal-overview.json           ← дашборд метрик (RED + audit + worker + ARQ)
 │   ├── portal-logs.json               ← дашборд логов (ошибки, объём, request_id)
+│   ├── portal-infrastructure.json     ← дашборд инфры (PostgreSQL + Redis + host + nginx)
 │   └── provisioning/                  ← auto-provision datasource (Prometheus+Loki) и dashboards
-└── docker-compose.monitoring.yml      ← overlay (5 сервисов)
+└── docker-compose.monitoring.yml      ← overlay (5 сервисов + 4 exporter'а)
 ```
 
 ### Запуск (полный стек — метрики + логи + алерты + UI)
@@ -209,11 +223,20 @@ UI (на хосте, проброшены на `127.0.0.1` — через SSH-т
 
 | Сервис | Порт | Назначение |
 |---|---|---|
-| Grafana | `:3000` | Единый UI: метрики + логи (два datasource, два дашборда). admin/`GRAFANA_ADMIN_PASSWORD` |
+| Grafana | `:3000` | Единый UI: метрики + логи (два datasource, три дашборда). admin/admin (смена при первом входе) |
 | Prometheus | `:9090` | Метрики: targets, query (PromQL), alert state |
 | Alertmanager | `:9093` | Состояние алертов, silences, тест отправки |
 | Loki | `:3100` | API логов (обычно через Grafana, напрямую — для отладки) |
 | Alloy | `:12345` | UI pipeline сборщика (inspect tailers, debugging) |
+| postgres-exporter | `:9187` | Метрики PostgreSQL (пул соединений, cache, XID, долгие TX, дедлоки) |
+| redis-exporter | `:9121` | Метрики Redis (память, evictions, клиенты, keyspace) |
+| node-exporter | `:9100` | Метрики хоста (диск/CPU/RAM/load) — критично для disk-full-алерта |
+| nginx-exporter | `:9113` | Метрики nginx (active connections, request rate — через stub_status) |
+
+Exporter'ы подключаются к `portal_internal` и видят `postgres`/`redis`/`nginx`
+по DNS. Секреты (`POSTGRES_PASSWORD`, `REDIS_PASSWORD`) интерполируются из `.env`.
+Nginx отдаёт `stub_status` на `http://nginx:80/stub_status` (только из сети
+`172.16.0.0/12`), см. `nginx/templates/proxy_locations.conf.tmpl`.
 
 ### Email-доставка алертов
 
@@ -231,13 +254,25 @@ UI Alertmanager. Переменные задаются в `.env` (см. `.env.ex
 | `PortalAuditQueueBacklog` | 🟡 warning | `portal_audit_queue_depth > 1000` 5 мин | ARQ-воркер не успевает flush'ить (или мёртв) |
 | `PortalAuditFlushStuck` | 🟡 warning | `portal_audit_processing_depth > 0` 10 мин | Батч взят, но не закоммичен — БД-связность / deadlock |
 | `PortalWorkerStale` | 🟡 warning | gauge не менялся 3 мин | ARQ-cron не выполняется — воркер скорее всего мёртв |
+| `PortalArqJobFailures` | 🟡 warning | `rate(portal_arq_jobs_total{status="failed"}) > 0.1/s` 5 мин | ARQ-задачи падают — смотреть логи worker, возможно упал upstream |
 | `PortalHighLatencyP99` | 🟡 warning | p99 latency > 5s | Медленный SQL / блокировки / нехватка пула |
 | `PortalSSEConnectionsHigh` | 🟡 warning | `portal_sse_connections > 500` 10 мин | Утечка SSE-стримов (незакрытые EventSource, вкладки-зомби) |
 | `PortalPhotoStorageHigh` | 🔵 info | `/data/photos > 100 ГБ` | Планировать ёмкость |
+| `PortalPGConnectionsHigh` | 🟡 warning | пул соединений > 80% | Насыщение пула → растёт latency (asyncpg pool / connection leak) |
+| `PortalPGCacheHitLow` | 🟡 warning | cache hit ratio < 90% | Нехватка shared_buffers или отсутствующие индексы |
+| `PortalPGWraparound` | 🟡 warning | XID возраст > 1.5e9 | autovacuum не справляется — близко к read-only защите |
+| `PortalPGDeadlocks` | 🟡 warning | дедлоки > 0 | Конкурирующие транзакции — баг в коде |
+| `PortalRedisMemoryHigh` | 🟡 warning | память > 90% maxmemory | Близко к eviction-режиму |
+| `PortalRedisEvictions` | 🟡 warning | evictions > 6/мин | Теряются сессии/audit — увеличить REDIS_MAXMEMORY |
+| `PortalDiskSpaceLow` | 🔴 critical | диск заполнен > 85% | Disk full ломает запись фото/БД/логов |
+| `PortalCPUHigh` | 🟡 warning | CPU > 80% 5 мин | Деградация latency для всех сервисов |
+| `PortalRAMLow` | 🟡 warning | свободная RAM < 10% | Риск OOM-kill контейнеров |
+| `PortalNginxConnectionsHigh` | 🟡 warning | active connections > 1000 | Утечка keepalive или аномальный трафик |
 
-> `PortalArqJobsFailing` (на `portal_arq_jobs_failed_total`) удалён: счётчики
-> были объявлены, но нигде не инкрементировались (ARQ 0.26 не передаёт флаг
-> успеха в `on_job_end`). Состояние воркера ловит `PortalWorkerStale`.
+> `PortalArqJobFailures` возрождён на корректной метрике `portal_arq_jobs_total{status="failed"}`
+> (гидрируется из Redis через декоратор `track_arq_job`). Прежняя версия на
+> `portal_arq_jobs_failed_total` была мёртвой — счётчики объявлялись, но нигде
+> не инкрементировались (ARQ 0.26 не передаёт флаг успеха в `on_job_end`).
 
 Полный PromQL и rationale — в самом `portal.yml`. Alertmanager-routing —
 email-receivers через SMTP-relay (см. §7 «Email-доставка алертов»).

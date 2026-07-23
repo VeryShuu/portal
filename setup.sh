@@ -76,7 +76,7 @@ show_menu() {
     echo
     echo -e "  ${BOLD}10.${RESET} Запустить мониторинг ${DIM}(Grafana + Loki + Prometheus)${RESET}"
     echo -e "  ${DIM}     Observability-overlay: метрики, централизованные логи, alerting.${RESET}"
-    echo -e "  ${DIM}     Grafana http://<server>:3000 (admin / GRAFANA_ADMIN_PASSWORD).${RESET}"
+    echo -e "  ${DIM}     Grafana http://<server>:3000 (admin / admin, сменить при первом входе).${RESET}"
     echo
     echo -e "  ${BOLD}0.${RESET}  Выход"
     echo
@@ -243,9 +243,7 @@ setup_env() {
     h2 "Observability (Grafana + алерты)"
     echo -e "  ${DIM}Параметры для observability-overlay (monitoring/docker-compose.monitoring.yml).${RESET}"
     echo -e "  ${DIM}Overlay НЕ подключается к прод-стеку автоматически — его поднимают явно.${RESET}"
-    echo -e "  ${DIM}Grafana admin-пароль. SMTP для алертов — можно пропустить (Enter).${RESET}"
-    echo
-    GRAFANA_ADMIN_PASSWORD=$(gen_or_ask "Grafana admin пароль  GRAFANA_ADMIN_PASSWORD")
+    echo -e "  ${DIM}Grafana: admin/admin при первом входе (принудительная смена), затем — SMTP для алертов.${RESET}"
     echo
     echo -e "  ${DIM}SMTP-relay для доставки алертов админам. Пусто = алерты только в UI.${RESET}"
     ALERT_SMTP_HOST=$(ask "SMTP host             ALERT_SMTP_HOST"  "")
@@ -308,7 +306,6 @@ SCREENSHOT_SERVICE_SECRET='${SCREENSHOT_SERVICE_SECRET}'
 # === Observability (overlay monitoring/docker-compose.monitoring.yml) ===
 # Используется только при явном поднятии overlay (не в базовом прод-деплое).
 GRAFANA_ADMIN_USER=admin
-GRAFANA_ADMIN_PASSWORD='${GRAFANA_ADMIN_PASSWORD}'
 PORTAL_METRICS_TOKEN=
 # SMTP для доставки алертов админам (Alertmanager → email). Пусто = алерты только в UI.
 ALERT_SMTP_HOST=${ALERT_SMTP_HOST}
@@ -1259,13 +1256,8 @@ start_monitoring() {
         return 1
     fi
 
-    local grafana_pw
-    grafana_pw=$(load_env_var GRAFANA_ADMIN_PASSWORD "")
-    if [[ -z "$grafana_pw" ]]; then
-        warn "GRAFANA_ADMIN_PASSWORD не задан в .env — Grafana стартует с паролем по умолчанию 'admin'."
-        warn "Смените его сразу после первого входа!"
-        echo
-    fi
+    echo -e "  ${DIM}Grafana: логин admin / пароль admin — принудительная смена при первом входе.${RESET}"
+    echo
 
     echo -e "  ${BOLD}Запуск observability-overlay...${RESET}"
     echo
@@ -1339,11 +1331,7 @@ start_monitoring() {
     echo
     if (( ready_grafana )); then
         echo -e "  ${BOLD}Grafana:${RESET}        http://${server_addr}:3000"
-        if [[ -z "$grafana_pw" ]]; then
-            echo -e "  ${DIM}Логин admin / пароль admin (сменить!).${RESET}"
-        else
-            echo -e "  ${DIM}Логин admin / пароль из .env::GRAFANA_ADMIN_PASSWORD${RESET}"
-        fi
+        echo -e "  ${DIM}Логин admin / пароль admin (принудительная смена при первом входе).${RESET}"
         echo -e "  ${DIM}Доступ из Windows (WSL2): тот же URL или http://localhost:3000${RESET}"
     else
         echo -e "  ${YELLOW}Grafana:${RESET}        http://${server_addr}:3000 ${YELLOW}(ещё стартует — открой через ~30 c)${RESET}"

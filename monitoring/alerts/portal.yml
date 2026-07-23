@@ -121,6 +121,20 @@ groups:
           summary: "ARQ-воркер, возможно, мёртв"
           description: "Гейдж portal_audit_queue_depth не менялся 3 мин при ненулевой очереди — ARQ-cron refresh_custom_metrics/flush_audit_queue не выполняется. Проверить `docker compose ps worker` и ключ Redis `arq:heartbeat`."
 
+      # ARQ job failures — задачи падают и не проходят даже после retry.
+      # >0.1/s (≈6/min) failures за 10-мин окно на 5 мин — системная проблема.
+      # Метрика portal_arq_jobs_total{status="failed"} гидрируется из Redis
+      # (worker → snapshot → API /metrics), см. backend/app/worker/tasks/metrics.py.
+      - alert: PortalArqJobFailures
+        expr: sum(rate(portal_arq_jobs_total{status="failed"}[10m])) by (function) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          service: portal-worker
+        annotations:
+          summary: "ARQ-задачи падают: {{ $labels.function }}"
+          description: "rate(portal_arq_jobs_total{status=\"failed\"}) > 0.1/s (≈6/мин) для {{ $labels.function }} уже 5 мин. Проверить логи worker (`docker compose logs worker`), возможно upstream (SMTP/Nextcloud/БД) недоступен."
+
   # ===================================================================
   # Saturation — ресурсы и ёмкость
   # ===================================================================
@@ -167,3 +181,186 @@ groups:
         annotations:
           summary: "Фото-хранилище большое ({{ $value | humanize1024 }})"
           description: "/data/photos/originals превысил 100 ГБ. Планировать ёмкость или чистить по retention."
+
+  # ===================================================================
+  # PostgreSQL — пул соединений, cache hit ratio, XID wraparound
+  # ===================================================================
+  - name: portal-postgresql
+    interval: 30s
+    rules:
+      # Использование пула соединений > 80%. Backend использует asyncpg pool;
+      # при насыщении новые запросы ждут соединение → растёт latency.
+      - alert: PortalPGConnectionsHigh
+        expr: |
+          sum(pg_stat_activity_count)
+          / clamp_min(pg_settings_max_connections{setting="max_connections"}, 1)
+          > 0.8
+        for: 5m
+        labels:
+          severity: warning
+          service: portal-postgres
+        annotations:
+          summary: "PostgreSQL: пул соединений насыщен ({{ $value | humanizePercentage }})"
+          description: "Активных соединений > 80% от max_connections уже 5 мин. Проверить долгие транзакции (pg_stat_activity), pool size backend'а, возможные connection leaks."
+
+      # Cache hit ratio < 90% — БД чаще читает с диска, чем из кэша.
+      # Индикатор нехватки shared_buffers или отсутствующих индексов.
+      - alert: PortalPGCacheHitLow
+        expr: |
+          (
+            sum(pg_stat_database_blks_hit)
+            / clamp_min(sum(pg_stat_database_blks_hit + pg_stat_database_blks_read), 1)
+          ) < 0.9
+          and sum(pg_stat_database_blks_hit + pg_stat_database_blks_read) > 10000
+        for: 10m
+        labels:
+          severity: warning
+          service: portal-postgres
+        annotations:
+          summary: "PostgreSQL: низкий cache hit ratio ({{ $value | humanizePercentage }})"
+          description: "Cache hit ratio < 90% при значимом объёме операций. Возможные причины: нехватка shared_buffers, отсутствующие индексы, большие seq-scan'ы. Проверить pg_stat_statements."
+
+      # XID wraparound — критично. При превышении ~1.5e9 БД переходит в
+      # read-only для защиты от wraparound. autovacuum должен держать это
+      # значение низким; если растёт — autovacuum не справляется.
+      - alert: PortalPGWraparound
+        expr: pg_database_xid_age > 1500000000
+        for: 10m
+        labels:
+          severity: warning
+          service: portal-postgres
+        annotations:
+          summary: "PostgreSQL: XID возраст большой ({{ $value }})"
+          description: "XID возраст БД {{ $labels.datname }} > 1.5e9 — приближается к wraparound-защите (БД станет read-only при ~2e9). Запустить VACUUM FREEZE вручную, проверить autovacuum."
+
+      # Дедлоки — всегда баг в коде. Любой дедлок за окно — повод разобраться.
+      - alert: PortalPGDeadlocks
+        expr: rate(pg_stat_database_deadlocks[5m]) > 0
+        for: 2m
+        labels:
+          severity: warning
+          service: portal-postgres
+        annotations:
+          summary: "PostgreSQL: обнаружены дедлоки"
+          description: "rate(pg_stat_database_deadlocks) > 0 — параллельные транзакции конфликтуют. Проверить логи PG (`docker compose logs postgres`), выявить конкурирующие транзакции."
+
+  # ===================================================================
+  # Redis — память, evictions, keyspace
+  # ===================================================================
+  - name: portal-redis
+    interval: 30s
+    rules:
+      # Память Redis > 90% от maxmemory — близко к eviction-режиму.
+      # Redis критичен: сессии, SSE, audit-очередь, rate-limit, idempotency.
+      - alert: PortalRedisMemoryHigh
+        expr: |
+          redis_memory_used_bytes
+          / clamp_min(redis_memory_max_bytes, 1) > 0.9
+        for: 5m
+        labels:
+          severity: warning
+          service: portal-redis
+        annotations:
+          summary: "Redis: память接近 maxmemory ({{ $value | humanizePercentage }})"
+          description: "Использование памяти Redis > 90% от maxmemory. При превышении начнутся evictions (политика maxmemory-policy). Проверить большие ключи (`redis-cli --bigkeys`), увеличить REDIS_MAXMEMORY."
+
+      # Evictions — ключи удаляются по политике maxmemory. На портале Redis не
+      # должен evict'ить (сессии/audit терять нельзя). >10/min — проблема.
+      - alert: PortalRedisEvictions
+        expr: rate(redis_evicted_keys_total[5m]) > 0.17
+        for: 5m
+        labels:
+          severity: warning
+          service: portal-redis
+        annotations:
+          summary: "Redis: высокая скорость evictions ({{ $value }}/s)"
+          description: "Redis удаляет ключи по политике maxmemory — памяти не хватает. Критично: могут теряться сессии/audit-события. Увеличить REDIS_MAXMEMORY в .env (требует рестарта redis)."
+
+      # Keyspace hit ratio < 90% — редко для Redis, но при больших наборах
+      # данных стоит проверить, не ушли ли горячие ключи на диск.
+      - alert: PortalRedisKeyspaceLow
+        expr: |
+          (
+            sum(rate(redis_keyspace_hits_total[5m]))
+            / clamp_min(
+              sum(rate(redis_keyspace_hits_total[5m]))
+              + sum(rate(redis_keyspace_misses_total[5m])), 1
+            )
+          ) < 0.9
+          and
+          (
+            sum(rate(redis_keyspace_hits_total[5m]))
+            + sum(rate(redis_keyspace_misses_total[5m]))
+          ) > 10
+        for: 10m
+        labels:
+          severity: warning
+          service: portal-redis
+        annotations:
+          summary: "Redis: низкий keyspace hit ratio ({{ $value | humanizePercentage }})"
+          description: "Keyspace hit ratio < 90% при значимом трафике. Возможные причины: TTL-ключи истекают быстрее, чем переиспользуются, или данные не помещаются в память."
+
+  # ===================================================================
+  # Host — диск, CPU, RAM (node_exporter)
+  # ===================================================================
+  - name: portal-host
+    interval: 30s
+    rules:
+      # Свободное место на диске < 15% — критично. /data хранит фото, БД
+      # (если volume), логи. Disk full = падение сервисов.
+      - alert: PortalDiskSpaceLow
+        expr: |
+          (1 -
+            node_filesystem_avail_bytes
+            / clamp_min(node_filesystem_size_bytes, 1)
+          ) > 0.85
+        for: 5m
+        labels:
+          severity: critical
+          service: portal-host
+        annotations:
+          summary: "Мало места на диске: {{ $labels.mountpoint }} (занято {{ $value | humanizePercentage }})"
+          description: "Файловая система {{ $labels.mountpoint }} ({{ $labels.device }}) заполнена > 85%. Критично — disk full ломает запись фото/БД/логов. Проверить `docker system df`, старые образы, /data/photos, логи."
+
+      # Нагрузка на CPU > 80% на 5 мин — деградация latency для всех сервисов.
+      - alert: PortalCPUHigh
+        expr: |
+          (1 - avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m]))) > 0.8
+        for: 5m
+        labels:
+          severity: warning
+          service: portal-host
+        annotations:
+          summary: "Высокая загрузка CPU ({{ $value | humanizePercentage }})"
+          description: "CPU utilization > 80% на хосте {{ $labels.instance }} уже 5 мин. Проверить `docker stats` — какой контейнер грузит, топ-процессы. Возможна нехватка ядер под нагрузку."
+
+      # Свободная RAM < 10% — близко к OOM-kill. Контейнеры начнут свопать.
+      - alert: PortalRAMLow
+        expr: |
+          node_memory_MemAvailable_bytes
+          / clamp_min(node_memory_MemTotal_bytes, 1) < 0.1
+        for: 5m
+        labels:
+          severity: warning
+          service: portal-host
+        annotations:
+          summary: "Мало свободной RAM ({{ $value | humanizePercentage }})"
+          description: "Доступная RAM < 10%. Возможен OOM-kill контейнеров. Проверить `docker stats`, настройки memory-limits сервисов, REDIS_MAXMEMORY/PostgreSQL shared_buffers."
+
+  # ===================================================================
+  # Nginx — соединения (stub_status)
+  # ===================================================================
+  - name: portal-nginx
+    interval: 30s
+    rules:
+      # Active connections > 1000 — для ~300 юзеров аномально. Может быть
+      # признаком утечки keepalive-соединений или атаки.
+      - alert: PortalNginxConnectionsHigh
+        expr: nginx_connections_active > 1000
+        for: 5m
+        labels:
+          severity: warning
+          service: portal-nginx
+        annotations:
+          summary: "Nginx: много активных соединений ({{ $value }})"
+          description: "Active connections nginx > 1000 уже 5 мин. Норма для ~300 юзеров — десятки-сотни (с учётом keepalive). Проверить `nginx -T` keepalive_timeout, логи доступа на аномальный трафик."

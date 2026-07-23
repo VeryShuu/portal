@@ -7,7 +7,7 @@ ARQ cron job — see ``app.worker.tasks.metrics``.
 
 from __future__ import annotations
 
-from prometheus_client import Counter, Gauge
+from prometheus_client import Counter, Gauge, Histogram
 
 # --- gauges (refreshed periodically by ARQ cron) ---------------------------
 
@@ -60,4 +60,21 @@ audit_events_pushed = Counter(
     "portal_audit_events_pushed_total",
     "Audit events pushed to the Redis queue.",
     labelnames=("event_type",),
+)
+
+# --- ARQ worker job metrics (cross-process: worker → Redis → API /metrics) --
+# Worker increments these via Redis (hincrby) in track_arq_job; the API process
+# hydrates them into these Prometheus objects on each /metrics scrape
+# (see middleware/metrics.py::hydrate_custom_metrics).
+arq_jobs_total = Counter(
+    "portal_arq_jobs_total",
+    "ARQ worker jobs processed, by function and outcome.",
+    labelnames=("function", "status"),
+)
+
+arq_job_duration = Histogram(
+    "portal_arq_job_duration_seconds",
+    "ARQ worker job wall-clock duration in seconds.",
+    labelnames=("function",),
+    buckets=(0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 120, 300, 600),
 )

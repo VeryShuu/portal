@@ -26,7 +26,12 @@ def test_worker_settings_has_no_cleanup_meetings_audit() -> None:
 
 
 def test_send_meeting_email_registered() -> None:
-    from app.worker.main import WorkerSettings
-    from app.worker.tasks.meetings.email import send_meeting_email
+    """send_meeting_email зарегистрирован в WorkerSettings.functions.
 
-    assert send_meeting_email in WorkerSettings.functions
+    Функция оборачивается в ``track_arq_job`` для ARQ-метрик, но декоратор
+    сохраняет ``__name__`` через ``functools.wraps`` — поэтому проверяем по имени.
+    """
+    from app.worker.main import WorkerSettings
+
+    func_names = {getattr(fn, "__name__", None) for fn in WorkerSettings.functions}
+    assert "send_meeting_email" in func_names
