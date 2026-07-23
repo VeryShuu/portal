@@ -26,6 +26,14 @@ settings = get_settings()
 
 METRICS_SNAPSHOT_KEY = "metrics:snapshot"
 WORKER_HEARTBEAT_KEY = "arq:heartbeat"
+# Separate timestamp key for age-based alerting. WORKER_HEARTBEAT_KEY is a pure
+# TTL key (value "1", TTL 90s) consumed by the Docker healthcheck; it carries no
+# timestamp, so a consumer cannot compute "how long ago the worker last ticked".
+# This companion key stores the wall-clock unix time of each tick and is read by
+# refresh_custom_metrics into ``portal_worker_last_heartbeat_seconds``. Absent
+# key (worker never started / dead long enough for TTL) → the gauge is not
+# hydrated → the PortalWorkerDown alert (time() - gauge > N) fires.
+WORKER_HEARTBEAT_MTIME_KEY = "arq:heartbeat:mtime"
 WORKER_HEARTBEAT_TTL = 90  # seconds — if not refreshed in 90 s, worker is considered dead
 PHOTOS_ORIGINALS_DIR = Path("/data/photos/originals")
 
@@ -114,6 +122,17 @@ async def refresh_custom_metrics(ctx: dict) -> dict:
         snapshot["audit_processing_depth"] = int(await redis.llen("audit_processing"))
     except Exception as exc:
         logger.warning("metrics.audit_queue_failed", error=str(exc))
+
+    # 1b. Worker heartbeat timestamp — basis for PortalWorkerDown alerting.
+    # Absent key (worker never started / TTL expired because it died) → the
+    # field is omitted and the gauge is not hydrated this cycle, so the gauge
+    # retains the last known value and its age keeps growing.
+    try:
+        mtime = await redis.get(WORKER_HEARTBEAT_MTIME_KEY)
+        if mtime is not None:
+            snapshot["worker_heartbeat_ts"] = int(mtime)
+    except Exception as exc:
+        logger.warning("metrics.worker_heartbeat_failed", error=str(exc))
 
     # 2. SSE connections — read from the global tracking key (single ZCARD)
     try:
@@ -257,11 +276,22 @@ async def refresh_custom_metrics(ctx: dict) -> dict:
 
 
 async def worker_heartbeat(ctx: dict) -> None:
-    """Write a TTL-bound key to Redis so healthchecks can verify the ARQ loop is alive.
+    """Write TTL-bound keys to Redis so healthchecks can verify the ARQ loop is alive.
 
-    Runs every 30 seconds via cron.  The key ``arq:heartbeat`` expires after
-    ``WORKER_HEARTBEAT_TTL`` seconds (90 s).  The Docker healthcheck reads this
-    key; absence means the worker process is stuck or dead.
+    Runs every 30 seconds via cron. Writes two keys:
+
+    * ``arq:heartbeat`` (value ``"1"``, TTL 90s) — consumed by the Docker
+      healthcheck; absence means the worker is stuck or dead.
+    * ``arq:heartbeat:mtime`` (value = unix timestamp, TTL 90s) — read by
+      ``refresh_custom_metrics`` into ``portal_worker_last_heartbeat_seconds``
+      for age-based alerting. The timestamp lets Prometheus compute the age via
+      ``time() - gauge``, which is impossible with the pure TTL key alone.
+
+    Both keys expire after ``WORKER_HEARTBEAT_TTL`` seconds (90 s).
     """
     redis = ctx["redis"]
-    await redis.set(WORKER_HEARTBEAT_KEY, "1", ex=WORKER_HEARTBEAT_TTL)
+    now = int(time.time())
+    pipe = redis.pipeline()
+    pipe.set(WORKER_HEARTBEAT_KEY, "1", ex=WORKER_HEARTBEAT_TTL)
+    pipe.set(WORKER_HEARTBEAT_MTIME_KEY, str(now), ex=WORKER_HEARTBEAT_TTL)
+    await pipe.execute()

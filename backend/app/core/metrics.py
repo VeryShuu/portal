@@ -26,6 +26,13 @@ audit_processing_depth = Gauge(
     "Number of audit events currently being processed by the flush worker.",
 )
 
+worker_last_heartbeat = Gauge(
+    "portal_worker_last_heartbeat_seconds",
+    "Unix timestamp of the last ARQ worker heartbeat (cron worker_heartbeat, "
+    "every 30s). Compute age via ``time() - portal_worker_last_heartbeat_seconds``. "
+    "A growing age means the worker is stuck or dead — basis for PortalWorkerDown.",
+)
+
 active_users_1h = Gauge(
     "portal_active_users_last_1h",
     "Distinct users that produced at least one audit event in the last hour.",

@@ -80,6 +80,30 @@ scrape_configs:
           service: loki
 
   # -------------------------------------------------------------------
+  # Grafana self-monitoring — health + active sessions/alerts. Нужен для
+  # мета-алерта GrafanaDown (без него UI-сбой невидим — весь observability
+  # UI лежит, но никто не узнает, т.к. сам портал и алерты работают).
+  # -------------------------------------------------------------------
+  - job_name: "grafana"
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["grafana:3000"]
+        labels:
+          service: grafana
+
+  # -------------------------------------------------------------------
+  # Alloy self-monitoring — pipeline health (loki_write requests, drops,
+  # tailer errors). Нужен для мета-алерта AlloyDown: если сборщик логов
+  # умер, centralized-логи перестают поступать тихо.
+  # -------------------------------------------------------------------
+  - job_name: "alloy"
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["alloy:12345"]
+        labels:
+          service: alloy
+
+  # -------------------------------------------------------------------
   # PostgreSQL exporter — пул соединений, cache hit ratio, XID wraparound,
   # размер БД, долгие транзакции, дедлоки. Данные влияют на RED backend'а.
   # -------------------------------------------------------------------

@@ -56,6 +56,7 @@ class TestHydrateCustomMetrics:
             "sse_connections": 7.0,
             "active_users_1h": 55.0,
             "photo_storage_bytes": 1_000_000.0,
+            "worker_heartbeat_ts": 1_700_000_000.0,
             "kb_articles_total": {"published": 10.0, "draft": 2.0},
             "news_published_total": {"published": 20.0},
             "users_total": {"local": 5.0, "keycloak": 50.0},
@@ -84,6 +85,7 @@ class TestHydrateCustomMetrics:
         fake_metrics.sse_connections = _FakeGauge("sse_connections")
         fake_metrics.active_users_1h = _FakeGauge("active_users_1h")
         fake_metrics.photo_storage_bytes = _FakeGauge("photo_storage_bytes")
+        fake_metrics.worker_last_heartbeat = _FakeGauge("worker_last_heartbeat")
         fake_metrics.kb_articles_total = _FakeGauge("kb_articles_total")
         fake_metrics.news_published_total = _FakeGauge("news_published_total")
         fake_metrics.users_total = _FakeGauge("users_total")
@@ -96,6 +98,7 @@ class TestHydrateCustomMetrics:
         assert ("set", 7.0) in gauge_calls["sse_connections"]
         assert ("set", 55.0) in gauge_calls["active_users_1h"]
         assert ("set", 1_000_000.0) in gauge_calls["photo_storage_bytes"]
+        assert ("set", 1_700_000_000.0) in gauge_calls["worker_last_heartbeat"]
 
     async def test_partial_snapshot_no_error(self):
         snap = {"audit_queue_depth": 5.0}

@@ -36,6 +36,10 @@ async def hydrate_custom_metrics(
                         _metrics_mod.audit_processing_depth.set(
                             float(snap["audit_processing_depth"])
                         )
+                    if "worker_heartbeat_ts" in snap:
+                        _metrics_mod.worker_last_heartbeat.set(
+                            float(snap["worker_heartbeat_ts"])
+                        )
                     if "sse_connections" in snap:
                         _metrics_mod.sse_connections.set(float(snap["sse_connections"]))
                     if "active_users_1h" in snap:

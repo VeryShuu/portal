@@ -75,6 +75,7 @@ class TestRefreshCustomMetrics:
         mock_redis.llen = AsyncMock(return_value=5)
         mock_redis.zcard = AsyncMock(return_value=3)
         mock_redis.hgetall = AsyncMock(return_value={})
+        mock_redis.get = AsyncMock(return_value=b"1700000000")
         mock_redis.set = AsyncMock()
 
         ctx = {"redis": mock_redis}
@@ -85,6 +86,42 @@ class TestRefreshCustomMetrics:
         assert result["audit_queue_depth"] == 5
         assert result["audit_processing_depth"] == 5
         assert result["sse_connections"] == 3
+        assert result["worker_heartbeat_ts"] == 1_700_000_000
+        assert "generated_at" in result
+
+    @pytest.mark.asyncio
+    async def test_worker_heartbeat_absent_omitted(self):
+        """Нет mtime-ключа (воркер ещё не стартовал / TTL истёк) → поле
+        отсутствует в snapshot. Gauge не гидрируется, PortalWorkerDown ловит."""
+        mock_redis = AsyncMock()
+        mock_redis.llen = AsyncMock(return_value=0)
+        mock_redis.zcard = AsyncMock(return_value=0)
+        mock_redis.hgetall = AsyncMock(return_value={})
+        mock_redis.get = AsyncMock(return_value=None)
+        mock_redis.set = AsyncMock()
+
+        ctx = {"redis": mock_redis}
+
+        with patch.object(metrics_task, "PHOTOS_ORIGINALS_DIR", Path("/nonexistent")):
+            result = await metrics_task.refresh_custom_metrics(ctx)
+
+        assert "worker_heartbeat_ts" not in result
+
+    @pytest.mark.asyncio
+    async def test_worker_heartbeat_error_swallowed(self):
+        mock_redis = AsyncMock()
+        mock_redis.llen = AsyncMock(return_value=0)
+        mock_redis.zcard = AsyncMock(return_value=0)
+        mock_redis.hgetall = AsyncMock(return_value={})
+        mock_redis.get = AsyncMock(side_effect=Exception("redis down"))
+        mock_redis.set = AsyncMock()
+
+        ctx = {"redis": mock_redis}
+
+        with patch.object(metrics_task, "PHOTOS_ORIGINALS_DIR", Path("/nonexistent")):
+            result = await metrics_task.refresh_custom_metrics(ctx)
+
+        assert "worker_heartbeat_ts" not in result
         assert "generated_at" in result
 
     @pytest.mark.asyncio
@@ -93,6 +130,7 @@ class TestRefreshCustomMetrics:
         mock_redis.llen = AsyncMock(side_effect=Exception("redis down"))
         mock_redis.zcard = AsyncMock(return_value=0)
         mock_redis.hgetall = AsyncMock(return_value={})
+        mock_redis.get = AsyncMock(return_value=None)
         mock_redis.set = AsyncMock()
 
         ctx = {"redis": mock_redis}
@@ -107,6 +145,8 @@ class TestRefreshCustomMetrics:
         mock_redis = AsyncMock()
         mock_redis.llen = AsyncMock(return_value=0)
         mock_redis.zcard = AsyncMock(side_effect=Exception("sse scan failed"))
+        mock_redis.get = AsyncMock(return_value=None)
+        mock_redis.hgetall = AsyncMock(return_value={})
         mock_redis.set = AsyncMock()
 
         ctx = {"redis": mock_redis}
@@ -122,6 +162,7 @@ class TestRefreshCustomMetrics:
         mock_redis.llen = AsyncMock(return_value=0)
         mock_redis.zcard = AsyncMock(return_value=0)
         mock_redis.hgetall = AsyncMock(return_value={})
+        mock_redis.get = AsyncMock(return_value=None)
         mock_redis.set = AsyncMock()
 
         mock_row = {
@@ -170,6 +211,7 @@ class TestRefreshCustomMetrics:
         mock_redis.llen = AsyncMock(return_value=0)
         mock_redis.zcard = AsyncMock(return_value=0)
         mock_redis.hgetall = AsyncMock(return_value={})
+        mock_redis.get = AsyncMock(return_value=None)
         mock_redis.set = AsyncMock()
 
         mock_pool = MagicMock()
@@ -190,6 +232,7 @@ class TestRefreshCustomMetrics:
         mock_redis.llen = AsyncMock(return_value=0)
         mock_redis.zcard = AsyncMock(return_value=0)
         mock_redis.hgetall = AsyncMock(return_value={})
+        mock_redis.get = AsyncMock(return_value=None)
         mock_redis.set = AsyncMock()
 
         (tmp_path / "photo.jpg").write_bytes(b"x" * 512)
@@ -206,6 +249,7 @@ class TestRefreshCustomMetrics:
         mock_redis.llen = AsyncMock(return_value=0)
         mock_redis.zcard = AsyncMock(return_value=0)
         mock_redis.hgetall = AsyncMock(return_value={})
+        mock_redis.get = AsyncMock(return_value=None)
         mock_redis.set = AsyncMock(side_effect=Exception("redis write error"))
 
         ctx = {"redis": mock_redis}
@@ -221,6 +265,7 @@ class TestRefreshCustomMetrics:
         mock_redis.llen = AsyncMock(return_value=2)
         mock_redis.zcard = AsyncMock(return_value=1)
         mock_redis.hgetall = AsyncMock(return_value={})
+        mock_redis.get = AsyncMock(return_value=None)
         mock_redis.set = AsyncMock()
 
         ctx = {"redis": mock_redis}
@@ -233,18 +278,29 @@ class TestRefreshCustomMetrics:
 
 class TestWorkerHeartbeat:
     @pytest.mark.asyncio
-    async def test_sets_heartbeat_key(self):
+    async def test_sets_heartbeat_and_mtime_keys(self):
         mock_redis = AsyncMock()
-        mock_redis.set = AsyncMock()
+        pipe = AsyncMock()
+        pipe.set = MagicMock(return_value=pipe)
+        pipe.execute = AsyncMock()
+        mock_redis.pipeline = MagicMock(return_value=pipe)
 
         ctx = {"redis": mock_redis}
-        await metrics_task.worker_heartbeat(ctx)
+        with patch.object(metrics_task.time, "time", return_value=1_700_000_000):
+            await metrics_task.worker_heartbeat(ctx)
 
-        mock_redis.set.assert_awaited_once_with(
+        # Pipeline пишет ДВА ключа: TTL-key (для docker healthcheck) + mtime.
+        pipe.set.assert_any_call(
             metrics_task.WORKER_HEARTBEAT_KEY,
             "1",
             ex=metrics_task.WORKER_HEARTBEAT_TTL,
         )
+        pipe.set.assert_any_call(
+            metrics_task.WORKER_HEARTBEAT_MTIME_KEY,
+            "1700000000",
+            ex=metrics_task.WORKER_HEARTBEAT_TTL,
+        )
+        pipe.execute.assert_awaited_once()
 
 
 class TestArqJobsSnapshot:
@@ -255,6 +311,7 @@ class TestArqJobsSnapshot:
         mock_redis = AsyncMock()
         mock_redis.llen = AsyncMock(return_value=0)
         mock_redis.zcard = AsyncMock(return_value=0)
+        mock_redis.get = AsyncMock(return_value=None)
         mock_redis.set = AsyncMock()
         mock_redis.hgetall = AsyncMock(
             side_effect=[
@@ -276,6 +333,7 @@ class TestArqJobsSnapshot:
         mock_redis = AsyncMock()
         mock_redis.llen = AsyncMock(return_value=0)
         mock_redis.zcard = AsyncMock(return_value=0)
+        mock_redis.get = AsyncMock(return_value=None)
         mock_redis.set = AsyncMock()
         mock_redis.hgetall = AsyncMock(side_effect=Exception("redis down"))
 

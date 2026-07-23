@@ -14,11 +14,90 @@
 #   portal_active_users_last_1h                — gauge
 #   up{job="portal"}                           — scrape success
 #
-# Worker heartbeat (не metric, а Redis key `arq:heartbeat` с TTL 90s) —
-# косвенно виден через stale гейджи: если воркер мёртв, кастомные метрики
-# замерзают (см. PortalWorkerDown через stale).
+# Worker heartbeat — cron `worker_heartbeat` пишет unix-timestamp в Redis
+# (ключ `arq:heartbeat:mtime`), который гидрируется в gauge
+# `portal_worker_last_heartbeat_seconds`. Age = time() - gauge — прямой датчик
+# смерти воркера (см. PortalWorkerDown ниже). Отдельный TTL-key `arq:heartbeat`
+# (без timestamp) остаётся для Docker healthcheck.
 
 groups:
+  # ===================================================================
+  # Meta-monitoring — здоровье самого observability-стека.
+  # Если умирает Prometheus/Alertmanager/Grafana/Loki/Alloy, остальной
+  # алертинг молча гибнет. Watchdog — всегда-firing heartbeat: его пропажа
+  # из уведомлений = умер прометей или alertmanager. Down-алерты ловят
+  # каждый компонент по отдельности.
+  # ===================================================================
+  - name: portal-meta
+    interval: 30s
+    rules:
+      # Watchdog — всегда firing. Это «маяк»: если он перестал приходить в
+      # уведомления, значит Prometheus не eval'ит rules или Alertmanager не
+      # шлёт (т.е. умер один из них). Канонический паттерн из best-practices.
+      - alert: Watchdog
+        expr: vector(1)
+        labels:
+          severity: warning
+          service: monitoring
+        annotations:
+          summary: "Monitoring watchdog alive"
+          description: "Этот алерт всегда firing. Если он перестал приходить в уведомления — умер Prometheus или Alertmanager (остальные алерты тоже молча не уходят). Проверить `docker compose ps prometheus alertmanager` (overlay monitoring)."
+
+      # Prometheus — не отвечает на self-scrape. Без него весь алертинг мёртв.
+      - alert: PrometheusDown
+        expr: up{job="prometheus"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: monitoring
+        annotations:
+          summary: "Prometheus недоступен"
+          description: "Prometheus не отвечает на self-scrape (:9090/metrics). Весь остальной алертинг не работает, пока он мёртв. Проверить `docker compose ps prometheus` (overlay monitoring), логи `docker compose logs prometheus`, свободное место на диске (retention 30d)."
+
+      # Alertmanager — мёртв. Прометей eval'ит алерты, но некому их доставить.
+      - alert: AlertmanagerDown
+        expr: up{job="alertmanager"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: monitoring
+        annotations:
+          summary: "Alertmanager недоступен"
+          description: "Alertmanager не отвечает на scrape (:9093/-/ready). Prometheus eval'ит алерты, но некому доставить уведомления. Проверить `docker compose ps alertmanager` (overlay monitoring), логи, SMTP-настройки."
+
+      # Grafana — мёртв. UI observability недоступен (алерты при этом идут).
+      - alert: GrafanaDown
+        expr: up{job="grafana"} == 0
+        for: 5m
+        labels:
+          severity: warning
+          service: monitoring
+        annotations:
+          summary: "Grafana недоступна"
+          description: "Grafana не отвечает на scrape (:3000/metrics). UI observability (дашборды) недоступен. Алерты при этом работают (Alertmanager независим). Проверить `docker compose ps grafana` (overlay monitoring)."
+
+      # Loki — мёртв. Centralized-логи не принимаются (но Grafana-alternatives живы).
+      - alert: LokiDown
+        expr: up{job="loki"} == 0
+        for: 5m
+        labels:
+          severity: warning
+          service: monitoring
+        annotations:
+          summary: "Loki недоступен"
+          description: "Loki не отвечает на scrape (:3100/ready). Centralized-логи не принимаются (поиск по request_id и т.п. через Grafana нерабочий). Проверить `docker compose ps loki` (overlay monitoring), свободное место на volume loki-data."
+
+      # Alloy — мёртв. Сбор логов остановлен (логи контейнеров не доходят до Loki).
+      - alert: AlloyDown
+        expr: up{job="alloy"} == 0
+        for: 5m
+        labels:
+          severity: warning
+          service: monitoring
+        annotations:
+          summary: "Alloy (сборщик логов) недоступен"
+          description: "Alloy не отвечает на scrape (:12345/-/ready). Сбор Docker-логов остановлен — новые логи не поступают в Loki. Проверить `docker compose ps alloy` (overlay monitoring), Docker socket mount."
+
   # ===================================================================
   # Availability — базовое «живо ли вообще»
   # ===================================================================
@@ -103,23 +182,41 @@ groups:
   - name: portal-worker
     interval: 30s
     rules:
-      # Worker heartbeat обновляется cron'ом `worker_heartbeat` раз в 30с,
-      # ключ в Redis `arq:heartbeat` (TTL 90с). Если воркер жив, кастомные
-      # гейджи (`portal_audit_queue_depth`, `portal_active_users_last_1h`)
-      # обновляются через `metrics:snapshot` раз в 30с.
+      # PRIMARY — прямой датчик смерти воркера. Cron `worker_heartbeat` каждые
+      # 30с пишет unix-timestamp в Redis → gauge portal_worker_last_heartbeat_seconds
+      # (гидрируется из snapshot). Age = time() - gauge.
       #
-      # Косвенный индикатор: если 3 подряд scrape (≈1.5 мин) показывают одно
-      # и то же значение gauge — воркер скорее всего лежит. time() самого
-      # gauge мы не имеем, поэтому используем `changes()` за окно.
+      # Порог 120с = heartbeat-интервал (30с) × 4 + запас. Heartbeat-TTL в Redis
+      # 90с, но snapshot обновляется 30с, поэтому после смерти воркера gauge
+      # «замрёт» на последнем значении и age начнёт расти сразу. 120с покрывает:
+      # 1 пропущенный цикл (норма) + лаг snapshot + лаг scrape.
+      #
+      # В отличие от PortalWorkerStale (ниже), этот алерт сработает даже если
+      # очередь audit пуста (воркер умер в простое) — старая реализация была
+      # слепа в этом случае (false-negative на тихую смерть).
+      - alert: PortalWorkerDown
+        expr: time() - portal_worker_last_heartbeat_seconds > 120
+        for: 1m
+        labels:
+          severity: critical
+          service: portal-worker
+        annotations:
+          summary: "ARQ-воркер не подаёт признаков жизни"
+          description: "Heartbeat воркера не обновлялся уже {{ $value | humanizeDuration }} (> 120с). Воркер завис или упал — cron'ы (audit flush, outbox dispatch, integration probes) не выполняются. Проверить `docker compose ps worker`, логи `arq_worker.*`, ключ Redis `arq:heartbeat`."
+
+      # SECONDARY — воркер жив (heartbeat тикает), но refresh_custom_metrics
+      # завис: кастомные гейджи застывают. Ловит subtler case: event-loop
+      # блокирован долгой задачей, cron не крутится, но процесс отвечает.
+      # Оставлен как доп. сигнал; основной датчик — PortalWorkerDown выше.
       - alert: PortalWorkerStale
         expr: changes(portal_audit_queue_depth[3m]) == 0 and portal_audit_queue_depth > 0
-        for: 2m
+        for: 5m
         labels:
           severity: warning
           service: portal-worker
         annotations:
-          summary: "ARQ-воркер, возможно, мёртв"
-          description: "Гейдж portal_audit_queue_depth не менялся 3 мин при ненулевой очереди — ARQ-cron refresh_custom_metrics/flush_audit_queue не выполняется. Проверить `docker compose ps worker` и ключ Redis `arq:heartbeat`."
+          summary: "ARQ-воркер: кастомные гейджи застывают"
+          description: "Гейдж portal_audit_queue_depth не менялся 3 мин при ненулевой очереди — cron refresh_custom_metrics/flush_audit_queue не выполняется, хотя heartbeat жив. Event-loop возможно блокирован долгой задачей. Проверить логи worker."
 
       # ARQ job failures — задачи падают и не проходят даже после retry.
       # >0.1/s (≈6/min) failures за 10-мин окно на 5 мин — системная проблема.

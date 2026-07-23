@@ -89,10 +89,13 @@ Backend принимает токен через **любой из двух за
 
 Кастомные гейджи объявлены в `./backend/app/core/metrics.py`
 (`portal_sse_connections`, `portal_audit_queue_depth`,
-`portal_audit_processing_depth`, `portal_active_users_last_1h`,
-`portal_photo_storage_bytes`, `portal_kb_articles_total{status}`,
-`portal_news_published_total{status}`, `portal_users_total{auth_source}`,
-счётчик `portal_audit_events_pushed_total{event_type}`, а также ARQ-метрики
+`portal_audit_processing_depth`, `portal_worker_last_heartbeat_seconds`
+(unix-timestamp последнего heartbeat'а воркера — основа алерта
+`PortalWorkerDown`, см. §3 «Heartbeat воркера»),
+`portal_active_users_last_1h`, `portal_photo_storage_bytes`,
+`portal_kb_articles_total{status}`, `portal_news_published_total{status}`,
+`portal_users_total{auth_source}`, счётчик
+`portal_audit_events_pushed_total{event_type}`, а также ARQ-метрики
 `portal_arq_jobs_total{function,status}` и
 `portal_arq_job_duration_seconds{function}`).
 
@@ -193,9 +196,22 @@ flowchart LR
 
 ### Heartbeat воркера
 
-`worker_heartbeat` (cron `second={0,30}`) обновляет Redis-ключ `arq:heartbeat`
-(`WORKER_HEARTBEAT_KEY`) c TTL **90 с** (`WORKER_HEARTBEAT_TTL`). Если ключ
-протух — воркер считается мёртвым (основа для алерта «worker down»).
+`worker_heartbeat` (cron `second={0,30}`) пишет в Redis **два ключа** c TTL
+**90 с** (`WORKER_HEARTBEAT_TTL`):
+
+| Ключ | Значение | Назначение |
+|---|---|---|
+| `arq:heartbeat` | `"1"` | Чистый TTL-key — читает Docker healthcheck воркера (ключ протух → healthcheck fail). |
+| `arq:heartbeat:mtime` | unix-timestamp | Читает `refresh_custom_metrics` → gauge `portal_worker_last_heartbeat_seconds`. Возраст = `time() - gauge` — **прямой датчик смерти воркера** для алерта `PortalWorkerDown`. |
+
+Два ключа нужны потому, что у чистого TTL-key нет timestamp'а — потребитель не
+может вычислить «как давно воркер тикал». Docker healthcheck работает по факту
+наличия ключа (binary alive/dead), а Prometheus-алертингу нужна непрерывная
+метрика возраста, поэтому mtime-ключ гидрируется в gauge. Если воркер умер,
+mtime-key протухает (TTL 90с), `refresh_custom_metrics` не находит его → gauge
+«замерзает» на последнем значении → `time() - gauge` растёт → алерт срабатывает
+даже при пустой audit-очереди (в отличие от старого косвенного `PortalWorkerStale`).
+
 
 ---
 
@@ -253,21 +269,42 @@ Consumer-сторона — scrape, сбор логов, alerting-правила
 ```
 monitoring/
 ├── README.md                          ← детальная инструкция запуска
-├── prometheus.yml                     ← scrape portal-backend + 4 exporter'а (postgres/redis/node/nginx)
+├── prometheus.yml                     ← scrape portal-backend + self + 4 exporter'а + Loki
 ├── loki/
 │   └── config.yml                     ← single-binary Loki (retention 30d)
 ├── alloy/
 │   └── config.alloy                   ← сбор Docker-логов → Loki (discovery + JSON)
 ├── alerts/
-│   ├── portal.yml                     ← alerting rules (PromQL) — backend + PG + Redis + host + nginx + ARQ
+│   ├── portal.yml                     ← alerting rules (PromQL) — 35 правил: мета-мониторинг + backend + audit + PG + Redis + host + nginx + ARQ + outbox + probes
 │   └── alertmanager.yml               ← routing + email-receivers (SMTP-relay)
 ├── grafana/
-│   ├── portal-overview.json           ← дашборд метрик (RED + audit + worker + ARQ)
+│   ├── portal-overview.json           ← дашборд метрик (RED + audit + worker + ARQ + бизнес + outbox + probes)
 │   ├── portal-logs.json               ← дашборд логов (ошибки, объём, request_id)
 │   ├── portal-infrastructure.json     ← дашборд инфры (PostgreSQL + Redis + host + nginx)
-│   └── provisioning/                  ← auto-provision datasource (Prometheus+Loki) и dashboards
-└── docker-compose.monitoring.yml      ← overlay (5 сервисов + 4 exporter'а)
+│   ├── portal-storage.json            ← дашборд хранилища (БД + папки /data + Docker-логи + volumes + Loki)
+│   └── provisioning/                  ← auto-provision datasource (Prometheus+Loki) и 4 дашборда
+├── node-exporter-textfile/            ← sidecar storage-collector (см. ниже)
+│   ├── Dockerfile                     ← alpine + jq + tini + crond
+│   ├── collect.sh                     ← du по /data/*, Docker json-file логам, named volumes
+│   └── crontab                        ← расписание (каждые 5 мин)
+├── textfile/                          ← rw-volume: storage-collector пишет, node-exporter читает
+└── docker-compose.monitoring.yml      ← overlay (5 сервисов + 4 exporter'а + storage-collector)
 ```
+
+### storage-collector (sidecar для объёмов на диске)
+
+node-exporter видит только целые ФС, а дашборд **«Portal — Storage»** хочет показать
+размеры отдельных папок (`/data/photos/originals`, `base_data/postgres`, …) и объём
+json-file логов каждого контейнера. Для этого служит лёгкий sidecar
+`storage-collector` (образ `monitoring/node-exporter-textfile/`, ~10 МБ RAM, без
+портов): каждые 5 мин `collect.sh` делает `du -sb` по папкам данных портала и
+суммирует логи контейнеров (имя сервиса — из compose-label), результат атомарно
+пишет в `monitoring/textfile/storage.prom`. node-exporter отдаёт его через
+`--collector.textfile.directory=/textfile` как метрики
+`portal_storage_folder_bytes`, `portal_storage_docker_logs_bytes`,
+`portal_storage_docker_volume_bytes`. Путь портала на хосте — env
+`PORTAL_HOST_PATH` (дефолт `/home/snow/portal`). Детали — в `monitoring/README.md`
+(раздел «storage-collector»).
 
 ### Запуск (полный стек — метрики + логи + алерты + UI)
 
@@ -289,15 +326,18 @@ UI (на хосте, проброшены на `127.0.0.1` — через SSH-т
 
 | Сервис | Порт | Назначение |
 |---|---|---|
-| Grafana | `:3001` | Единый UI: метрики + логи (два datasource, три дашборда). admin/admin (смена при первом входе) |
+| Grafana | `:3001` | Единый UI: метрики + логи (два datasource, **четыре** дашборда). admin/admin (смена при первом входе) |
 | Prometheus | `:9090` | Метрики: targets, query (PromQL), alert state |
 | Alertmanager | `:9093` | Состояние алертов, silences, тест отправки |
 | Loki | `:3100` | API логов (обычно через Grafana, напрямую — для отладки) |
 | Alloy | `:12345` | UI pipeline сборщика (inspect tailers, debugging) |
 | postgres-exporter | `:9187` | Метрики PostgreSQL (пул соединений, cache, XID, долгие TX, дедлоки) |
 | redis-exporter | `:9121` | Метрики Redis (память, evictions, клиенты, keyspace) |
-| node-exporter | `:9100` | Метрики хоста (диск/CPU/RAM/load) — критично для disk-full-алерта |
+| node-exporter | `:9100` | Метрики хоста (диск/CPU/RAM/load) + textfile-метрики storage-collector |
 | nginx-exporter | `:9113` | Метрики nginx (active connections, request rate — через stub_status) |
+
+`storage-collector` не открывает портов — он пишет в shared-volume
+`monitoring/textfile/`, который читает node-exporter (см. ниже).
 
 Exporter'ы подключаются к `portal_internal` и видят `postgres`/`redis`/`nginx`
 по DNS. Секреты (`POSTGRES_PASSWORD`, `REDIS_PASSWORD`) интерполируются из `.env`.
@@ -311,6 +351,23 @@ Nginx отдаёт `stub_status` на `http://nginx:80/stub_status` (тольк�
 даже при падении backend/worker. При пустом `ALERT_SMTP_HOST` алерты видны только в
 UI Alertmanager. Переменные задаются в `.env` (см. `.env.example`, секция Observability).
 
+### Мета-мониторинг observability-стека
+
+Если умирает сам Prometheus/Alertmanager/Grafana/Loki/Alloy, весь остальной
+алертинг молча гибнёт — это классическая «слепая зона». Группа `portal-meta`
+в `portal.yml` закрывает её. Дополнительно Prometheus скрейпит self-metrics
+Grafana и Alloy (jobs `grafana`, `alloy` в `prometheus.yml`), Loki и
+Alertmanager скрейпились и раньше.
+
+| Alert | Severity | Условие | Что значит |
+|---|---|---|---|
+| `Watchdog` | 🟡 warning | `vector(1)` — всегда firing | Маяк: если перестал приходить в уведомления → умер Prometheus или Alertmanager. Канонический best-practice паттерн. |
+| `PrometheusDown` | 🔴 critical | `up{job="prometheus"} == 0` 2 мин | Умер прометей — весь алертинг не работает. Проверить свободное место (retention 30d). |
+| `AlertmanagerDown` | 🔴 critical | `up{job="alertmanager"} == 0` 2 мин | Умер alertmanager — Prometheus eval'ит алерты, но некому доставить. |
+| `GrafanaDown` | 🟡 warning | `up{job="grafana"} == 0` 5 мин | UI observability недоступен (алерты работают независимо). |
+| `LokiDown` | 🟡 warning | `up{job="loki"} == 0` 5 мин | Centralized-логи не принимаются (поиск по request_id нерабочий). |
+| `AlloyDown` | 🟡 warning | `up{job="alloy"} == 0` 5 мин | Сбор Docker-логов остановлен — новые логи не доходят до Loki. |
+
 ### Ключевые алерты (`monitoring/alerts/portal.yml`)
 
 | Alert | Severity | Условие | Что значит |
@@ -319,7 +376,9 @@ UI Alertmanager. Переменные задаются в `.env` (см. `.env.ex
 | `PortalHighErrorRate` | 🔴 critical | 5xx > 5% при rate > 3/мин | Системная деградация, смотреть логи backend + дашборд Grafana |
 | `PortalAuditQueueBacklog` | 🟡 warning | `portal_audit_queue_depth > 1000` 5 мин | ARQ-воркер не успевает flush'ить (или мёртв) |
 | `PortalAuditFlushStuck` | 🟡 warning | `portal_audit_processing_depth > 0` 10 мин | Батч взят, но не закоммичен — БД-связность / deadlock |
-| `PortalWorkerStale` | 🟡 warning | gauge не менялся 3 мин | ARQ-cron не выполняется — воркер скорее всего мёртв |
+| `PortalAuditPushRateZero` | 🟡 warning | `rate(portal_audit_events_pushed_total[5m]) == 0` 10 мин | События не эмиттятся — сломался `push_audit_event` / Redis down |
+| `PortalWorkerDown` | 🔴 critical | `time() - portal_worker_last_heartbeat_seconds > 120` 1 мин | Воркер не тикает > 2 мин (завис/упал). Прямой датчик на heartbeat-mtime — ловит тихую смерть даже при пустой audit-очереди. См. §3 «Heartbeat воркера». |
+| `PortalWorkerStale` | 🟡 warning | `changes(portal_audit_queue_depth[3m]) == 0` при queue > 0, 5 мин | Вторичный датчик: воркер жив (heartbeat тикает), но `refresh_custom_metrics` завис — event-loop блокирован долгой задачей. |
 | `PortalArqJobFailures` | 🟡 warning | `rate(portal_arq_jobs_total{status="failed"}) > 0.1/s` 5 мин | ARQ-задачи падают — смотреть логи worker, возможно упал upstream |
 | `PortalHighLatencyP99` | 🟡 warning | p99 latency > 5s | Медленный SQL / блокировки / нехватка пула |
 | `PortalSSEConnectionsHigh` | 🟡 warning | `portal_sse_connections > 500` 10 мин | Утечка SSE-стримов (незакрытые EventSource, вкладки-зомби) |
@@ -329,13 +388,15 @@ UI Alertmanager. Переменные задаются в `.env` (см. `.env.ex
 | `PortalPGWraparound` | 🟡 warning | XID возраст > 1.5e9 | autovacuum не справляется — близко к read-only защите |
 | `PortalPGDeadlocks` | 🟡 warning | дедлоки > 0 | Конкурирующие транзакции — баг в коде |
 | `PortalRedisMemoryHigh` | 🟡 warning | память > 90% maxmemory | Близко к eviction-режиму |
-| `PortalRedisEvictions` | 🟡 warning | evictions > 6/мин | Теряются сессии/audit — увеличить REDIS_MAXMEMORY |
+| `PortalRedisEvictions` | 🟡 warning | evictions > 0.17/s (≈10/мин) | Теряются сессии/audit — увеличить REDIS_MAXMEMORY |
+| `PortalRedisKeyspaceLow` | 🟡 warning | keyspace hit ratio < 90% (при трафике > 10/мин) | TTL истекают быстрее переиспользования / данные не влезают в память |
 | `PortalDiskSpaceLow` | 🔴 critical | диск заполнен > 85% | Disk full ломает запись фото/БД/логов |
 | `PortalCPUHigh` | 🟡 warning | CPU > 80% 5 мин | Деградация latency для всех сервисов |
 | `PortalRAMLow` | 🟡 warning | свободная RAM < 10% | Риск OOM-kill контейнеров |
 | `PortalNginxConnectionsHigh` | 🟡 warning | active connections > 1000 | Утечка keepalive или аномальный трафик |
 | `PortalEmailOutboxBacklog` | 🟡 warning | `email_outbox_pending > 50` 5 мин | SMTP недоступен/медленный — письма копятся в очереди |
 | `PortalEmailOutboxDLQ` | 🟡 warning | `email_outbox_dlq > 0` 10 мин | Письма в dead-letter (безвозвратно потеряны) — разобрать |
+| `PortalEmailOutboxStuck` | 🟡 warning | `portal_email_outbox_sending_stale > 0` 10 мин | Worker взял письма, но не закоммитил (краш mid-dispatch) — watchdog `requeue_stale_sending` лечит |
 | `PortalMessengerOutboxBacklog` | 🟡 warning | `messenger_outbox_pending > 50` 5 мин | MAX API недоступен / неверный токен / rate-limit |
 | `PortalMessengerOutboxDLQ` | 🟡 warning | `messenger_outbox_dlq > 0` 10 мин | MAX-сообщения в dead-letter — разобрать |
 | `PortalIntegrationDown` | 🟡 warning | `portal_integration_up == 0` 3 мин | Keycloak/Nextcloud/SMTP/Collabora упал — смотреть какой в Grafana |
@@ -361,8 +422,12 @@ email-receivers через SMTP-relay (см. §7 «Email-доставка але
   отдельным всплескам 5xx settle'нуться без будоражащего alerting'а.
 - **Inhibition**: `PortalBackendDown` глушит все остальные `service=portal-backend`
   алерты — нет смысла будить из-за error rate, если сам бэкенд лежит.
-- **Гейджи без воркера «замерзают».** `PortalWorkerStale` ловит это по
-  `changes(portal_audit_queue_depth[3m]) == 0` — см. §7 Грабли основного стека.
+- **Гейджи без воркера «замерзают».** Первичный датчик смерти воркера —
+  `PortalWorkerDown` на gauge `portal_worker_last_heartbeat_seconds` (прямой
+  timestamp, см. §3 «Heartbeat воркера»). `PortalWorkerStale` (по
+  `changes(portal_audit_queue_depth[3m]) == 0`) оставлен как вторичный — ловит
+  subtler case, когда event-loop блокирован, но heartbeat ещё тикает. См. §8
+  Грабли основного стека.
 
 ---
 
@@ -370,7 +435,9 @@ email-receivers через SMTP-relay (см. §7 «Email-доставка але
 
 - **Кастомные гейджи без воркера «замерзают».** Если ARQ-воркер не запущен,
   `metrics:snapshot` не обновляется и кастомные метрики на `/metrics` показывают
-  устаревшие/нулевые значения. RED-метрики самого API при этом живые.
+  устаревшие/нулевые значения. RED-метрики самого API при этом живые. Смерть
+  воркера ловит `PortalWorkerDown` (прямой датчик на heartbeat-mtime, см. §3),
+  `PortalWorkerStale` — вторичный (застывшие гейджи).
 - **Токен сравнивается constant-time.** Не «оптимизируйте» `_require_metrics_token`
   на обычное `==` — это таймин-атака на токен.
 - **`mime_detection=fallback` не фейлит readiness** — это сигнал «libmagic
