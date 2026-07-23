@@ -276,7 +276,8 @@ monitoring/
 │   └── config.alloy                   ← сбор Docker-логов → Loki (discovery + JSON)
 ├── alerts/
 │   ├── portal.yml                     ← alerting rules (PromQL) — 35 правил: мета-мониторинг + backend + audit + PG + Redis + host + nginx + ARQ + outbox + probes
-│   └── alertmanager.yml               ← routing + email-receivers (SMTP-relay)
+│   ├── alertmanager.yml               ← шаблон (с ${VAR}) — рендерится в runtime
+│   └── render-alertmanager.sh         ← entrypoint: рендер ${VAR} → /tmp/alertmanager.yml (см. §7 Email-доставка)
 ├── grafana/
 │   ├── portal-overview.json           ← дашборд метрик (RED + audit + worker + ARQ + бизнес + outbox + probes)
 │   ├── portal-logs.json               ← дашборд логов (ошибки, объём, request_id)
@@ -350,6 +351,49 @@ Nginx отдаёт `stub_status` на `http://nginx:80/stub_status` (тольк�
 `${ALERT_SMTP_*}`), независимый от portal `email_outbox` — критично: алерты уходят
 даже при падении backend/worker. При пустом `ALERT_SMTP_HOST` алерты видны только в
 UI Alertmanager. Переменные задаются в `.env` (см. `.env.example`, секция Observability).
+
+#### Рендеринг `${VAR}` в alertmanager.yml (почему не работает «в лоб»)
+
+Alertmanager (как и большинство Go-приложений) **не умеет** раскрывать `${VAR}` в
+YAML-конфиге. Docker Compose интерполирует `${VAR}` только в своих own `.yml`, но
+**не в содержимом смонтированных файлов**. Поэтому если просто смонтировать
+`alertmanager.yml` с `${ALERT_SMTP_HOST}` — значение останется литеральным
+(`smtp_smarthost: "${ALERT_SMTP_HOST}:${ALERT_SMTP_PORT}"`), и доставка упадёт с
+`unknown port: tcp/${ALERT_SMTP_PORT}`.
+
+Решение — entrypoint-скрипт `monitoring/alerts/render-alertmanager.sh`: alertmanager
+монтирует `alertmanager.yml` как шаблон (`.tmpl`) и запускается через этот скрипт,
+который при старте рендерит `${VAR}` значениями из окружения (`awk`, т.к. `envsubst`
+в образе `prom/alertmanager` отсутствует — busybox-only) → готовый конфиг в
+`/tmp/alertmanager.yml`. Блок `smtp_*` в шаблоне хранит placeholder'ы, финальные
+значения подставляются скриптом.
+
+> **Кавычки в `.env`:** Docker Compose **не снимает** кавычки со значений. Если пароль
+> записан как `ALERT_SMTP_PASSWORD="secret"` (естественный рефлекс при спецсимволах),
+> значение станет `"secret"` — YAML получит двойное квотирование `""secret""` и
+> упадёт с `did not find expected key`. Скрипт `render-alertmanager.sh` срезает
+> одну пару внешних кавычек (`strip_quotes()` через числовые коды 042/047) — поэтому
+> пароль можно писать как с кавычками, так и без.
+
+Проверка доставки после настройки SMTP:
+
+```bash
+# 1. Перезапустить alertmanager (подхватит env + рендер)
+docker compose -f docker-compose.yml -f monitoring/docker-compose.monitoring.yml \
+  up -d alertmanager
+
+# 2. Проверить, что конфиг отрендерился (должны быть значения, не ${VAR})
+docker exec portal-alertmanager sed -n '28,33p' /tmp/alertmanager.yml
+
+# 3. Отправить тестовый алерт
+curl -X POST http://localhost:9093/api/v2/alerts -H "Content-Type: application/json" \
+  -d '[{"labels":{"alertname":"TestEmail","severity":"critical","service":"test"},
+        "annotations":{"summary":"Проверка доставки алертов"}}]'
+
+# 4. Проверить счётчики доставки (1 = успех, 0 в failed = нет ошибок)
+curl -s http://localhost:9093/metrics | grep alertmanager_notifications_total
+```
+
 
 ### Мета-мониторинг observability-стека
 
@@ -527,8 +571,12 @@ nginx со status ≥ 400).
   HTTP-healthcheck сделать нечем — убран. Готовность через `restart: unless-stopped`
   + ручная проверка: `curl http://localhost:3100/ready` (Loki),
   `curl http://localhost:12345/-/ready` (Alloy).
-- **`${VAR:default}` НЕ работает в alertmanager.yml** — только `${VAR}` без
-  дефолта (Alertmanager на Go). Дефолты задаются в overlay compose.
+- **`${VAR}` НЕ работает в alertmanager.yml напрямую** — Alertmanager (Go) не
+  интерполирует env-переменные в YAML, а Docker Compose раскрывает `${VAR}` только
+  в своих own `.yml`, не в смонтированных файлах. Поэтому конфиг рендерится при
+  старте скриптом `render-alertmanager.sh` (см. §7 «Email-доставка алертов»). Дефолты
+  задаются в overlay compose (`${ALERT_SMTP_HOST:-}`), скрипт лишь подставляет
+  итоговые значения. Кавычки в `.env` срезаются скриптом автоматически.
 - **Фиксированные UID datasource обязательны** (`uid: loki`, `uid: prometheus`) —
   без них Grafana генерирует случайные UID, дашборды не находят datasource'ы.
 - **`request_id` — НЕ лейбл** (см. выше). Делать его лейблом = взорвать индекс

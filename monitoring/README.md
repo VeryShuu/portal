@@ -22,7 +22,8 @@ monitoring/
 │   └── config.alloy                       ← сбор Docker-логов → Loki (discovery + JSON)
 ├── alerts/
 │   ├── portal.yml                         ← alerting rules (PromQL)
-│   └── alertmanager.yml                   ← routing + email-receivers (SMTP-relay)
+│   ├── alertmanager.yml                   ← шаблон routing+email (с ${VAR}, рендерится в runtime)
+│   └── render-alertmanager.sh             ← entrypoint: рендер ${VAR} → /tmp/alertmanager.yml (Go не интерполирует env)
 ├── grafana/
 │   ├── portal-overview.json               ← дашборд метрик (RED + audit + worker)
 │   ├── portal-logs.json                   ← дашборд логов (ошибки, объём, request_id)
@@ -191,11 +192,18 @@ docker compose -f monitoring/docker-compose.monitoring.yml run --rm prometheus \
 docker compose -f monitoring/docker-compose.monitoring.yml run --rm prometheus \
   promtool check rules /etc/prometheus/rules/portal.yml
 
-# Alertmanager:
-docker run --rm -v ./monitoring/alerts/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro \
+# Alertmanager (шаблон ${VAR} нужно сначала отрендерить — Go не интерполирует env):
+# Вариант 1 — через наш render-скрипт (как делает контейнер при старте):
+docker run --rm -v ./monitoring/alerts:/alerts:ro \
   -e ALERT_SMTP_HOST=localhost -e ALERT_SMTP_PORT=25 -e ALERT_SMTP_FROM=a@b \
-  -e ALERT_ADMINS_EMAIL=c@d --entrypoint amtool prom/alertmanager:v0.27.0 \
-  check-config /etc/alertmanager/alertmanager.yml
+  -e ALERT_SMTP_USER= -e ALERT_SMTP_PASSWORD= -e ALERT_ADMINS_EMAIL=c@d \
+  --entrypoint /bin/sh prom/alertmanager:v0.27.0 \
+  -c '/alerts/render-alertmanager.sh && \
+      ALERTMANAGER_OUT=/tmp/alertmanager.yml exec amtool check-config /tmp/alertmanager.yml'
+# (скрипт рендерит шаблон и exec'ает alertmanager; для чистой проверки уберите
+#  exec и замените последней строкой на "amtool check-config /tmp/alertmanager.yml")
+# Вариант 2 — если контейнер уже запущен, проверить отрендеренный конфиг:
+docker exec portal-alertmanager amtool check-config /tmp/alertmanager.yml
 
 # Alloy (River-синтаксис):
 docker run --rm -v ./monitoring/alloy/config.alloy:/etc/alloy/config.alloy:ro \

@@ -194,3 +194,9 @@ _write*.py
 
 # ===== Случайные медиа-файлы разработчиков =====
 mage-home.jpeg
+
+# ===== Monitoring — runtime-сгенерированные (содержат секреты!) =====
+# alertmanager.rendered.yml создаётся render-alertmanager.sh в рантайме
+# из alertmanager.yml (шаблон) и содержит РАСКРЫТЫЕ SMTP-credentials.
+# В коммите быть НЕ должно.
+monitoring/alerts/alertmanager.rendered.yml

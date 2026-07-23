@@ -75,11 +75,13 @@ services:
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
-    command:
-      - "--config.file=/etc/alertmanager/alertmanager.yml"
-      - "--storage.path=/alertmanager"
-    # SMTP-параметры для email-receivers (см. alertmanager.yml). Пустые по
-    # умолчанию → алерты видны только в UI, без доставки. Задать в .env.
+    # Alertmanager (Go) не умеет раскрывать ${VAR} в YAML, а Docker Compose
+    # интерполирует ${VAR} только в своих own .yml, не в смонтированных файлах.
+    # Образ prom/alertmanager — busybox-only (без envsubst). Поэтому монтируем
+    # alertmanager.yml как ШАБЛОН и рендерим скриптом render-alertmanager.sh
+    # (awk; срезает внешние кавычки из env-значений, переживая спецсимволы в
+    # паролях) при старте контейнера → готовый конфиг в /tmp/alertmanager.yml.
+    entrypoint: ["/usr/local/bin/render-alertmanager.sh"]
     environment:
       ALERT_SMTP_HOST: ${ALERT_SMTP_HOST:-}
       ALERT_SMTP_PORT: ${ALERT_SMTP_PORT:-25}
@@ -88,7 +90,8 @@ services:
       ALERT_SMTP_PASSWORD: ${ALERT_SMTP_PASSWORD:-}
       ALERT_ADMINS_EMAIL: ${ALERT_ADMINS_EMAIL:-}
     volumes:
-      - ./monitoring/alerts/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - ./monitoring/alerts/alertmanager.yml:/etc/alertmanager/alertmanager.tmpl:ro
+      - ./monitoring/alerts/render-alertmanager.sh:/usr/local/bin/render-alertmanager.sh:ro
       - alertmanager-data:/alertmanager
     ports:
       - "9093:9093"               # 0.0.0.0 — доступ из Windows в WSL2
