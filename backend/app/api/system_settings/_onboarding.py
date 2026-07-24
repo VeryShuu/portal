@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import cast
 
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 from sqlalchemy import text as sa_text
+from sqlalchemy.engine import CursorResult
 
 from app.api import system_settings as _ss
 from app.api.deps import AdminDep, DbDep, RedisDep
@@ -72,7 +74,7 @@ async def reset_onboarding(
         )
     )
     await db.commit()
-    updated = int(result.rowcount or 0)  # type: ignore[attr-defined]
+    updated = int(cast(CursorResult, result).rowcount or 0)
 
     reset_trigger = datetime.now(UTC).isoformat()
     new_settings = current.model_copy(update={"onboarding_reset_trigger": reset_trigger})
@@ -119,7 +121,7 @@ async def reset_onboarding_step_views(
         {"sid": body.step_id},
     )
     await db.commit()
-    updated = int(result.rowcount or 0)  # type: ignore[attr-defined]
+    updated = int(cast(CursorResult, result).rowcount or 0)
 
     await _ss._emit_audit(
         redis,

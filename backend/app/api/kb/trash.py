@@ -92,7 +92,7 @@ async def list_trash(
                 section_id=a.section_id,
                 section_title=sections_map.get(a.section_id) if a.section_id else None,
                 status=a.status,
-                deleted_at=a.deleted_at,  # type: ignore[arg-type]
+                deleted_at=a.deleted_at,
                 updated_at=a.updated_at,
                 files_count=files_count,
                 files_bytes=files_bytes,

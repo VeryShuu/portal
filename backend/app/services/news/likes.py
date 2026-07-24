@@ -9,9 +9,11 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Iterable
+from typing import cast
 
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.news import News, NewsLike
@@ -30,7 +32,7 @@ async def like_news(db: AsyncSession, *, news_id: uuid.UUID, user_id: uuid.UUID)
         .on_conflict_do_nothing(constraint="uq_news_likes_news_user")
     )
     res = await db.execute(stmt)
-    if res.rowcount and res.rowcount > 0:  # type: ignore[attr-defined]
+    if cast(CursorResult, res).rowcount and cast(CursorResult, res).rowcount > 0:
         await db.execute(
             update(News).where(News.id == news_id).values(like_count=News.like_count + 1)
         )
@@ -42,7 +44,7 @@ async def unlike_news(db: AsyncSession, *, news_id: uuid.UUID, user_id: uuid.UUI
     res = await db.execute(
         delete(NewsLike).where(NewsLike.news_id == news_id, NewsLike.user_id == user_id)
     )
-    if res.rowcount and res.rowcount > 0:  # type: ignore[attr-defined]
+    if cast(CursorResult, res).rowcount and cast(CursorResult, res).rowcount > 0:
         await db.execute(
             update(News)
             .where(News.id == news_id)

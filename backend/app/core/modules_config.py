@@ -102,7 +102,7 @@ def load_modules() -> AllModuleSettings:
             data = AllModuleSettings.model_validate_json(_MODULES_FILE.read_text("utf-8"))
             _modules_cache["data"] = data
             _modules_cache["fetched_at"] = now
-            return data
+            return cast(AllModuleSettings, data)
         except Exception as exc:
             logger.warning("modules.settings_parse_failed", path=str(_MODULES_FILE), error=str(exc))
 

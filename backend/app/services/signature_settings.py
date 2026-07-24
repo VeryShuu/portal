@@ -8,6 +8,7 @@ on-disk schema is defined in one spot (mirrors ``app.services.email_settings``).
 from __future__ import annotations
 
 from pathlib import Path
+from typing import cast
 
 from app.core.logging import get_logger
 from app.schemas.signature import SignatureSettings
@@ -21,7 +22,10 @@ SIGNATURE_SETTINGS_FILE = SETTINGS_DIR / "signature.json"
 def read_signature_settings() -> SignatureSettings | None:
     if SIGNATURE_SETTINGS_FILE.exists():
         try:
-            return SignatureSettings.model_validate_json(SIGNATURE_SETTINGS_FILE.read_text("utf-8"))
+            return cast(
+                SignatureSettings,
+                SignatureSettings.model_validate_json(SIGNATURE_SETTINGS_FILE.read_text("utf-8")),
+            )
         except Exception:
             logger.exception("signature_settings.load_failed")
     return None

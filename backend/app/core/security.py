@@ -4,7 +4,7 @@ import hashlib
 import secrets
 import time
 from datetime import timedelta
-from typing import Any
+from typing import Any, cast
 
 import bcrypt
 import jwt as pyjwt
@@ -47,7 +47,7 @@ def hash_password(password: str) -> str:
     Kept for bootstrap/CLI/test contexts.
     """
     salt = bcrypt.gensalt(rounds=_BCRYPT_ROUNDS)
-    return bcrypt.hashpw(_prepare_password(password), salt).decode()
+    return cast(str, bcrypt.hashpw(_prepare_password(password), salt).decode())
 
 
 def verify_password(plain: str, hashed: str) -> bool:
@@ -55,7 +55,7 @@ def verify_password(plain: str, hashed: str) -> bool:
     handlers. Kept for test/CLI contexts.
     """
     try:
-        return bcrypt.checkpw(_prepare_password(plain), hashed.encode())
+        return cast(bool, bcrypt.checkpw(_prepare_password(plain), hashed.encode()))
     except Exception:
         return False
 
@@ -143,7 +143,7 @@ async def parse_jwt_claims(token: str, jwks: list[dict[str, Any]] | None = None)
             f"azp mismatch: expected {kcs.oidc_client_id!r}, got {azp!r}"
         )
 
-    return claims
+    return cast(dict[str, Any], claims)
 
 
 def extract_user_data(claims: dict[str, Any]) -> dict[str, Any]:

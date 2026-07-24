@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from collections.abc import AsyncGenerator
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from fastapi import APIRouter, Depends, Header, HTTPException, UploadFile
 from fastapi_limiter.depends import RateLimiter
@@ -209,7 +209,7 @@ async def upload_files(
     if idempotency_key:
         cached = await redis.get(f"idem:upload:{user.id}:{idempotency_key}")
         if cached:
-            return UploadResult.model_validate_json(cached)
+            return cast(UploadResult, UploadResult.model_validate_json(cached))
 
     folder = await _get_folder_or_404(db, folder_id)
     await require_folder_permission(user, folder, "editor", db, redis)

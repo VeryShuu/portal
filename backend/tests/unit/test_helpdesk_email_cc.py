@@ -147,9 +147,9 @@ def _cc_db() -> MagicMock:
 @pytest.mark.asyncio
 class TestEnqueueReplyOutboundCc:
     async def test_cc_in_payload(self) -> None:
-        cc = [
+        cc: list[dict[str, object]] = [
             {"email": "a@x.local", "name": "Иван"},
-            {"email": "b@y.local", "name": None},
+            {"email": "b@x.local", "name": None},
         ]
         with patch(
             "app.services.helpdesk.outbound.enqueue_outbox_email", new=AsyncMock()
@@ -160,6 +160,7 @@ class TestEnqueueReplyOutboundCc:
                 message=_cc_msg(cc=cc),
                 mailbox=_cc_mailbox(),
             )
+        assert enqueue.await_args is not None
         payload = enqueue.await_args.kwargs["payload"]
         assert payload["cc"] == cc
 
@@ -175,6 +176,7 @@ class TestEnqueueReplyOutboundCc:
                 message=_cc_msg(cc=None),
                 mailbox=_cc_mailbox(),
             )
+        assert enqueue.await_args is not None
         payload = enqueue.await_args.kwargs["payload"]
         assert payload["cc"] == []
 
@@ -182,7 +184,7 @@ class TestEnqueueReplyOutboundCc:
         """H-4: CRLF в email/name Cc не должен инжектить заголовки. Каждый
         адрес проходит ``_sanitize_header_field`` (как ``to_email``/``subject``).
         """
-        cc = [
+        cc: list[dict[str, object]] = [
             {"email": "a@x.local\r\nBcc: leak@evil.test", "name": "И"},
             {"name": "Name\nX-Inject: yes", "email": "b@y.local"},
         ]
@@ -195,6 +197,7 @@ class TestEnqueueReplyOutboundCc:
                 message=_cc_msg(cc=cc),
                 mailbox=_cc_mailbox(),
             )
+        assert enqueue.await_args is not None
         payload = enqueue.await_args.kwargs["payload"]
         for p in payload["cc"]:
             assert "\r" not in p["email"], p

@@ -125,6 +125,7 @@ class TestExtractBodiesSignatureStripping:
         """
         msg = _multipart_alternative(_SIG_PLAIN, _SIG_HTML)
         plain, html = _extract_bodies(msg)
+        assert html is not None  # multipart/alternative гарантированно даёт html
         # Тело сохраняется в обоих.
         assert "Тело письма" in plain
         assert "Тело письма" in html
@@ -140,6 +141,7 @@ class TestExtractBodiesSignatureStripping:
             "<p>Просто текст без подписи.</p>",
         )
         plain, html = _extract_bodies(msg)
+        assert html is not None  # multipart/alternative → html присутствует
         assert "Просто текст без подписи." in plain
         assert "Просто текст без подписи." in html
 
@@ -148,6 +150,7 @@ class TestExtractBodiesSignatureStripping:
         plain деривируется из уже очищенного HTML."""
         msg = MIMEText(_SIG_HTML, "html", "utf-8")
         plain, html = _extract_bodies(msg)
+        assert html is not None  # text/html-письмо → html присутствует
         assert "Тело письма" in plain
         assert "Тело письма" in html
         for marker in _SIG_MARKERS:
@@ -207,6 +210,7 @@ class TestExtractBodiesSignatureStripping:
         )
         msg = _multipart_alternative(real_plain, real_html)
         plain, html = _extract_bodies(msg)
+        assert html is not None  # multipart/alternative → html присутствует
         assert "Test oe" in plain
         assert "Test oe" in html
         # Подпись отсутствует в обоих телах.

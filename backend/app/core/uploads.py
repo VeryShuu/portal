@@ -23,7 +23,7 @@ __all__ = ["CHUNK_SIZE", "iter_upload_chunks", "magic", "stream_upload_to_path"]
 try:
     import magic
 except Exception:  # pragma: no cover - optional fallback when libmagic missing
-    magic = None  # type: ignore[assignment]
+    magic = None
 
 CHUNK_SIZE = 1024 * 1024  # 1 MiB
 

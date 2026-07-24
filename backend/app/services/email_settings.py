@@ -11,6 +11,7 @@ from __future__ import annotations
 import contextlib
 import os
 from pathlib import Path
+from typing import cast
 
 from app.core.logging import get_logger
 from app.schemas.branding import EmailSettings, EmailSettingsOut
@@ -32,7 +33,10 @@ def read_email_settings() -> EmailSettings | None:
     """
     if EMAIL_SETTINGS_FILE.exists():
         try:
-            return EmailSettings.model_validate_json(EMAIL_SETTINGS_FILE.read_text("utf-8"))
+            return cast(
+                EmailSettings,
+                EmailSettings.model_validate_json(EMAIL_SETTINGS_FILE.read_text("utf-8")),
+            )
         except Exception:
             logger.exception("email_settings.load_failed")
     return None

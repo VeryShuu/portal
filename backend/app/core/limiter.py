@@ -13,6 +13,7 @@ NB: намеренно БЕЗ ``from __future__ import annotations`` — ина�
 import hashlib
 import ipaddress
 from collections.abc import Callable
+from typing import cast
 
 from fastapi import Request, Response
 
@@ -73,9 +74,9 @@ def _patch_rate_limiter_for_starlette1() -> Callable[..., object]:
             )
             pexpire = await self._check(key)
         if pexpire != 0:
-            return await callback(request, response, pexpire)
+            return cast(None, await callback(request, response, pexpire))
 
-    RateLimiter.__call__ = _patched_call  # type: ignore[method-assign]
+    RateLimiter.__call__ = _patched_call
     return _patched_call
 
 
@@ -129,7 +130,7 @@ def _real_ip(request: Request) -> str:
     real_ip = request.headers.get("X-Real-IP")
     if not real_ip:
         real_ip = request.client.host if request.client else "unknown"
-    return real_ip
+    return cast(str, real_ip)
 
 
 def probe_bypass_rate_limit(times: int, minutes: int) -> Callable[..., object]:
@@ -152,7 +153,7 @@ def probe_bypass_rate_limit(times: int, minutes: int) -> Callable[..., object]:
     async def _dependency(request: Request) -> None:
         if is_trusted_internal_ip(_real_ip(request)):
             return  # probe / service-to-service — пропускаем без счётчика
-        await limiter(request, None)  # type: ignore[arg-type]
+        await limiter(request, None)
 
     return _dependency
 

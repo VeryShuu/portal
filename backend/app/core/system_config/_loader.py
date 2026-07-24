@@ -38,7 +38,7 @@ def load_system_settings() -> SystemSettings:
             )
             cache["data"] = data
             cache["fetched_at"] = now
-            return data
+            return cast(SystemSettings, data)
         except Exception as exc:
             logger.error(
                 "system_settings.parse_failed",

@@ -15,6 +15,7 @@ audit event after commit.
 from __future__ import annotations
 
 import uuid
+from typing import cast
 
 from fastapi import APIRouter, HTTPException, Query, status
 from fastapi.responses import Response
@@ -57,7 +58,10 @@ async def _require_module_enabled(redis: RedisDep) -> None:
 
 
 def _not_found() -> Exception:
-    return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Directories disabled")
+    return cast(
+        Exception,
+        HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Directories disabled"),
+    )
 
 
 def _is_editor(user: User) -> bool:
@@ -103,7 +107,7 @@ async def create_directory(
         resource_title=directory.label_ru,
     )
     logger.info("directory.type_created", directory_id=str(directory.id), editor=str(editor.id))
-    return DirectoryPublic.model_validate(directory)
+    return cast(DirectoryPublic, DirectoryPublic.model_validate(directory))
 
 
 @router.patch(
@@ -130,7 +134,7 @@ async def update_directory(
         metadata={"fields": changed},
     )
     logger.info("directory.type_updated", directory_id=str(directory.id), editor=str(editor.id))
-    return DirectoryPublic.model_validate(directory)
+    return cast(DirectoryPublic, DirectoryPublic.model_validate(directory))
 
 
 @router.delete(
@@ -242,7 +246,7 @@ async def get_entry(
 ) -> EntryPublic:
     directory = await _resolve_directory(db, redis, slug, user=user)
     entry = await svc.get_entry_or_404(db, directory_id=directory.id, entry_id=entry_id)
-    return EntryPublic.model_validate(entry)
+    return cast(EntryPublic, EntryPublic.model_validate(entry))
 
 
 @router.post(
@@ -269,7 +273,7 @@ async def create_entry(
         metadata={"directory": slug},
     )
     logger.info("directory.entry_created", entry_id=str(entry.id), editor=str(editor.id))
-    return EntryPublic.model_validate(entry)
+    return cast(EntryPublic, EntryPublic.model_validate(entry))
 
 
 @router.patch(
@@ -297,7 +301,7 @@ async def update_entry(
         metadata={"directory": slug, "fields": changed},
     )
     logger.info("directory.entry_updated", entry_id=str(entry_id), editor=str(editor.id))
-    return EntryPublic.model_validate(refreshed)
+    return cast(EntryPublic, EntryPublic.model_validate(refreshed))
 
 
 @router.delete(

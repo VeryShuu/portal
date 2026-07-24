@@ -11,9 +11,10 @@ from __future__ import annotations
 import base64
 import uuid
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, cast
 
 from sqlalchemy import text
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import get_logger
@@ -149,7 +150,7 @@ async def requeue_stale_sending(session: AsyncSession, *, older_than_seconds: in
         ),
         {"older_than": older_than_seconds},
     )
-    count = result.rowcount or 0  # type: ignore[attr-defined]
+    count = cast(CursorResult, result).rowcount or 0
     if count:
         logger.warning("email_outbox.requeued_stale_sending", count=count)
     return count
@@ -251,7 +252,7 @@ async def reschedule_for_retry(
         ),
         {"id": outbox_id, "reset": reset_attempts},
     )
-    return (result.rowcount or 0) > 0  # type: ignore[attr-defined]
+    return (cast(CursorResult, result).rowcount or 0) > 0
 
 
 async def cancel(session: AsyncSession, outbox_id: uuid.UUID) -> bool:
@@ -267,7 +268,7 @@ async def cancel(session: AsyncSession, outbox_id: uuid.UUID) -> bool:
         ),
         {"id": outbox_id},
     )
-    return (result.rowcount or 0) > 0  # type: ignore[attr-defined]
+    return (cast(CursorResult, result).rowcount or 0) > 0
 
 
 async def cleanup_old_sent(session: AsyncSession, *, older_than_days: int = 30) -> int:
@@ -277,7 +278,7 @@ async def cleanup_old_sent(session: AsyncSession, *, older_than_days: int = 30) 
         text("DELETE FROM email_outbox WHERE status='SENT' AND sent_at < :cutoff"),
         {"cutoff": cutoff},
     )
-    return int(result.rowcount or 0)  # type: ignore[attr-defined]
+    return int(cast(CursorResult, result).rowcount or 0)
 
 
 def encode_ical_bytes(ical_bytes: bytes) -> str:

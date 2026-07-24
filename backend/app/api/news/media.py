@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 import uuid
 from pathlib import Path
+from typing import cast
 
 from fastapi import APIRouter, Body, HTTPException, Request, UploadFile, status
 from fastapi.responses import FileResponse, Response
@@ -64,7 +65,7 @@ async def upload_news_cover(
         resource_id=str(news_id),
         resource_title=news.title,
     )
-    return NewsPublic.model_validate(news)
+    return cast(NewsPublic, NewsPublic.model_validate(news))
 
 
 @router.delete("/{news_id}/cover", response_model=NewsPublic, summary="Удалить обложку новости")
@@ -85,7 +86,7 @@ async def delete_news_cover(
         resource_id=str(news_id),
         resource_title=news.title,
     )
-    return NewsPublic.model_validate(news)
+    return cast(NewsPublic, NewsPublic.model_validate(news))
 
 
 # ── Gallery ──────────────────────────────────────────────────────────────────
@@ -121,7 +122,7 @@ async def upload_gallery_image(
 ) -> GalleryImagePublic:
     news = await _get_news_or_404(db, news_id)
     img = await news_svc.upload_gallery_image(db, news, file)
-    return GalleryImagePublic.model_validate(img)
+    return cast(GalleryImagePublic, GalleryImagePublic.model_validate(img))
 
 
 @router.patch(
@@ -201,7 +202,7 @@ async def upload_attachment(
 ) -> AttachmentPublic:
     news = await _get_news_or_404(db, news_id)
     att = await news_svc.upload_attachment(db, news, file)
-    return AttachmentPublic.model_validate(att)
+    return cast(AttachmentPublic, AttachmentPublic.model_validate(att))
 
 
 @router.get("/{news_id}/attachments/{att_id}/download", summary="Скачать вложение")

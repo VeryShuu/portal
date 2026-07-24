@@ -8,10 +8,11 @@ from __future__ import annotations
 import uuid
 from collections.abc import Sequence
 from datetime import datetime
-from typing import Any
+from typing import Any, cast
 
 from sqlalchemy import func, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.files import FileFolder, FileFolderPermission, FileItem, FileShare
@@ -178,7 +179,7 @@ async def insert_folder_if_absent(
         .on_conflict_do_nothing(index_elements=["nc_path"])
     )
     result = await db.execute(stmt)
-    return int(result.rowcount or 0)  # type: ignore[attr-defined]
+    return int(cast(CursorResult, result).rowcount or 0)
 
 
 async def insert_folder_permission_if_absent(

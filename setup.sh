@@ -851,7 +851,7 @@ check_services() {
     #   3. Внутри контейнера nginx слушает :80 и проксирует /ready на backend.
     #      Plain HTTP, никаких TLS/SNI — детерминированно.
     # docker compose exec сам подставляет нужный compose-файл (с оверраем для dev).
-    local http_code body
+    local http_code
     if [[ -n "$nginx_container" ]]; then
         # curl -s --max-time 5 -o /dev/null -w "%{http_code}" — пишем код в stdout,
         # тело (если 503) — в файл, чтобы вывести его позже.

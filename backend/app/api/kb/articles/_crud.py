@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
+from typing import cast
 
 from fastapi import APIRouter, Header, HTTPException, status
 
@@ -38,7 +39,7 @@ async def create_article(
     if idempotency_key:
         cached = await redis.get(f"idem:kb_article:{user.id}:{idempotency_key}")
         if cached:
-            return KbArticlePublic.model_validate_json(cached)
+            return cast(KbArticlePublic, KbArticlePublic.model_validate_json(cached))
 
     if body.status not in ("draft", "published"):
         raise HTTPException(

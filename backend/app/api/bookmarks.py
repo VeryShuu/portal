@@ -4,6 +4,7 @@ import base64
 import hashlib
 import json
 import uuid
+from typing import cast
 from urllib.parse import urlparse
 
 import httpx
@@ -185,7 +186,7 @@ async def create_bookmark(
     db.add(bookmark)
     await db.commit()
     await db.refresh(bookmark)
-    return BookmarkPublic.model_validate(bookmark)
+    return cast(BookmarkPublic, BookmarkPublic.model_validate(bookmark))
 
 
 @router.delete("/{bookmark_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Удалить закладку")

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from typing import cast
 
 from fastapi import APIRouter, Query, Request, UploadFile, status
 from fastapi.responses import RedirectResponse
@@ -73,7 +74,7 @@ async def reorder_links(
 @router.get("/{link_id}", response_model=ServiceLinkPublic, summary="Получить ярлык")
 async def get_link(link_id: uuid.UUID, user: CurrentUser, db: DbDep) -> ServiceLinkPublic:
     link = await links_crud.get_link_or_404(db, link_id)
-    return ServiceLinkPublic.model_validate(link)
+    return cast(ServiceLinkPublic, ServiceLinkPublic.model_validate(link))
 
 
 @router.post(
@@ -154,7 +155,7 @@ async def create_link(
         resource_id=str(link.id),
     )
     logger.info("link.created", link_id=str(link.id), editor=str(editor.id))
-    return ServiceLinkPublic.model_validate(link)
+    return cast(ServiceLinkPublic, ServiceLinkPublic.model_validate(link))
 
 
 @router.put("/{link_id}", response_model=ServiceLinkPublic, summary="Обновить ярлык (admin)")
@@ -175,7 +176,7 @@ async def update_link(
         metadata={"fields": changed_fields},
     )
     logger.info("link.updated", link_id=str(link.id), editor=str(editor.id))
-    return ServiceLinkPublic.model_validate(link)
+    return cast(ServiceLinkPublic, ServiceLinkPublic.model_validate(link))
 
 
 @router.delete(
@@ -225,7 +226,7 @@ async def upload_link_icon(
         metadata={"fields": ["icon_url"]},
     )
     logger.info("link.icon.uploaded", link_id=str(link_id), editor=str(editor.id))
-    return ServiceLinkPublic.model_validate(link)
+    return cast(ServiceLinkPublic, ServiceLinkPublic.model_validate(link))
 
 
 @router.delete(

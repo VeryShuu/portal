@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+from typing import cast
 
 import httpx
 
@@ -49,7 +50,7 @@ async def _probe_keycloak() -> bool | None:
     try:
         async with httpx.AsyncClient(timeout=_PROBE_TIMEOUT) as client:
             resp = await client.get(url)
-        return resp.status_code == 200
+        return cast(bool, resp.status_code == 200)
     except Exception as exc:
         logger.warning("integration.keycloak_probe_failed", error=str(exc))
         return False

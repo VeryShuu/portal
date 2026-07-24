@@ -7,6 +7,7 @@ import io
 import uuid
 from collections.abc import AsyncGenerator
 from datetime import date
+from typing import cast
 
 from fastapi import HTTPException, Query, status
 from fastapi.responses import Response, StreamingResponse
@@ -204,4 +205,4 @@ async def get_user(
     user = await users_repo.fetch_active_user(db, user_id)
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-    return UserPublic.model_validate(user)
+    return cast(UserPublic, UserPublic.model_validate(user))

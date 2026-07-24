@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from typing import cast
 
 from fastapi import APIRouter, HTTPException, Query, status
 
@@ -128,7 +129,7 @@ async def set_section_permission(
             "permission": body.permission,
         },
     )
-    return PermissionEntry.model_validate(perm)
+    return cast(PermissionEntry, PermissionEntry.model_validate(perm))
 
 
 @router.delete("/sections/{section_id}/permissions/{subject_id}", status_code=204)
@@ -219,7 +220,7 @@ async def set_article_permission(
             "permission": body.permission,
         },
     )
-    return PermissionEntry.model_validate(perm)
+    return cast(PermissionEntry, PermissionEntry.model_validate(perm))
 
 
 @router.delete("/articles/{article_id}/permissions/{subject_id}", status_code=204)

@@ -135,6 +135,12 @@ ignore = ["B008", "RUF001", "RUF002", "RUF003"]
 python_version = "3.12"
 strict = false
 ignore_missing_imports = true
+# SQLAlchemy mypy-plugin: даёт настоящую типизацию async-query path
+# (db.execute(select(Model)) → Result[tuple[Model]], .scalar_one_or_none() → Model | None).
+# Без плагина select()/execute() возвращают Any → 230 no-any-return (см. ниже).
+# Плагин legacy-deprecated в SA 2.0, но единственный путь к реальной типизации
+# до SA 2.1. Альтернативы (sqlalchemy2-stubs) несовместимы с SA 2.0.
+plugins = ["sqlalchemy.ext.mypy.plugin"]
 disable_error_code = ["import-untyped"]
 
 [[tool.mypy.overrides]]

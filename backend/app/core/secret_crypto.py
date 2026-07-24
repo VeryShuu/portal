@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+from typing import cast
 
 from cryptography.fernet import Fernet
 
@@ -35,12 +36,12 @@ def _get_fernet() -> Fernet:
 
 def encrypt_secret(plaintext: str) -> str:
     """Encrypt a secret string → Fernet token (str, safe to store in DB)."""
-    return _get_fernet().encrypt(plaintext.encode("utf-8")).decode("utf-8")
+    return cast(str, _get_fernet().encrypt(plaintext.encode("utf-8")).decode("utf-8"))
 
 
 def decrypt_secret(token: str) -> str:
     """Decrypt a Fernet token → original secret string."""
-    return _get_fernet().decrypt(token.encode("utf-8")).decode("utf-8")
+    return cast(str, _get_fernet().decrypt(token.encode("utf-8")).decode("utf-8"))
 
 
 def rotate_key_cache() -> None:

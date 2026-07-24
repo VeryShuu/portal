@@ -6,7 +6,7 @@ import contextlib
 import json
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import httpx
 from fastapi import APIRouter, HTTPException, status
@@ -145,7 +145,10 @@ def _load_kc_settings() -> KeycloakSettings:
 
     if _KC_SETTINGS_FILE.exists():
         try:
-            return KeycloakSettings.model_validate_json(_KC_SETTINGS_FILE.read_text("utf-8"))
+            return cast(
+                KeycloakSettings,
+                KeycloakSettings.model_validate_json(_KC_SETTINGS_FILE.read_text("utf-8")),
+            )
         except Exception:
             logger.exception("keycloak_admin.settings_parse_failed")
     # Никакого env-fallback (ADR-037): первичная настройка — только через Admin UI.

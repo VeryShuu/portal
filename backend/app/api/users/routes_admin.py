@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from typing import cast
 
 from fastapi import Depends, Request, status
 from fastapi_limiter.depends import RateLimiter
@@ -37,7 +38,7 @@ async def change_user_role(
     redis: RedisDep,
 ) -> UserPublic:
     updated = await users_admin_service.change_user_role(db, redis, admin, user_id, body)
-    return UserPublic.model_validate(updated)
+    return cast(UserPublic, UserPublic.model_validate(updated))
 
 
 @router.post("/admin/local", response_model=UserPublic, summary="Создать локального пользователя")
@@ -48,7 +49,7 @@ async def create_local_user(
     redis: RedisDep,
 ) -> UserPublic:
     created = await users_admin_service.create_local_user(db, redis, admin, body)
-    return UserPublic.model_validate(created)
+    return cast(UserPublic, UserPublic.model_validate(created))
 
 
 @router.get(
@@ -76,7 +77,7 @@ async def admin_patch_user_profile(
     redis: RedisDep,
 ) -> UserPublic:
     updated = await users_admin_service.admin_patch_profile(db, redis, admin, user_id, body)
-    return UserPublic.model_validate(updated)
+    return cast(UserPublic, UserPublic.model_validate(updated))
 
 
 @router.delete(

@@ -9,6 +9,8 @@ Singleton-строка (``id=1``) с IMAP-конфигом. Пароль шиф�
 
 from __future__ import annotations
 
+from typing import cast
+
 from fastapi import APIRouter, HTTPException, status
 from sqlalchemy import select
 
@@ -178,7 +180,7 @@ async def _load_digest_singleton(db: DbDep) -> HelpdeskDigestSettings:
 @router.get("/digest", response_model=HelpdeskDigestSettingsOut)
 async def get_digest_settings(_admin: AdminDep, db: DbDep) -> HelpdeskDigestSettingsOut:
     row = await _load_digest_singleton(db)
-    return HelpdeskDigestSettingsOut.model_validate(row)
+    return cast(HelpdeskDigestSettingsOut, HelpdeskDigestSettingsOut.model_validate(row))
 
 
 @router.put("/digest", response_model=HelpdeskDigestSettingsOut)
@@ -210,7 +212,7 @@ async def put_digest_settings(
             "digest_schedule": payload.digest_schedule,
         },
     )
-    return HelpdeskDigestSettingsOut.model_validate(row)
+    return cast(HelpdeskDigestSettingsOut, HelpdeskDigestSettingsOut.model_validate(row))
 
 
 # ---------------------------------------------------------------------------

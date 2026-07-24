@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from typing import cast
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import Response
@@ -174,7 +175,7 @@ async def grant_folder_permission(
             "previous_permission": previous_permission,
         },
     )
-    return PermissionPublic.model_validate(perm)
+    return cast(PermissionPublic, PermissionPublic.model_validate(perm))
 
 
 @router.delete("/folders/{folder_id}/permissions/{subject_id}", status_code=204)

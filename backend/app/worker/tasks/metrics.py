@@ -126,26 +126,22 @@ def _dir_size_bytes(path: Path) -> int:
     return total
 
 
-async def refresh_custom_metrics(ctx: dict) -> dict:
-    """Refresh custom gauges and store the snapshot in Redis."""
-    redis = ctx["redis"]
-    pool = ctx.get("pg_pool")
-
-    snapshot: dict[str, float | int | dict | str] = {
-        "generated_at": datetime.now(tz=UTC).isoformat(),
-    }
-
-    # 1. Audit queue depth
+async def _collect_audit_depths(redis: Any, snapshot: dict) -> None:
+    """Audit queue + processing-list depths (LLLEN)."""
     try:
         snapshot["audit_queue_depth"] = int(await redis.llen(AUDIT_QUEUE_KEY))
         snapshot["audit_processing_depth"] = int(await redis.llen("audit_processing"))
     except Exception as exc:
         logger.warning("metrics.audit_queue_failed", error=str(exc))
 
-    # 1b. Worker heartbeat timestamp — basis for PortalWorkerDown alerting.
-    # Absent key (worker never started / TTL expired because it died) → the
-    # field is omitted and the gauge is not hydrated this cycle, so the gauge
-    # retains the last known value and its age keeps growing.
+
+async def _collect_worker_heartbeat(redis: Any, snapshot: dict) -> None:
+    """Worker heartbeat mtime — basis for PortalWorkerDown alerting.
+
+    Absent key (worker never started / TTL expired because it died) → the
+    field is omitted and the gauge is not hydrated this cycle, so the gauge
+    retains the last known value and its age keeps growing.
+    """
     try:
         mtime = await redis.get(WORKER_HEARTBEAT_MTIME_KEY)
         if mtime is not None:
@@ -153,93 +149,101 @@ async def refresh_custom_metrics(ctx: dict) -> dict:
     except Exception as exc:
         logger.warning("metrics.worker_heartbeat_failed", error=str(exc))
 
-    # 1c. ARQ pending-queue depth. ARQ stores pending jobs in a ZSET (scored by
-    # enqueue time); ZCARD gives the count. Growing depth = worker not keeping
-    # up (slow/dead jobs) while enqueue continues. Basis for PortalArqQueueBacklog.
+
+async def _collect_arq_queue_depth(redis: Any, snapshot: dict) -> None:
+    """ARQ pending-queue depth (ZCARD). Growing depth = worker not keeping up
+    (slow/dead jobs) while enqueue continues. Basis for PortalArqQueueBacklog."""
     try:
         snapshot["arq_queue_depth"] = int(await redis.zcard(ARQ_QUEUE_KEY))
     except Exception as exc:
         logger.warning("metrics.arq_queue_failed", error=str(exc))
 
-    # 2. SSE connections — read from the global tracking key (single ZCARD)
+
+async def _collect_sse_connections(redis: Any, snapshot: dict) -> None:
+    """SSE connections — read from the global tracking key (single ZCARD)."""
     try:
         snapshot["sse_connections"] = int(await redis.zcard("sse:global"))
     except Exception as exc:
         logger.warning("metrics.sse_scan_failed", error=str(exc))
 
-    # 3. DB-derived gauges (only if DB available)
-    if pool is not None:
-        try:
-            async with pool.acquire() as conn:
-                row = await conn.fetchrow(
-                    """
-                    SELECT
-                        (SELECT count(*) FROM users WHERE auth_source='keycloak') AS u_kc,
-                        (SELECT count(*) FROM users WHERE auth_source='local')    AS u_local,
-                        (SELECT count(*) FROM kb_articles
-                          WHERE status='published' AND deleted_at IS NULL)        AS kb_pub,
-                        (SELECT count(*) FROM kb_articles
-                          WHERE status='draft' AND deleted_at IS NULL)            AS kb_draft,
-                        (SELECT count(*) FROM news
-                          WHERE status='published' AND deleted_at IS NULL)        AS news_pub,
-                        (SELECT count(*) FROM news
-                          WHERE status='draft' AND deleted_at IS NULL)            AS news_draft,
-                        (SELECT count(DISTINCT user_id) FROM audit_log
-                          WHERE created_at >= $1 AND user_id IS NOT NULL)         AS active_1h
-                    """,
-                    datetime.now(tz=UTC) - timedelta(hours=1),
-                )
-                if row is not None:
-                    snapshot["users_total"] = {
-                        "keycloak": int(row["u_kc"] or 0),
-                        "local": int(row["u_local"] or 0),
-                    }
-                    snapshot["kb_articles_total"] = {
-                        "published": int(row["kb_pub"] or 0),
-                        "draft": int(row["kb_draft"] or 0),
-                    }
-                    snapshot["news_published_total"] = {
-                        "published": int(row["news_pub"] or 0),
-                        "draft": int(row["news_draft"] or 0),
-                    }
-                    snapshot["active_users_1h"] = int(row["active_1h"] or 0)
 
-                # Outbox health — visibility into email/MAX delivery pipeline.
-                # Без этого копящиеся/DLQ-ящиеся письма невидимы до жалоб юзеров.
-                outbox = await conn.fetchrow(
-                    """
-                    SELECT
-                        (SELECT count(*) FROM email_outbox
-                          WHERE status = 'PENDING')                      AS e_pending,
-                        (SELECT count(*) FROM email_outbox
-                          WHERE status = 'DLQ')                           AS e_dlq,
-                        (SELECT count(*) FROM email_outbox
-                          WHERE status = 'SENDING'
-                            AND updated_at < NOW() - INTERVAL '10 min')  AS e_stale,
-                        (SELECT count(*) FROM messenger_outbox
-                          WHERE status = 'PENDING')                      AS m_pending,
-                        (SELECT count(*) FROM messenger_outbox
-                          WHERE status = 'DLQ')                           AS m_dlq,
-                        (SELECT count(*) FROM messenger_outbox
-                          WHERE status = 'SENDING'
-                            AND updated_at < NOW() - INTERVAL '10 min')  AS m_stale
-                    """
-                )
-                if outbox is not None:
-                    snapshot["email_outbox"] = {
-                        "pending": int(outbox["e_pending"] or 0),
-                        "dlq": int(outbox["e_dlq"] or 0),
-                        "sending_stale": int(outbox["e_stale"] or 0),
-                    }
-                    snapshot["messenger_outbox"] = {
-                        "pending": int(outbox["m_pending"] or 0),
-                        "dlq": int(outbox["m_dlq"] or 0),
-                        "sending_stale": int(outbox["m_stale"] or 0),
-                    }
-        except Exception as exc:
-            logger.warning("metrics.db_failed", error=str(exc))
+async def _collect_db_gauges(pool: Any, snapshot: dict) -> None:
+    """DB-derived gauges (users/kb/news/active/outbox). Only if DB available."""
+    if pool is None:
+        return
+    try:
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT
+                    (SELECT count(*) FROM users WHERE auth_source='keycloak') AS u_kc,
+                    (SELECT count(*) FROM users WHERE auth_source='local')    AS u_local,
+                    (SELECT count(*) FROM kb_articles
+                      WHERE status='published' AND deleted_at IS NULL)        AS kb_pub,
+                    (SELECT count(*) FROM kb_articles
+                      WHERE status='draft' AND deleted_at IS NULL)            AS kb_draft,
+                    (SELECT count(*) FROM news
+                      WHERE status='published' AND deleted_at IS NULL)        AS news_pub,
+                    (SELECT count(*) FROM news
+                      WHERE status='draft' AND deleted_at IS NULL)            AS news_draft,
+                    (SELECT count(DISTINCT user_id) FROM audit_log
+                      WHERE created_at >= $1 AND user_id IS NOT NULL)         AS active_1h
+                """,
+                datetime.now(tz=UTC) - timedelta(hours=1),
+            )
+            if row is not None:
+                snapshot["users_total"] = {
+                    "keycloak": int(row["u_kc"] or 0),
+                    "local": int(row["u_local"] or 0),
+                }
+                snapshot["kb_articles_total"] = {
+                    "published": int(row["kb_pub"] or 0),
+                    "draft": int(row["kb_draft"] or 0),
+                }
+                snapshot["news_published_total"] = {
+                    "published": int(row["news_pub"] or 0),
+                    "draft": int(row["news_draft"] or 0),
+                }
+                snapshot["active_users_1h"] = int(row["active_1h"] or 0)
 
-    # 4. Photo storage size — offloaded to thread pool to avoid blocking the event loop
+            # Outbox health — visibility into email/MAX delivery pipeline.
+            # Без этого копящиеся/DLQ-ящиеся письма невидимы до жалоб юзеров.
+            outbox = await conn.fetchrow(
+                """
+                SELECT
+                    (SELECT count(*) FROM email_outbox
+                      WHERE status = 'PENDING')                      AS e_pending,
+                    (SELECT count(*) FROM email_outbox
+                      WHERE status = 'DLQ')                           AS e_dlq,
+                    (SELECT count(*) FROM email_outbox
+                      WHERE status = 'SENDING'
+                        AND updated_at < NOW() - INTERVAL '10 min')  AS e_stale,
+                    (SELECT count(*) FROM messenger_outbox
+                      WHERE status = 'PENDING')                      AS m_pending,
+                    (SELECT count(*) FROM messenger_outbox
+                      WHERE status = 'DLQ')                           AS m_dlq,
+                    (SELECT count(*) FROM messenger_outbox
+                      WHERE status = 'SENDING'
+                        AND updated_at < NOW() - INTERVAL '10 min')  AS m_stale
+                """
+            )
+            if outbox is not None:
+                snapshot["email_outbox"] = {
+                    "pending": int(outbox["e_pending"] or 0),
+                    "dlq": int(outbox["e_dlq"] or 0),
+                    "sending_stale": int(outbox["e_stale"] or 0),
+                }
+                snapshot["messenger_outbox"] = {
+                    "pending": int(outbox["m_pending"] or 0),
+                    "dlq": int(outbox["m_dlq"] or 0),
+                    "sending_stale": int(outbox["m_stale"] or 0),
+                }
+    except Exception as exc:
+        logger.warning("metrics.db_failed", error=str(exc))
+
+
+async def _collect_photo_storage(snapshot: dict) -> None:
+    """Photo storage size — offloaded to thread pool to avoid blocking the loop."""
     try:
         loop = asyncio.get_running_loop()
         snapshot["photo_storage_bytes"] = await loop.run_in_executor(
@@ -248,8 +252,10 @@ async def refresh_custom_metrics(ctx: dict) -> dict:
     except Exception as exc:
         logger.warning("metrics.photo_size_failed", error=str(exc))
 
-    # 5. ARQ job accounting — HGETALL the worker-written hashes. Keys carry the
-    # cumulative counts; the API hydrates deltas into Prometheus counters.
+
+async def _collect_arq_job_accounting(redis: Any, snapshot: dict) -> None:
+    """ARQ job accounting — HGETALL the worker-written hashes. Keys carry the
+    cumulative counts; the API hydrates deltas into Prometheus counters."""
     try:
         jobs_raw = await redis.hgetall(ARQ_JOBS_KEY)
         time_raw = await redis.hgetall(ARQ_JOB_TIME_KEY)
@@ -262,8 +268,12 @@ async def refresh_custom_metrics(ctx: dict) -> dict:
     except Exception as exc:
         logger.warning("metrics.arq_jobs_failed", error=str(exc))
 
-    # 6. Integration health — probe results written by probe_integrations cron.
-    # Hash maps integration name → "1"/"0"; absent integrations are unconfigured.
+
+async def _collect_integration_health(redis: Any, snapshot: dict) -> None:
+    """Integration health — probe results written by probe_integrations cron.
+
+    Hash maps integration name → "1"/"0"; absent integrations are unconfigured.
+    """
     try:
         from app.worker.tasks.integration_health import INTEGRATION_HEALTH_KEY
 
@@ -274,8 +284,10 @@ async def refresh_custom_metrics(ctx: dict) -> dict:
     except Exception as exc:
         logger.warning("metrics.integrations_failed", error=str(exc))
 
-    # 7. Synthetic probes — hash maps "{flow}:ok"/"{flow}:ms" written by
-    # run_synthetic_probe cron. Absent when probe creds are not configured.
+
+async def _collect_synthetic_probes(redis: Any, snapshot: dict) -> None:
+    """Synthetic probes — hash maps "{flow}:ok"/"{flow}:ms" written by
+    run_synthetic_probe cron. Absent when probe creds are not configured."""
     try:
         from app.worker.tasks.synthetic_probe import SYNTHETIC_PROBE_KEY
 
@@ -285,6 +297,31 @@ async def refresh_custom_metrics(ctx: dict) -> dict:
             snapshot["synthetic_probe"] = synth
     except Exception as exc:
         logger.warning("metrics.synthetic_failed", error=str(exc))
+
+
+async def refresh_custom_metrics(ctx: dict) -> dict:
+    """Refresh custom gauges and store the snapshot in Redis.
+
+    Thin orchestrator: delegates each metric group to a dedicated ``_collect_*``
+    coroutine (all swallow their own errors so one failure never poisons the
+    whole snapshot). See the per-collector docstrings for the data sources.
+    """
+    redis = ctx["redis"]
+    pool = ctx.get("pg_pool")
+
+    snapshot: dict[str, float | int | dict | str] = {
+        "generated_at": datetime.now(tz=UTC).isoformat(),
+    }
+
+    await _collect_audit_depths(redis, snapshot)
+    await _collect_worker_heartbeat(redis, snapshot)
+    await _collect_arq_queue_depth(redis, snapshot)
+    await _collect_sse_connections(redis, snapshot)
+    await _collect_db_gauges(pool, snapshot)
+    await _collect_photo_storage(snapshot)
+    await _collect_arq_job_accounting(redis, snapshot)
+    await _collect_integration_health(redis, snapshot)
+    await _collect_synthetic_probes(redis, snapshot)
 
     # Persist the snapshot for the API process to consume
     try:

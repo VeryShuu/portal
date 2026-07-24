@@ -8,6 +8,7 @@ assets), the MIME maps and the find/delete/upload primitives.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import cast
 
 from fastapi import HTTPException, UploadFile, status
 
@@ -42,10 +43,13 @@ DEFAULT_SETTINGS = BrandingSettings()
 def load_settings() -> BrandingSettings:
     if SETTINGS_FILE.exists():
         try:
-            return BrandingSettings.model_validate_json(SETTINGS_FILE.read_text("utf-8"))
+            return cast(
+                BrandingSettings,
+                BrandingSettings.model_validate_json(SETTINGS_FILE.read_text("utf-8")),
+            )
         except Exception as exc:
             logger.debug("branding.settings_load_failed", error=str(exc))
-    return DEFAULT_SETTINGS.model_copy()
+    return cast(BrandingSettings, DEFAULT_SETTINGS.model_copy())
 
 
 def save_settings(s: BrandingSettings) -> None:

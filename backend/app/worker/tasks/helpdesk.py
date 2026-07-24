@@ -110,9 +110,7 @@ async def _release_lock(redis: Redis, key: str, token: str) -> None:
         # ``await``. Локальное игнорирование чистее, чем ``cast("Any", ...)``
         # на каждом вызове (poll_lock/digest_lock в тех же задачах обходят это
         # тем, что ``redis = ctx.get(...)`` без аннотации = ``Any``).
-        await redis.eval(  # type: ignore[misc]
-            _LOCK_RELEASE_LUA, 1, key, token
-        )
+        await redis.eval(_LOCK_RELEASE_LUA, 1, key, token)
 
 
 async def _module_enabled(redis: Redis) -> bool:

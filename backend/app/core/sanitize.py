@@ -9,6 +9,7 @@ in DOMPurify (defense-in-depth).
 from __future__ import annotations
 
 import re as _re_mod
+from typing import cast
 
 import nh3
 
@@ -236,7 +237,7 @@ def sanitize_markdown(value: str | None) -> str:
 def clean_title(value: str | None) -> str:
     if not value:
         return ""
-    return nh3.clean(value, tags=set(), strip_comments=True)
+    return cast(str, nh3.clean(value, tags=set(), strip_comments=True))
 
 
 def escape_text(value: str | None) -> str:

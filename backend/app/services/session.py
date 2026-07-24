@@ -77,7 +77,7 @@ async def save_session(redis: Redis, session_id: str, data: dict[str, Any]) -> N
     user_id = data.get("user_id")
     if user_id:
         key = _user_sessions_key(user_id)
-        await redis.sadd(key, session_id)  # type: ignore[misc]
+        await redis.sadd(key, session_id)
         await redis.expire(key, _USER_SESSIONS_TTL)
 
 
@@ -130,7 +130,7 @@ async def delete_session(redis: Redis, session_id: str) -> None:
             data = json.loads(raw)
             user_id = data.get("user_id")
             if user_id:
-                await redis.srem(_user_sessions_key(user_id), session_id)  # type: ignore[misc]
+                await redis.srem(_user_sessions_key(user_id), session_id)
         except Exception as exc:
             # Best-effort cleanup of the user→sessions index; session itself
             # is deleted below regardless. Corrupt payload is unexpected → debug.
@@ -180,7 +180,7 @@ async def invalidate_all_user_sessions(
     redis: Redis, user_id: str, except_session_id: str | None = None
 ) -> int:
     key = _user_sessions_key(user_id)
-    session_ids = await redis.smembers(key)  # type: ignore[misc]
+    session_ids = await redis.smembers(key)
     count = 0
     invalidated_sids: list[str] = []
     for sid in session_ids:
@@ -191,7 +191,7 @@ async def invalidate_all_user_sessions(
         count += 1
     if except_session_id:
         if invalidated_sids:
-            await redis.srem(key, *invalidated_sids)  # type: ignore[misc]
+            await redis.srem(key, *invalidated_sids)
     else:
         await redis.delete(key)
     return count
@@ -223,4 +223,4 @@ async def acquire_refresh_lock(redis: Redis, session_id: str) -> str | None:
 async def release_refresh_lock(redis: Redis, session_id: str, token: str) -> None:
     """Release the lock only if we still own it (compare-and-delete)."""
     with contextlib.suppress(Exception):
-        await redis.eval(_RELEASE_LOCK_LUA, 1, _refresh_lock_key(session_id), token)  # type: ignore[misc]
+        await redis.eval(_RELEASE_LOCK_LUA, 1, _refresh_lock_key(session_id), token)

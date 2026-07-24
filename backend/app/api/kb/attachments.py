@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 import uuid
 from pathlib import Path
+from typing import cast
 
 from fastapi import APIRouter, HTTPException, UploadFile, status
 from fastapi.responses import Response
@@ -117,7 +118,7 @@ async def upload_article_file(
         resource_id=str(article_id),
         metadata={"filename": original_name, "size_bytes": size},
     )
-    return KbFilePublic.model_validate(kb_file)
+    return cast(KbFilePublic, KbFilePublic.model_validate(kb_file))
 
 
 @router.delete("/articles/{article_id}/files/{file_id}", status_code=204)

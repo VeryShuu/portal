@@ -45,5 +45,5 @@ async def import_scan_status(job_id: str, request: Request, user: AdminDep) -> d
     if status == JobStatus.not_found:
         raise HTTPException(status_code=404, detail="Job not found")
     info = await job.info()
-    result = info.result if info is not None else None  # type: ignore[attr-defined]
+    result = info.result if info is not None else None
     return {"job_id": job_id, "status": status.value, "result": result}

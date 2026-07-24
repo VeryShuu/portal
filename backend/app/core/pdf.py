@@ -6,6 +6,8 @@ the backend process does not need to manage a Chromium instance itself.
 
 from __future__ import annotations
 
+from typing import cast
+
 import httpx
 
 from app.core.config import get_settings
@@ -28,4 +30,4 @@ async def render_pdf(html: str) -> bytes:
         resp.raise_for_status()
 
     logger.info("pdf.done size=%d", len(resp.content))
-    return resp.content
+    return cast(bytes, resp.content)

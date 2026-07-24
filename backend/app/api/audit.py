@@ -125,8 +125,8 @@ async def list_event_types(_admin: AdminDep, db: DbDep) -> list[str]:
 @router.get("/queue/depth", summary="Размер очереди audit_queue в Redis")
 async def audit_queue_depth(_admin: AdminDep, redis: RedisDep) -> dict[str, int]:
     try:
-        pending = int(await redis.llen(AUDIT_QUEUE_KEY))  # type: ignore[misc]
-        processing = int(await redis.llen("audit_processing"))  # type: ignore[misc]
+        pending = int(await redis.llen(AUDIT_QUEUE_KEY))
+        processing = int(await redis.llen("audit_processing"))
     except Exception as exc:
         logger.exception("audit.queue_depth.redis_failed", error=str(exc))
         raise HTTPException(

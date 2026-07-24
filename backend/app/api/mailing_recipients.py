@@ -8,6 +8,7 @@ A curated address book used by the news "share by email" feature. Both reads
 from __future__ import annotations
 
 import uuid
+from typing import cast
 
 from fastapi import APIRouter, Query, status
 
@@ -66,7 +67,7 @@ async def create_recipient(
         resource_title=recipient.name,
     )
     logger.info("mailing_recipient.created", recipient_id=str(recipient.id), editor=str(editor.id))
-    return MailingRecipientPublic.model_validate(recipient)
+    return cast(MailingRecipientPublic, MailingRecipientPublic.model_validate(recipient))
 
 
 @router.put(
@@ -92,7 +93,7 @@ async def update_recipient(
         metadata={"fields": changed},
     )
     logger.info("mailing_recipient.updated", recipient_id=str(recipient.id), editor=str(editor.id))
-    return MailingRecipientPublic.model_validate(recipient)
+    return cast(MailingRecipientPublic, MailingRecipientPublic.model_validate(recipient))
 
 
 @router.delete(

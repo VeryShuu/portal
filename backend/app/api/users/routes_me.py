@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 from fastapi import Depends, Request, UploadFile
 from fastapi_limiter.depends import RateLimiter
 
@@ -18,7 +20,7 @@ from . import router, users_me_service
 
 @router.get("/me", response_model=UserMe, summary="Текущий пользователь")
 async def get_me(user: CurrentUser) -> UserMe:
-    return UserMe.model_validate(user)
+    return cast(UserMe, UserMe.model_validate(user))
 
 
 @router.patch("/me/profile", response_model=UserMe, summary="Обновить профиль")
@@ -28,7 +30,7 @@ async def patch_my_profile(
     db: DbDep,
 ) -> UserMe:
     updated = await users_me_service.patch_my_profile(db, user, body)
-    return UserMe.model_validate(updated)
+    return cast(UserMe, UserMe.model_validate(updated))
 
 
 @router.patch("/me/preferences", response_model=UserMe, summary="Обновить персональные настройки")
@@ -38,7 +40,7 @@ async def patch_my_preferences(
     db: DbDep,
 ) -> UserMe:
     updated = await users_me_service.patch_my_preferences(db, user, body)
-    return UserMe.model_validate(updated)
+    return cast(UserMe, UserMe.model_validate(updated))
 
 
 @router.post("/me/avatar", response_model=UserMe, summary="Загрузить аватар")
@@ -48,7 +50,7 @@ async def upload_avatar(
     db: DbDep,
 ) -> UserMe:
     updated = await users_me_service.upload_avatar(db, user, file)
-    return UserMe.model_validate(updated)
+    return cast(UserMe, UserMe.model_validate(updated))
 
 
 @router.patch(

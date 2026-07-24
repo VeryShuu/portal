@@ -19,6 +19,7 @@ import re
 import shutil
 import uuid
 from pathlib import Path
+from typing import cast
 
 import aiofiles
 from fastapi import HTTPException, UploadFile, status
@@ -263,7 +264,7 @@ def _detect_mime(data: bytes) -> str | None:
     """MIME через ``python-magic`` по первым байтам (как ``stream_upload_to_path``)."""
     try:
         if magic is not None and data:
-            return magic.from_buffer(data[:2048], mime=True)
+            return cast(str, magic.from_buffer(data[:2048], mime=True))
     except Exception:
         return None
     return None

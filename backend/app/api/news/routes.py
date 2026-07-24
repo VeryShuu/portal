@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from typing import cast
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 from fastapi_limiter.depends import RateLimiter
@@ -128,7 +129,7 @@ async def get_news(
 
     public = NewsPublic.model_validate(news)
     public.liked_by_me = await news_svc.is_liked_by(db, news_id=news_id, user_id=user.id)
-    return public
+    return cast(NewsPublic, public)
 
 
 @router.post(
@@ -145,7 +146,7 @@ async def create_news(
     if idempotency_key:
         cached = await redis.get(f"idem:news:{editor.id}:{idempotency_key}")
         if cached:
-            return NewsPublic.model_validate_json(cached)
+            return cast(NewsPublic, NewsPublic.model_validate_json(cached))
 
     news = await news_svc.create_news(db, author=editor, data=body.model_dump())
     for cat in body.categories:
@@ -165,7 +166,7 @@ async def create_news(
             public.model_dump_json(),
             ex=IDEMPOTENCY_TTL,
         )
-    return public
+    return cast(NewsPublic, public)
 
 
 @router.put("/{news_id}", response_model=NewsPublic, summary="Обновить новость")
@@ -191,7 +192,7 @@ async def update_news(
         resource_id=str(news_id),
         resource_title=updated.title,
     )
-    return NewsPublic.model_validate(updated)
+    return cast(NewsPublic, NewsPublic.model_validate(updated))
 
 
 @router.put("/{news_id}/draft", response_model=NewsPublic, summary="Автосохранение черновика")
@@ -209,7 +210,7 @@ async def save_draft(
     updated = await news_svc.update_news(
         db, news=news, editor=editor, data=body.model_dump(exclude_unset=True)
     )
-    return NewsPublic.model_validate(updated)
+    return cast(NewsPublic, NewsPublic.model_validate(updated))
 
 
 @router.delete(
@@ -256,7 +257,7 @@ async def restore_news(
         resource_id=str(news_id),
         resource_title=news.title,
     )
-    return NewsPublic.model_validate(news)
+    return cast(NewsPublic, NewsPublic.model_validate(news))
 
 
 @router.delete(
@@ -313,7 +314,7 @@ async def share_news_email(
     if idempotency_key:
         cached = await redis.get(f"idem:news-share:{editor.id}:{idempotency_key}")
         if cached:
-            return NewsShareEmailResponse.model_validate_json(cached)
+            return cast(NewsShareEmailResponse, NewsShareEmailResponse.model_validate_json(cached))
 
     news = await _get_news_or_404(db, news_id)
     if news.status != "published":

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from typing import cast
 
 from fastapi import APIRouter, HTTPException, Request, status
 
@@ -60,7 +61,7 @@ async def create_room_endpoint(
         resource_title=room.name,
     )
     logger.info("meetings.room.created", room_id=str(room.id), admin=str(admin.id))
-    return RoomOut.model_validate(room)
+    return cast(RoomOut, RoomOut.model_validate(room))
 
 
 @router.get("/{room_id}", response_model=RoomOut)
@@ -72,7 +73,7 @@ async def get_room_endpoint(
     room = await get_room(db, room_id)
     if not room:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Room not found")
-    return RoomOut.model_validate(room)
+    return cast(RoomOut, RoomOut.model_validate(room))
 
 
 @router.put("/{room_id}", response_model=RoomOut)
@@ -99,7 +100,7 @@ async def update_room_endpoint(
         details={"fields": sorted(payload.model_dump(exclude_none=True).keys())},
     )
     logger.info("meetings.room.updated", room_id=str(room.id), admin=str(admin.id))
-    return RoomOut.model_validate(room)
+    return cast(RoomOut, RoomOut.model_validate(room))
 
 
 @router.delete("/{room_id}", status_code=status.HTTP_204_NO_CONTENT)

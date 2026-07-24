@@ -5,9 +5,11 @@ from __future__ import annotations
 import secrets
 import uuid
 from datetime import UTC, datetime
+from typing import cast
 
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import AsyncSessionLocal
@@ -74,7 +76,7 @@ async def _restore_file_shares(
                 .on_conflict_do_nothing(constraint="uq_file_share_folder_file_subject")
             )
             result = await db.execute(stmt)
-            if result.rowcount:  # type: ignore[attr-defined]
+            if cast(CursorResult, result).rowcount:
                 restored += 1
     await db.commit()
     return restored
@@ -163,7 +165,7 @@ async def startup_sync_nc_folders(ctx: dict) -> None:
                     .on_conflict_do_nothing(index_elements=["nc_path"])
                 )
                 result = await db.execute(stmt)
-                if result.rowcount:  # type: ignore[attr-defined]
+                if cast(CursorResult, result).rowcount:
                     path_to_id[nc_path] = new_id
                     created += 1
 

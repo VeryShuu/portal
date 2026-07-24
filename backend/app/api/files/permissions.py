@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
+from typing import cast
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
@@ -240,7 +241,7 @@ async def grant_permission(
             for p in all_perms
         ],
     )
-    return PermissionPublic.model_validate(perm_row)
+    return cast(PermissionPublic, PermissionPublic.model_validate(perm_row))
 
 
 # ── Revoke permission ──────────────────────────────────────────────────────────
