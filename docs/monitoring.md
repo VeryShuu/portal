@@ -178,9 +178,20 @@ Playwright логинится (local-auth) и проверяет загрузк�
 `403 CSRF: Origin mismatch`. Решение: worker читает `portal_base_url` из
 SystemSettings и передаёт его в payload `/probe`, а probe проставляет его как
 заголовок `Origin` на login-POST (spoof). Безопасно — probe уже аутентифицирован
-`SCREENSHOT_SERVICE_SECRET` и живёт в доверенной сети. Cookie остаются
-host-scoped (все `set_cookie` без `domain=`), а `page.request` шарит cookie-jar
-с BrowserContext, поэтому reload на шаге 3 автоматически отправит сессию.
+`SCREENSHOT_SERVICE_SECRET` и живёт в доверенной сети.
+
+**Грабли: Secure-cookie vs internal HTTP-навигация.** На проде
+(`ENVIRONMENT=production`) бэкенд ставит `portal_session` с флагом `Secure`
+(`is_production` в `app/api/auth/local.py`). Chromium **не отправляет
+Secure-cookie по plain-HTTP**, а probe навигирует SPA через внутренний
+`PROBE_FRONTEND_URL=http://nginx:80`. Без коррекции session-cookie теряется
+после login → `GET /bootstrap` отдаёт 401 → SPA уходит на SSO → `#app` не
+монтируется → `assert_app_shell` таймаутится через 30с (метрика
+`portal_synthetic_probe_up` падает в 0). На dev (`ENVIRONMENT=development`)
+`Secure=False`, поэтому регрессия не ловится локально. Решение: probe
+пере-кладёт `portal_session` в BrowserContext **без** `Secure` после успешного
+login (`cookie_utils.normalize_session_cookie_for_probe`), то же доверение, что
+и spoof-`Origin` (service-to-service в доверенной сети). No-op на dev.
 
 **Грабли: `PROBE_FRONTEND_URL` должен указывать на `portal-nginx`, не на
 `portal-frontend`.** На production-деплое есть два nginx-контейнера: `portal-nginx`

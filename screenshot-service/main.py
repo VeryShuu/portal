@@ -5,11 +5,12 @@ import json
 import logging
 import os
 import time
-from typing import Any
 from urllib.parse import urlparse
 
 from aiohttp import web
 from playwright.async_api import Browser, Playwright, Route, async_playwright
+
+from cookie_utils import normalize_session_cookie_for_probe
 
 logging.basicConfig(
     level=logging.INFO,
@@ -61,7 +62,9 @@ _LAUNCH_ARGS = [
 def _check_secret(request: web.Request) -> web.Response | None:
     """Return 401 if the shared-secret header is absent or wrong."""
     if not _SERVICE_SECRET:
-        return _error(503, "service not configured: SCREENSHOT_SERVICE_SECRET is not set")
+        return _error(
+            503, "service not configured: SCREENSHOT_SERVICE_SECRET is not set"
+        )
     provided = request.headers.get("X-Screenshot-Secret", "")
     if not provided or provided != _SERVICE_SECRET:
         logger.warning("screenshot.unauthorized remote=%s", request.remote)
@@ -103,7 +106,9 @@ def _validate_screenshot_url(url: str) -> str | None:
         origin == allowed or origin.startswith(allowed + "/")
         for allowed in _ALLOWED_ORIGINS
     ):
-        logger.warning("screenshot.blocked_url url=%s allowed=%s", url, _ALLOWED_ORIGINS)
+        logger.warning(
+            "screenshot.blocked_url url=%s allowed=%s", url, _ALLOWED_ORIGINS
+        )
         return "url origin is not in the allowed list"
 
     return None
@@ -210,7 +215,9 @@ async def take_screenshot(request: web.Request) -> web.Response:
     full_page = request.rel_url.query.get("full_page", "false").lower() == "true"
     browser: Browser = request.app["browser"]
 
-    logger.info("screenshot.start url=%s %dx%d full_page=%s", url, width, height, full_page)
+    logger.info(
+        "screenshot.start url=%s %dx%d full_page=%s", url, width, height, full_page
+    )
     t0 = time.time()
     try:
         context = await browser.new_context(viewport={"width": width, "height": height})
@@ -222,7 +229,10 @@ async def take_screenshot(request: web.Request) -> web.Response:
             await context.close()
         elapsed = round((time.time() - t0) * 1000)
         logger.info(
-            "screenshot.done url=%s elapsed_ms=%d size=%d", url, elapsed, len(image_bytes)
+            "screenshot.done url=%s elapsed_ms=%d size=%d",
+            url,
+            elapsed,
+            len(image_bytes),
         )
         return web.Response(
             body=image_bytes,
@@ -261,7 +271,12 @@ async def render_pdf(request: web.Request) -> web.Response:
             pdf_bytes = await page.pdf(
                 format="A4",
                 print_background=True,
-                margin={"top": "20mm", "bottom": "20mm", "left": "15mm", "right": "15mm"},
+                margin={
+                    "top": "20mm",
+                    "bottom": "20mm",
+                    "left": "15mm",
+                    "right": "15mm",
+                },
             )
         finally:
             await context.close()
@@ -330,8 +345,12 @@ async def run_probe(request: web.Request) -> web.Response:
     if not admin_email or not admin_password:
         return web.Response(
             text=json.dumps(
-                {"ok": False, "configured": False, "flow": flow,
-                 "error": "PROBE_ADMIN_EMAIL/PASSWORD not set"}
+                {
+                    "ok": False,
+                    "configured": False,
+                    "flow": flow,
+                    "error": "PROBE_ADMIN_EMAIL/PASSWORD not set",
+                }
             ),
             content_type="application/json",
         )
@@ -352,8 +371,11 @@ async def run_probe(request: web.Request) -> web.Response:
             page = await context.new_page()
             # 1. Navigate to login page.
             try:
-                await page.goto(f"{frontend_url}/login", wait_until="domcontentloaded",
-                                timeout=PAGE_TIMEOUT_MS)
+                await page.goto(
+                    f"{frontend_url}/login",
+                    wait_until="domcontentloaded",
+                    timeout=PAGE_TIMEOUT_MS,
+                )
             except Exception:
                 step_failed = "navigate_login"
                 raise
@@ -378,10 +400,25 @@ async def run_probe(request: web.Request) -> web.Response:
                 if step_failed is None:
                     step_failed = "login_request"
                 raise
+            # 2b. On production the backend stamps portal_session with
+            # ``Secure`` (is_production → True). Chromium does not send
+            # Secure cookies over the internal HTTP frontend URL, so the
+            # SPA's bootstrap request would arrive without a session → 401
+            # → redirect to SSO → assert_app_shell timeout. Re-stamp the
+            # session as non-secure for the internal HTTP navigation. This
+            # is the same trust-boundary relaxation as the Origin-spoof
+            # above (service-to-service in a trusted network). No-op on dev
+            # where the cookie is already non-secure. See cookie_utils.py.
+            override = normalize_session_cookie_for_probe(
+                await context.cookies(), frontend_url
+            )
+            if override is not None:
+                await context.add_cookies([override])
             # 3. Reload + assert SPA shell rendered (session cookie now set).
             try:
-                await page.goto(frontend_url, wait_until="domcontentloaded",
-                                timeout=PAGE_TIMEOUT_MS)
+                await page.goto(
+                    frontend_url, wait_until="domcontentloaded", timeout=PAGE_TIMEOUT_MS
+                )
                 await page.wait_for_selector("#app", timeout=PAGE_TIMEOUT_MS)
             except Exception:
                 step_failed = step_failed or "assert_app_shell"
@@ -395,8 +432,9 @@ async def run_probe(request: web.Request) -> web.Response:
         elapsed = round((time.time() - t0) * 1000)
         logger.info("probe.done flow=%s ok=true elapsed_ms=%d", flow, elapsed)
         return web.Response(
-            text=json.dumps({"ok": True, "configured": True, "flow": flow,
-                             "elapsed_ms": elapsed}),
+            text=json.dumps(
+                {"ok": True, "configured": True, "flow": flow, "elapsed_ms": elapsed}
+            ),
             content_type="application/json",
             headers={"X-Elapsed-Ms": str(elapsed)},
         )
@@ -405,8 +443,13 @@ async def run_probe(request: web.Request) -> web.Response:
         logger.exception("probe.error flow=%s step=%s", flow, step_failed)
         return web.Response(
             text=json.dumps(
-                {"ok": False, "configured": True, "flow": flow,
-                 "elapsed_ms": elapsed, "step_failed": step_failed}
+                {
+                    "ok": False,
+                    "configured": True,
+                    "flow": flow,
+                    "elapsed_ms": elapsed,
+                    "step_failed": step_failed,
+                }
             ),
             content_type="application/json",
             status=200,  # 200 with ok=false — the probe ran, the flow failed

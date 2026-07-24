@@ -1,0 +1,3 @@
+# Dev/test deps for screenshot-service unit tests.
+# Pinned lower bounds to match backend's pytest stack (pyproject.toml).
+pytest>=8.2.0

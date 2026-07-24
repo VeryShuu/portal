@@ -18,6 +18,27 @@ permissions:
   contents: read
 
 jobs:
+  screenshot-unit:
+    name: screenshot-service / pytest unit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: screenshot-service
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: screenshot-service/requirements-dev.txt
+      - name: Install dev deps
+        # Только pytest — модуль под тестом (cookie_utils.py) не зависит от
+        # aiohttp/playwright, поэтому heavyweight образ не нужен.
+        run: pip install -r requirements-dev.txt
+      - name: pytest
+        run: python -m pytest
+
   backend-lint:
     name: backend / ruff + mypy
     runs-on: ubuntu-latest
@@ -783,6 +804,7 @@ jobs:
       - frontend-unit
       - frontend-e2e
       - compose-smoke
+      - screenshot-unit
     # Не на PR: билдим и пушим только main-коммиты и релизные теги.
     if: github.event_name == 'push' && always() && success()
     permissions:
