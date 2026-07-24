@@ -8,10 +8,6 @@ export const E2E_RUN_ID = `e2e-${Date.now().toString(36)}-${Math.random()
   .toString(36)
   .slice(2, 8)}`
 
-export function runScoped(name: string): string {
-  return `${E2E_RUN_ID}-${name}`
-}
-
 export function runScopedEmail(local: string, domain = 'portal.local'): string {
   return `${E2E_RUN_ID}-${local}@${domain}`
 }

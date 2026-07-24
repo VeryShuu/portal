@@ -219,7 +219,7 @@ export function fileIconEmoji(item: NCItem): string {
   return '📎'
 }
 
-export function fileExt(item: NCItem): string {
+function fileExt(item: NCItem): string {
   return item.name.split('.').pop()?.toLowerCase() ?? ''
 }
 

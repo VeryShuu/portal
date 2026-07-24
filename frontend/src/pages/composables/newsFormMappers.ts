@@ -1,6 +1,6 @@
 export type NewsStatus = 'draft' | 'published'
 
-export const NEWS_STATUSES: readonly NewsStatus[] = ['draft', 'published']
+const NEWS_STATUSES: readonly NewsStatus[] = ['draft', 'published']
 
 export const AUTOSAVE_INTERVAL_MS = 30_000
 

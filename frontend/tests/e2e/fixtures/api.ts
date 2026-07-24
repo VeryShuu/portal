@@ -12,19 +12,6 @@ export interface ApiResponse<T = unknown> {
   data: T | null
 }
 
-export async function localLogin(page: Page, email: string, password: string): Promise<void> {
-  await page.goto('/login')
-  const emailInput = page.locator('input[type="email"], input[name="email"]').first()
-  await emailInput.waitFor({ timeout: 10_000 })
-  await emailInput.fill(email)
-  await page.locator('input[type="password"]').first().fill(password)
-  await page
-    .getByRole('button', { name: /войти|log in|sign in/i })
-    .first()
-    .click()
-  await page.waitForURL((url) => !url.pathname.startsWith('/login'), { timeout: 15_000 })
-}
-
 export async function apiRequest<T = unknown>(
   page: Page,
   method: string,

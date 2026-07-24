@@ -64,7 +64,6 @@ export default defineConfig({
           'editor': [
             '@tiptap/vue-3',
             '@tiptap/starter-kit',
-            '@tiptap/extension-image',
             '@tiptap/extension-link',
             '@tiptap/extension-placeholder',
             '@tiptap/extension-table',
@@ -90,7 +89,6 @@ export default defineConfig({
         'src/main.ts',
         'src/i18n/**',
         'src/styles/**',
-        'src/queries/index.ts',
       ],
       reporter: ['text', 'html', 'lcov', 'cobertura'],
       reportsDirectory: 'coverage',

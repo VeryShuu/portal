@@ -1,6 +1,6 @@
 import { api, apiUpload } from './index'
 import { triggerDownload } from '../utils/download'
-import type { components } from './types.gen.d'
+import type { components } from './types.gen'
 
 // ── Type aliases derived from the generated OpenAPI schema ────────────────────
 // Run `npm run gen:types` to regenerate types.gen.d.ts from openapi.json
