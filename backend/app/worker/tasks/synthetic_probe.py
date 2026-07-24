@@ -65,8 +65,12 @@ async def run_synthetic_probe(ctx: dict) -> dict | None:
         data: dict[str, Any] = resp.json()
     except Exception as exc:
         logger.warning("synthetic.probe_call_failed", error=str(exc))
-        data = {"ok": False, "configured": True, "flow": "login_and_load",
-                "step_failed": "service_unreachable"}
+        data = {
+            "ok": False,
+            "configured": True,
+            "flow": "login_and_load",
+            "step_failed": "service_unreachable",
+        }
 
     flow = data.get("flow", "login_and_load")
     # configured=False (no creds in screenshot-service) → skip, record nothing.

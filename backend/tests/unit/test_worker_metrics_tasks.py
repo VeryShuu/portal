@@ -369,9 +369,7 @@ class TestTrackArqJob:
         assert result == "ok"
 
         # started (отдельный hincrby до вызова) + терминальный succeeded (в pipeline)
-        mock_redis.hincrby.assert_awaited_once_with(
-            metrics_task.ARQ_JOBS_KEY, "my_task:started", 1
-        )
+        mock_redis.hincrby.assert_awaited_once_with(metrics_task.ARQ_JOBS_KEY, "my_task:started", 1)
         pipe.hincrby.assert_any_call(metrics_task.ARQ_JOBS_KEY, "my_task:succeeded", 1)
         pipe.hincrby.assert_any_call(metrics_task.ARQ_JOB_TIME_KEY, "my_task:count", 1)
 
@@ -420,8 +418,11 @@ class TestTrackArqJob:
         # Терминальный счётчик — именно :timeout, а не :failed.
         pipe.hincrby.assert_any_call(metrics_task.ARQ_JOBS_KEY, "slow_task:timeout", 1)
         # :failed НЕ должен был записаться.
-        failed_calls = [c for c in pipe.hincrby.call_args_list
-                        if c.args == (metrics_task.ARQ_JOBS_KEY, "slow_task:failed", 1)]
+        failed_calls = [
+            c
+            for c in pipe.hincrby.call_args_list
+            if c.args == (metrics_task.ARQ_JOBS_KEY, "slow_task:failed", 1)
+        ]
         assert not failed_calls
 
     @pytest.mark.asyncio

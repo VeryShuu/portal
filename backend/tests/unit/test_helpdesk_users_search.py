@@ -73,9 +73,7 @@ class TestSearchHelpdeskUsers:
         (иначе карточка CC была бы пустой)."""
         with patch(
             "app.services.keycloak.directory.search_users",
-            new=AsyncMock(
-                return_value=[_kc_user(uid="u", email="x@y.z", username="legacy.user")]
-            ),
+            new=AsyncMock(return_value=[_kc_user(uid="u", email="x@y.z", username="legacy.user")]),
         ):
             result = await search_helpdesk_users(user=object(), redis=object(), q="legacy")
         assert result[0].full_name == "legacy.user"
@@ -93,8 +91,11 @@ class TestSearchHelpdeskUsers:
         meetings/participants.py (там тоже нет try/except). Фронт покажет
         ``cc.searchError``; в server-лог попадёт полный traceback. Если позже
         решим возвращать ``[]`` при сбое — изменить и этот тест."""
-        with patch(
-            "app.services.keycloak.directory.search_users",
-            new=AsyncMock(side_effect=RuntimeError("kc down")),
-        ), pytest.raises(RuntimeError, match="kc down"):
+        with (
+            patch(
+                "app.services.keycloak.directory.search_users",
+                new=AsyncMock(side_effect=RuntimeError("kc down")),
+            ),
+            pytest.raises(RuntimeError, match="kc down"),
+        ):
             await search_helpdesk_users(user=object(), redis=object(), q="query")

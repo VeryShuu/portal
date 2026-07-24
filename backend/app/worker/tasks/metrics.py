@@ -254,12 +254,10 @@ async def refresh_custom_metrics(ctx: dict) -> dict:
         jobs_raw = await redis.hgetall(ARQ_JOBS_KEY)
         time_raw = await redis.hgetall(ARQ_JOB_TIME_KEY)
         snapshot["arq_jobs"] = {
-            k.decode() if isinstance(k, bytes) else k: int(v)
-            for k, v in jobs_raw.items()
+            k.decode() if isinstance(k, bytes) else k: int(v) for k, v in jobs_raw.items()
         }
         snapshot["arq_job_ms"] = {
-            k.decode() if isinstance(k, bytes) else k: int(v)
-            for k, v in time_raw.items()
+            k.decode() if isinstance(k, bytes) else k: int(v) for k, v in time_raw.items()
         }
     except Exception as exc:
         logger.warning("metrics.arq_jobs_failed", error=str(exc))
@@ -271,8 +269,7 @@ async def refresh_custom_metrics(ctx: dict) -> dict:
 
         integ_raw = await redis.hgetall(INTEGRATION_HEALTH_KEY)
         snapshot["integrations"] = {
-            k.decode() if isinstance(k, bytes) else k: int(v)
-            for k, v in integ_raw.items()
+            k.decode() if isinstance(k, bytes) else k: int(v) for k, v in integ_raw.items()
         }
     except Exception as exc:
         logger.warning("metrics.integrations_failed", error=str(exc))
@@ -283,10 +280,7 @@ async def refresh_custom_metrics(ctx: dict) -> dict:
         from app.worker.tasks.synthetic_probe import SYNTHETIC_PROBE_KEY
 
         synth_raw = await redis.hgetall(SYNTHETIC_PROBE_KEY)
-        synth = {
-            k.decode() if isinstance(k, bytes) else k: int(v)
-            for k, v in synth_raw.items()
-        }
+        synth = {k.decode() if isinstance(k, bytes) else k: int(v) for k, v in synth_raw.items()}
         if synth:
             snapshot["synthetic_probe"] = synth
     except Exception as exc:

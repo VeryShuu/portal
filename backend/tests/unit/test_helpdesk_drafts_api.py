@@ -102,5 +102,7 @@ class TestRouterWiring:
 
         # ``@router.post(..., status_code=201)`` кладёт ``status_code`` на
         # underlying APIRoute, не на декорированную функцию — ищем через роутер.
-        route = next(r for r in router.routes if getattr(r, "endpoint", None) is upload_draft_attachment)
+        route = next(
+            r for r in router.routes if getattr(r, "endpoint", None) is upload_draft_attachment
+        )
         assert route.status_code == 201  # type: ignore[attr-defined]

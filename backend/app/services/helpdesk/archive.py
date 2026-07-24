@@ -80,7 +80,7 @@ async def _archive_one(db: AsyncSession, ticket: HelpdeskTicket) -> None:
             # ``description_html`` (rich-редактор TipTap) сохраняется в архив,
             # иначе форматирование заявки терялось при закрытии (only plain
             # ``description`` было раньше). ``None`` сериализуется как null —
-            #legacy-заявки без html остаются читаемыми.
+            # legacy-заявки без html остаются читаемыми.
             "description_html": ticket.description_html,
             "status": ticket.status,
             "source": ticket.source,

@@ -327,12 +327,15 @@ class TestInlineFlagMarking:
         не передаётся (это не ``multipart/related`` — Content-ID отсутствует)."""
         spy = _save_spy(uuid.uuid4())
         html = '<img src="https://example.com/a.png">'
-        with patch(
-            "app.services.helpdesk.email_images._fetch_remote",
-            new=AsyncMock(return_value=b"png"),
-        ), patch(
-            "app.services.helpdesk.email_images._assert_safe_to_fetch",
-            new=AsyncMock(return_value=True),
+        with (
+            patch(
+                "app.services.helpdesk.email_images._fetch_remote",
+                new=AsyncMock(return_value=b"png"),
+            ),
+            patch(
+                "app.services.helpdesk.email_images._assert_safe_to_fetch",
+                new=AsyncMock(return_value=True),
+            ),
         ):
             await localize_images(
                 cast("Any", object()),
@@ -353,9 +356,7 @@ class TestInlineFlagMarking:
         маркируется ``is_inline=True`` + ``content_id``."""
         spy = _save_spy(uuid.uuid4())
         inline_map = {
-            "shot@outlook": InlineImage(
-                data=b"png", content_type="image/png", filename="shot.png"
-            )
+            "shot@outlook": InlineImage(data=b"png", content_type="image/png", filename="shot.png")
         }
         html = '<p>txt</p><img width="100" id="Pic_x0020_1">'
         with patch(

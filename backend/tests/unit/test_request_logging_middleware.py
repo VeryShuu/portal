@@ -203,9 +203,11 @@ def test_slow_request_logs_as_warning() -> None:
 
     # log_slow_request_ms — runtime, из system.json. Мокаем: 0 = всегда «slow».
     fake_settings = type("FakeSettings", (), {"log_slow_request_ms": 0})()
-    with patch.object(middleware_logging, "logger", mock_log), patch(
-        "app.core.system_config.load_system_settings", return_value=fake_settings
-    ), TestClient(app) as client:
+    with (
+        patch.object(middleware_logging, "logger", mock_log),
+        patch("app.core.system_config.load_system_settings", return_value=fake_settings),
+        TestClient(app) as client,
+    ):
         client.get("/probe")
 
     # log_slow_request_ms == 0 → условие `_slow_ms > 0` False → info (не warning).
@@ -230,9 +232,11 @@ def test_slow_request_warning_when_threshold_low() -> None:
 
     # Порог 10 ms — sleep(50ms) точно больше.
     fake_settings = type("FakeSettings", (), {"log_slow_request_ms": 10})()
-    with patch.object(middleware_logging, "logger", mock_log), patch(
-        "app.core.system_config.load_system_settings", return_value=fake_settings
-    ), TestClient(app) as client:
+    with (
+        patch.object(middleware_logging, "logger", mock_log),
+        patch("app.core.system_config.load_system_settings", return_value=fake_settings),
+        TestClient(app) as client,
+    ):
         client.get("/probe")
 
     methods["warning"].assert_called_once()
@@ -252,9 +256,11 @@ def test_slow_request_disabled_when_threshold_huge() -> None:
     class FakeSettings:
         log_slow_request_ms = 60_000  # 60 секунд — точно больше любого теста.
 
-    with patch.object(middleware_logging, "logger", mock_log), patch(
-        "app.core.system_config.load_system_settings", return_value=FakeSettings()
-    ), TestClient(app) as client:
+    with (
+        patch.object(middleware_logging, "logger", mock_log),
+        patch("app.core.system_config.load_system_settings", return_value=FakeSettings()),
+        TestClient(app) as client,
+    ):
         client.get("/probe")
 
     methods["info"].assert_called_once()

@@ -9,7 +9,7 @@
 
 from __future__ import annotations
 
-import asyncio
+import asyncio  # noqa: F401 — используется только как patch-target ("asyncio.open_connection") ниже; mock.patch ищет атрибут по строковому имени и требует импорта модуля в рантайме
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -132,9 +132,7 @@ class TestProbeKeycloak:
     @pytest.mark.asyncio
     async def test_not_configured_returns_none(self):
         fake_kc = MagicMock(keycloak_url="", keycloak_realm="")
-        with patch(
-            "app.services.keycloak.settings._get_kc_settings", return_value=fake_kc
-        ):
+        with patch("app.services.keycloak.settings._get_kc_settings", return_value=fake_kc):
             result = await ih._probe_keycloak()
         assert result is None
 
@@ -148,9 +146,7 @@ class TestProbeKeycloak:
         mock_client.__aexit__ = AsyncMock(return_value=False)
 
         with (
-            patch(
-                "app.services.keycloak.settings._get_kc_settings", return_value=fake_kc
-            ),
+            patch("app.services.keycloak.settings._get_kc_settings", return_value=fake_kc),
             patch("httpx.AsyncClient", return_value=mock_client),
         ):
             result = await ih._probe_keycloak()
@@ -162,13 +158,11 @@ class TestProbeKeycloak:
 
         class _BoomClient:
             def __await__(self):
-                raise asyncio.TimeoutError()
+                raise TimeoutError()
 
         with (
-            patch(
-                "app.services.keycloak.settings._get_kc_settings", return_value=fake_kc
-            ),
-            patch("httpx.AsyncClient", side_effect=asyncio.TimeoutError),
+            patch("app.services.keycloak.settings._get_kc_settings", return_value=fake_kc),
+            patch("httpx.AsyncClient", side_effect=TimeoutError),
         ):
             result = await ih._probe_keycloak()
         assert result is False
@@ -179,9 +173,7 @@ class TestProbeSmtp:
     async def test_not_configured_returns_none(self):
         fake_cfg = MagicMock()
         fake_cfg.host = ""
-        with patch(
-            "app.services.email_settings.read_email_settings", return_value=fake_cfg
-        ):
+        with patch("app.services.email_settings.read_email_settings", return_value=fake_cfg):
             result = await ih._probe_smtp()
         assert result is None
 
@@ -189,9 +181,7 @@ class TestProbeSmtp:
     async def test_connection_failed_returns_false(self):
         fake_cfg = MagicMock(host="smtp.example.local", port=25)
         with (
-            patch(
-                "app.services.email_settings.read_email_settings", return_value=fake_cfg
-            ),
+            patch("app.services.email_settings.read_email_settings", return_value=fake_cfg),
             patch("asyncio.open_connection", side_effect=ConnectionRefusedError),
         ):
             result = await ih._probe_smtp()

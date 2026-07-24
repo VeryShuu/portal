@@ -83,7 +83,11 @@ async def serve_draft_attachment(
 
     # Path-traversal guard (как в kb/media.py и helpdesk/media.py): только
     # безопасные символы, без каталогов.
-    if not re.fullmatch(r"\w[\w.\-]{0,254}", draft.filename) or "/" in draft.filename or "\\" in draft.filename:  # noqa: E501
+    if (
+        not re.fullmatch(r"\w[\w.\-]{0,254}", draft.filename)
+        or "/" in draft.filename
+        or "\\" in draft.filename
+    ):  # noqa: E501
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid filename",

@@ -86,9 +86,7 @@ def _extract_strings(node: ast.AST) -> list[str]:
     return []
 
 
-def _record_literal(
-    value: object, py_file: Path, found: dict[str, set[Path]]
-) -> None:
+def _record_literal(value: object, py_file: Path, found: dict[str, set[Path]]) -> None:
     """Записать literal в реестр, если он похож на event_type (формат домен.action)."""
     if not isinstance(value, str):
         return
@@ -112,9 +110,7 @@ def test_event_type_enum_naming_convention() -> None:
         # Домен и action — lowercase ASCII, без дефисов.
         for part in e.value.split("."):
             assert part, f"Empty segment in {e.value}"
-            assert re.fullmatch(r"[a-z][a-z0-9_]*", part), (
-                f"Invalid segment '{part}' in {e.value}"
-            )
+            assert re.fullmatch(r"[a-z][a-z0-9_]*", part), f"Invalid segment '{part}' in {e.value}"
 
 
 def test_all_literals_in_code_are_registered_in_enum() -> None:

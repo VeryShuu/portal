@@ -51,7 +51,7 @@ db_pool_size = Gauge(
 db_pool_limit = Gauge(
     "portal_db_pool_limit",
     "Max connections the API pool will open (db_pool_size + db_max_overflow). "
-    "Divide portal_db_pool_size{state=\"in_use\"} by this for saturation ratio.",
+    'Divide portal_db_pool_size{state="in_use"} by this for saturation ratio.',
 )
 
 active_users_1h = Gauge(

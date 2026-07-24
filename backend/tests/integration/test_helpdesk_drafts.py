@@ -41,7 +41,9 @@ _PNG_BYTES = bytes.fromhex(
 
 def _png_upload(name: str = "screen.png") -> UploadFile:
     return UploadFile(
-        filename=name, file=io.BytesIO(_PNG_BYTES), headers=cast("Any", {"content-type": "image/png"})
+        filename=name,
+        file=io.BytesIO(_PNG_BYTES),
+        headers=cast("Any", {"content-type": "image/png"}),
     )
 
 
@@ -143,7 +145,7 @@ class TestBackfillDraftImages:
             real_db_session, user=real_user, file=_png_upload("b.png")
         )
         description_html = (
-            f'<p>Скриншоты:</p>'
+            f"<p>Скриншоты:</p>"
             f'<p><img src="/api/v1/helpdesk/draft-attachments/{d1.id}"></p>'
             f'<p><img src="/api/v1/helpdesk/draft-attachments/{d2.id}"></p>'
         )
@@ -159,7 +161,9 @@ class TestBackfillDraftImages:
         )
         # Both draft URLs replaced with inline-media URLs.
         assert "draft-attachments" not in (ticket.description_html or "")
-        assert f"/api/v1/helpdesk/tickets/{ticket.id}/inline-media/" in (ticket.description_html or "")
+        assert f"/api/v1/helpdesk/tickets/{ticket.id}/inline-media/" in (
+            ticket.description_html or ""
+        )
 
         full = await tickets_service.fetch_ticket_for_user(
             real_db_session, ticket_id=ticket.id, user_id=real_user.id
@@ -170,21 +174,29 @@ class TestBackfillDraftImages:
 
         # Two inline attachments created for the first message.
         atts = (
-            await real_db_session.execute(
-                select(HelpdeskAttachment).where(HelpdeskAttachment.message_id == first.id)
+            (
+                await real_db_session.execute(
+                    select(HelpdeskAttachment).where(HelpdeskAttachment.message_id == first.id)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         inline = [a for a in atts if a.is_inline]
         assert len(inline) == 2
 
         # Draft rows deleted (backfilled atomically).
         remaining = (
-            await real_db_session.execute(
-                select(HelpdeskDraftAttachment).where(
-                    HelpdeskDraftAttachment.id.in_([d1.id, d2.id])
+            (
+                await real_db_session.execute(
+                    select(HelpdeskDraftAttachment).where(
+                        HelpdeskDraftAttachment.id.in_([d1.id, d2.id])
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         assert remaining == []
 
         # Draft files removed from the drafts folder.
@@ -209,9 +221,7 @@ class TestBackfillDraftImages:
         """Best-effort: a draft-id that doesn't exist (or isn't owned by the user)
         is left untouched — the ticket is still created."""
         bogus = "00000000-0000-0000-0000-000000000000"
-        description_html = (
-            f'<p><img src="/api/v1/helpdesk/draft-attachments/{bogus}"></p>'
-        )
+        description_html = f'<p><img src="/api/v1/helpdesk/draft-attachments/{bogus}"></p>'
         ticket = await tickets_service.create_ticket(
             real_db_session,
             user=real_user,
@@ -308,9 +318,7 @@ class TestRouterCommitsToDatabase:
     moment someone removes ``await db.commit()`` from ``upload_draft_attachment``.
     """
 
-    async def test_uploaded_draft_visible_from_fresh_session(
-        self, _independent_engine, files_dir
-    ):
+    async def test_uploaded_draft_visible_from_fresh_session(self, _independent_engine, files_dir):
         import uuid as _uuid
 
         from sqlalchemy.ext.asyncio import AsyncSession
@@ -348,9 +356,7 @@ class TestRouterCommitsToDatabase:
 
             async with AsyncSession(_independent_engine, expire_on_commit=False) as req_session:
                 req_user = (
-                    await req_session.execute(
-                        select(UserModel).where(UserModel.id == uid)
-                    )
+                    await req_session.execute(select(UserModel).where(UserModel.id == uid))
                 ).scalar_one()
                 resp = await upload_draft_attachment(
                     file=_png_upload(),

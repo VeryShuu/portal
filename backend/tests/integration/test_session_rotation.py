@@ -85,9 +85,7 @@ async def test_rotate_session_kills_foreign_session_fixation(redis_client):
         "access_token": "victim-at",
         "auth_source": "keycloak",
     }
-    new_sid = await rotate_session(
-        redis_client, old_session_id=attacker_sid, data=victim_session
-    )
+    new_sid = await rotate_session(redis_client, old_session_id=attacker_sid, data=victim_session)
 
     # Инвариант 2: чужая (фиксационная) сессия убита.
     assert await get_session(redis_client, attacker_sid) is None, (

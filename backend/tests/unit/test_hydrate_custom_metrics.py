@@ -26,7 +26,9 @@ async def _noop_next(request):
     return MagicMock()
 
 
-def patch_db_pool(*, checkedout: int = 0, checkedin: int = 0, pool_size: int = 20, max_overflow: int = 30):
+def patch_db_pool(
+    *, checkedout: int = 0, checkedin: int = 0, pool_size: int = 20, max_overflow: int = 30
+):
     """Стабает DB pool + settings для /metrics-блока как единый context manager.
 
     Новый pool-код (middleware/metrics.py) читает engine.pool.checkedout/checkedin
@@ -388,9 +390,14 @@ class TestDBPoolHydration:
         fake_metrics.db_pool_size = _FakeLabeledGauge()
         fake_metrics.db_pool_limit = _FakeLimitGauge()
 
-        with patch("app.middleware.metrics._metrics_mod", fake_metrics), patch_db_pool(
-            checkedout=checkedout, checkedin=checkedin,
-            pool_size=pool_size, max_overflow=max_overflow,
+        with (
+            patch("app.middleware.metrics._metrics_mod", fake_metrics),
+            patch_db_pool(
+                checkedout=checkedout,
+                checkedin=checkedin,
+                pool_size=pool_size,
+                max_overflow=max_overflow,
+            ),
         ):
             await _hydrate(req, _noop_next)
         return gauge_calls
@@ -432,8 +439,13 @@ class TestDBPoolHydration:
             next_called = True
             return MagicMock()
 
-        with patch("app.core.database.engine", bad_engine), \
-             patch("app.core.config.get_settings", return_value=MagicMock(db_pool_size=20, db_max_overflow=30)):
+        with (
+            patch("app.core.database.engine", bad_engine),
+            patch(
+                "app.core.config.get_settings",
+                return_value=MagicMock(db_pool_size=20, db_max_overflow=30),
+            ),
+        ):
             await _hydrate(req, _check_next)
 
         assert next_called is True

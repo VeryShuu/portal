@@ -57,9 +57,7 @@ async def hydrate_custom_metrics(
                             float(snap["audit_processing_depth"])
                         )
                     if "worker_heartbeat_ts" in snap:
-                        _metrics_mod.worker_last_heartbeat.set(
-                            float(snap["worker_heartbeat_ts"])
-                        )
+                        _metrics_mod.worker_last_heartbeat.set(float(snap["worker_heartbeat_ts"]))
                     if "arq_queue_depth" in snap:
                         _metrics_mod.arq_queue_depth.set(float(snap["arq_queue_depth"]))
                     if "sse_connections" in snap:
@@ -94,9 +92,7 @@ async def hydrate_custom_metrics(
                     # ARQ job duration histogram — delta-increment of count and sum.
                     # snapshot key "arq_job_ms" maps "{function}:{count|sum}" -> value.
                     ms = snap.get("arq_job_ms") or {}
-                    funcs = {
-                        f for f in ms if f.endswith(":count") or f.endswith(":sum")
-                    }
+                    funcs = {f for f in ms if f.endswith(":count") or f.endswith(":sum")}
                     for prefix in {f.rsplit(":", 1)[0] for f in funcs}:
                         try:
                             cur_count = float(ms.get(f"{prefix}:count", 0))
@@ -117,16 +113,12 @@ async def hydrate_custom_metrics(
 
                     # Outbox gauges — plain set() (no labels, cumulative counts).
                     for kind in ("pending", "dlq", "sending_stale"):
-                        eo = (snap.get("email_outbox") or {})
+                        eo = snap.get("email_outbox") or {}
                         if kind in eo:
-                            getattr(
-                                _metrics_mod, f"email_outbox_{kind}"
-                            ).set(float(eo[kind]))
-                        mo = (snap.get("messenger_outbox") or {})
+                            getattr(_metrics_mod, f"email_outbox_{kind}").set(float(eo[kind]))
+                        mo = snap.get("messenger_outbox") or {}
                         if kind in mo:
-                            getattr(
-                                _metrics_mod, f"messenger_outbox_{kind}"
-                            ).set(float(mo[kind]))
+                            getattr(_metrics_mod, f"messenger_outbox_{kind}").set(float(mo[kind]))
 
                     # Integration probes — 1/0 up/down per integration.
                     for integration, value in (snap.get("integrations") or {}).items():
@@ -136,9 +128,7 @@ async def hydrate_custom_metrics(
 
                     # Synthetic probes — "{flow}:ok"/"{flow}:ms" per flow.
                     synth = snap.get("synthetic_probe") or {}
-                    flows = {
-                        f[:-3] for f in synth if f.endswith(":ok") or f.endswith(":ms")
-                    }
+                    flows = {f[:-3] for f in synth if f.endswith(":ok") or f.endswith(":ms")}
                     for flow in flows:
                         if f"{flow}:ok" in synth:
                             _metrics_mod.synthetic_probe_up.labels(flow=flow).set(

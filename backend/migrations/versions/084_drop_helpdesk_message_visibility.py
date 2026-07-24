@@ -25,7 +25,9 @@ depends_on: str | tuple[str, ...] | None = None
 
 def upgrade() -> None:
     # CHECK-констрейнт сначала (он ссылается на колонку), затем сама колонка.
-    op.execute("ALTER TABLE helpdesk_messages DROP CONSTRAINT IF EXISTS ck_helpdesk_messages_visibility")
+    op.execute(
+        "ALTER TABLE helpdesk_messages DROP CONSTRAINT IF EXISTS ck_helpdesk_messages_visibility"
+    )
     op.execute("ALTER TABLE helpdesk_messages DROP COLUMN IF EXISTS visibility")
 
 
@@ -33,8 +35,7 @@ def downgrade() -> None:
     # Возврат колонки + CHECK (default 'public'). Исторические internal-значения
     # не восстанавливаем — данных нет, а обратная data-mig неоднозначна.
     op.execute(
-        "ALTER TABLE helpdesk_messages ADD COLUMN visibility VARCHAR(10) "
-        "NOT NULL DEFAULT 'public'"
+        "ALTER TABLE helpdesk_messages ADD COLUMN visibility VARCHAR(10) NOT NULL DEFAULT 'public'"
     )
     op.execute(
         "ALTER TABLE helpdesk_messages ADD CONSTRAINT ck_helpdesk_messages_visibility "

@@ -329,9 +329,7 @@ class TestAssignValidation:
         assert exc.value.status_code == 404
         assert "Agent not found" in str(exc.value.detail)
 
-    async def test_assign_to_random_uuid_returns_404(
-        self, real_db_session, real_editor, ticket
-    ):
+    async def test_assign_to_random_uuid_returns_404(self, real_db_session, real_editor, ticket):
         """Несуществующий user_id → 404 (как и любой lookup по id в helpdesk)."""
         from app.api.helpdesk.tickets import assign_ticket as assign_endpoint
         from app.schemas.helpdesk import TicketAssignIn

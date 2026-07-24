@@ -77,9 +77,9 @@ def test_extract_handles_bytes_and_bytearray() -> None:
 # test_helpdesk_email_signature.py. Полный образец там; здесь — минимально
 # достаточный для срабатывания strip_email_signature по logo-маркеру.
 _SIG_HTML = (
-    '<p>Тело письма</p>'
+    "<p>Тело письма</p>"
     '<table><tr><td><img src="https://mage.ru/sign/Mage_Ru.png"></td>'
-    '<td><b>Вячеслав Борзихин</b><br>+7 (8152) 400 580<br>'
+    "<td><b>Вячеслав Борзихин</b><br>+7 (8152) 400 580<br>"
     '<a href="mailto:borzihin.vs@mage.ru">borzihin.vs@mage.ru</a></td></tr></table>'
 )
 
@@ -181,8 +181,8 @@ class TestExtractBodiesSignatureStripping:
         """
         # Сокращённый реальный HTML подписи из баг-репорта 20.07.2026.
         real_html = (
-            '<p class=MsoNormal>Test oe <o:p></o:p></p>'
-            '<table class=MsoNormalTable border=0 cellspacing=0 cellpadding=0><tr>'
+            "<p class=MsoNormal>Test oe <o:p></o:p></p>"
+            "<table class=MsoNormalTable border=0 cellspacing=0 cellpadding=0><tr>"
             "<td valign=top style='border:none;border-right:solid #7B92AE 1.0pt;"
             "padding:0cm 5.25pt 0cm 0cm'>"
             '<p class=MsoNormal style="margin:.1pt">'
@@ -191,7 +191,7 @@ class TestExtractBodiesSignatureStripping:
             'src="http://mage.ru/signature/images/Mage_Ru.png"></span></a>'
             "</p></td>"
             '<td style="padding:0cm 0cm 0cm 9.0pt">'
-            '<table class=MsoNormalTable border=0 cellspacing=0 cellpadding=0 width=400>'
+            "<table class=MsoNormalTable border=0 cellspacing=0 cellpadding=0 width=400>"
             "<tr><td><p><b><span style='font-size:10.5pt;font-family:Arial;"
             "color:#00479D'>Вячеслав Борзихин</span></b></p></td></tr>"
             "</table></td></tr></table>"

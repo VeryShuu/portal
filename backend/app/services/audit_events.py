@@ -176,9 +176,7 @@ class EventType(StrEnum):
 
     # --- system_settings ------------------------------------------------
     SYSTEM_SETTINGS_ONBOARDING_RESET = "system_settings.onboarding_reset"
-    SYSTEM_SETTINGS_ONBOARDING_STEP_RESET_VIEWS = (
-        "system_settings.onboarding_step_reset_views"
-    )
+    SYSTEM_SETTINGS_ONBOARDING_STEP_RESET_VIEWS = "system_settings.onboarding_step_reset_views"
     SYSTEM_SETTINGS_UPDATED = "system_settings.updated"
 
     # --- user -----------------------------------------------------------

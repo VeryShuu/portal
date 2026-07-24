@@ -988,7 +988,7 @@ class TestNotifyTicketCreatedMax:
     _SIG_HTML = (
         "<p>Принтер сломался</p>"
         '<table><tr><td><img src="https://mage.ru/sign/Mage_Ru.png"></td>'
-        '<td><b>Вячеслав Борзихин</b><br>+7 (8152) 400 580</td></tr></table>'
+        "<td><b>Вячеслав Борзихин</b><br>+7 (8152) 400 580</td></tr></table>"
     )
     # ``body_text`` «грязный» — как будто подпись не отрезалась в ingress
     # (симулирует legacy-запись в БД до фикса _extract_bodies).

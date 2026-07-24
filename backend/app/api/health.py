@@ -107,9 +107,7 @@ async def _probe_optional_integrations() -> dict[str, str]:
         from app.worker.tasks.integration_health import _probe_keycloak
 
         kc = await _probe_keycloak()
-        result["keycloak"] = (
-            "ok" if kc else "unconfigured" if kc is None else "error"
-        )
+        result["keycloak"] = "ok" if kc else "unconfigured" if kc is None else "error"
     except Exception:
         result["keycloak"] = "error"
 
@@ -131,9 +129,7 @@ async def _probe_optional_integrations() -> dict[str, str]:
             from app.worker.tasks.integration_health import _probe_collabora
 
             coll = await _probe_collabora()
-            result["collabora"] = (
-                "ok" if coll else "unconfigured" if coll is None else "error"
-            )
+            result["collabora"] = "ok" if coll else "unconfigured" if coll is None else "error"
     except Exception:
         result["collabora"] = "error"
 

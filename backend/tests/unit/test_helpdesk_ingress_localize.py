@@ -106,9 +106,7 @@ class TestLocalizeAttachmentsAndImages:
         # Attach-часть (doc.pdf) сохранена как обычное вложение (is_inline=False),
         # inline cid:logo — как inline-картинка (is_inline=True, content_id="logo").
         assert ("doc.pdf", b"%PDF fake", False, None) in saved
-        assert any(
-            is_inline and cid == "logo" for _name, _data, is_inline, cid in saved
-        )
+        assert any(is_inline and cid == "logo" for _name, _data, is_inline, cid in saved)
         # Tracker возвращён (для cleanup при rollback — H-5).
         assert tracker is not None
 

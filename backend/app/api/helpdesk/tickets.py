@@ -611,9 +611,7 @@ async def add_agent_message(
         # транзакцию, что и ответ (outbox-инвариант AGENTS.md). Сбой enqueue
         # откатывает ответ (агент видит 500, повторяет) — это сознательно: иначе
         # письмо заявителю терялось при сохранённом ответе. Не best-effort.
-        mailbox is not None
-        and support_domain
-        and message.email_message_id
+        mailbox is not None and support_domain and message.email_message_id
     ):
         await outbound_service.enqueue_reply_outbound(
             db, ticket=ticket, message=message, mailbox=mailbox

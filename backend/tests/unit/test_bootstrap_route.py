@@ -256,7 +256,8 @@ class TestBootstrapRoute:
                 ),
             ),
             patch(
-                "app.api.bootstrap._fetch_unread_count", AsyncMock(side_effect=Exception("db error"))
+                "app.api.bootstrap._fetch_unread_count",
+                AsyncMock(side_effect=Exception("db error")),
             ),
             patch("app.api.bootstrap._is_helpdesk_agent", AsyncMock(return_value=False)),
             patch("app.api.bootstrap._build_branding", return_value=branding),
