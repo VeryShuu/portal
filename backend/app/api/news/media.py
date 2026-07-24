@@ -12,7 +12,7 @@ from fastapi.responses import FileResponse, Response
 
 from app.api.deps import CurrentUser, DbDep, EditorDep, RedisDep
 from app.core.system_config import load_system_settings
-from app.core.uploads import stream_upload_to_path
+from app.core.uploads import safe_join_within, stream_upload_to_path
 from app.models.news import News as NewsModel
 from app.schemas.kb_extra import MediaUploadResponse
 from app.schemas.news import (
@@ -219,7 +219,7 @@ async def download_attachment(
     if not att:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Attachment not found")
 
-    file_path = NEWS_MEDIA_DIR / str(news_id) / "attachments" / att.filename
+    file_path = safe_join_within(NEWS_MEDIA_DIR, str(news_id), "attachments", att.filename)
     if not file_path.exists():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found on disk")
 

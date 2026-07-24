@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.constants import ALLOWED_NEWS_COVER_IMG_TYPES
 from app.core.system_config import load_system_settings
-from app.core.uploads import stream_upload_to_path
+from app.core.uploads import safe_join_within, stream_upload_to_path
 from app.models.news import News, NewsGalleryImage
 
 from ._helpers import _CONTENT_TYPE_TO_EXT, _NEWS_MEDIA_DIR
@@ -71,7 +71,7 @@ async def delete_gallery_image(
     img = result.scalar_one_or_none()
     if not img:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Image not found")
-    (_NEWS_MEDIA_DIR / str(news_id) / "gallery" / img.filename).unlink(missing_ok=True)
+    safe_join_within(_NEWS_MEDIA_DIR, str(news_id), "gallery", img.filename).unlink(missing_ok=True)
     await db.execute(delete(NewsGalleryImage).where(NewsGalleryImage.id == img_id))
     await db.commit()
     return img

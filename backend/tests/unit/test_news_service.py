@@ -416,6 +416,36 @@ async def test_delete_gallery_image_found():
 
 
 @pytest.mark.asyncio
+async def test_delete_gallery_image_blocks_path_traversal():
+    """Defense-in-depth: malicious filename из БД не вырывается за _NEWS_MEDIA_DIR.
+
+    Регрессия для CodeQL py/path-injection (sink: Path.unlink). Даже если
+    кто-то запишет в filename '../../../etc/passwd', safe_join_within() вернёт
+    404 до вызова unlink(), файл вне base не будет затронут.
+    """
+    from fastapi import HTTPException
+
+    from app.services.news import delete_gallery_image
+
+    db = _make_db()
+    img = MagicMock()
+    img.filename = "../../../../etc/passwd"
+    result_mock = MagicMock()
+    result_mock.scalar_one_or_none.return_value = img
+    db.execute = AsyncMock(return_value=result_mock)
+
+    with (
+        patch("pathlib.Path.unlink") as mock_unlink,
+        pytest.raises(HTTPException) as exc_info,
+    ):
+        await delete_gallery_image(db, uuid.uuid4(), uuid.uuid4())
+
+    assert exc_info.value.status_code == 404
+    mock_unlink.assert_not_called()
+    db.commit.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_delete_gallery_image_not_found():
     from fastapi import HTTPException
 
@@ -451,6 +481,35 @@ async def test_delete_attachment_found():
 
     assert result is att
     db.commit.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_delete_attachment_blocks_path_traversal():
+    """Defense-in-depth: malicious filename из БД блокируется safe_join_within.
+
+    Регрессия для CodeQL py/path-injection (sink: Path.unlink). Файл вне
+    _NEWS_MEDIA_DIR не удаляется; возвращается 404 вместо выполнения unlink.
+    """
+    from fastapi import HTTPException
+
+    from app.services.news import delete_attachment
+
+    db = _make_db()
+    att = MagicMock()
+    att.filename = "../../../../tmp/secret"
+    result_mock = MagicMock()
+    result_mock.scalar_one_or_none.return_value = att
+    db.execute = AsyncMock(return_value=result_mock)
+
+    with (
+        patch("pathlib.Path.unlink") as mock_unlink,
+        pytest.raises(HTTPException) as exc_info,
+    ):
+        await delete_attachment(db, uuid.uuid4(), uuid.uuid4())
+
+    assert exc_info.value.status_code == 404
+    mock_unlink.assert_not_called()
+    db.commit.assert_not_called()
 
 
 @pytest.mark.asyncio

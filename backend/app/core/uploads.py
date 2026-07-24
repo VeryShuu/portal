@@ -12,13 +12,19 @@ from collections.abc import Set as AbstractSet
 from pathlib import Path
 
 import aiofiles
-from fastapi import HTTPException, UploadFile
+from fastapi import HTTPException, UploadFile, status
 
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
 
-__all__ = ["CHUNK_SIZE", "iter_upload_chunks", "magic", "stream_upload_to_path"]
+__all__ = [
+    "CHUNK_SIZE",
+    "iter_upload_chunks",
+    "magic",
+    "safe_join_within",
+    "stream_upload_to_path",
+]
 
 try:
     import magic
@@ -113,3 +119,32 @@ async def iter_upload_chunks(file: UploadFile) -> AsyncIterator[bytes]:
         if not chunk:
             break
         yield chunk
+
+
+def safe_join_within(base: Path, *segments: str) -> Path:
+    """Join ``segments`` under ``base`` rejecting anything that escapes it.
+
+    Defense-in-depth guard for FS sinks that build a path from DB-sourced
+    components (news/KB/feedback attachment filenames). Callers already write
+    server-generated UUIDs / sanitized names, so this is not fixing an
+    exploitable bug — it closes CodeQL ``py/path-injection`` alerts and
+    protects against future regressions if a writer ever stores a raw
+    user-supplied name.
+
+    Resolves the final path (following ``..``) and verifies it stays inside
+    ``base.resolve()``. Raises ``HTTPException(404)`` on escape: a traversal
+    attempt never points at a real stored file, so 404 is the honest answer.
+
+    Mirrors the ``resolve()`` + ``is_relative_to()`` pattern already used in
+    ``app/services/photos_storage/paths.py`` and ``app/services/kb_trash.py``.
+    """
+    resolved_base = base.resolve()
+    candidate = (resolved_base.joinpath(*segments)).resolve()
+    if not candidate.is_relative_to(resolved_base):
+        logger.warning(
+            "uploads.path_traversal_blocked",
+            base=str(resolved_base),
+            segments=list(segments),
+        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+    return candidate

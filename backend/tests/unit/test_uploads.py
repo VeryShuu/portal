@@ -218,3 +218,75 @@ class TestIterUploadChunks:
         uf = _make_upload_file([b"only"])
         result = [chunk async for chunk in iter_upload_chunks(uf)]
         assert result == [b"only"]
+
+
+# ── safe_join_within ──────────────────────────────────────────────────────────
+
+
+class TestSafeJoinWithin:
+    """Defense-in-depth path-traversal guard (closes CodeQL py/path-injection)."""
+
+    def test_returns_resolved_path_inside_base(self, tmp_path: Path):
+        from app.core.uploads import safe_join_within
+
+        base = tmp_path / "store"
+        base.mkdir()
+        (base / "sub").mkdir()
+        (base / "sub" / "file.txt").write_text("x")
+
+        result = safe_join_within(base, "sub", "file.txt")
+        assert result == (base / "sub" / "file.txt").resolve()
+        assert result.is_relative_to(base.resolve())
+
+    def test_dotdot_escape_is_blocked(self, tmp_path: Path):
+        from app.core.uploads import safe_join_within
+
+        base = tmp_path / "store"
+        base.mkdir()
+        secret = tmp_path / "secret.txt"
+        secret.write_text("private")
+
+        with pytest.raises(HTTPException) as exc_info:
+            safe_join_within(base, "..", "secret.txt")
+
+        # 404 — честный ответ: traversal никогда не указывает на реальный файл
+        assert exc_info.value.status_code == 404
+        # Файл вне base не тронут (guard падает до любой FS-операции)
+        assert secret.read_text() == "private"
+
+    def test_absolute_segment_escape_is_blocked(self, tmp_path: Path):
+        from app.core.uploads import safe_join_within
+
+        base = tmp_path / "store"
+        base.mkdir()
+
+        # Абсолютный путь как сегмент — попытка выйти за base
+        with pytest.raises(HTTPException) as exc_info:
+            safe_join_within(base, str(tmp_path / "elsewhere"))
+
+        assert exc_info.value.status_code == 404
+
+    def test_deep_traversal_with_nested_dirs_blocked(self, tmp_path: Path):
+        """Регрессия на ../../etc/passwd-style атаки через валидный префикс."""
+        from app.core.uploads import safe_join_within
+
+        base = tmp_path / "data" / "news_media"
+        base.mkdir(parents=True)
+        (base / "abc-123" / "attachments").mkdir(parents=True)
+
+        with pytest.raises(HTTPException) as exc_info:
+            safe_join_within(base, "abc-123", "attachments", "..", "..", "..", "etc", "passwd")
+
+        assert exc_info.value.status_code == 404
+
+    def test_normal_uuid_filename_allowed(self, tmp_path: Path):
+        """Имитация реального use-case: server-generated UUID filename."""
+        from app.core.uploads import safe_join_within
+
+        base = tmp_path / "data" / "news_media"
+        (base / "abc-123" / "attachments").mkdir(parents=True)
+        uuid_name = "550e8400-e29b-41d4-a716-446655440000"
+
+        result = safe_join_within(base, "abc-123", "attachments", uuid_name)
+        assert result.is_relative_to(base.resolve())
+        assert uuid_name in result.name

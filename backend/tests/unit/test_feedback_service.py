@@ -556,6 +556,43 @@ class TestDeleteAttachment:
 
         assert exc_info.value.status_code == 409
 
+    @pytest.mark.asyncio
+    async def test_blocks_path_traversal_in_filename(self):
+        """Defense-in-depth: malicious filename блокируется safe_join_within.
+
+        Регрессия для CodeQL py/path-injection (sink: Path.unlink в
+        delete_attachment). Даже если в att.filename попадёт '../../etc/passwd'
+        (гипотетический будущий writer или прямая правка БД), unlink не
+        выполняется, возвращается 404. Теперь delete защищён симметрично
+        resolve_attachment_for_download.
+        """
+        from fastapi import HTTPException
+
+        from app.api.feedback.feedback_service import delete_attachment
+
+        admin = _make_user(role="admin")
+        db = _make_db()
+        att_id = uuid.uuid4()
+        fb_id = uuid.uuid4()
+        att = _make_attachment(id=att_id, feedback_id=fb_id, filename="../../etc/passwd")
+        fb = _make_feedback(id=fb_id, status="open", attachments=[att])
+
+        with (
+            patch(
+                "app.api.feedback.feedback_service.feedback_repo.fetch_feedback_with_attachments",
+                new_callable=AsyncMock,
+                return_value=fb,
+            ),
+            patch("pathlib.Path.unlink") as mock_unlink,
+            pytest.raises(HTTPException) as exc_info,
+        ):
+            await delete_attachment(db, admin, fb_id, att_id)
+
+        assert exc_info.value.status_code == 404
+        mock_unlink.assert_not_called()
+        db.delete.assert_not_called()
+        db.commit.assert_not_called()
+
 
 # ── feedback_repo helpers ─────────────────────────────────────────────────────
 

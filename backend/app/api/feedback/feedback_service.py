@@ -11,7 +11,7 @@ from redis.asyncio import Redis
 from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.uploads import stream_upload_to_path
+from app.core.uploads import safe_join_within, stream_upload_to_path
 from app.models.feedback import Feedback, FeedbackAttachment, FeedbackReply
 from app.models.user import User
 from app.schemas.feedback import (
@@ -252,7 +252,7 @@ async def delete_attachment(
             detail="Cannot modify attachments on a closed ticket",
         )
 
-    disk_path = FEEDBACK_FILES_DIR / str(feedback_id) / att.filename
+    disk_path = safe_join_within(FEEDBACK_FILES_DIR, str(feedback_id), att.filename)
     disk_path.unlink(missing_ok=True)
     await db.delete(att)
     fb.updated_at = func.now()

@@ -9,7 +9,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.system_config import load_system_settings
-from app.core.uploads import stream_upload_to_path
+from app.core.uploads import safe_join_within, stream_upload_to_path
 from app.models.news import News, NewsAttachment
 
 from ._helpers import _NEWS_MEDIA_DIR
@@ -53,7 +53,8 @@ async def delete_attachment(
     att = result.scalar_one_or_none()
     if not att:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Attachment not found")
-    (_NEWS_MEDIA_DIR / str(news_id) / "attachments" / att.filename).unlink(missing_ok=True)
+    path = safe_join_within(_NEWS_MEDIA_DIR, str(news_id), "attachments", att.filename)
+    path.unlink(missing_ok=True)
     await db.execute(delete(NewsAttachment).where(NewsAttachment.id == att_id))
     await db.commit()
     return att
