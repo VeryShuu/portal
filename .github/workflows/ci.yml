@@ -3,6 +3,8 @@ name: CI
 on:
   push:
     branches: [main]
+    # Semver-теги (v1.2.3) триггерят релизные сборки с доп. тегами :v1.2.3/:v1.2/:v1.
+    tags: ["v*"]
   pull_request:
     branches: [main]
 
@@ -756,3 +758,139 @@ jobs:
             exit 1
           fi
           echo "docs/tests.generated.md is in sync with tests."
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # publish-images: сборка и пуш Docker-образов в GHCR (ghcr.io/veryshuu/*).
+  # Запускается ТОЛЬКО на push в main или semver-tag (v*), НЕ на pull_request —
+  # чтобы не пушить с PR-раннеров. Все образы билдятся параллельно через matrix.
+  # Тегирование: всегда sha-<7симв> + latest; при push tag v1.2.3 → +v1.2.3/v1.2/v1.
+  # См. ADR-045 (CI-built images in GHCR + pull-based deploy).
+  # ───────────────────────────────────────────────────────────────────────────
+  publish-images:
+    name: publish / GHCR images
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # Публикуем только если весь gate-набор зелёный. always() — чтобы
+    # смок- и юнит-задачи со status 'success' учитывались корректно даже
+    # при последующих сбоях в зависимостях.
+    needs:
+      - backend-lint
+      - backend-unit
+      - frontend-lint
+      - frontend-unit
+      - compose-smoke
+    # Не на PR: билдим и пушим только main-коммиты и релизные теги.
+    if: github.event_name == 'push' && always() && success()
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        # 6 уникальных образов. backend собирается один раз (target: production),
+        # используется 3 сервисами (backend/worker/migrations) по одному имени.
+        # context/file соответствуют docker-compose.yml: context — каталог сборки,
+        # file — путь к Dockerfile от корня репозитория (НЕ относительно context,
+        # таково API build-push-action).
+        include:
+          - image: portal-backend
+            context: ./backend
+            file: ./backend/Dockerfile
+            target: production
+          - image: portal-frontend
+            context: .
+            file: ./frontend/Dockerfile
+            target: ""
+          - image: portal-nginx
+            context: ./nginx
+            file: ./nginx/Dockerfile
+            target: ""
+          - image: portal-nginx-config
+            context: ./nginx
+            file: ./nginx/Dockerfile.config
+            target: ""
+          - image: portal-screenshot
+            context: ./screenshot-service
+            file: ./screenshot-service/Dockerfile
+            target: ""
+          - image: portal-postgres
+            context: ./postgres
+            file: ./postgres/Dockerfile
+            target: ""
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Compute image tags
+        id: meta
+        run: |
+          # Полное имя образа в GHCR: ghcr.io/veryshuu/<image>.
+          # Версия образа = major-версия PG для postgres, иначе IMAGE_TAG.
+          registry="ghcr.io/veryshuu"
+          short_sha="${GITHUB_SHA::7}"
+
+          if [[ "${{ matrix.image }}" == "portal-postgres" ]]; then
+            # postgres тегируется по major-версии (PG 16) — как в docker-compose.yml.
+            full="${registry}/portal-postgres:16"
+            tags="${full}"
+            # При релизном tag — пере-тегируем latest-postgres16 не имеет смысла;
+            # оставляем единственный :16 (rolling, всегда последний main).
+          else
+            # sha-тег — точная привязка к коммиту (для отката).
+            sha_tag="${registry}/${{ matrix.image }}:sha-${short_sha}"
+            # latest — указатель на HEAD main (continuous deploy).
+            latest_tag="${registry}/${{ matrix.image }}:latest"
+            tags="${sha_tag}"$'\n'"${latest_tag}"
+
+            # При push semver-tag (v1.2.3) — добавляем :v1.2.3, :v1.2, :v1.
+            ref="${GITHUB_REF#refs/tags/}"
+            if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+              ver="${ref#v}"
+              tags="${tags}"$'\n'"${registry}/${{ matrix.image }}:v${ver}"
+              # major.minor и major (если есть minor и patch части).
+              if [[ "${ver}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+                minor="${ver%.*}"
+                major="${minor%.*}"
+                tags="${tags}"$'\n'"${registry}/${{ matrix.image }}:v${minor}"
+                tags="${tags}"$'\n'"${registry}/${{ matrix.image }}:v${major}"
+              fi
+            fi
+          fi
+
+          # Записываем теги как JSON-массив для build-push-action::tags (multiline → JSON).
+          json_tags=$(printf '%s\n' "$tags" | jq -R . | jq -sc .)
+          {
+            echo "tags<<EOF"
+            printf '%s\n' "$tags"
+            echo "EOF"
+            echo "tags_json=${json_tags}"
+          } >> "$GITHUB_OUTPUT"
+          echo "Computed tags for ${{ matrix.image }}:"
+          printf '  %s\n' "$tags"
+
+      - name: Set up Docker Buildx
+        # Pinned by SHA (supply-chain hardening): v4.2.0 — коммит bb05f3f5.
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c
+
+      - name: Log in to GHCR
+        # Pinned by SHA (supply-chain hardening): v4.5.0 — коммит 06fb636f.
+        # Встроенный GITHUB_TOKEN с packages: write — отдельный PAT не нужен.
+        uses: docker/login-action@06fb636fac595d6fb4b28a5dfcb21a6f5091859c
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Build and push ${{ matrix.image }}
+        # Pinned by SHA (supply-chain hardening): v7.3.0 — коммит 53b7df96.
+        # Floating tag @v7 можно перезаписать компрометацией репо action'а,
+        # а job имеет packages: write. dependabot обновит SHA.
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.file }}
+          target: ${{ matrix.target }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          # Кэш сборки между запусками (ускоряет с ~6 до ~2 мин на повторных сборках).
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

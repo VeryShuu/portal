@@ -59,8 +59,13 @@
 git clone https://github.com/VeryShuu/portal.git
 cd portal
 bash setup.sh          # создаёт папки, .env, спрашивает пароли
-docker compose up -d --build
 ```
+
+Режим образов задаётся в `.env` (см. ADR-045):
+- **`IMAGE_PREFIX=ghcr.io/veryshuu/`** — pull готовых CI-образов (рекомендуется для прода): `docker compose pull && docker compose up -d`.
+- **`IMAGE_PREFIX=` пусто** — локальная сборка из исходников: `docker compose up -d --build`.
+
+`setup.sh` (пункт «1. Production») сам выбирает режим по `IMAGE_PREFIX` в `.env`.
 
 После старта:
 - UI — `https://localhost/` (или `PORTAL_BASE_URL` из `.env`)
@@ -105,8 +110,14 @@ docker compose -f docker-compose.yml -f docker-compose.staging.yml up -d --build
 
 ```bash
 git pull
-docker compose up -d --build   # пересобирает только изменившиеся образы
+bash setup.sh          # → пункт «6. Обновить Production»
 ```
+
+Скрипт сам определяет режим по `IMAGE_PREFIX` в `.env`:
+- registry (`ghcr.io/veryshuu/`) → `docker compose pull` готовых образов,
+- пусто → `docker compose up -d --build` (пересборка изменившихся).
+
+Подробно: [`docs/deploy.md`](./docs/deploy.md) §10 (включая откат через `IMAGE_TAG=sha-XXXXXXX`).
 
 Миграции БД применяются автоматически при старте сервиса `migrations`.
 

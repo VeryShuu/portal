@@ -313,7 +313,7 @@ services:
   storage-collector:
     build:
       context: ./monitoring/node-exporter-textfile
-    image: portal-storage-collector:${IMAGE_TAG:-latest}
+    image: ${IMAGE_PREFIX:-}portal-storage-collector:${IMAGE_TAG:-latest}
     container_name: portal-storage-collector
     restart: unless-stopped
     security_opt:

@@ -166,6 +166,10 @@ load/output/
 .zenflow/
 .zenflow-attachments/
 .zcode/                  # локальный контекст ZCode (plans/settings) — не в git
+# codebase-memory: граф кодовой базы (graph.db.zst, ~12 МБ бинарник) —
+# переиндексируется локально одной командой index_repository. Не коммитить:
+# в публичном репо это мёртвый вес, каждый clone таскал бы его в истории.
+.codebase-memory/
 
 # ===== Временные файлы сессий =====
 _commit_msg.txt

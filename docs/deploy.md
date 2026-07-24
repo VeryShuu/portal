@@ -134,16 +134,28 @@ chmod 600 system_data/certs/portal.key
 
 ## 6. Первый запуск
 
----
+Режим образов задаётся в `.env` переменными `IMAGE_PREFIX` и `IMAGE_TAG` (см. ADR-045):
 
-## 6. Первый запуск
+- **`IMAGE_PREFIX=ghcr.io/veryshuu/`** (прод) — pull готовых CI-образов из GitHub Container Registry. Сервер не компилирует, откат = сменить `IMAGE_TAG` на short-SHA.
+- **`IMAGE_PREFIX=` пусто** (dev/staging) — локальная сборка образов из исходников.
+
+### 6.1 Запуск с готовыми образами из registry (прод)
 
 ```bash
-docker compose pull          # если используете готовые образы из ghcr
-docker compose build         # либо локальная сборка
+# .env: IMAGE_PREFIX=ghcr.io/veryshuu/  и IMAGE_TAG=latest (или sha-XXXXXXX)
+docker compose pull
 docker compose up -d
 docker compose logs -f migrations    # дождаться "Done" / exit code 0
-docker compose ps            # все сервисы должны быть Up / healthy
+docker compose ps                    # все сервисы должны быть Up / healthy
+```
+
+### 6.2 Запуск с локальной сборкой (dev/staging)
+
+```bash
+# .env: IMAGE_PREFIX=  (пусто)
+docker compose up -d --build
+docker compose logs -f migrations    # дождаться "Done" / exit code 0
+docker compose ps                    # все сервисы должны быть Up / healthy
 ```
 
 Порядок старта:
@@ -214,25 +226,68 @@ docker compose exec -T postgres \
 
 ## 10. Обновление до новой версии
 
+> **Рекомендованный путь:** `bash setup.sh` → пункт «6. Обновить Production».
+> Скрипт сам определяет режим (registry pull или локальная сборка) по `IMAGE_PREFIX`
+> в `.env`, делает `git pull`, опциональный `pg_dump`, и `compose up -d` с проверкой
+> миграций. Ниже — ручные процедуры для понимания и нестандартных случаев.
+
+### 10.1 Обновление (registry pull — прод)
+
+Каждый push в `main` собирает и публикует образы в GHCR: теги `sha-<7симв>` (точная
+привязка к коммиту) и `latest` (указатель на HEAD main). См. ADR-045.
+
 ```bash
-git fetch --tags
-git checkout v1.x.x
+# 1. Обновить конфиг compose / миграции (нужны актуальные docker-compose.yml,
+#    .env, alembic-файлы — миграции baked в образ, но compose/環境 живут в git).
+git pull --ff-only
+
+# 2. (Опционально) прицепить точный коммит вместо latest:
+#    IMAGE_TAG=sha-abc1234 в .env  — иначе остаётся latest.
+
+# 3. Pull новых образов + пересоздать контейнеры.
+#    setup.sh сделает обе команды; вручную:
 docker compose pull
-docker compose build
-docker compose up -d         # migrations отработают сами
+docker compose up -d         # migrations отработают сами (one-shot сервис)
 docker compose logs -f migrations
 ```
 
-Откат:
+### 10.2 Обновление (локальная сборка — dev/staging)
+
 ```bash
-git checkout v1.(x-1).x
-docker compose up -d
-# при необходимости — alembic downgrade -1 в одноразовом контейнере
+# .env: IMAGE_PREFIX=  (пусто)
+git pull --ff-only
+docker compose up -d --build   # пересоберёт только изменившиеся образы
+docker compose logs -f migrations
 ```
 
-⚠️ Перед обновлением — убедиться, что инфраструктурный бэкап актуален (или
-снять разовый `pg_dump`, см. §7). Миграции 008→024 необратимые без потери
-данных (kb_versions, photo_*, file_*, fk-индексы).
+### 10.3 Откат
+
+Откат образа — через `IMAGE_TAG` в `.env` (на проде), **не** через `git checkout`
+(последний не меняет образ, который бежит из registry):
+
+```bash
+# 1. Узнать SHA предыдущего успешного CI-билда (вкладка Actions → publish-images).
+# 2. Установить его в .env:
+#    IMAGE_TAG=sha-abc1234
+docker compose pull
+docker compose up -d
+docker compose logs -f migrations
+```
+
+⚠️ **Откат миграций БД** — отдельная операция, образ её не делает. Если новая версия
+накатила миграцию, откат образа оставит схему опережающей:
+
+```bash
+# Откат одной миграции (в одноразовом контейнере из текущего образа):
+docker compose run --rm migrations alembic downgrade -1
+```
+
+**Внимание:** миграции 008→024 необратимы без потери данных (kb_versions, photo_*,
+file_*, fk-индексы). Перед откатом через эти ревизии — восстановить БД из дампа (§7),
+это безопаснее ручного downgrade.
+
+⚠️ Перед обновлением — убедиться, что инфраструктурный бэкап актуален (или снять
+разовый `pg_dump`, см. §7).
 
 ---
 

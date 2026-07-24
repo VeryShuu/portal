@@ -11,7 +11,7 @@ services:
     build:
       context: ./postgres
       dockerfile: Dockerfile
-    image: portal-postgres:16
+    image: ${IMAGE_PREFIX:-}portal-postgres:16
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
@@ -68,7 +68,7 @@ services:
     build:
       context: ./screenshot-service
       dockerfile: Dockerfile
-    image: portal-screenshot:${IMAGE_TAG:-latest}
+    image: ${IMAGE_PREFIX:-}portal-screenshot:${IMAGE_TAG:-latest}
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
@@ -100,7 +100,7 @@ services:
       context: ./backend
       dockerfile: Dockerfile
       target: production
-    image: portal-backend:${IMAGE_TAG:-latest}
+    image: ${IMAGE_PREFIX:-}portal-backend:${IMAGE_TAG:-latest}
     restart: "no"
     command: ["/app/scripts/migrate.sh"]
     env_file: .env
@@ -120,7 +120,7 @@ services:
       context: ./backend
       dockerfile: Dockerfile
       target: production
-    image: portal-backend:${IMAGE_TAG:-latest}
+    image: ${IMAGE_PREFIX:-}portal-backend:${IMAGE_TAG:-latest}
     restart: unless-stopped
     env_file: .env
     environment:
@@ -179,7 +179,7 @@ services:
       context: ./backend
       dockerfile: Dockerfile
       target: production
-    image: portal-backend:${IMAGE_TAG:-latest}
+    image: ${IMAGE_PREFIX:-}portal-backend:${IMAGE_TAG:-latest}
     restart: unless-stopped
     command: ["python", "-m", "arq", "app.worker.main.WorkerSettings"]
     security_opt:
@@ -231,7 +231,7 @@ services:
     build:
       context: ./nginx
       dockerfile: Dockerfile.config
-    image: portal-nginx-config:${IMAGE_TAG:-latest}
+    image: ${IMAGE_PREFIX:-}portal-nginx-config:${IMAGE_TAG:-latest}
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
@@ -259,7 +259,7 @@ services:
     build:
       context: .
       dockerfile: ./frontend/Dockerfile
-    image: portal-frontend:${IMAGE_TAG:-latest}
+    image: ${IMAGE_PREFIX:-}portal-frontend:${IMAGE_TAG:-latest}
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
@@ -282,7 +282,7 @@ services:
     build:
       context: ./nginx
       dockerfile: Dockerfile
-    image: portal-nginx:${IMAGE_TAG:-latest}
+    image: ${IMAGE_PREFIX:-}portal-nginx:${IMAGE_TAG:-latest}
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true

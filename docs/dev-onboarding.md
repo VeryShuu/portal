@@ -65,7 +65,7 @@ export DATABASE_URL="postgresql+asyncpg://postgres:portal@localhost:5432/portal"
 export REDIS_URL="redis://localhost:6379/0"
 export LOCAL_AUTH_ENABLED=true
 export ADMIN_EMAIL=admin@example.com
-export ADMIN_PASSWORD=admin12345
+export ADMIN_PASSWORD='<сильный пароль, ≥ 8 симв.>'   # ТОЛЬКО для локального dev; в проде — из .env, не из доки
 
 # миграции и старт
 alembic upgrade head
@@ -102,7 +102,7 @@ npm run dev                # vite — http://localhost:5173
 | `REDIS_URL` | `redis://localhost:6379/0` | сессии, rate-limit, ARQ |
 | `LOCAL_AUTH_ENABLED` | `true` | разрешить `/auth/local` (для dev) |
 | `ADMIN_EMAIL` | `admin@example.com` | bootstrap-админ при первом старте |
-| `ADMIN_PASSWORD` | `admin12345` (≥ 8 симв.) | пароль bootstrap-админа |
+| `ADMIN_PASSWORD` | `<свой пароль, ≥ 8 симв.>` | пароль bootstrap-админа (только dev) |
 
 Keycloak/Nextcloud/SMTP — в development не обязательны. Их параметры задаются
 через Admin UI (хранятся в `./system_data/secrets/keycloak-settings.json` или в контейнере по пути `/data/secrets/keycloak-settings.json` и

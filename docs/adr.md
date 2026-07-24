@@ -1368,3 +1368,64 @@ docker compose -f docker-compose.yml -f monitoring/docker-compose.monitoring.yml
 - +~500–650 МБ RAM к overlay (Loki ~400 МБ, Alloy ~150 МБ), базовый compose не затронут.
 - Архитектурно готово к добавлению трейсинга (Tempo) — отдельным overlay, Grafana уже есть.
 
+---
+
+## ADR-045: CI-built images в GHCR + pull-based deploy (июль 2026)
+
+**Статус:** Принято
+
+**Контекст:**
+Деплой на прод выполнялся как `git pull` + `docker compose up -d --build` — образы собирались прямо на прод-сервере. Пауза при обновлении составляла ~5 минут (билд backend/frontend/nginx), сервер простаивал на компиляции, а откат означал снова `git checkout` + билд (ещё 5 минут и риск — какая именно версия сейчас бежит, было неясно).
+
+Инфраструктура уже была наполовину готова: `docker-compose.yml` использовал `${IMAGE_TAG:-latest}` на 6 из 7 образов (исключения — `redis:7-alpine` upstream и `postgres` с тегом `:16`). Но `IMAGE_TAG` нигде не определялся (разрешался в `latest`), имен образов не было registry-префикса, и ни один CI-job не билдил/пушит образы. CI гонял 15 job'ов (lint/unit/integration/e2e/smoke), но публиковал только отчёты о покрытии.
+
+Репозиторий — публичный (репо `VeryShuu/portal`), интранет-портал для ~300 сотрудников, ~30 секунд паузы при деплое приемлемы (blue-green не требуется).
+
+**Решение:**
+
+Перейти на **pull-based деплой**: CI собирает и публикует образы в GitHub Container Registry (GHCR), прод-сервер тянет готовые образы вместо локальной сборки.
+
+1. **Registry: GHCR** (`ghcr.io/veryshuu/*`). Выбор обоснован:
+   - Репозиторий публичный → GHCR **бесплатен безлимитно** (без minute/storage/egress-лимитов для публичных пакетов). Для приватного репо остался бы лимит 500 МБ storage + 1 ГБ egress/мес.
+   - Встроенный `GITHUB_TOKEN` с `packages: write` — отдельный PAT не нужен, никаких секретов в workflow.
+   - Уже экосистемно: `actions/checkout`, Dependabot, GitHub Issues — всё в одном аккаунте.
+
+2. **Тегирование** (job `publish-images` в `.github/workflows/ci.yml`):
+   - На каждый push в `main`: `sha-<7симв>` (точная привязка к коммиту для отката) + `latest` (указатель на HEAD main, continuous deploy).
+   - При push semver-tag `v1.2.3`: дополнительно `v1.2.3`, `v1.2`, `v1` (для семантических релизов).
+   - `postgres` тегируется единым `:16` (rolling, по major-версии PG) — как и в compose.
+   - Job запускается **только на push** (`if: github.event_name == 'push'`), НЕ на `pull_request` — чтобы не пушить с PR-раннеров. Gate: `needs: [backend-lint, backend-unit, frontend-lint, frontend-unit, compose-smoke]`.
+
+3. **IMAGE_PREFIX — конфигурируемый registry-префикс** в `docker-compose.yml`:
+   ```
+   image: ${IMAGE_PREFIX:-}portal-backend:${IMAGE_TAG:-latest}
+   ```
+   Пустая `IMAGE_PREFIX` = локальная сборка (dev/staging не ломаются); `ghcr.io/veryshuu/` на проде = pull. Обратно-совместимо: существующие dev-окружения работают без изменений.
+
+4. **6 образов в matrix** (backend с `target: production` используется 3 сервисами — backend/worker/migrations — по одному имени): portal-backend, portal-frontend, portal-nginx, portal-nginx-config, portal-screenshot, portal-postgres. Backend собирается один раз, `cache-from`/`cache-to: type=gha` ускоряет повторные сборки с ~6 до ~2 мин.
+
+5. **`setup.sh` ветвит pull vs build** по `IMAGE_PREFIX` в `.env` (функция `run_compose`): на проде с префиксом — `compose pull` + `up -d` без `--build`; без префикса — старое `up -d --build`. `update_production()` показывает, какой режим применится.
+
+**Альтернативы, рассмотренные и отвергнутые:**
+
+- **Blue-green (два стека за nginx upstream).** Избыточно: 30 секунд паузы приемлемы для интранет-портала, а blue-green требует обратной совместимости миграций (старый и новый backend одновременно), что не всегда выполнимо.
+- **Сборка на проде с разнесением `build` и `up`.** Убирало ~4.5 минуты (билд идёт при работающих контейнерах), но не решало воспроизводимость (какая версия бежит) и не давало лёгкого отката. Подходит как interim-шаг, но registry — правильное решение.
+- **Docker Hub.** Для публичных образов безлимитно, но GHCR ближе к коду (один аккаунт, встроенный токен, интеграция с Actions).
+- **Self-hosted registry (Harbor/registry:2).** Дополнительная инфраструктура для обслуживания — не оправдано при бесплатном GHCR.
+
+**Грабли / одноразовые шаги:**
+
+1. **Первый пуш в GHCR создаёт package приватным по умолчанию.** После первого успешного `publish-images` зайти на `github.com/users/VeryShuu/packages` и переключить каждый `portal-*` package в **public** — иначе `docker compose pull` на проде упадёт с 401 (анонимный pull приватного пакета запрещён). Для публичного репо это разовый ручной шаг.
+2. **Откат = смена `IMAGE_TAG`, не `git checkout`.** Старая док-процедура `git checkout v1.(x-1).x` + `up -d` НЕ меняла образ (тот же тег из registry). Новая процедура: `IMAGE_TAG=sha-<старый>` в `.env` → `pull` → `up -d`. См. `docs/deploy.md` §10.3.
+3. **Откат образа ≠ откат миграций.** Образ не делает `alembic downgrade`. Если новая версия накатила миграцию, откат образа оставит схему опередающей — downgrade отдельно через `docker compose run --rm migrations alembic downgrade -1`. Миграции 008→024 необратимы.
+4. **`file:` в `build-push-action` — путь от корня репо**, не от `context`. Matrix содержит оба поля явно, чтобы соответствовать `docker-compose.yml` (где `dockerfile` указан относительно `context`).
+5. **Actions пинены по SHA** (supply-chain hardening): `docker/login-action@06fb636f…`, `setup-buildx-action@bb05f3f5…`, `build-push-action@53b7df96…`. Dependabot обновит SHA. Floating-теги (`@v7`) можно перезаписать компрометацией репо action'а, а job имеет `packages: write`.
+
+**Последствия:**
+- Деплой-пауза: ~5 мин → ~30 сек (pull готовых образов).
+- Воспроизводимость: на проде бежит ровно тот образ, что прошёл CI (тег `sha-<7>` однозначно идентифицирует коммит).
+- Откат: смена `IMAGE_TAG` в `.env` + `pull` — секунды, а не повторный билд.
+- Сервер не занимается компиляцией — CPU свободен для трафика.
+- Dev-окружения не затронуты: `IMAGE_PREFIX=` пустая сохраняет локальную сборку.
+- +1 CI-job (`publish-images`), ~8–12 мин на полный билд 6 образов (с кэшем ~3–5 мин), параллельно через matrix.
+

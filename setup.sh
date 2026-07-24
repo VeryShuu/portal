@@ -271,6 +271,13 @@ setup_env() {
 # задаются через Admin UI → Администрирование после запуска.
 # ============================================================
 
+# === Container images (registry) ===
+# IMAGE_PREFIX: пусто = локальная сборка образов из исходников (dev/staging);
+#   ghcr.io/veryshuu/ = pull готовых CI-образов (prod). См. ADR-045.
+# IMAGE_TAG: latest = последний успешный билд main; sha-XXXXXXX = точка отката.
+IMAGE_PREFIX=
+IMAGE_TAG=latest
+
 # === PostgreSQL ===
 POSTGRES_DB=${POSTGRES_DB}
 POSTGRES_USER=${POSTGRES_USER}
@@ -692,7 +699,22 @@ run_compose() {
         *)       err "run_compose: неизвестный режим '$mode'" ;;
     esac
 
-    if [[ -n "$no_cache" ]]; then
+    # На проде с заданным IMAGE_PREFIX — pull готовых CI-образов из registry
+    # (без локальной сборки). См. ADR-045. В остальных случаях — сборка из исходников.
+    local image_prefix
+    image_prefix=$(load_env_var IMAGE_PREFIX)
+    if [[ "$mode" == "prod" && -n "$no_cache" ]]; then
+        # --no-cache в prod + registry: бессмысленно (образ чужой), но если
+        # пользователь явно попросил full rebuild — пересобираем локально.
+        docker compose "${files[@]}" build --no-cache
+        docker compose "${files[@]}" up -d
+    elif [[ "$mode" == "prod" && -n "$image_prefix" ]]; then
+        echo -e "  ${DIM}Pull образов из registry (${image_prefix}…) …${RESET}"
+        if ! docker compose "${files[@]}" pull 2>&1 | sed 's/^/  │ /'; then
+            err "docker compose pull не удался. Проверьте IMAGE_PREFIX/IMAGE_TAG в .env и доступ к registry."
+        fi
+        docker compose "${files[@]}" up -d
+    elif [[ -n "$no_cache" ]]; then
         docker compose "${files[@]}" build --no-cache
         docker compose "${files[@]}" up -d
     else
@@ -1134,7 +1156,16 @@ update_production() {
         [[ "${answer,,}" == "y" ]] || { echo "  Отмена."; exit 0; }
     fi
 
-    echo -e "  ${DIM}Процедура: git pull → pg_dump (опционально) → docker compose pull → up -d.${RESET}"
+    # Показываем, какой режим применится — registry pull или локальная сборка.
+    local _ip
+    _ip=$(load_env_var IMAGE_PREFIX)
+    if [[ -n "$_ip" ]]; then
+        echo -e "  ${DIM}Режим образов: pull из registry (${_ip}…, тег=$(load_env_var IMAGE_TAG latest)).${RESET}"
+        echo -e "  ${DIM}Процедура: git pull → pg_dump (опционально) → compose pull → up -d.${RESET}"
+    else
+        echo -e "  ${DIM}Режим образов: локальная сборка из исходников (IMAGE_PREFIX пуст).${RESET}"
+        echo -e "  ${DIM}Процедура: git pull → pg_dump (опционально) → compose build → up -d.${RESET}"
+    fi
     echo -e "  ${DIM}Миграции применятся автоматически при старте backend (scripts/migrate.sh).${RESET}"
     echo
 
@@ -1164,21 +1195,17 @@ update_production() {
     # ── 3. Backup ─────────────────────────────────────────────────────────────
     offer_backup "обновлением prod"
 
-    # ── 4. docker compose pull ────────────────────────────────────────────────
+    # ── 4. down + apply (pull|build) + up ─────────────────────────────────────
+    # run_compose сам определяет pull vs build по IMAGE_PREFIX в .env (см. ADR-045).
     echo
-    echo -e "  ${BOLD}2/4. Pull образов (если обновились в registry) ...${RESET}"
-    if ! docker compose pull 2>&1 | sed 's/^/  │ /'; then
-        warn "docker compose pull завершился с ошибкой — возможно часть образов собирается локально."
-    fi
-
-    # ── 5. build + up ─────────────────────────────────────────────────────────
-    echo
-    echo -e "  ${BOLD}3/4. Build + up -d ...${RESET}"
+    echo -e "  ${BOLD}2/4. Остановка старого стека ...${RESET}"
     docker compose down --remove-orphans 2>&1 | sed 's/^/  │ /' || true
+    echo
+    echo -e "  ${BOLD}3/4. Apply образов (pull из registry или build) + up -d ...${RESET}"
     run_compose prod
     echo "prod" > "$MODE_FILE"
 
-    # ── 6. Контроль миграций + check_services ─────────────────────────────────
+    # ── 5. Контроль миграций + check_services ─────────────────────────────────
     echo
     echo -e "  ${BOLD}4/4. Ожидаю применения миграций ...${RESET}"
     # Миграции отрабатывают в одноразовом контейнере migrations.

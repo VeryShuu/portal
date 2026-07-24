@@ -5,7 +5,7 @@
 **Принципы работы:**
 - Никаких костылей и временных решений — только качественный код по best practices.
 - Пиши тесты, проверяй их до и после правок кода.
-- При крупных изменениях — пересборка контейнеров без кэша (`docker compose build --no-cache <service>`).
+- При крупных изменениях — пересборка контейнеров без кэша (`docker compose build --no-cache <service>`). На проде образы не собираются локально — пушатся в GHCR через CI и тянутся `docker compose pull` (ADR-045); локальная сборка — только dev/staging.
 
 ---
 
@@ -27,7 +27,7 @@
 
 ## Доступные инструменты (MCP)
 
-Конфигурация: **workspace** серверы — в `.zcode/config.json` (auto-connect при открытии проекта, shared с командой через git); **user** серверы — в `~/.zcode/cli/config.json`. Секреты **никогда** в конфиг-файлах — только через env / wrapper-скрипты.
+Конфигурация: **workspace** серверы — в `.zcode/config.json` (auto-connect при открытии проекта, локальный файл, не в git); **user** серверы — в `~/.zcode/cli/config.json`. Секреты **никогда** в конфиг-файлах — только через env / wrapper-скрипты.
 
 | Инструмент | Scope | Назначение | Когда использовать |
 |---|---|---|---|
@@ -353,7 +353,7 @@ Chromium вынесен из бэкенда в `screenshot-service/` (aiohttp + 
 - **Pydantic EmailStr:** не работает с `.local`-доменами (DNS-проверка). Для корпоративного email использовать `email: str = Field(min_length=1, max_length=255)`.
 - **TLS:** `portal-nginx` не стартует без `system_data/certs/portal.crt` + `portal.key`. Dev — self-signed (см. `docs/deploy.md`).
 - **fastapi-limiter + starlette 1.x:** `app/core/limiter.py` содержит monkey-patch совместимости (ADR-043). **НЕ добавлять** `from __future__ import annotations` в этот файл — ломает FastAPI-интроспекцию `Request`/`Response` после патча → 422 на rate-limited endpoints.
-- **Образ backend вкомпилирован** (target `production`): volume-mount только для `/data/*`. После правок backend-кода — `docker compose build backend`, иначе `restart` не подхватит изменения. Это же касается сертификатов в `backend/certs/` — добавление/обновление `russian_trusted_root_ca.crt` требует пересборки.
+- **Образ backend вкомпилирован** (target `production`): volume-mount только для `/data/*`. После правок backend-кода в **dev** — `docker compose build backend`, иначе `restart` не подхватит изменения. На **проде** образы не собираются локально — CI пушит в GHCR, прод тянет `docker compose pull` (ADR-045). Это же касается сертификатов в `backend/certs/` — добавление/обновление `russian_trusted_root_ca.crt` требует пересборки образа (на проде — следующий CI-билд + pull).
 - **`portal_base_url`** в `system.json` обязан включать scheme (`https://...`) — иначе CSRF Origin-проверка ломается → 403 на local login. Валидатор `_schemas.py` добавляет scheme автоматически, но при ручном редактировании — указывать явно.
 - **Russian Trusted Root CA (Минцифры):** не входит в Mozilla CA Bundle / `certifi`. Для TLS к российским endpoint'ам (MAX `*.max.ru`, Госуслуги, Сбер и т.д.) сертификат `backend/certs/russian_trusted_root_ca.crt` ставится в образ через `update-ca-certificates` (расширение обязано быть `.crt`). httpx-клиенты должны использовать `ssl.create_default_context()`, чтобы читать **системный** trust store, а не `certifi.where()` — иначе сертификат-фикс не сработает.
 
