@@ -83,8 +83,38 @@
 | Тесты с покрытием | `pytest --cov=app --cov-report=term-missing` |
 | Lint (проверка) | `ruff check .` |
 | Lint (автофикс) | `ruff check . --fix` |
-| Typecheck | `mypy app` |
+| Typecheck | `mypy .` (как CI; `mypy app` — только app/, CI проверяет всё) |
 | Форматирование | `ruff format .` |
+
+#### CI-эквивалент локально (ВАЖНО — читай перед любыми lint/mypy-правками)
+
+> ⚠️ **Главный урок (сессия 2026-07-24):** локальные версии `ruff`/`mypy`/`radon` могут
+> **отличаться** от CI. ruff добавил правило UP041 в 0.15.22, mypy 2.3.0 усилил
+> `no-any-return` — локально их не было, в CI падало. Результат: 5 итераций «починил →
+> CI опять красный» из-за рассинхрона окружений. Версии теперь зафискированы на `==`
+> (см. `pyproject.toml` §`[project.optional-dependencies] dev`), но локальный python
+> всё ещё может тащить свои версии.
+
+**Перед коммитом backend-кода, затрагивающего lint/типы — проверяй как CI, а не локально:**
+
+```bash
+cd backend && ./scripts/ci_lint.sh
+```
+
+Скрипт создаёт изолированный `.venv-ci/` (кэшируется, в `.gitignore`), ставит deps
+через `pip install -e ".[dev]"` (точно как CI) и гоняет 1:1 те же команды:
+`ruff check .`, `ruff format --check .`, `mypy .` (внимание: CI гоняет `mypy .`,
+**не** `mypy app` — это разные наборы файлов!). Первый запуск ~30с, повторный ~3с.
+Флаг `--recreate` пересоздаёт venv (после обновления deps в pyproject.toml).
+
+**Когда пересоздавать `.venv-ci`:**
+- После изменения deps в `pyproject.toml` (даже минорного) → `./scripts/ci_lint.sh --recreate`.
+- После того как Dependabot обновил ruff/mypy/radon → сразу `--recreate` + прогнать +
+  починить все новые ошибки **до** мёрджа (не «как раньше» — ловить в CI).
+
+> Обновление ruff/mypy/radon — **не механический bump**. Новые minor-версии добавляют
+> правила → нужен отдельный PR с правкой кода. Dependabot откроет PR, но код-фиксы
+> делает разработчик (или агент), прогнав `ci_lint.sh --recreate` локально.
 
 ### Frontend (`cd /home/snow/portal/frontend`)
 | Назначение | Команда |
@@ -221,7 +251,7 @@
 
 ### Общее
 - **Definition of Done**: код + тест (unit обязательно, integration если есть API/БД) + lint pass + typecheck pass + i18n проверен (frontend).
-- **Перед коммитом**: `ruff check . && mypy app && pytest tests/unit` (backend); `npm run lint:check && npm run typecheck && npm run test:unit && npm run i18n:check` (frontend).
+- **Перед коммитом** (backend): `./scripts/ci_lint.sh` (ruff+mypy в точном CI-окружении, см. §«CI-эквивалент локально») + `pytest tests/unit`. Не полагайся на локальные ruff/mypy — их версии могут расходиться с CI (урок 2026-07-24). Frontend: `npm run lint:check && npm run typecheck && npm run test:unit && npm run i18n:check`.
 - **Миграции zero-downtime**: добавление колонок — `nullable=True` сначала, бэкфилл данных, затем `NOT NULL` отдельной миграцией.
 
 ---
