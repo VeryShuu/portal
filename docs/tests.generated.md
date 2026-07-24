@@ -1063,6 +1063,7 @@ tests/unit/test_feedback_service.py::TestCommonMappers::test_reply_to_out_with_a
 tests/unit/test_feedback_service.py::TestCommonMappers::test_reply_to_out_without_admin
 tests/unit/test_feedback_service.py::TestCreateFeedback::test_creates_and_returns_feedback
 tests/unit/test_feedback_service.py::TestCreateFeedback::test_swallows_notify_error
+tests/unit/test_feedback_service.py::TestDeleteAttachment::test_blocks_path_traversal_in_filename
 tests/unit/test_feedback_service.py::TestDeleteAttachment::test_deletes_attachment_successfully
 tests/unit/test_feedback_service.py::TestDeleteAttachment::test_non_admin_cannot_delete_from_closed_ticket
 tests/unit/test_feedback_service.py::TestDeleteAttachment::test_non_admin_non_owner_gets_403
@@ -3229,10 +3230,12 @@ tests/unit/test_news_service.py::TestCoverFocalValidation::test_update_rejects_o
 tests/unit/test_news_service.py::TestCoverFocalValidation::test_update_rejects_out_of_range[50-101]
 tests/unit/test_news_service.py::test_create_news_draft
 tests/unit/test_news_service.py::test_create_news_published_sets_published_at
+tests/unit/test_news_service.py::test_delete_attachment_blocks_path_traversal
 tests/unit/test_news_service.py::test_delete_attachment_found
 tests/unit/test_news_service.py::test_delete_attachment_not_found
 tests/unit/test_news_service.py::test_delete_cover_removes_file
 tests/unit/test_news_service.py::test_delete_cover_when_no_cover
+tests/unit/test_news_service.py::test_delete_gallery_image_blocks_path_traversal
 tests/unit/test_news_service.py::test_delete_gallery_image_found
 tests/unit/test_news_service.py::test_delete_gallery_image_not_found
 tests/unit/test_news_service.py::test_delete_news_sets_fields
@@ -4117,6 +4120,11 @@ tests/unit/test_tls_status.py::TestGetTlsStatusInfo::test_tls_status_out_schema
 tests/unit/test_uploads.py::TestIterUploadChunks::test_empty_file_yields_nothing
 tests/unit/test_uploads.py::TestIterUploadChunks::test_single_chunk
 tests/unit/test_uploads.py::TestIterUploadChunks::test_yields_all_chunks
+tests/unit/test_uploads.py::TestSafeJoinWithin::test_absolute_segment_escape_is_blocked
+tests/unit/test_uploads.py::TestSafeJoinWithin::test_deep_traversal_with_nested_dirs_blocked
+tests/unit/test_uploads.py::TestSafeJoinWithin::test_dotdot_escape_is_blocked
+tests/unit/test_uploads.py::TestSafeJoinWithin::test_normal_uuid_filename_allowed
+tests/unit/test_uploads.py::TestSafeJoinWithin::test_returns_resolved_path_inside_base
 tests/unit/test_uploads.py::TestStreamUploadToPath::test_allowed_mimes_none_skips_check
 tests/unit/test_uploads.py::TestStreamUploadToPath::test_creates_parent_dirs
 tests/unit/test_uploads.py::TestStreamUploadToPath::test_disallowed_mime_deletes_file
