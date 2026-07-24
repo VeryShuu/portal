@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { mount, enableAutoUnmount } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
 
 const i18n = createI18n({ legacy: false, locale: 'ru', missingWarn: false, fallbackWarn: false, messages: { ru: {}, en: {} } })
@@ -80,6 +80,12 @@ const globalPlugins = {
   plugins: [i18n],
   stubs: { RouterLink: { template: '<a><slot /></a>' } },
 }
+
+// Гарантированно размонтирует wrapper после каждого it → срабатывает
+// onUnmounted → clearFocusTimer(). Без этого отложенный setTimeout(50ms)
+// из watch(props.modelValue) протекает за пределы жизни компонента и падает
+// в Vitest teardown с ReferenceError: document is not defined (CI блокер).
+enableAutoUnmount(afterEach)
 
 describe('cov2 LightboxBase', () => {
   beforeEach(() => {

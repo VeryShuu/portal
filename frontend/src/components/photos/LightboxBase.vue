@@ -163,6 +163,10 @@ watch(() => props.modelValue, (newVal) => {
       if (closeBtn) closeBtn.focus()
     }, 50)
   } else {
+    // Лайтбокс закрылся — отложенный фокус на close-button больше не нужен.
+    // Без этого таймер протекает (запускается в уже уничтоженном окружении
+    // при размонтировании — ReferenceError: document is not defined).
+    clearFocusTimer()
     const prev = previouslyFocusedElement.value
     if (prev && typeof prev.focus === 'function') prev.focus()
     previouslyFocusedElement.value = null
