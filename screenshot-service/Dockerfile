@@ -14,7 +14,10 @@ RUN pip install --no-cache-dir -r requirements.txt \
     || (sleep 10 && pip install --no-cache-dir -r requirements.txt) \
     || (sleep 20 && pip install --no-cache-dir -r requirements.txt)
 
-COPY main.py .
+# Копируем runtime-модули сервиса (main.py + helpers). Список явный: test_*.py
+# и pytest.ini/requirements-dev.txt — это CI-only артефакты, в образе не нужны.
+# При добавлении нового helper-модуля добавить его сюда же.
+COPY main.py cookie_utils.py ./
 
 RUN chown -R pptruser:pptruser /app
 
