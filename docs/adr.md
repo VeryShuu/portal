@@ -1394,7 +1394,7 @@ docker compose -f docker-compose.yml -f monitoring/docker-compose.monitoring.yml
    - На каждый push в `main`: `sha-<7симв>` (точная привязка к коммиту для отката) + `latest` (указатель на HEAD main, continuous deploy).
    - При push semver-tag `v1.2.3`: дополнительно `v1.2.3`, `v1.2`, `v1` (для семантических релизов).
    - `postgres` тегируется единым `:16` (rolling, по major-версии PG) — как и в compose.
-   - Job запускается **только на push** (`if: github.event_name == 'push'`), НЕ на `pull_request` — чтобы не пушить с PR-раннеров. Gate: `needs: [backend-lint, backend-unit, frontend-lint, frontend-unit, compose-smoke]`.
+   - Job запускается **только на push** (`if: github.event_name == 'push'`), НЕ на `pull_request` — чтобы не пушить с PR-раннеров. Gate: `needs: [backend-lint, backend-unit, backend-integration, frontend-lint, frontend-unit, frontend-e2e, compose-smoke]` — в набор входят ВСЕ критичные job'ы, иначе образ с упавшими интеграционными/e2e ушёл бы в `:latest` (авто-деплой на прод).
 
 3. **IMAGE_PREFIX — конфигурируемый registry-префикс** в `docker-compose.yml`:
    ```
@@ -1404,7 +1404,7 @@ docker compose -f docker-compose.yml -f monitoring/docker-compose.monitoring.yml
 
 4. **6 образов в matrix** (backend с `target: production` используется 3 сервисами — backend/worker/migrations — по одному имени): portal-backend, portal-frontend, portal-nginx, portal-nginx-config, portal-screenshot, portal-postgres. Backend собирается один раз, `cache-from`/`cache-to: type=gha` ускоряет повторные сборки с ~6 до ~2 мин.
 
-5. **`setup.sh` ветвит pull vs build** по `IMAGE_PREFIX` в `.env` (функция `run_compose`): на проде с префиксом — `compose pull` + `up -d` без `--build`; без префикса — старое `up -d --build`. `update_production()` показывает, какой режим применится.
+5. **`setup.sh` ветвит pull vs build** по `IMAGE_PREFIX` в `.env` (функция `run_compose`): на проде с префиксом — `compose pull` + `up -d` **всегда** (даже при «полном рестарте с очисткой», п.4 меню — на registry-проде локальная сборка не выполняется никогда); без префикса — `build` (`--no-cache` для п.4, инкремент `--build` иначе). Пункты 4 и 6 меню показывают оператору, какой режим применится, заранее.
 
 **Альтернативы, рассмотренные и отвергнутые:**
 

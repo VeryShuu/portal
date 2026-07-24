@@ -52,8 +52,16 @@ show_menu() {
     echo -e "  ${DIM}     Production-образ + открытые порты для QA/k6/zap, nginx на 8080/8443,${RESET}"
     echo -e "  ${DIM}     ENVIRONMENT=staging, уровень логов задаётся через Admin UI. Прод-near тестирование.${RESET}"
     echo
-    echo -e "  ${BOLD}4.${RESET}  Полная пересборка ${DIM}(--no-cache)${RESET} и запуск текущего режима"
-    echo -e "  ${DIM}     Нужна когда изменились Dockerfile или зависимости.${RESET}"
+    # Подпись п.4 зависит от режима образов: на registry-проде тут pull
+    # свежих тегов (на проде не собираем — ADR-045), локально — build --no-cache.
+    if [[ -n "$(load_env_var IMAGE_PREFIX)" ]]; then
+        echo -e "  ${BOLD}4.${RESET}  Полный рестарт с очисткой и запуск текущего режима"
+        echo -e "  ${DIM}     Режим registry: pull свежих образов (без кэша docker) → пересоздание контейнеров.${RESET}"
+        echo -e "  ${DIM}     На проде локальная сборка не выполняется (ADR-045).${RESET}"
+    else
+        echo -e "  ${BOLD}4.${RESET}  Полная пересборка ${DIM}(--no-cache)${RESET} и запуск текущего режима"
+        echo -e "  ${DIM}     Игнорирует кэш docker — нужно когда изменились Dockerfile или зависимости.${RESET}"
+    fi
     echo -e "  ${DIM}     Текущий режим: $(current_mode_label).${RESET}"
     echo
     sep
@@ -688,6 +696,15 @@ apply_sysctl() {
 }
 
 # ─── Docker Compose команды ────────────────────────────────────────────────────
+# run_compose <mode> [no-cache]
+#
+# Режим образов определяется IMAGE_PREFIX в .env (ADR-045):
+#   • IMAGE_PREFIX непустой  → pull готовых CI-образов из registry.
+#     На registry-проде ЛОКАЛЬНАЯ СБОРКА НЕ ВЫПОЛНЯЕТСЯ НИКОГДА — даже с
+#     no-cache. «Полный рестарт с очисткой» в этом режиме тянет свежие теги
+#     принудительно (ignore-pull-failures нет), игнорируя локальный кэш docker.
+#   • IMAGE_PREFIX пуст       → локальная сборка из исходников (dev/staging).
+#     no-cache добавляет --no-cache к build.
 run_compose() {
     local mode="$1" no_cache="${2:-}"
     local -a files=(-f docker-compose.yml)
@@ -699,25 +716,29 @@ run_compose() {
         *)       err "run_compose: неизвестный режим '$mode'" ;;
     esac
 
-    # На проде с заданным IMAGE_PREFIX — pull готовых CI-образов из registry
-    # (без локальной сборки). См. ADR-045. В остальных случаях — сборка из исходников.
     local image_prefix
     image_prefix=$(load_env_var IMAGE_PREFIX)
-    if [[ "$mode" == "prod" && -n "$no_cache" ]]; then
-        # --no-cache в prod + registry: бессмысленно (образ чужой), но если
-        # пользователь явно попросил full rebuild — пересобираем локально.
-        docker compose "${files[@]}" build --no-cache
-        docker compose "${files[@]}" up -d
-    elif [[ "$mode" == "prod" && -n "$image_prefix" ]]; then
-        echo -e "  ${DIM}Pull образов из registry (${image_prefix}…) …${RESET}"
+
+    if [[ -n "$image_prefix" ]]; then
+        # ── Registry-режим: pull, не сборка (ADR-045). ────────────────────────
+        # no-cache тут — «тяни свежие теги принудительно» (без --quiet: покажем,
+        # какие слои обновились). Никакой `build` в этой ветке быть не должно —
+        # иначе на проде начнётся компиляция, ради которой мы и перешли на registry.
+        if [[ -n "$no_cache" ]]; then
+            echo -e "  ${DIM}Принудительный pull свежих образов из registry (${image_prefix}…) …${RESET}"
+        else
+            echo -e "  ${DIM}Pull образов из registry (${image_prefix}…) …${RESET}"
+        fi
         if ! docker compose "${files[@]}" pull 2>&1 | sed 's/^/  │ /'; then
             err "docker compose pull не удался. Проверьте IMAGE_PREFIX/IMAGE_TAG в .env и доступ к registry."
         fi
         docker compose "${files[@]}" up -d
     elif [[ -n "$no_cache" ]]; then
+        # ── Локальный режим + полная очистка. ─────────────────────────────────
         docker compose "${files[@]}" build --no-cache
         docker compose "${files[@]}" up -d
     else
+        # ── Локальный режим, инкремент. ───────────────────────────────────────
         docker compose "${files[@]}" up -d --build
     fi
 }
@@ -1477,10 +1498,22 @@ main() {
             if [[ "$saved_mode" == "dev" || "$saved_mode" == "staging" ]]; then
                 generate_dev_files
             fi
-            echo -e "  Полная пересборка (--no-cache), режим: $(current_mode_label)"
-            # --no-cache пересобирает образы — если что-то пойдёт не так,
-            # откат без бэкапа будет болезненным. Предлагаем pg_dump.
-            offer_backup "полной пересборкой (--no-cache)"
+            # Превью режима образов: оператор заранее видит, ЧТО произойдёт.
+            local _ip _action
+            _ip=$(load_env_var IMAGE_PREFIX)
+            if [[ -n "$_ip" ]]; then
+                _action="принудительный pull свежих образов из registry (${_ip}…)"
+                echo -e "  Полный рестарт с очисткой, режим: $(current_mode_label)"
+                echo -e "  ${DIM}Режим образов: ${_action}.${RESET}"
+                echo -e "  ${DIM}На проде локальная сборка не выполняется (ADR-045).${RESET}"
+            else
+                _action="полная пересборка (--no-cache) из исходников"
+                echo -e "  Полная пересборка (--no-cache), режим: $(current_mode_label)"
+                echo -e "  ${DIM}Режим образов: ${_action}.${RESET}"
+            fi
+            # Любая из операций может накатить миграции (новый образ/сборка) —
+            # откат без бэкапа болезненный. Предлагаем pg_dump в обоих режимах.
+            offer_backup "${_action}"
             echo
             echo -e "  ${DIM}Останавливаю контейнеры...${RESET}"
             docker compose down --remove-orphans

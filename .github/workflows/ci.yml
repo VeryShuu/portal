@@ -773,11 +773,15 @@ jobs:
     # Публикуем только если весь gate-набор зелёный. always() — чтобы
     # смок- и юнит-задачи со status 'success' учитывались корректно даже
     # при последующих сбоях в зависимостях.
+    # В набор входят ВСЕ критичные job'ы (ADR-045 §2): lint/unit/integration/
+    # e2e/smoke. Без них образ с упавшими интеграционными/e2e ушёл бы в GHCR.
     needs:
       - backend-lint
       - backend-unit
+      - backend-integration
       - frontend-lint
       - frontend-unit
+      - frontend-e2e
       - compose-smoke
     # Не на PR: билдим и пушим только main-коммиты и релизные теги.
     if: github.event_name == 'push' && always() && success()

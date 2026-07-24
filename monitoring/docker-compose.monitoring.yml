@@ -309,11 +309,15 @@ services:
   #
   # НЕ открывает портов. Монтирует /:/host:ro — для du по host-папкам и
   # чтения config.v2.json контейнеров (имя сервиса по container id).
+  #
+  # Локальная сборка (НЕ в GHCR). Monitoring-overlay собирается на месте
+  # через `up -d --build`, поэтому имя образа фиксировано без registry-префикса
+  # — в отличие от сервисов из docker-compose.yml, тег/префикс тут не нужны.
   # ---------------------------------------------------------------------
   storage-collector:
     build:
       context: ./monitoring/node-exporter-textfile
-    image: ${IMAGE_PREFIX:-}portal-storage-collector:${IMAGE_TAG:-latest}
+    image: portal-storage-collector:latest
     container_name: portal-storage-collector
     restart: unless-stopped
     security_opt:
