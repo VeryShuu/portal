@@ -173,13 +173,13 @@ class WorkerSettings:
         track_arq_job(close_expired_polls),
         track_arq_job(send_email_notification),
         track_arq_job(notify_news_published),
-        func(track_arq_job(process_photo_upload), timeout=300, max_tries=5),
-        func(track_arq_job(cleanup_deleted_photos), timeout=300, max_tries=2),
-        func(track_arq_job(generate_folder_zip), timeout=600, max_tries=2),
-        func(track_arq_job(cleanup_zip_jobs), timeout=120, max_tries=2),
-        func(track_arq_job(detect_missing_thumbnails), timeout=300, max_tries=2),
-        func(track_arq_job(import_scan_run), timeout=600, max_tries=2),
-        func(track_arq_job(empty_photo_trash), timeout=300, max_tries=2),
+        func(track_arq_job(process_photo_upload), timeout=300, max_tries=5),  # type: ignore[arg-type]  # arq: track_arq_job возвращает Callable, func ждёт WorkerCoroutine
+        func(track_arq_job(cleanup_deleted_photos), timeout=300, max_tries=2),  # type: ignore[arg-type]  # arq: track_arq_job возвращает Callable, func ждёт WorkerCoroutine
+        func(track_arq_job(generate_folder_zip), timeout=600, max_tries=2),  # type: ignore[arg-type]  # arq: track_arq_job возвращает Callable, func ждёт WorkerCoroutine
+        func(track_arq_job(cleanup_zip_jobs), timeout=120, max_tries=2),  # type: ignore[arg-type]  # arq: track_arq_job возвращает Callable, func ждёт WorkerCoroutine
+        func(track_arq_job(detect_missing_thumbnails), timeout=300, max_tries=2),  # type: ignore[arg-type]  # arq: track_arq_job возвращает Callable, func ждёт WorkerCoroutine
+        func(track_arq_job(import_scan_run), timeout=600, max_tries=2),  # type: ignore[arg-type]  # arq: track_arq_job возвращает Callable, func ждёт WorkerCoroutine
+        func(track_arq_job(empty_photo_trash), timeout=300, max_tries=2),  # type: ignore[arg-type]  # arq: track_arq_job возвращает Callable, func ждёт WorkerCoroutine
         # refresh_custom_metrics / worker_heartbeat не инструментируем — это
         # сами сборщики метрик/heartbeat, их обёртка создавала бы рекурсивный
         # шум и маскировала бы stale-детектор ( PortalWorkerStale ).

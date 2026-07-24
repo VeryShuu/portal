@@ -105,16 +105,16 @@ async def try_add_connection(
     """
     conn_key = _SSE_CONN_KEY.format(user_id=str(user_id))
     now = time.time()
-    result = await redis.eval(
+    result = await redis.eval(  # type: ignore[misc]  # redis-py async-overload typing
         _LUA_CONN_ADD,
         2,
         conn_key,
         _SSE_GLOBAL_CONN_KEY,
-        now,
-        now + _SSE_CONNECTION_TTL,
+        now,  # type: ignore[arg-type]  # redis-py async-overload typing
+        now + _SSE_CONNECTION_TTL,  # type: ignore[arg-type]  # redis-py async-overload typing
         connection_id,
-        max_per_user,
-        max_global,
+        max_per_user,  # type: ignore[arg-type]  # redis-py async-overload typing
+        max_global,  # type: ignore[arg-type]  # redis-py async-overload typing
     )
     return int(result)
 

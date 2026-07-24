@@ -35,7 +35,7 @@ def _png_upload(name: str = "screen.png") -> UploadFile:
     return UploadFile(
         filename=name,
         file=io.BytesIO(b"bytes"),
-        headers={"content-type": "image/png"},  # type: ignore[dict-item]
+        headers={"content-type": "image/png"},  # type: ignore[dict-item,arg-type]  # starlette UploadFile.headers ожидает Headers, dict-литерал ок для теста
     )
 
 

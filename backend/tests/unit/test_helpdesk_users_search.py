@@ -8,11 +8,14 @@ Endpoint stateless (только проксирует в Keycloak) — тест�
 
 from __future__ import annotations
 
+from typing import cast
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from redis.asyncio import Redis
 
 from app.api.helpdesk.users import search_helpdesk_users
+from app.models.user import User
 from app.schemas.helpdesk import HelpdeskUserOption
 
 
@@ -37,7 +40,9 @@ class TestSearchHelpdeskUsers:
                 ]
             ),
         ):
-            result = await search_helpdesk_users(user=object(), redis=object(), q="анна")
+            result = await search_helpdesk_users(
+                user=cast(User, object()), redis=cast(Redis, object()), q="анна"
+            )
 
         assert len(result) == 2
         assert result[0] == HelpdeskUserOption(
@@ -55,7 +60,9 @@ class TestSearchHelpdeskUsers:
             "app.services.keycloak.directory.search_users",
             new=AsyncMock(return_value=[_kc_user(uid="x", email="x@y.z")]),
         ) as kc:
-            result = await search_helpdesk_users(user=object(), redis=object(), q="ab")
+            result = await search_helpdesk_users(
+                user=cast(User, object()), redis=cast(Redis, object()), q="ab"
+            )
         assert result == []
         kc.assert_not_awaited()
 
@@ -64,7 +71,9 @@ class TestSearchHelpdeskUsers:
         with patch(
             "app.services.keycloak.directory.search_users", new=AsyncMock(return_value=[])
         ) as kc:
-            result = await search_helpdesk_users(user=object(), redis=object(), q="  a  ")
+            result = await search_helpdesk_users(
+                user=cast(User, object()), redis=cast(Redis, object()), q="  a  "
+            )
         assert result == []
         kc.assert_not_awaited()
 
@@ -75,7 +84,9 @@ class TestSearchHelpdeskUsers:
             "app.services.keycloak.directory.search_users",
             new=AsyncMock(return_value=[_kc_user(uid="u", email="x@y.z", username="legacy.user")]),
         ):
-            result = await search_helpdesk_users(user=object(), redis=object(), q="legacy")
+            result = await search_helpdesk_users(
+                user=cast(User, object()), redis=cast(Redis, object()), q="legacy"
+            )
         assert result[0].full_name == "legacy.user"
 
     async def test_passes_limit_to_keycloak(self) -> None:
@@ -83,7 +94,9 @@ class TestSearchHelpdeskUsers:
         with patch(
             "app.services.keycloak.directory.search_users", new=AsyncMock(return_value=[])
         ) as kc:
-            await search_helpdesk_users(user=object(), redis=object(), q="query", limit=42)
+            await search_helpdesk_users(
+                user=cast(User, object()), redis=cast(Redis, object()), q="query", limit=42
+            )
         kc.assert_awaited_once_with("query", max_results=42)
 
     async def test_propagates_keycloak_error(self) -> None:
@@ -98,4 +111,6 @@ class TestSearchHelpdeskUsers:
             ),
             pytest.raises(RuntimeError, match="kc down"),
         ):
-            await search_helpdesk_users(user=object(), redis=object(), q="query")
+            await search_helpdesk_users(
+                user=cast(User, object()), redis=cast(Redis, object()), q="query"
+            )

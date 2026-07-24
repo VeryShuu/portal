@@ -62,7 +62,7 @@ async def _publish_to_stream(
             "link": notification.link or "",
             "created_at": notification.created_at.isoformat(),
         }
-        await redis.xadd(stream_key, payload, maxlen=200, approximate=True)
+        await redis.xadd(stream_key, payload, maxlen=200, approximate=True)  # type: ignore[arg-type]  # redis-py async-overload typing
         await redis.expire(stream_key, 7 * 24 * 3600)
     except Exception as exc:
         logger.exception(

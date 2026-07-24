@@ -42,7 +42,7 @@ async def push_audit_event(
             "metadata": metadata or {},
             "created_at": datetime.now(UTC).isoformat(),
         }
-        await redis.rpush(AUDIT_QUEUE_KEY, json.dumps(record))
+        await redis.rpush(AUDIT_QUEUE_KEY, json.dumps(record))  # type: ignore[misc]  # redis-py async-overload typing
         try:
             from app.core.metrics import audit_events_pushed
 

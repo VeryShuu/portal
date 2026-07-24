@@ -78,7 +78,7 @@ async def _release_lock(redis: Redis, key: str, token: str) -> None:
         # перегрузку, возвращающую ``Awaitable[str] | str`` → mypy-error на
         # ``await``. Локальное игнорирование чистее, чем ``cast("Any", ...)``
         # на каждом вызове (см. ``tasks/helpdesk.py:_release_lock``).
-        await redis.eval(_LOCK_RELEASE_LUA, 1, key, token)
+        await redis.eval(_LOCK_RELEASE_LUA, 1, key, token)  # type: ignore[misc]  # redis-py async-overload typing
 
 
 async def _load_max_settings(db: AsyncSession) -> HelpdeskMaxBotSettings | None:

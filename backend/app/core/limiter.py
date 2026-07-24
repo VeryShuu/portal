@@ -76,7 +76,7 @@ def _patch_rate_limiter_for_starlette1() -> Callable[..., object]:
         if pexpire != 0:
             return cast(None, await callback(request, response, pexpire))
 
-    RateLimiter.__call__ = _patched_call
+    RateLimiter.__call__ = _patched_call  # type: ignore[method-assign]  # monkey-patch совместимости fastapi-limiter (ADR-043)
     return _patched_call
 
 
@@ -153,7 +153,7 @@ def probe_bypass_rate_limit(times: int, minutes: int) -> Callable[..., object]:
     async def _dependency(request: Request) -> None:
         if is_trusted_internal_ip(_real_ip(request)):
             return  # probe / service-to-service — пропускаем без счётчика
-        await limiter(request, None)
+        await limiter(request, None)  # type: ignore[arg-type]  # fastapi-limiter: response необязателен для check-only
 
     return _dependency
 

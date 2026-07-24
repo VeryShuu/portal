@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime, timedelta
+from typing import cast
 
 from fastapi import APIRouter, HTTPException, Query, status
 
@@ -92,7 +93,9 @@ async def list_trash(
                 section_id=a.section_id,
                 section_title=sections_map.get(a.section_id) if a.section_id else None,
                 status=a.status,
-                deleted_at=a.deleted_at,
+                deleted_at=cast(
+                    datetime, a.deleted_at
+                ),  # trash-SQL гарантирует deleted_at IS NOT NULL
                 updated_at=a.updated_at,
                 files_count=files_count,
                 files_bytes=files_bytes,
