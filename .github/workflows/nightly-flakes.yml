@@ -9,6 +9,12 @@ concurrency:
   group: nightly-flakes-${{ github.ref }}
   cancel-in-progress: true
 
+# Workflow только читает код и аплоадит артефакт (тестовые логи) —
+# дефолтные права сужаем до contents: read (principle of least privilege).
+# Закрывает CodeQL actions/missing-workflow-permissions.
+permissions:
+  contents: read
+
 jobs:
   flake-detect:
     name: backend / pytest 5x (flake detection)
