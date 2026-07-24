@@ -93,6 +93,87 @@ async def test_real_ip_identifier_fallback_to_client_host():
     assert result.startswith("127.0.0.1:")
 
 
+# ── Probe-bypass: доверенные docker-internal подсети ──────────────────────
+# Synthetic-проба логинится через настоящий /auth/local/login и упиралась в
+# IP-лимит (5/15min → 429). probe_bypass_rate_limit скипает лимит для запросов
+# из docker-internal сети (172.16.0.0/12). Покрываем обе ветви: bypass (probe)
+# и enforce (внешний клиент — brute-force-защита не ослаблена).
+
+from app.core.limiter import (
+    is_trusted_internal_ip,
+    probe_bypass_rate_limit,
+)
+
+
+class TestIsTrustedInternalIp:
+    def test_docker_subnet(self):
+        # Реальный IP screenshot-service на проде.
+        assert is_trusted_internal_ip("172.18.0.2") is True
+        assert is_trusted_internal_ip("172.31.255.255") is True  # граница /12
+        assert is_trusted_internal_ip("172.16.0.0") is True  # начало /12
+
+    def test_external_ip(self):
+        assert is_trusted_internal_ip("8.8.8.8") is False
+        assert is_trusted_internal_ip("203.0.113.5") is False
+        # 10.x / 192.168.x намеренно НЕ доверенные (могут быть клиентами LAN).
+        assert is_trusted_internal_ip("10.0.0.1") is False
+        assert is_trusted_internal_ip("192.168.1.1") is False
+        # Граница выше /12.
+        assert is_trusted_internal_ip("172.32.0.1") is False
+
+    def test_invalid_ip(self):
+        assert is_trusted_internal_ip("not-an-ip") is False
+        assert is_trusted_internal_ip("") is False
+        assert is_trusted_internal_ip("999.999.999.999") is False
+
+
+class TestProbeBypassRateLimit:
+    """probe_bypass_rate_limit: скип для internal-IP, enforce для внешних."""
+
+    @pytest.mark.asyncio
+    async def test_bypass_skips_for_internal_ip(self, monkeypatch):
+        """Probe (172.18.0.2) → limiter НЕ вызывается, dependency no-op."""
+        from fastapi_limiter.depends import RateLimiter
+
+        # Мокаем __call__ RateLimiter, чтобы убедиться, что он не вызывается.
+        call_count = {"n": 0}
+        original_call = RateLimiter.__call__
+
+        async def _counting_call(self, request, response):
+            call_count["n"] += 1
+
+        monkeypatch.setattr(RateLimiter, "__call__", _counting_call)
+        try:
+            dependency = probe_bypass_rate_limit(times=5, minutes=15)
+            req = _make_request(real_ip="172.18.0.2")
+            await dependency(request=req)
+        finally:
+            monkeypatch.setattr(RateLimiter, "__call__", original_call)
+
+        assert call_count["n"] == 0  # bypass — limiter не дёргали
+
+    @pytest.mark.asyncio
+    async def test_bypass_enforces_for_external_ip(self, monkeypatch):
+        """Внешний IP → limiter ВЫЗЫВАЕТСЯ (brute-force-защита работает)."""
+        from fastapi_limiter.depends import RateLimiter
+
+        call_count = {"n": 0}
+        original_call = RateLimiter.__call__
+
+        async def _counting_call(self, request, response):
+            call_count["n"] += 1
+
+        monkeypatch.setattr(RateLimiter, "__call__", _counting_call)
+        try:
+            dependency = probe_bypass_rate_limit(times=5, minutes=15)
+            req = _make_request(real_ip="203.0.113.5")
+            await dependency(request=req)
+        finally:
+            monkeypatch.setattr(RateLimiter, "__call__", original_call)
+
+        assert call_count["n"] == 1  # enforce — limiter вызван ровно 1 раз
+
+
 # ── Патч совместимости fastapi-limiter 0.1.6 + starlette 1.x ─────────────────
 # В starlette 1.x include_router оставляет в app.routes объекты _IncludedRouter
 # без атрибутов path/methods. Оригинальный RateLimiter.__call__ падал с

@@ -11,6 +11,7 @@ NB: намеренно БЕЗ ``from __future__ import annotations`` — ина�
 """
 
 import hashlib
+import ipaddress
 from collections.abc import Callable
 
 from fastapi import Request, Response
@@ -95,6 +96,65 @@ async def real_ip_identifier(request: Request) -> str:
     if not real_ip:
         real_ip = request.client.host if request.client else "unknown"
     return f"{real_ip}:{request.scope['path']}"
+
+
+# ── Probe-bypass: доверенные docker-internal подсети ──────────────────────
+# Synthetic-проба (cron run_synthetic_probe, каждые 5 мин) логинится через
+# настоящий /auth/local/login под сервисным аккаунтом. IP-лимит (5/15min)
+# срабатывает на 6-м запросе → 429. Probe приходит из docker-internal сети
+# (screenshot-service → nginx → backend). Запросы из этой подсети —
+# service-to-service, и X-Real-IP их ставит trusted nginx (внешний клиент
+# подделать не может), поэтому байпас безопасен. См. probe_bypass_rate_limit.
+TRUSTED_INTERNAL_CIDR = ipaddress.ip_network("172.16.0.0/12")
+
+
+def is_trusted_internal_ip(ip_str: str) -> bool:
+    """IP из docker-internal bridge-подсети (172.16.0.0/12)?
+
+    Покрывает весь default Docker bridge range (172.16–172.31). Используется
+    для probe-bypass rate-limiter'а. 10.x/192.168.x намеренно НЕ включены —
+    это могут быть пользовательские клиенты из корпоративной LAN.
+    """
+    try:
+        return ipaddress.ip_address(ip_str) in TRUSTED_INTERNAL_CIDR
+    except ValueError:
+        return False
+
+
+def _real_ip(request: Request) -> str:
+    """Только IP-часть (без пути) — единый источник для bypass-проверки.
+
+    Тот же приоритет, что у real_ip_identifier: X-Real-IP (nginx) → client.host.
+    """
+    real_ip = request.headers.get("X-Real-IP")
+    if not real_ip:
+        real_ip = request.client.host if request.client else "unknown"
+    return real_ip
+
+
+def probe_bypass_rate_limit(times: int, minutes: int) -> Callable[..., object]:
+    """Dependency-фабрика: RateLimiter с bypass для доверенных internal-IP.
+
+    Заменяет прямой ``Depends(RateLimiter(times=N, minutes=M))`` на эндпоинтах,
+    куда стучится synthetic-проба (login). Для запросов из docker-internal
+    подсети (172.16.0.0/12 — probe/exporters) лимит скипается; для остальных
+    действует стандартный RateLimiter. Brute-force-защита для реальных
+    пользователей сохраняется: внешний атакующий не имеет IP из 172.16/12 и не
+    может подделать X-Real-IP (его ставит nginx из $remote_addr).
+
+    NB: email-лимит (RateLimiter с identifier=email_identifier) отдельно не
+    обёртывается — probe укладывается в него (3 логина/15мин < 10).
+    """
+    from fastapi_limiter.depends import RateLimiter
+
+    limiter = RateLimiter(times=times, minutes=minutes)
+
+    async def _dependency(request: Request) -> None:
+        if is_trusted_internal_ip(_real_ip(request)):
+            return  # probe / service-to-service — пропускаем без счётчика
+        await limiter(request, None)  # type: ignore[arg-type]
+
+    return _dependency
 
 
 async def email_identifier(request: Request) -> str:

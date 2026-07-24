@@ -182,11 +182,35 @@ SystemSettings и передаёт его в payload `/probe`, а probe прос
 host-scoped (все `set_cookie` без `domain=`), а `page.request` шарит cookie-jar
 с BrowserContext, поэтому reload на шаге 3 автоматически отправит сессию.
 
+**Грабли: `PROBE_FRONTEND_URL` должен указывать на `portal-nginx`, не на
+`portal-frontend`.** На production-деплое есть два nginx-контейнера: `portal-nginx`
+(маршрутизатор: `/api/` → backend, `/` → SPA) и `portal-frontend` (чистый
+статиксервер, `nginx.spa.conf` без `location /api/`). Probe шлёт POST на
+`{PROBE_FRONTEND_URL}/api/v1/auth/local/login` — если указать `frontend:80`,
+попадёшь в статиксервер, который отдаст **405 Method Not Allowed** (POST на
+статический файл). Правильное значение на проде: `PROBE_FRONTEND_URL=http://nginx:80`.
+Дефолт `http://frontend:80` в `.env.example` годится только для dev-overlay
+(где `frontend` — это Vite dev-server с proxy).
+
+**Грабли: rate-limiter на `/auth/local/login` vs probe.** Эндпоинт защищён
+`RateLimiter(times=5, minutes=15)` по IP (защита от брутфорса). Probe логинится
+каждые 5 мин → на 6-м запросе за окно ловит **429 Too Many Requests**.
+Решение: IP-лимит обёрнут в `probe_bypass_rate_limit` (`app/core/limiter.py`) —
+запросы из docker-internal подсети `172.16.0.0/12` (где живёт screenshot-service)
+срабатывают без счётчика. Brute-force-защита для внешних пользователей
+сохраняется: `X-Real-IP` ставит trusted nginx из `$remote_addr`, внешний
+атакующий не имеет IP из `172.16/12` и не может его подделать. Email-лимит
+(`times=10`, `identifier=email_identifier`) не обходится — probe укладывается
+(3 логина/15мин < 10).
+
 **Что значит состояние панели:**
 - **No data** — `PROBE_ADMIN_EMAIL/PASSWORD` не заданы → probe skip-ается.
 - **`0` (красный)** — креды заданы, но flow сломан. Поле `step_failed` в
   ответе `/probe` указывает шаг: `navigate_login` (frontend недоступен /
-  неверный `PROBE_FRONTEND_URL`), `login_status_403` (CSRF / неверные креды),
+  неверный `PROBE_FRONTEND_URL` — напр. `405` если указан `frontend:80` вместо
+  `nginx:80`), `login_status_403` (CSRF / неверные креды),
+  `login_status_429` (rate-limit — не должен срабатывать после bypass-фикса;
+  если сработал — probe не из 172.16/12 или обход сломан),
   `assert_app_shell` (SPA не отрисовался), `still_on_login` (логин не сработал).
 - **`1` (зелёный)** — поток работает end-to-end.
 
@@ -602,10 +626,55 @@ Loki индексирует **только лейблы**, содержимое 
 
 ### Дашборд логов (`monitoring/grafana/portal-logs.json`)
 
-7 панелей в Grafana (папка Portal): ошибки backend/worker, объём по сервисам,
+8 панелей в Grafana (папка Portal): ошибки backend/worker, объём по сервисам,
 объём по уровням (stacked), медленные запросы nginx, 5xx, audit-pipeline,
 трассировка по `request_id` (с переменной-фильтром по `request_id` из логов
-nginx со status ≥ 400).
+nginx со status ≥ 400), и **«Ошибки инфра-контейнеров»** — FATAL/PANIC postgres
+и persistence-сбои redis (см. ниже §«Loki-ruler»).
+
+Панель «Ошибки инфра-контейнеров» показывает ровно те строки postgres/redis, на
+которых срабатывают Loki-алерты (согласованная пара «видишь строки → понимаешь
+alert»). Plain-text логи postgres/redis не парсятся `stage.json` → лейбла
+`level` у них нет, поэтому фильтрация по содержимому строки (`|~`/`!~`), а не
+по лейблу. Селектор — `compose_service` (stable, без суффикса `-N`).
+
+### Loki-ruler (log-based alerts)
+
+Конфиг ruler'а жил в `monitoring/loki/config.yml` (`ruler:`) с самого начала
+(local storage `/loki/rules`, `alertmanager_url: http://alertmanager:9093`),
+но до ADR-«лог-алертов» директория rules не монтировалась в контейнер Loki →
+правил не было. Теперь bind-mount `./monitoring/loki/rules:/loki/rules:ro`
+(сервис `loki` в overlay) доставляет правила из репо.
+
+**Конвенция путей (критично!):** при `auth_enabled: false` (single-tenant)
+tenant-id = `fake`. Rules обязаны лежать в поддиректории tenant'а —
+`monitoring/loki/rules/fake/<file>.yaml`. Файл прямо в `rules/` загружен **не
+будет** — ruler молча его проигнорирует (№1 причина «правила не работают»).
+
+Текущие правила (`monitoring/loki/rules/fake/portal-loki-rules.yaml`, группа
+`portal-loki`, severity `critical` → роутятся в существующий receiver
+`admins-email`):
+
+- **`PostgresFatal`** — `FATAL:`/`PANIC:` в логе postgres, > 2 за 5 мин.
+  Исключены transient startup/recovery FATAL (`the database system is starting
+  up`, `... is in recovery mode`) — они нормальны при рестарте, их ловит
+  `PortalBackendDown`. `ERROR:` намеренно не трогаем (шум от плохих SQL-запросов).
+- **`RedisPersistenceFailure`** — фразы persistence/подключений redis
+  (`Background saving error`, `Write error saving DB on disk`, `fork: Cannot
+  allocate memory`, `OOM command not allowed when used memory`, ...), > 1 за
+  5 мин. Маркер `#` не используем — ловит косметический `overcommit_memory is
+  set to 0` на каждом старте redis-контейнера.
+
+**Проверка после деплоя** (правило #1 тихих провалов):
+`curl -s http://localhost:3100/loki/api/v1/rules` → группа `portal-loki` с
+обоими правилами. Loki опрашивает директорию раз в минуту (`ruler.poll_interval`,
+default) — после recreate правила появятся в течение ~1 мин, не мгновенно.
+
+**Добавить новое правило:** дописать в тот же yaml (или новый файл в
+`rules/fake/`), recreat'а не нужно — ruler подхватит на следующем poll.
+Селектор — `compose_service` для plain-text, `{service=..., level=...}` для
+structlog. Пороги — согласно философии `portal.yml` (self-recovers = не
+алертить, мин. `for:` 2–5 мин).
 
 ### Грабли
 
@@ -629,3 +698,7 @@ nginx со status ≥ 400).
 - **Docker socket для Alloy**: `/var/run/docker.sock:ro` — discovery + attach
   работают на чтение. Alloy не управляет контейнерами (не start/stop), только
   читает логи.
+- **Tenant-путь Loki-ruler**: rules обязаны лежать в `rules/fake/<file>.yaml`
+  (поддиректория tenant'а `fake` при `auth_enabled: false`). Файл прямо в
+  `rules/` загружен НЕ будет — ruler молча проигнорирует. Проверка:
+  `curl -s http://localhost:3100/loki/api/v1/rules`. См. §«Loki-ruler» выше.

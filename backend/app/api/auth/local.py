@@ -11,7 +11,7 @@ from sqlalchemy import func, select, update
 
 from app.api.deps import DbDep, RedisDep
 from app.core.config import get_settings
-from app.core.limiter import email_identifier
+from app.core.limiter import email_identifier, probe_bypass_rate_limit
 from app.core.security import (
     DUMMY_HASH,
     LAST_AUTH_METHOD_COOKIE,
@@ -35,7 +35,9 @@ settings = get_settings()
     "/local/login",
     summary="Локальный вход по email + паролю",
     dependencies=[
-        Depends(RateLimiter(times=5, minutes=15)),
+        # IP-лимит с bypass для synthetic-пробы (docker-internal подсеть
+        # 172.16.0.0/12). Brute-force-защита для внешних клиентов сохраняется.
+        Depends(probe_bypass_rate_limit(times=5, minutes=15)),
         Depends(RateLimiter(times=10, minutes=15, identifier=email_identifier)),
     ],
 )

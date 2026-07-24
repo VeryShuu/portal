@@ -1,0 +1,70 @@
+# Loki ruler rules — первое содержательное правило (конфиг ruler'а жил в
+# monitoring/loki/config.yml с самого начала, но директория rules/ не
+# монтировалась в контейнер, поэтому правила не подхватывались).
+#
+# Смонтировано в контейнер Loki как /loki/rules (bind-mount из репо,
+# см. monitoring/docker-compose.monitoring.yml, сервис loki).
+#
+# ⚠️ КОНВЕНЦИЯ ПУТЕЙ: при auth_enabled: false (single-tenant) tenant-id = `fake`.
+# Rules обязаны лежать в поддиректории tenant'а: rules/fake/<file>.yaml.
+# Файл прямо в rules/ загружен НЕ будет — ruler молча его проигнорирует.
+# Проверка после деплоя: curl -s http://localhost:3100/loki/api/v1/rules
+#
+# Селекторы используют лейбл `compose_service` (stable, без суффикса `-N`),
+# НЕ `service` (он есть только у structlog-логов backend/worker) и НЕ
+# `container` (включает суффикс реплики, ломает sum-by). Plain-text логи
+# postgres/redis не парсятся stage.json → лейбла `level` у них нет,
+# фильтруем по содержимому строки через |~ / !~.
+#
+# Маршрут алертов: alertmanager_url в config.yml указывает на существующий
+# portal-alertmanager. Роутинг в alertmanager.yml — по severity=critical →
+# receiver admins-email (отдельное правило по alertname не требуется).
+
+groups:
+  - name: portal-loki
+    interval: 1m
+    rules:
+      # PostgreSQL FATAL/PANIC — connection/system-level (не ERROR: это шум
+      # от плохих SQL-запросов приложения — constraint violations и т.п.).
+      # Исключаем transient startup/recovery FATAL: они имеют severity FATAL,
+      # но нормальны при рестарте PG (каждый рестарт даёт всплеск, пока backend
+      # переподключается) — эти случаи уже ловит PortalBackendDown.
+      - alert: PostgresFatal
+        expr: |
+          sum by (container) (
+            count_over_time(
+              {compose_service="postgres"}
+                |~ "FATAL:|PANIC:"
+                !~ "the database system is starting up|the database system is in recovery mode"
+              [5m]
+            )
+          ) > 2
+        for: 2m
+        labels:
+          severity: critical
+          service: postgres
+        annotations:
+          summary: "PostgreSQL: FATAL/PANIC в логах ({{ $value }} за 5 мин)"
+          description: "Более 2 FATAL/PANIC-сообщений в логе postgres за 5 мин (pool exhaustion / auth storm / PANIC). Startup/recovery FATAL исключены. Смотреть: docker compose logs postgres, дашборд Portal — Logs (панель «Ошибки инфра-контейнеров»)."
+
+      # Redis persistence/connection failures (AOF+RDB при --appendonly yes
+      # --appendfsync everysec --maxmemory 256mb). Фразы вместо голого маркера
+      # `#` — последний ловит косметический `WARNING: overcommit_memory is set
+      # to 0` на почти каждом старте redis-контейнера → ложные страницы.
+      # Порог > 1: единичный fork-blip может быть транзиентом, 2 за 5 мин — реальная проблема.
+      - alert: RedisPersistenceFailure
+        expr: |
+          sum by (container) (
+            count_over_time(
+              {compose_service="redis"}
+                |~ "Background saving error|Write error saving DB on disk|Can't save in background|fork: Cannot allocate memory|Error accepting a client connection|Error moving cur APPEND ONLY FILE|Error removing APPEND ONLY FILE|OOM command not allowed when used memory"
+              [5m]
+            )
+          ) > 1
+        for: 2m
+        labels:
+          severity: critical
+          service: redis
+        annotations:
+          summary: "Redis: сбой persistence/подключений ({{ $value }} за 5 мин)"
+          description: "Ошибки RDB/AOF-сохранения или приёма соединений в логе redis за 5 мин. Проверить: docker compose logs redis, свободное место на volume redis-data, память контейнера (maxmemory 256mb)."

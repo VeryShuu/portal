@@ -142,6 +142,12 @@ services:
       - "-config.file=/etc/loki/config.yml"
     volumes:
       - ./monitoring/loki/config.yml:/etc/loki/config.yml:ro
+      # Rules для ruler (см. monitoring/loki/rules/fake/portal-loki-rules.yaml).
+      # Bind-mount перекрывает путь /loki/rules внутри volume loki-data — это
+      # безопасно: ruler только читает rules, рабочий путь /loki/rules-tmp.
+      # Конвенция путей: при auth_enabled: false tenant = `fake` → поддиректория
+      # fake/ обязательна (файл прямо в rules/ загружен НЕ будет).
+      - ./monitoring/loki/rules:/loki/rules:ro
       - loki-data:/loki
     ports:
       - "3100:3100"               # 0.0.0.0 — доступ из Windows в WSL2 (обычно через Grafana)

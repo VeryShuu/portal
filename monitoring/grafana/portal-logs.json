@@ -12,7 +12,7 @@
       }
     ]
   },
-  "description": "Логи портала из Loki: ошибки, объём по сервисам/уровням, медленные запросы и 5xx nginx, корреляция по request_id.",
+  "description": "Логи портала из Loki: ошибки, объём по сервисам/уровням, медленные запросы и 5xx nginx, корреляция по request_id, FATAL/persistence-ошибки postgres/redis.",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
@@ -245,6 +245,34 @@
       ],
       "title": "Трассировка по request_id (все сервисы)",
       "type": "logs"
+    },
+    {
+      "datasource": {"type": "loki", "uid": "loki"},
+      "fieldConfig": {"defaults": {}, "overrides": []},
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 34},
+      "id": 8,
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "prettifyLogMessage": false,
+        "showCommonLabels": false,
+        "showLabels": false,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      },
+      "targets": [
+        {
+          "datasource": {"type": "loki", "uid": "loki"},
+          "editorMode": "code",
+          "expr": "{compose_service=~\"postgres|redis\"} |~ \"FATAL:|PANIC:|Background saving error|Write error saving DB on disk|Can't save in background|fork: Cannot allocate memory|Error accepting a client connection|Error moving cur APPEND ONLY FILE|Error removing APPEND ONLY FILE|OOM command not allowed when used memory\" !~ \"the database system is starting up|the database system is in recovery mode\"",
+          "queryType": "instant",
+          "refId": "A",
+          "maxLines": 100
+        }
+      ],
+      "title": "Ошибки инфра-контейнеров (postgres FATAL/PANIC, redis persistence)",
+      "type": "logs"
     }
   ],
   "refresh": "30s",
@@ -283,6 +311,6 @@
   "timezone": "browser",
   "title": "Portal — Logs",
   "uid": "portal-logs",
-  "version": 1,
+  "version": 2,
   "weekStart": ""
 }
