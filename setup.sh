@@ -77,7 +77,8 @@ show_menu() {
     echo -e "  ${DIM}     docker compose restart. Текущий режим: $(current_mode_label).${RESET}"
     echo
     echo -e "  ${BOLD}8.${RESET}  Остановить стек"
-    echo -e "  ${DIM}     docker compose down. Данные сохраняются.${RESET}"
+    echo -e "  ${DIM}     docker compose down: убирает основной стек и monitoring-overlay (если запущен).${RESET}"
+    echo -e "  ${DIM}     Контейнеры удаляются; данные (БД, файлы, volumes Grafana/Loki) сохраняются.${RESET}"
     echo
     echo -e "  ${BOLD}9.${RESET}  Статус + последние логи"
     echo -e "  ${DIM}     docker compose ps + logs --tail=30 backend.${RESET}"
@@ -1124,6 +1125,24 @@ preflight() {
         else
             ok ".env: все обязательные ключи заполнены"
         fi
+
+        # ── Согласованность режим/IMAGE_PREFIX ────────────────────────────────
+        # dev концептуально ВСЕГДА локальная сборка (bind-mount исходников,
+        # hot-reload, target: test). CI билдит только target: production —
+        # тегов :dev в GHCR не существует. Комбинация dev + IMAGE_PREFIX
+        # бессмысленна и падает на `docker compose pull` (pull access denied).
+        # staging/prod совместимы с любым режимом образов.
+        local _env_prefix
+        _env_prefix=$(load_env_var IMAGE_PREFIX)
+        if [[ "$mode" == "dev" && -n "$_env_prefix" ]]; then
+            warn "Конфликт конфигурации: режим dev + IMAGE_PREFIX='${_env_prefix}' в .env."
+            warn "  dev всегда локальная сборка (hot-reload, тег :dev) — образов :dev в registry нет."
+            warn "  Либо уберите IMAGE_PREFIX в .env (пусто) для локальной dev-сборки,"
+            warn "  либо переключите режим на prod:  echo prod > .portal-mode"
+            fatal=1
+        else
+            ok "Режим/IMAGE_PREFIX: согласованы"
+        fi
     fi
 
     # ── Свободные порты ──────────────────────────────────────────────────────
@@ -1256,6 +1275,35 @@ ops_stop() {
     echo -e "  Остановка сервисов (режим: $(current_mode_label)) ..."
     read -r -p "  Подтвердить остановку? (y/N): " answer
     [[ "${answer,,}" == "y" ]] || { echo "  Отмена."; exit 0; }
+
+    # Сначала убираем monitoring-overlay (если запущен). Overlay-контейнеры
+    # используют сеть portal_internal, которую создаёт основной стек —
+    # если сначала сделать down основного стека, сеть исчезнет, а overlay
+    # останется висеть. Порядок важен: overlay → основной.
+    local overlay="monitoring/docker-compose.monitoring.yml"
+    if [[ -f "$overlay" ]]; then
+        # Полный список overlay-сервисов (должен совпадать с start_monitoring).
+        local -a mon_services=(
+            prometheus alertmanager grafana loki alloy
+            postgres-exporter redis-exporter node-exporter nginx-exporter
+            storage-collector
+        )
+        # Запущен ли overlay? Проверяем по любому из сервисов (ps -q пуст, если
+        # ни один не поднят). container_name у storage-collector фиксированный,
+        # остальные — по имени сервиса через project-prefix.
+        if [[ -n "$(docker compose -f docker-compose.yml -f "$overlay" ps -q \
+                     "${mon_services[@]}" 2>/dev/null)" ]]; then
+            echo -e "  ${DIM}Убираю monitoring-overlay (down, без -v) ...${RESET}"
+            # down [SERVICES]: убирает контейнеры overlay. БЕЗ -v: данные
+            # Grafana/Loki/Prometheus в named volumes сохраняются (как и
+            # данные портала в base_data/). Сеть portal_internal трогать НЕ
+            # надо — её создал и владеет основной стек (удалится на его down).
+            docker compose -f docker-compose.yml -f "$overlay" \
+                down "${mon_services[@]}" 2>&1 | sed 's/^/  │ /' || true
+            ok "Monitoring-overlay убран (данные в volumes сохранены)."
+        fi
+    fi
+
     docker compose "${compose_files[@]}" down 2>&1 | sed 's/^/  │ /'
     ok "Стек остановлен. Данные в base_data/ сохранены."
 }

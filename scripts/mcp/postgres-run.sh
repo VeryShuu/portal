@@ -53,7 +53,16 @@ PG_PWD_ENC="$(printf '%s' "${PG_PWD}" | urlencode_python)"
 
 DSN="postgresql://${PG_USR}:${PG_PWD_ENC}@postgres:5432/${PG_DB}"
 
+# Детерминированное имя + самоочистка: ZCode при reconnect/restart «бросает»
+# stdio-процесс, не закрывая stdin чисто — под WSL2 `docker run --rm` тогда не
+# срабатывает (контейнер не получает EOF и висит зомби). Фиксим так: при каждом
+# запуске убиваем осиротевший контейнер с тем же именем, затем поднимаем новый.
+# --name гарантирует, что копий не плодится (иначе был бы случайный random-name).
+CONTAINER_NAME="mcp-postgres"
+docker rm -f "${CONTAINER_NAME}" >/dev/null 2>&1 || true
+
 exec docker run --rm -i \
+  --name "${CONTAINER_NAME}" \
   --network portal_internal \
   crystaldba/postgres-mcp:latest \
   --access-mode restricted \

@@ -27,7 +27,13 @@ export GITHUB_PERSONAL_ACCESS_TOKEN="${TOKEN}"
 
 # read-only: список PR/issues/CI/репо; toolsets ограничены тем, что реально нужно.
 # Добавьте toolsets при необходимости (например: 'issues,pull_requests,actions,repos,code_security').
+# Детерминированное имя + самоочистка осиротевших копий (см. postgres-run.sh):
+# ZCode при reconnect бросает stdio, под WSL2 --rm не срабатывает → зомби.
+CONTAINER_NAME="mcp-github"
+docker rm -f "${CONTAINER_NAME}" >/dev/null 2>&1 || true
+
 exec docker run --rm -i \
+  --name "${CONTAINER_NAME}" \
   -e GITHUB_PERSONAL_ACCESS_TOKEN \
   ghcr.io/github/github-mcp-server:latest \
   stdio --read-only
