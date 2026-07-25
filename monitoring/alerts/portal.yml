@@ -410,8 +410,18 @@ groups:
           summary: "Redis: высокая скорость evictions ({{ $value }}/s)"
           description: "Redis удаляет ключи по политике maxmemory — памяти не хватает. Критично: могут теряться сессии/audit-события. Увеличить REDIS_MAXMEMORY в .env (требует рестарта redis)."
 
-      # Keyspace hit ratio < 90% — редко для Redis, но при больших наборах
-      # данных стоит проверить, не ушли ли горячие ключи на диск.
+      # Keyspace hit ratio < 90% — диагностика вытеснения ключей из памяти.
+      #
+      # ВАЖНО: для этого приложения низкий keyspace hit ratio (30–50% в норме)
+      # НЕ является аномалией. Портал использует Redis одновременно как
+      # session-cache, rate-limiter (fastapi-limiter, Lua GET→SET per окно),
+      # idempotency-store (SET NX), view-dedup и lock-store — все эти паттерны
+      # по контракту создают miss. Поэтому «голый» hit ratio всегда будет низким.
+      #
+      # Реальная проблема — когда ключи вытесняются до повторного использования,
+      # что проявляется одновременно: (а) низкий hit ratio И (б) evictions > 0
+      # (Redis выбрасывает ключи по политике maxmemory). Только в этом случае
+      # нужны REDIS_MAXMEMORY / анализ eviction-policy.
       - alert: PortalRedisKeyspaceLow
         expr: |
           (
@@ -426,13 +436,15 @@ groups:
             sum(rate(redis_keyspace_hits_total[5m]))
             + sum(rate(redis_keyspace_misses_total[5m]))
           ) > 10
+          and
+          sum(rate(redis_evicted_keys_total[5m])) > 0
         for: 10m
         labels:
           severity: warning
           service: portal-redis
         annotations:
-          summary: "Redis: низкий keyspace hit ratio ({{ $value | humanizePercentage }})"
-          description: "Keyspace hit ratio < 90% при значимом трафике. Возможные причины: TTL-ключи истекают быстрее, чем переиспользуются, или данные не помещаются в память."
+          summary: "Redis: низкий keyspace hit ratio с eviction'ами ({{ $value | humanizePercentage }})"
+          description: "Keyspace hit ratio < 90% И eviction rate > 0 при трафике > 10/мин. Это реальная проблема: Redis вытесняет ключи до повторного использования (мало памяти). Низкий hit ratio сам по себе — норма для этого приложения (rate-limiter / idempotency / view-dedup создают miss по дизайну). Действие: увеличить REDIS_MAXMEMORY в .env, проверить maxmemory-policy."
 
   # ===================================================================
   # Host — диск, CPU, RAM (node_exporter)

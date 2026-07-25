@@ -500,7 +500,7 @@ Alertmanager скрейпились и раньше.
 | `PortalPGDeadlocks` | 🟡 warning | дедлоки > 0 | Конкурирующие транзакции — баг в коде |
 | `PortalRedisMemoryHigh` | 🟡 warning | память > 90% maxmemory | Близко к eviction-режиму |
 | `PortalRedisEvictions` | 🟡 warning | evictions > 0.17/s (≈10/мин) | Теряются сессии/audit — увеличить REDIS_MAXMEMORY |
-| `PortalRedisKeyspaceLow` | 🟡 warning | keyspace hit ratio < 90% (при трафике > 10/мин) | TTL истекают быстрее переиспользования / данные не влезают в память |
+| `PortalRedisKeyspaceLow` | 🟡 warning | keyspace hit ratio < 90% **И** evictions > 0 (при трафике > 10/мин) | Redis вытесняет ключи до повторного использования — увеличить `REDIS_MAXMEMORY`. Низкий hit ratio **сам по себе — норма** (см. ниже «Keyspace hit rate: ложные срабатывания») |
 | `PortalDiskSpaceLow` | 🔴 critical | диск заполнен > 85% | Disk full ломает запись фото/БД/логов |
 | `PortalCPUHigh` | 🟡 warning | CPU > 80% 5 мин | Деградация latency для всех сервисов |
 | `PortalRAMLow` | 🟡 warning | свободная RAM < 10% | Риск OOM-kill контейнеров |
@@ -530,6 +530,33 @@ email-receivers через SMTP-relay (см. §7 «Email-доставка але
 > должен вмешаться (warning/critical), а инфо-сигналы держать в UI для
 > периодического обзора. Если info-алерт должен стать активным — поднять его
 > `severity` до `warning` в `portal.yml`.
+
+#### Keyspace hit rate: ложные срабатывания
+
+Панель «Keyspace hit rate» (`portal-infrastructure.json`, id=7) и алерт
+`PortalRedisKeyspaceLow` основаны на классической метрике `hits / (hits + misses)`,
+пришедшей из мира LRU-кеша (memcached), где `miss` означает «упали в тяжёлую
+БД». Для **этого приложения** эта интерпретация некорректна: портал использует
+Redis одновременно в **пяти разных паттернах**, и три из них **по контракту
+создают miss**:
+
+| Паттерн | Где в коде | Почему miss — норма |
+|---|---|---|
+| Rate-limiter (fastapi-limiter, Lua `GET → SET`) | `app/core/limiter.py` + 23 `RateLimiter(times=N, minutes=1)` | Каждый новый `(IP, route)` в окне 1 мин — miss; TTL истёк — снова miss |
+| View-dedup | `app/api/news/routes.py` `if not redis.exists(dedup_key)` | Первый просмотр `(news_id, user_id)` обязан быть miss — иначе это не дедуп |
+| Idempotency + lock (`SET NX`) | `app/middleware/idempotency.py` | Каждый новый `Idempotency-Key` = miss по дизайну |
+| ACL cache (TTL 5 мин) | `app/services/acl_base.py`, `photos_acl.py` | Первый запрос после TTL = miss + fill — ожидаемо |
+| Session / SSE | `app/services/session.py`, `notifications_sse.py` | Вот тут hit rate действительно высокий, но это меньшинство трафика |
+
+В результате «голый» keyspace hit rate стабильно держится в районе 30–50% — это
+**архитектурная норма**, не симптом деградации. Реальная проблема
+(данные не помещаются в память) проявляется **одновременно**: низкий hit ratio
+**И** `redis_evicted_keys_total > 0` (ключи вытесняются по политике maxmemory до
+повторного использования). Поэтому с 2026-07-25 `PortalRedisKeyspaceLow`
+сконъюнктирован с `sum(rate(redis_evicted_keys_total[5m])) > 0` — алерт стреляет
+только при реальной нехватке памяти, а не на шумных, но корректных miss'ах
+rate/dedup-паттернов. Самостоятельно поднимать hit rate (длинные TTL для dedup,
+отказ от `SET NX`) **нельзя** — это сломает семантику соответствующих механизмов.
 
 ### Грабли reference-стека
 

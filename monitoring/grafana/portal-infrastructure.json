@@ -649,7 +649,7 @@
       "id": 7,
       "title": "Keyspace hit rate",
       "type": "stat",
-      "description": "Доля удачных чтений ключей. Норма: > 95%. < 90% — TTL-ключи истекают быстрее переиспользования, или данные не помещаются в память.",
+      "description": "Доля удачных чтений ключей. ВНИМАНИЕ: низкие значения (30–50% — обычная картина) НЕ аномалия для этого приложения. Redis используется одновременно как session-cache, rate-limiter (fastapi-limiter, Lua GET→SET на каждое окно), idempotency-store (SET NX), view-dedup и lock-store — все эти паттерны по контракту создают miss. Реальная проблема — низкий hit ratio ВМЕСТЕ с eviction'ами > 0 (см. соседнюю панель «Evicted keys»). Если evictions = 0 — keyspace полностью в памяти, низкий hit rate объясняется короткими TTL rate/dedup-ключей и не требует действий.",
       "gridPos": {
         "h": 6,
         "w": 8,
