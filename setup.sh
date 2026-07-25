@@ -1336,11 +1336,27 @@ start_monitoring() {
 
     # Проверка, что основной стек запущен — obs-контейнерам нужна сеть
     # portal_internal и живой backend для scrape /metrics.
-    if ! docker compose ps --services --filter "status=running" 2>/dev/null \
-         | grep -qE '^(backend|nginx)$'; then
-        warn "Основной стек портала, похоже, не запущен (backend/nginx не найдены)."
-        warn "Observability-overlay требует сеть portal_internal и живой backend для scrape."
-        echo -e "  ${DIM}Сначала запустите портал (пункты 1/2/3), затем мониторинг.${RESET}"
+    #
+    # ВАЖНО: флаги -f нужно брать через compose_files_args + MODE_FILE. Если
+    # портал запущен через dev-overlay (docker-compose.dev.yml), то «голый»
+    # `docker compose ps` видит только базовый compose-проект и не находит
+    # dev-контейнеры — проверка ложно рапортовала «стек не запущен». См.
+    # аналогичный паттерн в pg_backup().
+    #
+    # Ищем именно сервис `backend` (ASGI-процесс, отдаёт /metrics) — НЕ worker
+    # (это ARQ, метрик не отдаёт) и НЕ nginx-config (это sidecar рендера
+    # конфига, а не сам nginx-сервер).
+    local -a compose_files
+    mapfile -t compose_files < <(compose_files_args "$(cat "$MODE_FILE" 2>/dev/null || echo prod)")
+
+    local running_services
+    running_services=$(docker compose "${compose_files[@]}" ps --services --filter "status=running" 2>/dev/null)
+
+    if ! grep -qx 'backend' <<<"$running_services"; then
+        warn "Сервис 'backend' (ASGI) не запущен — observability не сможет scrape'ить /metrics."
+        echo -e "  ${DIM}Запущенные сейчас: ${running_services//$'\n'/ }${RESET}"
+        echo -e "  ${DIM}NB: 'worker' — это ARQ (метрик не отдаёт); 'nginx-config' — sidecar, не сам nginx.${RESET}"
+        echo -e "  ${DIM}Сначала поднимите портал (пункты 1/2/3), затем мониторинг.${RESET}"
         echo
         read -r -p "  Всё равно продолжить? (y/N): " ans
         [[ "${ans,,}" == "y" ]] || { echo -e "  ${DIM}Отмена.${RESET}"; return 1; }
