@@ -6,7 +6,6 @@ Integration-тесты миграций Alembic.
 
 import asyncio
 import os
-import pathlib
 
 import asyncpg
 import pytest
@@ -31,23 +30,20 @@ def postgres_container():
 
 @pytest.fixture(scope="module")
 def migration_env(postgres_container):
-    """Готовит БД (init.sql) и возвращает (alembic_cfg, plain_url)."""
+    """Готовит БД и возвращает (alembic_cfg, plain_url).
+
+    init.sql НЕ выполняется вручную: образ portal-postgres:16 применяет его
+    автоматически при первом старте контейнера (init.sql запечён в образ через
+    /docker-entrypoint-initdb.d/01-init.sql, см. ADR-046). Раньше init.sql
+    доставлялся только bind-mount'ом (которого у testcontainers нет), поэтому
+    тест выполнял его сам — теперь это делает образ, ручное выполнение падало
+    бы с duplicate key (FTS-конфиг уже создан).
+    """
     url = postgres_container.get_connection_url()
     asyncpg_url = url.replace("postgresql://", "postgresql+asyncpg://", 1).replace(
         "psycopg2", "asyncpg"
     )
     plain_url = url.replace("postgresql+psycopg2://", "postgresql://").replace("+psycopg2", "")
-
-    init_sql = (pathlib.Path(__file__).parent.parent.parent / "migrations" / "init.sql").read_text()
-
-    async def _run_init():
-        conn = await asyncpg.connect(plain_url)
-        try:
-            await conn.execute(init_sql)
-        finally:
-            await conn.close()
-
-    asyncio.run(_run_init())
 
     cfg = Config()
     cfg.set_main_option("script_location", "migrations")

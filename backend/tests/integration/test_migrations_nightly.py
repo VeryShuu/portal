@@ -9,11 +9,8 @@ only manifest when the bootstrap order is exercised from scratch).
 
 from __future__ import annotations
 
-import asyncio
 import os
-import pathlib
 
-import asyncpg
 import pytest
 
 testcontainers = pytest.importorskip("testcontainers.postgres")
@@ -44,19 +41,10 @@ def test_alembic_upgrade_head_on_clean_container():
         plain_url = url.replace("postgresql+psycopg2://", "postgresql://").replace("+psycopg2", "")
         asyncpg_url = plain_url.replace("postgresql://", "postgresql+asyncpg://", 1)
 
-        init_sql = (
-            pathlib.Path(__file__).parent.parent.parent / "migrations" / "init.sql"
-        ).read_text()
-
-        async def _run_init():
-            conn = await asyncpg.connect(plain_url)
-            try:
-                await conn.execute(init_sql)
-            finally:
-                await conn.close()
-
-        asyncio.run(_run_init())
-
+        # init.sql НЕ выполняем вручную: образ portal-postgres:16 применяет его
+        # автоматически при первом старте (запечён в /docker-entrypoint-initdb.d/,
+        # см. ADR-046). Ручное выполнение упало бы с duplicate key (FTS-конфиг
+        # уже создан).
         cfg = Config()
         cfg.set_main_option("script_location", "migrations")
         cfg.set_main_option("sqlalchemy.url", asyncpg_url)
