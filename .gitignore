@@ -116,6 +116,7 @@ backend/tmp_data/
 
 # ===== Runtime (setup.sh) =====
 .portal-mode
+.portal-profile
 .env.backup.*
 
 # ===== Test artifacts =====

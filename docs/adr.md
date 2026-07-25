@@ -1429,3 +1429,86 @@ docker compose -f docker-compose.yml -f monitoring/docker-compose.monitoring.yml
 - Dev-окружения не затронуты: `IMAGE_PREFIX=` пустая сохраняет локальную сборку.
 - +1 CI-job (`publish-images`), ~8–12 мин на полный билд 6 образов (с кэшем ~3–5 мин), параллельно через matrix.
 
+## ADR-046: Разделение контуров dev/prod — prod без клона репозитория (июль 2026)
+
+**Статус:** Принято
+
+**Связь:** Расширяет и уточняет [ADR-045](#adr-045-ci-built-images-в-ghcr--pull-based-deploy-июль-2026). ADR-045 оставил в силе требование `git pull` на проде (для `docker-compose.yml`, `.env`, bind-mount'а `init.sql`); ADR-046 это требование снимает.
+
+**Контекст:**
+
+ADR-045 перевёл деплой на pull-based: образы едут из GHCR. Но на прод-сервере **по-прежнему требовался полный клон репозитория**, потому что три артефакта жилі в дереве исходников:
+
+1. `backend/migrations/init.sql` — bind-mount'ился в postgres как `/docker-entrypoint-initdb.d/01-init.sql:ro` (создаёт FTS-конфиг `russian_hunspell` и расширения при первом старте PG-кластера).
+2. `docker-compose.yml` + `.env` — читаются `docker compose` из CWD.
+3. `monitoring/docker-compose.monitoring.yml` + дерево `./monitoring/*` — для observability-overlay (см. ADR-044).
+
+Процедура обновления в `docs/deploy.md` §10.1 по-прежнему начиналась с `git pull --ff-only`, а `setup.sh::update_production()` делал то же самое. На прод-сервере оказывалось ~200 МБ дерева исходников (backend/frontend/nginx/postgres/screenshot-service, тесты, доки), которое **никогда не использовалось** для работы портала — только чтобы `docker compose` нашёл compose-файл и init.sql.
+
+Это противоречие (образы из registry, но репо всё равно клонируется целиком) хотелось закрыть: прод должен оперировать минимальным набором файлов, без дерева исходников, тестов, `.git`.
+
+**Решение:**
+
+Разделить два **контура** явно и сделать prod-контур самодостаточным без git-клона.
+
+1. **Запечь `init.sql` в postgres-образ.** Раньше hunspell-файлы (`russian.dict/.affix/.stop`) уже копировались в образ через `postgres/Dockerfile`, а SQL-инициализация (`CREATE EXTENSION`, `CREATE TEXT SEARCH CONFIGURATION`) — bind-mount'илась. Теперь `init.sql` тоже `COPY`'ится в `/docker-entrypoint-initdb.d/01-init.sql`. Образ `portal-postgres:16` становится self-contained. Скрипты в `/docker-entrypoint-initdb.d/*` выполняются **только при первом старте** (пустой `PGDATA`), так что на уже развёрнутых стендах повторного срабатывания не будет — это меняет только источник на новых стендах.
+
+   Чтобы COPY достал до `backend/migrations/init.sql`, build-context postgres поднят с `./postgres` на `.` (precedent: `frontend` уже собирается так). В корневой `.dockerignore` добавлен whitelist:
+   ```
+   !backend/migrations/init.sql
+   !postgres/Dockerfile
+   !postgres/hunspell/russian.stop
+   ```
+
+2. **Профиль контура (`.portal-profile`).** Машина фиксирует свой тип:
+   - `prod` — продакшен: deploy-bundle без клона репо, образы из GHCR (`IMAGE_PREFIX=ghcr.io/veryshuu/`), local-build заблокирован, dev/staging-пункты меню скрыты.
+   - `dev` — разработка/staging/CI: полный клон репо, локальная сборка, bind-mount'ы исходников, hot-reload.
+
+   Файл `.portal-profile` machine-local (в `.gitignore`, как `.portal-mode` и `.env`). Default при отсутствии — `dev` (backward-compatible: всё работает как до ADR-046). Профиль выбирается интерактивно в `setup_env()`; он же подставляет `IMAGE_PREFIX` в `.env` автоматически.
+
+   Внимание на разницу: `.portal-mode` хранит **последний запущенный режим** (prod/dev/staging), `.portal-profile` — **тип машины** (prod/dev). Семантически разные.
+
+3. **Гейты в `setup.sh` по профилю:**
+   - `run_compose()`: prod-контур + пустой `IMAGE_PREFIX` → явный err (local-build без исходников всё равно упал бы, но с непонятной ошибкой COPY).
+   - `show_menu()`: prod-контур скрывает п.2 (Разработка), п.3 (Стейджинг); dev-контур скрывает п.6 (Обновить Production).
+   - `main()` case 2/3/6: дублирующий guard на случай прямого ввода цифры.
+   - `gen-dev-files`: в prod-контуре блокируется (override'ы со ссылками на `./backend/*` там бессмысленны).
+   - `preflight()`: проверяет наличие `docker-compose.yml`, согласованность prod-профиля с `IMAGE_PREFIX`.
+   - `update_production()`: если `.git` отсутствует и контур prod — git-pull пропускается тихо (обновление конфигурации делается распаковкой нового bundle).
+
+4. **CI job `deploy-bundle`** (в `.github/workflows/ci.yml`): на релизном теге `v*` собирает tarball `portal-deploy-bundle-<tag>.tar.gz` с минимальным набором:
+   - `docker-compose.yml`, `.env.example`, `setup.sh`, `DEPLOY-BUNDLE-README.md`
+   - `monitoring/` целиком (overlay-конфиги + `node-exporter-textfile/` для локальной сборки `portal-storage-collector`, который не в registry)
+
+   Исключено: `backend/`, `frontend/`, `nginx/`, `postgres/`, `screenshot-service/`, тесты, `*.md` (кроме README bundle), `.git`, `monitoring/loki/rules/fake/` (тестовые данные), `monitoring/textfile/storage.prom` (runtime, генерируется на месте).
+
+   Tarball аттачится к GitHub Release через `softprops/action-gh-release@3bb12739` (SHA-pinned). Флоу на проде:
+   ```
+   gh release download v1.2.3 -p 'portal-deploy-bundle-*.tar.gz'
+   tar xzf portal-deploy-bundle-*.tar.gz -C /opt/portal
+   cd /opt/portal && ./setup.sh   # → п.5 (профиль prod) → п.1 (запуск)
+   ```
+
+**Альтернативы, рассмотренные и отвергнутые:**
+
+- **Shallow/sparse git clone на проде.** Меньше автоматизации, но всё ещё требовало git на прод-сервере и `.git`-каталог. Bundle через Release — полностью декларирует состав prod-окружения и не тащит git-инфраструктуру.
+- **Ручное копирование `docker-compose.yml` + `.env`.** Просто, но нет версионирования и не покрыт monitoring-overlay. Bundle с CI — воспроизводимо и привязано к релизному тегу.
+- **Запечь monitoring-overlay в отдельный образ.** Loki/Prometheus/Grafana уже тянутся из upstream-registry; overlay — это конфиги + одна локальная сборка `portal-storage-collector`. Запекать конфиги в образ ломает ADR-044 (конфиги редактируются через bind-mount без пересборки). Bundle сохраняет текущую модель.
+
+**Грабли / одноразовые шаги:**
+
+1. **Build-context postgres изменился с `./postgres` на `.`** — это видимое нарушение принципа «context = каталог сервиса». Обосновано: нужен COPY файла вне `./postgres`. Альтернатива (sym/hardlink `init.sql` в `./postgres/` перед сборкой) нарушила бы single-source-of-truth. Whitelist в `.dockerignore` удерживает context маленьким (только 3 файла из всего репо).
+2. **`init.sql` молча переименовывался в CI:** в compose-bind-mount целевое имя было `01-init.sql`, в CI-`docker run` — `00_init.sql`. После ADR-046 источник один (`COPY ... /docker-entrypoint-initdb.d/01-init.sql`), расхождение исчезло вместе с самими `-v`-mount'ами.
+3. **`.portal-profile` default `dev`** — намеренно. Существующие dev-машины и CI-раннеры работают без изменений (никто не создавал `.portal-profile` → `dev` → local-build). Только явный выбор «prod» при `setup_env` переключает машину в registry-режим.
+4. **Bundle ~80 КБ** (gzip), собирается за секунды. Не артефакт-гигант, не раздувает Release.
+
+**Последствия:**
+
+- Prod-сервер больше не требует git-клон репозитория: только deploy-bundle (~80 КБ) + образы из GHCR.
+- `init.sql` — в образе postgres; bind-mount убран из 5 точек (`docker-compose.yml`, `setup.sh` heredoc, `ci.yml` ×2, `nightly-{flakes,security}.yml`).
+- Dev/CI не затронуты: полный клон репо, `generate_dev_files()`, local-build, bind-mount'ы исходников — без изменений. `gen-dev-files` на CI-раннере работает как раньше (там dev-контур).
+- Воспроизводимость prod-окружения: bundle версии `v*` ↔ образы того же тега ↔ коммит того же SHA. Три источника согласованы релизным тегом.
+- +1 CI-job (`deploy-bundle`), запускается только на теге `v*`, ~30 сек.
+- Миграции (`migrate.sh`, compose-сервис `migrations`) — без изменений, работают из образа backend.
+
+

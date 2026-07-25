@@ -19,6 +19,29 @@ h2()   { echo; echo -e "  ${BOLD}$*${RESET}"; sep; }
 # ─── Файл с запомненным режимом ────────────────────────────────────────────────
 MODE_FILE=".portal-mode"
 
+# ─── Профиль контура (ADR-046) ────────────────────────────────────────────────
+# Отличается от MODE_FILE (последний запущенный режим): профиль фиксирует контур
+# машины — на чём мы работаем. Это решает вопрос «нужен ли клон репо» и «можно
+# ли тут собирать образы локально».
+#   prod  → deploy-bundle без клона репо; образы только из GHCR (IMAGE_PREFIX
+#           непустой); local-build заблокирован; dev/staging-пункты скрыты.
+#   dev   → полный клон репо; локальная сборка; мониторинг-overlay из дерева.
+PROFILE_FILE=".portal-profile"
+
+current_profile() {
+    # default dev — backward-compatible: без .portal-profile всё работает как
+    # раньше (локальная сборка из полного клона).
+    cat "$PROFILE_FILE" 2>/dev/null || echo "dev"
+}
+
+profile_label() {
+    case "$(current_profile)" in
+        prod) echo -e "${GREEN}prod${RESET} (deploy-bundle, registry)";;
+        dev)  echo -e "${CYAN}dev${RESET} (полный клон, local-build)";;
+        *)    echo -e "${DIM}не задан (≈dev)${RESET}";;
+    esac
+}
+
 current_mode_label() {
     if [[ -f "$MODE_FILE" ]]; then
         case "$(cat "$MODE_FILE")" in
@@ -39,19 +62,34 @@ show_menu() {
     echo -e "  ${BOLD}╔══════════════════════════════════════════════╗${RESET}"
     echo -e "  ${BOLD}║       Portal — управление развёртыванием     ║${RESET}"
     echo -e "  ${BOLD}╚══════════════════════════════════════════════╝${RESET}"
+    echo -e "  ${DIM}  Контур: $(profile_label)${RESET}"
     echo
+    local _profile
+    _profile=$(current_profile)
+
     echo -e "  ${BOLD}1.${RESET}  ${GREEN}Production${RESET}"
-    echo -e "  ${DIM}     Сборка production-образов и запуск. Nginx слушает порты из .env (80/443).${RESET}"
+    if [[ "$_profile" == "prod" ]]; then
+        echo -e "  ${DIM}     Pull production-образов из registry и запуск. Nginx слушает порты из .env (80/443).${RESET}"
+    else
+        echo -e "  ${DIM}     Сборка production-образов и запуск. Nginx слушает порты из .env (80/443).${RESET}"
+    fi
     echo
-    echo -e "  ${BOLD}2.${RESET}  ${CYAN}Разработка${RESET}"
-    echo -e "  ${DIM}     Сборка dev-образа (target=test): pytest, ruff, mypy, тесты внутри.${RESET}"
-    echo -e "  ${DIM}     Bind-mount исходников и tests/ для hot-reload (uvicorn --reload, 1 worker).${RESET}"
-    echo -e "  ${DIM}     PostgreSQL/Redis на 5432/6379, backend на :8000, ENVIRONMENT=development.${RESET}"
-    echo
-    echo -e "  ${BOLD}3.${RESET}  ${YELLOW}Стейджинг${RESET}"
-    echo -e "  ${DIM}     Production-образ + открытые порты для QA/k6/zap, nginx на 8080/8443,${RESET}"
-    echo -e "  ${DIM}     ENVIRONMENT=staging, уровень логов задаётся через Admin UI. Прод-near тестирование.${RESET}"
-    echo
+
+    # Пункты 2/3 (dev/staging) — только в dev-контуре. На prod-сервере
+    # (deploy-bundle без дерева исходников) локальная сборка невозможна,
+    # bind-mount'ов нет — запускать их бессмысленно. См. ADR-046.
+    if [[ "$_profile" != "prod" ]]; then
+        echo -e "  ${BOLD}2.${RESET}  ${CYAN}Разработка${RESET}"
+        echo -e "  ${DIM}     Сборка dev-образа (target=test): pytest, ruff, mypy, тесты внутри.${RESET}"
+        echo -e "  ${DIM}     Bind-mount исходников и tests/ для hot-reload (uvicorn --reload, 1 worker).${RESET}"
+        echo -e "  ${DIM}     PostgreSQL/Redis на 5432/6379, backend на :8000, ENVIRONMENT=development.${RESET}"
+        echo
+        echo -e "  ${BOLD}3.${RESET}  ${YELLOW}Стейджинг${RESET}"
+        echo -e "  ${DIM}     Production-образ + открытые порты для QA/k6/zap, nginx на 8080/8443,${RESET}"
+        echo -e "  ${DIM}     ENVIRONMENT=staging, уровень логов задаётся через Admin UI. Прод-near тестирование.${RESET}"
+        echo
+    fi
+
     # Подпись п.4 зависит от режима образов: на registry-проде тут pull
     # свежих тегов (на проде не собираем — ADR-045), локально — build --no-cache.
     if [[ -n "$(load_env_var IMAGE_PREFIX)" ]]; then
@@ -69,10 +107,16 @@ show_menu() {
     echo -e "  ${BOLD}5.${RESET}  Настроить / пересоздать .env"
     echo -e "  ${DIM}     Изменить пароли, порты, учётную запись администратора.${RESET}"
     echo
-    echo -e "  ${BOLD}6.${RESET}  ${GREEN}Обновить Production${RESET}"
-    echo -e "  ${DIM}     git pull → pg_dump (опц.) → docker compose pull → up -d.${RESET}"
-    echo -e "  ${DIM}     Миграции применяются автоматически. Текущий режим: $(current_mode_label).${RESET}"
-    echo
+
+    # Пункт 6 (update_production) — только в prod-контуре. На dev-машине
+    # «обновлять production» бессмысленно (тут нет прода). См. ADR-046.
+    if [[ "$_profile" == "prod" ]]; then
+        echo -e "  ${BOLD}6.${RESET}  ${GREEN}Обновить Production${RESET}"
+        echo -e "  ${DIM}     (git pull если есть клон) → pg_dump (опц.) → docker compose pull → up -d.${RESET}"
+        echo -e "  ${DIM}     Миграции применяются автоматически. Текущий режим: $(current_mode_label).${RESET}"
+        echo
+    fi
+
     echo -e "  ${BOLD}7.${RESET}  Перезапустить стек ${DIM}(без пересборки)${RESET}"
     echo -e "  ${DIM}     docker compose restart. Текущий режим: $(current_mode_label).${RESET}"
     echo
@@ -187,6 +231,39 @@ setup_env() {
         ok "Резервная копия сохранена."
     fi
 
+    # ── Профиль контура (ADR-046) ──────────────────────────────────────────────
+    # Профиль определяет, как именно работает эта машина — и влияет на режим
+    # образов по умолчанию (IMAGE_PREFIX в .env), и на какие пункты меню видны.
+    #   prod — продакшен-сервер: образов тут не собираем, тянем из GHCR;
+    #          клон репо не нужен (только deploy-bundle).
+    #   dev  — машина разработчика / staging с локальной сборкой: полный клон
+    #          репо, bind-mount исходников, hot-reload.
+    h2 "Контур машины (профиль)"
+    echo -e "  ${DIM}Профиль фиксирует тип машины и влияет на режим образов.${RESET}"
+    echo -e "  ${DIM}  prod — прод: образы из GHCR (ghcr.io/veryshuu/…), без клон репо${RESET}"
+    echo -e "  ${DIM}  dev  — разработка/staging: локальная сборка, полный клон репо${RESET}"
+    echo
+    local _cur_profile
+    _cur_profile=$(current_profile)
+    local _default_profile="${_cur_profile:-dev}"
+    local _profile_choice
+    read -r -p "  Контур [prod/dev] (по умолчанию ${_default_profile}): " _profile_choice
+    case "${_profile_choice,,}" in
+        prod)
+            echo "prod" > "$PROFILE_FILE"
+            DEFAULT_IMAGE_PREFIX="ghcr.io/veryshuu/"
+            ok "Профиль: ${GREEN}prod${RESET} — образы из GHCR, local-build заблокирован"
+            ;;
+        ""|"dev")
+            echo "dev" > "$PROFILE_FILE"
+            DEFAULT_IMAGE_PREFIX=""
+            ok "Профиль: ${CYAN}dev${RESET} — локальная сборка из клона репо"
+            ;;
+        *)
+            err "Неизвестный профиль '${_profile_choice}'. Допустимо: prod | dev"
+            ;;
+    esac
+
     # ── PostgreSQL ──────────────────────────────────────────────────────────────
     h2 "PostgreSQL — база данных"
     echo -e "  ${DIM}Имя базы и пользователя обычно оставляют по умолчанию (portal/portal).${RESET}"
@@ -282,9 +359,12 @@ setup_env() {
 
 # === Container images (registry) ===
 # IMAGE_PREFIX: пусто = локальная сборка образов из исходников (dev/staging);
-#   ghcr.io/veryshuu/ = pull готовых CI-образов (prod). См. ADR-045.
+#   ghcr.io/veryshuu/ = pull готовых CI-образов из GHCR (prod). См. ADR-045, ADR-046.
+# Значение зафиксировано выбором профиля при setup_env (см. .portal-profile):
+#   prod-контур → всегда ghcr.io/veryshuu/ (local-build заблокирован в setup.sh);
+#   dev-контур  → пусто (локальная сборка).
 # IMAGE_TAG: latest = последний успешный билд main; sha-XXXXXXX = точка отката.
-IMAGE_PREFIX=
+IMAGE_PREFIX=${DEFAULT_IMAGE_PREFIX}
 IMAGE_TAG=latest
 
 # === PostgreSQL ===
@@ -618,8 +698,8 @@ STAGEOF
 services:
   postgres-test:
     build:
-      context: ./postgres
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: postgres/Dockerfile
     image: portal-postgres:16
     restart: "no"
     environment:
@@ -636,8 +716,6 @@ services:
       - full_page_writes=off
     tmpfs:
       - /var/lib/postgresql/data
-    volumes:
-      - ./backend/migrations/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
     ports:
       - "5433:5432"
     healthcheck:
@@ -720,6 +798,16 @@ run_compose() {
     local image_prefix
     image_prefix=$(load_env_var IMAGE_PREFIX)
 
+    # ── Контурный guard (ADR-046) ────────────────────────────────────────────
+    # prod-контур (deploy-bundle, без дерева исходников) НЕ может собирать
+    # образы локально — Dockerfile'ов на машине нет. Только pull из registry.
+    # На случай, если оператор вручную обнулил IMAGE_PREFIX — блокируем рано,
+    # с понятным сообщением, а не позволяем docker compose падать на COPY.
+    if [[ "$(current_profile)" == "prod" && -z "$image_prefix" ]]; then
+        err "prod-контур требует IMAGE_PREFIX (registry pull). Уберите пустое значение" \
+            "в .env или пересоздайте .env через пункт «Настроить .env», выбрав профиль prod."
+    fi
+
     if [[ -n "$image_prefix" ]]; then
         # ── Registry-режим: pull, не сборка (ADR-045). ────────────────────────
         # no-cache тут — «тяни свежие теги принудительно» (без --quiet: покажем,
@@ -736,10 +824,12 @@ run_compose() {
         docker compose "${files[@]}" up -d
     elif [[ -n "$no_cache" ]]; then
         # ── Локальный режим + полная очистка. ─────────────────────────────────
+        # Достижимо только в dev-контуре (prod отсечён guard'ом выше).
         docker compose "${files[@]}" build --no-cache
         docker compose "${files[@]}" up -d
     else
         # ── Локальный режим, инкремент. ───────────────────────────────────────
+        # Достижимо только в dev-контуре (prod отсечён guard'ом выше).
         docker compose "${files[@]}" up -d --build
     fi
 }
@@ -1108,6 +1198,33 @@ preflight() {
     fi
     ok "docker compose v2: ok"
 
+    # ── Контур / файлы запуска (ADR-046) ─────────────────────────────────────
+    # docker-compose.yml обязателен в обоих контурах (полный клон или deploy-
+    # bundle). Без него docker compose падает с менее понятной ошибкой.
+    if [[ ! -f docker-compose.yml ]]; then
+        err "docker-compose.yml не найден в текущем каталоге." \
+            "Запускайте setup.sh из корня репозитория (dev) или из каталога," \
+            "куда распакован deploy-bundle (prod). См. ADR-046."
+    fi
+    ok "docker-compose.yml: найден"
+    echo -e "  ${DIM}Профиль контура: $(profile_label)${RESET}"
+
+    # ── prod-контур без IMAGE_PREFIX — противоречие (ADR-046) ───────────────
+    # prod-контур = deploy-bundle, дерева исходников нет → local-build
+    # невозможен. IMAGE_PREFIX обязан указывать на registry.
+    if [[ "$(current_profile)" == "prod" && -f .env ]]; then
+        local _pf_prefix
+        _pf_prefix=$(load_env_var IMAGE_PREFIX)
+        if [[ -z "$_pf_prefix" ]]; then
+            warn "prod-контур (.portal-profile=prod), но IMAGE_PREFIX пуст в .env."
+            warn "  Без исходников локальная сборка невозможна. Пересоздайте .env"
+            warn "  через пункт «Настроить .env», выбрав профиль prod."
+            fatal=1
+        else
+            ok "prod-контур / IMAGE_PREFIX='${_pf_prefix}': согласованы"
+        fi
+    fi
+
     # ── .env (кроме первого запуска) ─────────────────────────────────────────
     if [[ -f .env ]]; then
         # Проверяем обязательные ключи
@@ -1201,10 +1318,10 @@ update_production() {
     _ip=$(load_env_var IMAGE_PREFIX)
     if [[ -n "$_ip" ]]; then
         echo -e "  ${DIM}Режим образов: pull из registry (${_ip}…, тег=$(load_env_var IMAGE_TAG latest)).${RESET}"
-        echo -e "  ${DIM}Процедура: git pull → pg_dump (опционально) → compose pull → up -d.${RESET}"
+        echo -e "  ${DIM}Процедура: обновление конфигурации → pg_dump (опц.) → compose pull → up -d.${RESET}"
     else
         echo -e "  ${DIM}Режим образов: локальная сборка из исходников (IMAGE_PREFIX пуст).${RESET}"
-        echo -e "  ${DIM}Процедура: git pull → pg_dump (опционально) → compose build → up -d.${RESET}"
+        echo -e "  ${DIM}Процедура: git pull → pg_dump (опц.) → compose build → up -d.${RESET}"
     fi
     echo -e "  ${DIM}Миграции применятся автоматически при старте backend (scripts/migrate.sh).${RESET}"
     echo
@@ -1216,20 +1333,32 @@ update_production() {
         [[ "${answer,,}" == "y" ]] || exit 1
     }
 
-    # ── 2. git pull ───────────────────────────────────────────────────────────
-    echo -e "  ${BOLD}1/4. Git pull ...${RESET}"
-    if git rev-parse --is-inside-work-tree &>/dev/null; then
-        local branch
-        branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "main")
-        echo -e "  ${DIM}Текущая ветка: ${branch}${RESET}"
-        if ! git pull --ff-only 2>&1 | sed 's/^/  │ /'; then
-            warn "git pull --ff-only не удался (локальные коммиты или расхождение)."
-            warn "Разберитесь вручную: git status && git log --oneline -5"
-            err "Прерываю обновление."
-        fi
-        ok "git pull: ok"
+    # ── 2. Обновление конфигурации ───────────────────────────────────────────
+    # В dev-контуре (полный клон репо) — это git pull. В prod-контуре
+    # (deploy-bundle без клона) обновление конфигурации делается распаковкой
+    # свежего bundle перед запуском setup.sh — здесь этот шаг пропускаем.
+    # Подробности: ADR-046.
+    local _profile
+    _profile=$(current_profile)
+    if [[ "$_profile" == "prod" && ! -d .git ]]; then
+        echo -e "  ${BOLD}1/4. Конфигурация ...${RESET}"
+        echo -e "  ${DIM}prod-контур без клона репо — обновление конфигурации делается${RESET}"
+        echo -e "  ${DIM}распаковкой нового deploy-bundle (см. ADR-046). Пропускаю git pull.${RESET}"
     else
-        warn "Не в git-репозитории — пропускаю git pull."
+        echo -e "  ${BOLD}1/4. Git pull ...${RESET}"
+        if git rev-parse --is-inside-work-tree &>/dev/null; then
+            local branch
+            branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "main")
+            echo -e "  ${DIM}Текущая ветка: ${branch}${RESET}"
+            if ! git pull --ff-only 2>&1 | sed 's/^/  │ /'; then
+                warn "git pull --ff-only не удался (локальные коммиты или расхождение)."
+                warn "Разберитесь вручную: git status && git log --oneline -5"
+                err "Прерываю обновление."
+            fi
+            ok "git pull: ok"
+        else
+            warn "Не в git-репозитории — пропускаю git pull."
+        fi
     fi
 
     # ── 3. Backup ─────────────────────────────────────────────────────────────
@@ -1487,6 +1616,16 @@ start_monitoring() {
 main() {
     # Неинтерактивный режим для CI: сгенерировать dev/staging compose-оверрайды и выйти.
     if [[ "${1:-}" == "gen-dev-files" ]]; then
+        # gen-dev-files генерирует override'ы, которые bind-mount'ят дерево
+        # исходников (./backend, ./frontend, ...). На prod-сервере без клона
+        # репозитория эти override'ы бесполезны и запутают — явно запрещаем.
+        # CI гоняет gen-dev-files на runner'е с полным checkout'ом (dev-контур).
+        # См. ADR-046.
+        if [[ "$(current_profile)" == "prod" ]]; then
+            err "gen-dev-files доступен только в dev-контуре." \
+                "На prod-сервере (deploy-bundle) override'ы со ссылками на" \
+                "исходники бессмысленны."
+        fi
         generate_dev_files
         exit 0
     fi
@@ -1522,6 +1661,12 @@ main() {
             show_done prod
             ;;
         2)
+            # dev/staging-режимы требуют bind-mount исходников и локальную сборку
+            # — на prod-сервере (deploy-bundle) этого нет. См. ADR-046.
+            if [[ "$(current_profile)" == "prod" ]]; then
+                err "Режим разработки недоступен в prod-контуре." \
+                    "На прод-сервере нет дерева исходников для bind-mount и сборки."
+            fi
             check_existing_data
             create_dirs
             apply_sysctl
@@ -1535,6 +1680,10 @@ main() {
             show_done dev
             ;;
         3)
+            if [[ "$(current_profile)" == "prod" ]]; then
+                err "Режим стейджинга недоступен в prod-контуре." \
+                    "На прод-сервере нет дерева исходников для bind-mount и сборки."
+            fi
             check_existing_data
             create_dirs
             apply_sysctl
@@ -1592,6 +1741,12 @@ main() {
             echo
             ;;
         6)
+            # update_production имеет смысл только в prod-контуре (там где живёт
+            # прод-стек). На dev-машине «обновлять production» бессмысленно.
+            if [[ "$(current_profile)" != "prod" ]]; then
+                err "Пункт «Обновить Production» доступен только в prod-контуре." \
+                    "Эта машина не управляет продакшеном (см. .portal-profile, ADR-046)."
+            fi
             update_production
             ;;
         7)

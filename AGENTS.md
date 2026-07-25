@@ -6,7 +6,7 @@
 - Никаких костылей и временных решений — только качественный код по best practices.
 - Пиши тесты, проверяй их до и после правок кода.
 - При крупных изменениях — пересборка контейнеров без кэша (`docker compose build --no-cache <service>`). На проде образы не собираются локально — пушатся в GHCR через CI и тянутся `docker compose pull` (ADR-045); локальная сборка — только dev/staging.
-
+- **Prod-контур не требует клон репозитория** (ADR-046): образы из GHCR + deploy-bundle (`docker-compose.yml` + `.env.example` + `setup.sh` + `monitoring/`) из GitHub Release. Профиль контура фиксируется в `.portal-profile` (`prod`/`dev`, default `dev`); `setup.sh` гейтит пункты меню и блокирует local-build в prod-контуре. `init.sql` запечён в postgres-образ (`/docker-entrypoint-initdb.d/01-init.sql`), bind-mount убран.
 ---
 
 ## Приоритет инструкций (от высшего к низшему)
@@ -384,6 +384,7 @@ Chromium вынесен из бэкенда в `screenshot-service/` (aiohttp + 
 - **TLS:** `portal-nginx` не стартует без `system_data/certs/portal.crt` + `portal.key`. Dev — self-signed (см. `docs/deploy.md`).
 - **fastapi-limiter + starlette 1.x:** `app/core/limiter.py` содержит monkey-patch совместимости (ADR-043). **НЕ добавлять** `from __future__ import annotations` в этот файл — ломает FastAPI-интроспекцию `Request`/`Response` после патча → 422 на rate-limited endpoints.
 - **Образ backend вкомпилирован** (target `production`): volume-mount только для `/data/*`. После правок backend-кода в **dev** — `docker compose build backend`, иначе `restart` не подхватит изменения. На **проде** образы не собираются локально — CI пушит в GHCR, прод тянет `docker compose pull` (ADR-045). Это же касается сертификатов в `backend/certs/` — добавление/обновление `russian_trusted_root_ca.crt` требует пересборки образа (на проде — следующий CI-билд + pull).
+- **Prod без клона репо (ADR-046):** на прод-сервере нет дерева исходников — только deploy-bundle. После правок `init.sql`/`postgres/Dockerfile` (которые теперь запекают init.sql в образ) пересборка `portal-postgres` происходит в CI при следующем пуше в `main`; прод получает новый образ через `docker compose pull`. Локально правку можно проверить `docker build -t portal-postgres:16 -f postgres/Dockerfile .` (context = корень репо, не `./postgres`).
 - **`portal_base_url`** в `system.json` обязан включать scheme (`https://...`) — иначе CSRF Origin-проверка ломается → 403 на local login. Валидатор `_schemas.py` добавляет scheme автоматически, но при ручном редактировании — указывать явно.
 - **Russian Trusted Root CA (Минцифры):** не входит в Mozilla CA Bundle / `certifi`. Для TLS к российским endpoint'ам (MAX `*.max.ru`, Госуслуги, Сбер и т.д.) сертификат `backend/certs/russian_trusted_root_ca.crt` ставится в образ через `update-ca-certificates` (расширение обязано быть `.crt`). httpx-клиенты должны использовать `ssl.create_default_context()`, чтобы читать **системный** trust store, а не `certifi.where()` — иначе сертификат-фикс не сработает.
 

@@ -55,15 +55,32 @@
 
 ### Production
 
+На проде **клон репозитория не нужен** — образы едут из GHCR (ADR-045), а каркас запуска (compose, .env, setup.sh, monitoring-overlay) приезжает одним tarball из GitHub Release (ADR-046).
+
+```bash
+# 1. Скачать deploy-bundle (аттачится CI к каждому релизу v*):
+gh release download v1.2.3 -p 'portal-deploy-bundle-*.tar.gz'
+tar xzf portal-deploy-bundle-v1.2.3.tar.gz
+cd portal-deploy
+
+# 2. Положить TLS-сертификаты (см. docs/deploy.md §5):
+mkdir -p system_data/certs
+cp /path/to/portal.crt system_data/certs/
+cp /path/to/portal.key system_data/certs/
+
+bash setup.sh          # → п.5 (.env, выбрать профиль "prod") → п.1 (запуск)
+```
+
+Альтернатива (если прод historical держит полный клон):
 ```bash
 git clone https://github.com/VeryShuu/portal.git
 cd portal
-bash setup.sh          # создаёт папки, .env, спрашивает пароли
+bash setup.sh          # создаёт папки, .env, спрашивает пароли + профиль контура
 ```
 
-Режим образов задаётся в `.env` (см. ADR-045):
-- **`IMAGE_PREFIX=ghcr.io/veryshuu/`** — pull готовых CI-образов (рекомендуется для прода): `docker compose pull && docker compose up -d`.
-- **`IMAGE_PREFIX=` пусто** — локальная сборка из исходников: `docker compose up -d --build`.
+Режим образов задаётся в `.env` (см. ADR-045), `setup.sh` подставляет автоматически по выбранному профилю контура (ADR-046):
+- **`IMAGE_PREFIX=ghcr.io/veryshuu/`** (prod-контур) — pull готовых CI-образов: `docker compose pull && docker compose up -d`.
+- **`IMAGE_PREFIX=` пусто** (dev-контур) — локальная сборка из исходников: `docker compose up -d --build`.
 
 `setup.sh` (пункт «1. Production») сам выбирает режим по `IMAGE_PREFIX` в `.env`.
 

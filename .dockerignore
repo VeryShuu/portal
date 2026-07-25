@@ -12,6 +12,13 @@ docker-compose*.yml
 Makefile
 hunspell/
 
+# Whitelist: postgres-образ собирается с context="." (ADR-046), поэтому init.sql
+# и postgres/Dockerfile должны попасть в context. Корневые ignore-правила выше
+# отрезают backend/ и postgres/ целиком — выборочно возвращаем только нужное.
+!backend/migrations/init.sql
+!postgres/Dockerfile
+!postgres/hunspell/russian.stop
+
 frontend/node_modules/
 frontend/dist/
 frontend/.vite/

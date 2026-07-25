@@ -9,8 +9,8 @@ x-logging: &default-logging
 services:
   postgres:
     build:
-      context: ./postgres
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: postgres/Dockerfile
     image: ${IMAGE_PREFIX:-}portal-postgres:16
     restart: unless-stopped
     security_opt:
@@ -21,7 +21,6 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - ./base_data/postgres:/var/lib/postgresql/data
-      - ./backend/migrations/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-portal} -d ${POSTGRES_DB:-portal}"]
       interval: 10s

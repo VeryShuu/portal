@@ -76,15 +76,25 @@ Portal **никогда** не использует JWT пользователя
 
 ## 4. Заполнение `.env`
 
+> **Два способа получить файлы запуска** (см. ADR-046):
+> - **Prod (без клона репо):** скачать deploy-bundle из GitHub Release — `gh release download v1.2.3 -p 'portal-deploy-bundle-*.tar.gz'`, распаковать в каталог запуска. В bundle уже есть `.env.example`, `docker-compose.yml`, `setup.sh`, `monitoring/`.
+> - **Dev/staging (полный клон):** `git clone https://github.com/VeryShuu/portal.git` — все исходники для локальной сборки.
+
 ```bash
 cp .env.example .env
 # Открыть .env и заполнить:
+```
+
+Или через интерактивный мастер (рекомендуется для первого запуска — он же фиксирует профиль контура в `.portal-profile`):
+```bash
+./setup.sh   # → пункт 5 «Настроить / пересоздать .env»
 ```
 
 Обязательные (только bootstrap, см. ADR-037):
 - `POSTGRES_PASSWORD`, `REDIS_PASSWORD`, `SECRET_KEY` (≥32 симв.) — сгенерировать через `openssl rand -base64 32`.
 - `DATABASE_URL`, `REDIS_URL` собираются автоматически в `docker-compose.yml` из паролей выше.
 - `ADMIN_EMAIL`, `ADMIN_PASSWORD` — bootstrap первого admin'а (применяется один раз).
+- `IMAGE_PREFIX` — режим доставки образов (см. ADR-045, ADR-046): пусто = локальная сборка (dev/staging); `ghcr.io/veryshuu/` = pull готовых CI-образов (prod). `setup.sh` выставляет автоматически по выбранному профилю контура.
 
 После первого запуска войти через `/auth/local` под bootstrap-админом и в Admin UI настроить:
 - **Keycloak** (URL, realm, client_id, client_secret, sync-credentials) — раздел «Keycloak».
@@ -228,26 +238,50 @@ docker compose exec -T postgres \
 
 > **Рекомендованный путь:** `bash setup.sh` → пункт «6. Обновить Production».
 > Скрипт сам определяет режим (registry pull или локальная сборка) по `IMAGE_PREFIX`
-> в `.env`, делает `git pull`, опциональный `pg_dump`, и `compose up -d` с проверкой
+> в `.env`, делает обновление конфигурации (git pull если есть клон, либо ничего в
+> prod-контуре с deploy-bundle), опциональный `pg_dump`, и `compose up -d` с проверкой
 > миграций. Ниже — ручные процедуры для понимания и нестандартных случаев.
 
 ### 10.1 Обновление (registry pull — прод)
 
 Каждый push в `main` собирает и публикует образы в GHCR: теги `sha-<7симв>` (точная
-привязка к коммиту) и `latest` (указатель на HEAD main). См. ADR-045.
+привязка к коммиту) и `latest` (указатель на HEAD main). См. ADR-045. На релизном теге
+`v*` дополнительно аттачится deploy-bundle (ADR-046).
+
+#### 10.1.a Прод с deploy-bundle (без клона репо — ADR-046)
 
 ```bash
-# 1. Обновить конфиг compose / миграции (нужны актуальные docker-compose.yml,
-#    .env, alembic-файлы — миграции baked в образ, но compose/環境 живут в git).
-git pull --ff-only
+cd /opt/portal
+# 1. Скачать свежий bundle и распаковать поверх (с заменой compose/setup/monitoring):
+gh release download v1.2.3 -p 'portal-deploy-bundle-*.tar.gz'
+tar xzf portal-deploy-bundle-v1.2.3.tar.gz   # распакует в ./portal-deploy/
+cp -r portal-deploy/* . && rm -rf portal-deploy
 
 # 2. (Опционально) прицепить точный коммит вместо latest:
 #    IMAGE_TAG=sha-abc1234 в .env  — иначе остаётся latest.
 
-# 3. Pull новых образов + пересоздать контейнеры.
-#    setup.sh сделает обе команды; вручную:
+# 3. Pull новых образов + пересоздать контейнеры (setup.sh п.6 сделает обе команды):
+./setup.sh                       # → пункт 6 «Обновить Production»
+# или вручную:
 docker compose pull
-docker compose up -d         # migrations отработают сами (one-shot сервис)
+docker compose up -d             # migrations отработают сами (one-shot сервис)
+docker compose logs -f migrations
+```
+
+#### 10.1.b Прод с полным клоном репо (legacy)
+
+Если прод-сервер historically держит полный клон репо (профиль `dev`, либо `.portal-profile` отсутствует), процедура прежняя:
+
+```bash
+# 1. Обновить конфиг compose (нужны актуальные docker-compose.yml и .env;
+#    миграции baked в образ — alembic-файлы на хосте не нужны).
+git pull --ff-only
+
+# 2. (Опционально) IMAGE_TAG=sha-abc1234 в .env.
+
+# 3. Pull новых образов + пересоздать контейнеры:
+docker compose pull
+docker compose up -d             # migrations отработают сами
 docker compose logs -f migrations
 ```
 
@@ -291,7 +325,72 @@ file_*, fk-индексы). Перед откатом через эти реви
 
 ---
 
-## 11. Troubleshooting
+## 11. Prod-контур без git-клона (ADR-046)
+
+Полная процедура для прод-сервера, который **не держит клон репозитория**. Всё необходимое приезжает двумя путями: образы из GHCR (ADR-045) + deploy-bundle из Release (ADR-046).
+
+### Состав prod-окружения
+
+```
+/opt/portal/                    # каталог запуска (произвольный путь)
+├── docker-compose.yml          # из deploy-bundle
+├── .env                        # генерируется setup.sh или руками из .env.example
+├── .env.example                # из deploy-bundle
+├── .portal-profile             # 'prod' — фиксирует контур (machine-local, в .gitignore)
+├── .portal-mode                # 'prod' — последний запущенный режим (machine-local)
+├── setup.sh                    # из deploy-bundle
+├── DEPLOY-BUNDLE-README.md
+├── monitoring/                 # observability-overlay (ADR-044)
+│   ├── docker-compose.monitoring.yml
+│   ├── prometheus.yml, alerts/, alloy/, loki/, grafana/
+│   └── node-exporter-textfile/ # для локальной сборки portal-storage-collector
+├── base_data/                  # данные PostgreSQL/Redis (runtime)
+├── upload_data/                # пользовательские файлы (runtime)
+├── system_data/                # settings/secrets/certs/nginx_conf (runtime)
+└── backups/                    # pg_dump (runtime)
+```
+
+**Чего тут НЕТ (и не нужно):** `backend/`, `frontend/`, `nginx/Dockerfile`, `postgres/Dockerfile`, `screenshot-service/`, тесты, `*.md` (кроме README bundle), `.git`. Всё это живёт внутри образов из GHCR.
+
+### Профиль контура `.portal-profile`
+
+Машина фиксирует свой тип, чтобы `setup.sh` скрывал неприменимые пункты меню и блокировал local-build:
+
+| Значение | Контур | Поведение |
+|---|---|---|
+| `prod` | Продакшен | Образы из GHCR (`IMAGE_PREFIX=ghcr.io/veryshuu/`); local-build заблокирован; пункты «Разработка»/«Стейджинг» скрыты. |
+| `dev` | Разработка/staging/CI | Полный клон репо; локальная сборка; bind-mount'ы исходников; пункт «Обновить Production» скрыт. |
+| (отсутствует) | ≈ dev | Default для обратной совместимости — всё работает как до ADR-046. |
+
+Профиль выбирается при `setup.sh` → пункт 5 (интерактивный вопрос). Меняет файл и подставляет `IMAGE_PREFIX` в `.env` автоматически.
+
+Отличие от `.portal-mode`: `.portal-mode` хранит последний **запущенный режим** (prod/dev/staging), `.portal-profile` — **тип машины** (prod/dev). Семантически разные.
+
+### Первый запуск
+
+```bash
+cd /opt/portal
+gh release download v1.2.3 -p 'portal-deploy-bundle-*.tar.gz'
+tar xzf portal-deploy-bundle-v1.2.3.tar.gz
+cp -r portal-deploy/* . && rm -rf portal-deploy
+
+# TLS-сертификаты (если ещё нет):
+mkdir -p system_data/certs
+cp /path/to/portal.crt system_data/certs/
+cp /path/to/portal.key system_data/certs/
+chmod 600 system_data/certs/portal.key
+
+./setup.sh                       # → п.5 (настроить .env, выбрать профиль prod)
+                                 # → п.1 (запуск Production)
+```
+
+### Обновление
+
+См. §10.1.a.
+
+---
+
+## 12. Troubleshooting
 
 | Симптом | Проверка | Решение |
 |---------|----------|---------|
