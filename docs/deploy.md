@@ -246,7 +246,13 @@ docker compose exec -T postgres \
 
 Каждый push в `main` собирает и публикует образы в GHCR: теги `sha-<7симв>` (точная
 привязка к коммиту) и `latest` (указатель на HEAD main). См. ADR-045. На релизном теге
-`v*` дополнительно аттачится deploy-bundle (ADR-046).
+`v*` дополнительно публикуются семантические теги (`v1.2.3`, `v1.2`, `v1`) и аттачится
+deploy-bundle (ADR-046).
+
+> ⚠️ **Prod пинится к релизному тегу `v*`, не к `:latest`** (ADR-047, semver-lock).
+> Продакшен обновляется **только** при явной смене `IMAGE_TAG=v1.x.x` в `.env`.
+> `IMAGE_TAG=latest` в prod-контуре отвергается `setup.sh` (защита от implicit-deploy).
+> Релизный процесс для создателя: `./scripts/release.sh <ver>` (из клона репо).
 
 #### 10.1.a Прод с deploy-bundle (без клона репо — ADR-046)
 
@@ -257,10 +263,13 @@ gh release download v1.2.3 -p 'portal-deploy-bundle-*.tar.gz'
 tar xzf portal-deploy-bundle-v1.2.3.tar.gz   # распакует в ./portal-deploy/
 cp -r portal-deploy/* . && rm -rf portal-deploy
 
-# 2. (Опционально) прицепить точный коммит вместо latest:
-#    IMAGE_TAG=sha-abc1234 в .env  — иначе остаётся latest.
+# 2. ВЫСТАВИТЬ релизный тег в .env (обязательно для prod-контура, ADR-047):
+#    IMAGE_TAG=v1.2.3
+#    (доступные теги: gh release list --repo VeryShuu/portal)
+#    Если .env уже содержит нужный тег — шаг пропустить.
 
-# 3. Pull новых образов + пересоздать контейнеры (setup.sh п.6 сделает обе команды):
+# 3. Pull новых образов + пересоздать контейнеры (setup.sh п.6 сделает обе команды,
+#    плюс проверит существование тега в registry через docker manifest inspect):
 ./setup.sh                       # → пункт 6 «Обновить Production»
 # или вручную:
 docker compose pull
@@ -277,7 +286,8 @@ docker compose logs -f migrations
 #    миграции baked в образ — alembic-файлы на хосте не нужны).
 git pull --ff-only
 
-# 2. (Опционально) IMAGE_TAG=sha-abc1234 в .env.
+# 2. ВЫСТАВИТЬ релизный тег в .env (обязательно для prod-профиля, ADR-047):
+#    IMAGE_TAG=v1.2.3
 
 # 3. Pull новых образов + пересоздать контейнеры:
 docker compose pull
@@ -288,7 +298,7 @@ docker compose logs -f migrations
 ### 10.2 Обновление (локальная сборка — dev/staging)
 
 ```bash
-# .env: IMAGE_PREFIX=  (пусто)
+# .env: IMAGE_PREFIX=  (пусто), IMAGE_TAG может быть любым (gate не срабатывает в dev-контуре)
 git pull --ff-only
 docker compose up -d --build   # пересоберёт только изменившиеся образы
 docker compose logs -f migrations
@@ -297,12 +307,16 @@ docker compose logs -f migrations
 ### 10.3 Откат
 
 Откат образа — через `IMAGE_TAG` в `.env` (на проде), **не** через `git checkout`
-(последний не меняет образ, который бежит из registry):
+(последний не меняет образ, который бежит из registry). Предпочтительный путь —
+**предыдущий релизный тег** (`v1.x.y`); для точечной диагностики — `sha-<7симв>`:
 
 ```bash
-# 1. Узнать SHA предыдущего успешного CI-билда (вкладка Actions → publish-images).
-# 2. Установить его в .env:
-#    IMAGE_TAG=sha-abc1234
+# 1a. Узнать предыдущий релизный тег (предпочтительно):
+gh release list --repo VeryShuu/portal
+# 1b. ИЛИ точный коммит (вкладка Actions → publish-images, для диагностики):
+#     IMAGE_TAG=sha-abc1234
+# 2. Установить в .env:
+#    IMAGE_TAG=v1.2.2     (или sha-abc1234 для диагностики)
 docker compose pull
 docker compose up -d
 docker compose logs -f migrations
@@ -390,7 +404,97 @@ chmod 600 system_data/certs/portal.key
 
 ---
 
-## 12. Troubleshooting
+## 12. Миграция с :latest на semver-lock (ADR-047)
+
+Если существующий прод сейчас работает на `IMAGE_TAG=latest`, переход на semver-lock требует порядка: **сначала затегать и выставить тег на проде, потом мёрджить gate-код**. Иначе следующий `update_production` упадёт в `preflight` (что и есть сигнал «мигрируй»).
+
+### Шаг 1. Затегать текущее состояние прода как `v1.0.0` (ДО мерджа ADR-047)
+
+```bash
+# Из клона репо (dev-машина), на коммите, который сейчас фактически бежит на проде:
+git log --oneline -1 origin/main    # убедиться, что это тот самый коммит
+./scripts/release.sh 1.0.0          # валидирует semver, чистое дерево, синхрон с main,
+                                    # создаёт annotated tag и пушит
+# Альтернатива без скрипта (с тем же эффектом):
+# git tag -a v1.0.0 -m "Release v1.0.0"
+# git push origin v1.0.0
+```
+
+CI на теге `v1.0.0`:
+1. `validate-release-tag` — пройдёт (формат корректен, тег на main).
+2. `publish-images` — опубликует образы под тегами `v1.0.0`, `v1.0`, `v1` (+ `latest`, `sha-*`).
+3. `deploy-bundle` — соберёт и аттачит `portal-deploy-bundle-v1.0.0.tar.gz` к Release.
+
+**Проверка:** `gh release view v1.0.0 --repo VeryShuu/portal` должен показать tarball.
+
+### Шаг 2. Перевести прод на `v1.0.0`
+
+```bash
+cd <каталог-прода>
+
+# Снять контрольный SHA текущего образа (для отката, если что-то пойдёт не так):
+docker image inspect ghcr.io/veryshuu/portal-backend:latest --format '{{.Id}}' \
+  | tee ~/portal-image-id-pre-semver.txt
+
+# Опционально, но рекомендовано: бэкап БД
+docker compose exec -T postgres pg_dump -U portal -d portal | gzip > ~/portal-$(date +%Y%m%d).sql.gz
+
+# Выставить тег в .env
+sed -i 's/^IMAGE_TAG=.*/IMAGE_TAG=v1.0.0/' .env
+grep '^IMAGE_TAG=' .env    # проверить
+
+# Pull + up (пока БЕЗ нового setup.sh — старый не имеет gate)
+docker compose pull
+docker compose up -d
+docker compose logs -f migrations    # дождаться "exited 0"
+```
+
+**Верификация:**
+```bash
+curl -sk https://localhost/health
+docker compose images | grep portal-backend    # должно показать v1.0.0
+```
+
+**Откат (если v1.0.0 не завёлся):**
+```bash
+sed -i 's/^IMAGE_TAG=.*/IMAGE_TAG=latest/' .env   # вернуться к rolling
+docker compose pull && docker compose up -d
+```
+
+### Шаг 3. Мёрджить ADR-047 (gate активируется)
+
+Теперь, когда прод уже на `v1.0.0`, можно без риска мёрджить код ADR-047 (новый `setup.sh` с gate, CI `validate-release-tag`, `scripts/release.sh`). После мерджа:
+
+- CI продолжит пушить `:latest` (не убирали) — но прод его больше не возьмёт (`IMAGE_TAG=v1.0.0` в `.env`).
+- Следующий `update_production` пройдёт `preflight` корректно (gate видит `v1.0.0`, не `latest`).
+
+### Шаг 4. Релизный цикл после миграции
+
+```bash
+# Dev-машина: релиз новой версии
+./scripts/release.sh 1.1.0
+# → ждём зелёного CI (publish-images + deploy-bundle для v1.1.0)
+
+# Прод: обновление
+cd <каталог-прода>
+gh release download v1.1.0 -p 'portal-deploy-bundle-*.tar.gz'   # если на bundle
+tar xzf portal-deploy-bundle-v1.1.0.tar.gz && cp -r portal-deploy/* . && rm -rf portal-deploy
+sed -i 's/^IMAGE_TAG=.*/IMAGE_TAG=v1.1.0/' .env
+./setup.sh    # → п.6 «Обновить Production»
+```
+
+### Что изменилось семантически
+
+| | До ADR-047 | После ADR-047 |
+|---|---|---|
+| Что бежит на проде | `latest` (rolling, = HEAD main) | `v1.x.x` (явный pin) |
+| Выкатка новой версии | автоматически на следующий pull | только при смене `IMAGE_TAG` |
+| Откат | `IMAGE_TAG=sha-XXXXXXX` (искать SHA) | `IMAGE_TAG=v1.x.<пред>` (понятно) |
+| «Какая версия на проде» | `docker inspect` | одна строка в `.env` |
+
+---
+
+## 13. Troubleshooting
 
 | Симптом | Проверка | Решение |
 |---------|----------|---------|

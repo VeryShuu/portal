@@ -363,7 +363,10 @@ setup_env() {
 # Значение зафиксировано выбором профиля при setup_env (см. .portal-profile):
 #   prod-контур → всегда ghcr.io/veryshuu/ (local-build заблокирован в setup.sh);
 #   dev-контур  → пусто (локальная сборка).
-# IMAGE_TAG: latest = последний успешный билд main; sha-XXXXXXX = точка отката.
+# IMAGE_TAG: v1.x.x = релизный тег, ОБЯЗАТЕЛЕН для prod-контура (ADR-047, semver-lock).
+#   latest = последний успешный билд main (ТОЛЬКО dev/experiments; на проде запрещён);
+#   sha-XXXXXXX = точный коммит (для отката/диагностики).
+# Доступные теги: gh release list --repo VeryShuu/portal
 IMAGE_PREFIX=${DEFAULT_IMAGE_PREFIX}
 IMAGE_TAG=latest
 
@@ -795,8 +798,9 @@ run_compose() {
         *)       err "run_compose: неизвестный режим '$mode'" ;;
     esac
 
-    local image_prefix
+    local image_prefix image_tag
     image_prefix=$(load_env_var IMAGE_PREFIX)
+    image_tag=$(load_env_var IMAGE_TAG latest)
 
     # ── Контурный guard (ADR-046) ────────────────────────────────────────────
     # prod-контур (deploy-bundle, без дерева исходников) НЕ может собирать
@@ -818,6 +822,20 @@ run_compose() {
         else
             echo -e "  ${DIM}Pull образов из registry (${image_prefix}…) …${RESET}"
         fi
+
+        # Проверяем, что тег существует в registry ДО pull (ADR-047).
+        # docker compose pull на несуществующем теге выдаёт невнятное "manifest
+        # unknown" где-то в середине лога. Эта проверка даёт оператору сразу
+        # понятную ошибку с указанием тега и подсказкой, где посмотреть доступные.
+        # Проверяем backend (он используется 3 сервисами и всегда присутствует).
+        local _probe="${image_prefix}portal-backend:${image_tag}"
+        if ! docker manifest inspect "$_probe" >/dev/null 2>&1; then
+            err "Образ ${_probe} не найден в registry." \
+                "Проверьте IMAGE_TAG='${image_tag}' в .env. Доступные теги:" \
+                "  gh release list --repo VeryShuu/portal   (релизные v*)" \
+                "  gh api /users/VeryShuu/packages/container/portal-backend/versions  (все, включая sha-*)"
+        fi
+
         if ! docker compose "${files[@]}" pull 2>&1 | sed 's/^/  │ /'; then
             err "docker compose pull не удался. Проверьте IMAGE_PREFIX/IMAGE_TAG в .env и доступ к registry."
         fi
@@ -1222,6 +1240,20 @@ preflight() {
             fatal=1
         else
             ok "prod-контур / IMAGE_PREFIX='${_pf_prefix}': согласованы"
+        fi
+
+        # ── prod-контур + IMAGE_TAG=latest — implicit-deploy, запрещён (ADR-047).
+        # Прод обязан пиниться к релизному тегу v1.x.x. Иначе любой merge в main
+        # (включая AI-код) автоматически едет на прод — без явного решения.
+        local _pf_tag
+        _pf_tag=$(load_env_var IMAGE_TAG latest)
+        if [[ "$_pf_tag" == "latest" ]]; then
+            warn "prod-контур с IMAGE_TAG=latest — это implicit-deploy (запрещён, ADR-047)."
+            warn "  Любой merge в main автоматически уехал бы на прод. Укажите релизный тег:"
+            warn "    IMAGE_TAG=v1.x.x в .env  (доступные теги: gh release list --repo VeryShuu/portal)"
+            fatal=1
+        else
+            ok "prod-контур / IMAGE_TAG='${_pf_tag}': semver-lock активен (ADR-047)"
         fi
     fi
 

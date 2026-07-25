@@ -84,6 +84,17 @@ bash setup.sh          # создаёт папки, .env, спрашивает �
 
 `setup.sh` (пункт «1. Production») сам выбирает режим по `IMAGE_PREFIX` в `.env`.
 
+**Semver-lock (ADR-047):** prod-контур обязан пиниться к релизному тегу `IMAGE_TAG=v1.x.x` в `.env` (защита от implicit-deploy — `latest` в prod-профиле отвергается). Релизный процесс для создателя:
+
+```bash
+# Из клона репо (dev-машина), на синхронизированном с origin/main HEAD:
+./scripts/release.sh 1.5.0
+# → CI публикует образы под тегом v1.5.0 + аттачит deploy-bundle к Release
+# → на проде: IMAGE_TAG=v1.5.0 в .env → setup.sh п.6
+```
+
+Доступные теги: `gh release list --repo VeryShuu/portal`.
+
 После старта:
 - UI — `https://localhost/` (или `PORTAL_BASE_URL` из `.env`)
 - API docs — `https://localhost/api/docs`

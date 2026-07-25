@@ -786,6 +786,61 @@ jobs:
   # Тегирование: всегда sha-<7симв> + latest; при push tag v1.2.3 → +v1.2.3/v1.2/v1.
   # См. ADR-045 (CI-built images in GHCR + pull-based deploy).
   # ───────────────────────────────────────────────────────────────────────────
+  # ────────────────────────────────────────────────────────────────────────────
+  # validate-release-tag — gate перед publish на тегах v* (ADR-047).
+  #
+  # Semver-lock прода: прод обязан пиниться к релизному тегу v1.2.3. Чтобы
+  # оператор не мог протолкнуть в registry образ с некорректным тегом (v1.5,
+  # v1.2.3-rc без номера, release-1 и т.п.), валидируем формат И привязку
+  # тега к main ДО того, как publish-images запушит образы.
+  #
+  # Семантика needs: этот job skipped на main-push (if=только тег v*). Skipped
+  # dependency считается success в always() && success(), поэтому publish-images
+  # на main-push срабатывает как прежде. На теге v* — job обязан выполниться
+  # и пройти, иначе publish не запустится.
+  # ────────────────────────────────────────────────────────────────────────────
+  validate-release-tag:
+    name: validate / release tag (ADR-047)
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          # Нужна история main, чтобы проверить, что тег на коммите из main.
+          fetch-depth: 0
+
+      - name: Validate semver format
+        run: |
+          set -euo pipefail
+          ref_name="${GITHUB_REF_NAME:-}"
+          # Допустимо: v1.2.3 или v1.2.3-rc1 (release candidate с номером).
+          # Формат: v + X.Y.Z + опц. -rcN (N — номер). Согласовано с
+          # scripts/release.sh (defense-in-depth).
+          if [[ ! "$ref_name" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-rc[0-9]+)?$ ]]; then
+            echo "::error::Некорректный формат релизного тега: '${ref_name}'"
+            echo "::error::Допустимо: v1.2.3 или v1.2.3-rc1 (semver X.Y.Z с опц. -rcN)"
+            echo "::error::Используйте ./scripts/release.sh <version> — он валидирует до git tag."
+            exit 1
+          fi
+          echo "✓ Semver format OK: ${ref_name}"
+
+      - name: Verify tag is on a commit reachable from main
+        # Защита от тегирования случайной feature-ветки. Тег обязан указывать
+        # на коммит, который входит в историю main (включая сам HEAD main).
+        run: |
+          set -euo pipefail
+          sha="${GITHUB_SHA}"
+          # git branch --contains показывает ветки, в истории которых есть коммит.
+          # На CI пуш тега origin/main уже обновлён, поэтому проверка корректна.
+          if ! git branch -r --contains "$sha" | grep -qE 'origin/main$'; then
+            echo "::error::Тег ${GITHUB_REF_NAME} указывает на коммит ${sha:0:7},"
+            echo "::error::который НЕ входит в историю origin/main. Релизить можно"
+            echo "::error::только коммиты из main (см. scripts/release.sh)."
+            exit 1
+          fi
+          echo "✓ Tag ${GITHUB_REF_NAME} → commit ${sha:0:7} (on main)"
+
   publish-images:
     name: publish / GHCR images
     runs-on: ubuntu-latest
@@ -795,6 +850,8 @@ jobs:
     # при последующих сбоях в зависимостях.
     # В набор входят ВСЕ критичные job'ы (ADR-045 §2): lint/unit/integration/
     # e2e/smoke. Без них образ с упавшими интеграционными/e2e ушёл бы в GHCR.
+    # validate-release-tag добавлен для тегов v* (ADR-047): на main-push он
+    # skipped (success), на теге v* — обязан пройти.
     needs:
       - backend-lint
       - backend-unit
@@ -804,6 +861,7 @@ jobs:
       - frontend-e2e
       - compose-smoke
       - screenshot-unit
+      - validate-release-tag
     # Не на PR: билдим и пушим только main-коммиты и релизные теги.
     if: github.event_name == 'push' && always() && success()
     permissions:
