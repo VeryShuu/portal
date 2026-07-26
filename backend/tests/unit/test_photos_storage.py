@@ -657,8 +657,9 @@ def test_compute_blurhash_exception_returns_none(tmp_path):
     Тест обновлён: Image.open в реальности поднимает OSError для
     битых/нечитаемых файлов (PIL.UnidentifiedImageError — его подкласс).
     """
-    from PIL import UnidentifiedImageError  # noqa: F401 — re-exported через PIL
     from unittest.mock import MagicMock
+
+    from PIL import UnidentifiedImageError  # noqa: F401 — re-exported через PIL
 
     mock_bh = MagicMock()
     mock_bh.encode.side_effect = ValueError("bad image data")

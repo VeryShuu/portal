@@ -4267,7 +4267,9 @@ tests/unit/test_worker_email_outbox.py::TestHeaderInjection::test_from_crlf_stri
 tests/unit/test_worker_email_outbox.py::TestHeaderInjection::test_sanitize_header_helper
 tests/unit/test_worker_email_outbox.py::TestHeaderInjection::test_subject_crlf_stripped_meeting
 tests/unit/test_worker_email_outbox.py::TestHeaderInjection::test_to_crlf_stripped_generic
+tests/unit/test_worker_email_outbox.py::TestProcessEmailOutbox::test_lock_already_acquired_returns_zero
 tests/unit/test_worker_email_outbox.py::TestProcessEmailOutbox::test_no_claimed_returns_zero
+tests/unit/test_worker_email_outbox.py::TestProcessEmailOutbox::test_no_redis_in_context_returns_zero
 tests/unit/test_worker_email_outbox.py::TestProcessEmailOutbox::test_outer_exception_is_swallowed
 tests/unit/test_worker_email_outbox.py::TestProcessEmailOutbox::test_requeues_stale_sending_before_claim
 tests/unit/test_worker_email_outbox.py::TestProcessEmailOutbox::test_send_permanent_error_marks_failed
