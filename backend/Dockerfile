@@ -74,39 +74,9 @@ COPY alembic.ini ./
 RUN chmod +x /app/scripts/entrypoint.sh /app/scripts/migrate.sh /app/scripts/run_pytest_unit.sh /app/scripts/run_pip_audit.sh
 EXPOSE 8000
 
-FROM python:3.12-slim AS production
-
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1 \
-    DEBIAN_FRONTEND=noninteractive
-
-# Нативный retry apt-get вместо «sleep + повтор» — см. REVIEW-5.1.
-RUN echo 'Acquire::Retries "10";' > /etc/apt/apt.conf.d/80-retries \
-    && echo 'Acquire::http::Timeout "60";' >> /etc/apt/apt.conf.d/80-retries \
-    && echo 'Acquire::https::Timeout "60";' >> /etc/apt/apt.conf.d/80-retries \
-    && (sed -i 's|URIs: http://deb.debian.org|URIs: http://mirror.yandex.ru|g' /etc/apt/sources.list.d/debian.sources 2>/dev/null || true) \
-    && (sed -i 's|http://deb.debian.org|http://mirror.yandex.ru|g' /etc/apt/sources.list 2>/dev/null || true)
-
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
-        curl \
-        gosu \
-        redis-tools \
-        libmagic1 \
-        libpq5 \
-        libheif1 \
-        libde265-0 \
-        libjpeg62-turbo \
-        zlib1g \
-        libwebp7 \
-        ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
-
-# Российские доверенные CA (Минцифры) — см. комментарий в runtime-base выше
-# и backend/certs/README.md. Без этого MAX Bot API и другие российские сервисы
-# падают с CERTIFICATE_VERIFY_FAILED.
-COPY certs/*.crt /usr/local/share/ca-certificates/
-RUN update-ca-certificates
+# apt-packages, Russian CA certs, ENV и apt-mirror наследуются из runtime-base —
+# держим весь apt-установок и update-ca-certificates в одном месте (см. REVIEW M15).
+FROM runtime-base AS production
 
 COPY --from=prod-builder /install /usr/local
 

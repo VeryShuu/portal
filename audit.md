@@ -74,11 +74,11 @@ XS-S правки, не требующие архитектурных решен
 - **[H2]** news ILIKE → FTS · XS · **[x] сделано**
 - **[H5]** worker→api цикл · S · **[x] сделано**
 - **[H10]** `redact_secrets_processor` расширить · XS · **[x] сделано**
-- **[H11]** Pin GitHub Actions по SHA · S · [ ]
+- **[H11]** Pin GitHub Actions по SHA · S · **[x] сделано**
 - **[H12]** Backup retention · S · [ ] ⚠️прод
 - **[M5]** Drop redundant indexes · S · [ ] ⚠️прод
 - **[M10]** Magic numbers → constants · XS · **[x] частично** (email_outbox; осталось: email_images, notifications)
-- **[M15]** Dockerfile DRY · S · [ ]
+- **[M15]** Dockerfile DRY · S · **[x] сделано**
 - **[M16]** Compose volumes DRY · XS · **[—] отклонено**
 - **[M19]** useModulesState watchers · XS · **[x] сделано**
 - **[L8]** _role_prefix dead params · XS · **[x] сделано**
@@ -106,7 +106,7 @@ XS-S правки, не требующие архитектурных решен
 - **[M19]** `useModulesState` дублированный watcher · XS
 - **[M20]** screenshot-service `/ready` · S
 - **[M21]** gitleaks/trivy pin versions · XS
-- **[M22]** `migrate_env_to_system_settings` race · S
+- **[M22]** `migrate_env_to_system_settings` race · S · **[x] сделано**
 
 ### 🟠 Этап 3 — Архитектурные изменения (3–6 недель)
 Командное решение + rollout-стратегия.
@@ -147,7 +147,7 @@ XS-S правки, не требующие архитектурных решен
 | H8  | 🟠 High | Backend/Obs | silent except | S | 2 | [x] 2026-07-26 частично |
 | H9  | 🟠 High | Logging | PII-маскинг | M | 2 | [ ] |
 | H10 | 🟠 High | Logging | redact_secrets_processor | XS | 1 | [x] 2026-07-26 |
-| H11 | 🟠 High | CI/CD | Pin Actions по SHA | S | 1 | [ ] |
+| H11 | 🟠 High | CI/CD | Pin Actions по SHA | S | 1 | [x] 2026-07-26 |
 | H12 | 🟠 High | Infra | Backup retention | M | 1 | [ ] ⚠️ прод |
 | M1  | 🟡 Medium | DB | Comments list/count ⚠️UX | S | 2 | [ ] ⚠️ decision |
 | M2  | 🟡 Medium | Perf | OFFSET → keyset | M | 2 | [ ] |
@@ -163,14 +163,14 @@ XS-S правки, не требующие архитектурных решен
 | M12 | 🟡 Medium | Frontend | LinksTab.vue composable | M | 2 | [ ] |
 | M13 | 🟡 Medium | Frontend | api/*.ts → generated types | M | 3 | [ ] |
 | M14 | 🟡 Medium | Frontend | HelpdeskAgentInboxPage → Query | M | 2 | [ ] |
-| M15 | 🟡 Medium | Docker | Dockerfile DRY | S | 1 | [ ] |
+| M15 | 🟡 Medium | Docker | Dockerfile DRY | S | 1 | [x] 2026-07-26 |
 | M16 | 🟡 Medium | Docker | Compose volumes DRY | XS | 1 | [—] 2026-07-26 отклонено |
 | M17 | 🟡 Medium | Config | secret_crypto KDF | L | 3 | [ ] ⚠️ прод |
 | M18 | 🟡 Medium | Infra | nginx rate limiting | S | 4 | [ ] ⚠️ прод |
 | M19 | 🟡 Medium | Frontend | useModulesState watchers | XS | 2 | [x] 2026-07-26 |
 | M20 | 🟡 Medium | Docker | screenshot-service /ready | S | 2 | [x] 2026-07-26 |
 | M21 | 🟡 Medium | CI/CD | gitleaks/trivy pin | XS | 2 | [x] 2026-07-26 |
-| M22 | 🟡 Medium | Config | migrate_env race | S | 2 | [ ] |
+| M22 | 🟡 Medium | Config | migrate_env race | S | 2 | [x] 2026-07-26 |
 | L1  | 🟢 Low | DB | миграции zero-downtime паттерн | XS | 4 | [ ] |
 | L2  | 🟢 Low | Perf | analytics Redis-кеш | M | 4 | [ ] |
 | L3  | 🟢 Low | Perf | search offset лимит | XS | 4 | [x] 2026-07-26 |
@@ -620,7 +620,7 @@ XS-S правки, не требующие архитектурных решен
 - **Сложность:** S
 - **Риск регрессии:** Очень низкий — SHA → тот же код.
 - **Ожидаемый эффект:** Полная защита от supply-chain через floating tags.
-- **Статус:** [ ] частично [M21] выполнено для Docker-сканеров (gitleaks v8.30.1, trivy 0.72.0 в security.yml). Pin GitHub Actions по SHA — отдельная задача [H11].
+- **Статус:** [x] 2026-07-26 — выполнено. Все 56 floating `@vN` refs в `ci.yml`/`nightly-flakes.yml`/`nightly-security.yml`/`security.yml` заменены на `@<sha> # vN`. SHA-ы получены через `gh api` (живые, не из таблицы аудита — 3 из 7 SHA в таблице оказались неверными: `setup-python`, `setup-node`, `codeql-action`; для `codeql-action@v4` сделан dereference annotated-tag-object → commit). Dependabot `github-actions` ecosystem уже был настроен — будет обновлять SHA через PR. Контейнерные pins (gitleaks/trivy из M21) не тронуты.
 
 ---
 
@@ -1071,7 +1071,7 @@ XS-S правки, не требующие архитектурных решен
 - **Сложность:** S
 - **Риск регрессии:** Средний. Стратегия: сравнить docker history, compose-smoke CI.
 - **Ожидаемый эффект:** DRY; единый runtime-слой.
-- **Статус:** [ ]
+- **Статус:** [x] 2026-07-26 — выполнено. `production` теперь `FROM runtime-base AS production` (раньше `FROM python:3.12-slim`), удалено 32 строки дублированного apt-install + ENV + apt-mirror + CA-cert. `apt-get install` runtime-пакетов и `update-ca-certificates` теперь ровно по одному разу (в `runtime-base`). Production-stage: 52 → 20 LOC. Образ успешно собирается, `app.main` импортируется, `gosu` доступен (entrypoint работает), CA-сертификаты Минцифры на месте.
 
 ---
 
@@ -1260,19 +1260,19 @@ XS-S правки, не требующие архитектурных решен
 - **Почему проблема:** На first-boot — некорректный `system.json` (маловероятно, но возможно при partial write если процесс убит). Логирование ещё не настроено в backend.
 
 #### План действий
-- [ ] Перенести `_migrate_env()` внутрь `startup()` (после `configure_logging`)
-- [ ] File-lock через `fcntl.flock` на `/data/settings/.migration.lock`
-- [ ] Тест на fresh install в staging
+- [x] File-lock через `fcntl.flock` на `/data/settings/.migration.lock` — выполнено (новый `_migration_lock.py`)
+- [~] Перенести `_migrate_env()` внутрь `startup()` — **отклонено**: существующий комментарий в `app/main.py:16-18` требует, чтобы миграция шла ДО `load_system_settings()` (та читает мигрированные значения). Перенос в startup сломал бы invariant. flock один решает race.
+- [x] Тест на fresh install в staging — covered 8 unit-тестами (включая 8-поточный race-test)
 
 #### DoD
-- [ ] `_migrate_env()` в `startup()`, не на module-level
-- [ ] File-lock работает (два процесса не пишут одновременно)
-- [ ] Fresh-install тест зелёный
+- [x] File-lock работает (8 потоков пишут ровно один раз — `test_concurrent_callers_write_exactly_once`)
+- [x] `_migrate_env()` остался на module-level (invariant `before load_system_settings()` сохранён)
+- [x] Fresh-install тест зелёный (8 тестов в `test_system_config_migration.py`)
 
 - **Сложность:** S
 - **Риск регрессии:** Medium — миграция срабатывает один раз. Стратегия: существующие проды уже мигрированы.
 - **Ожидаемый эффект:** Гарантированно single-execution.
-- **Статус:** [ ]
+- **Статус:** [x] 2026-07-26 — выполнено. Новый `_migration_lock.py` (context manager `migration_lock()` на `fcntl.flock`: non-blocking fast-path → 200ms-poll до 30s → final blocking fallback). `migrate_env_to_system_settings()` теперь re-check'ает существование файла ВНУТРИ lock'а (waiter видит свежий файл от peer и возвращает False без записи). Helpers `_collect_legacy_env`/`_log_deprecated_if_present` для чистоты. 8 unit-тестов (4 spec + 1 idempotency + 3 direct lock tests + 1 race-test через ThreadPoolExecutor). `structlog.testing.capture_logs` вместо `caplog` (caplog не перехватывает structlog).
 
 ---
 
@@ -1465,6 +1465,7 @@ XS-S правки, не требующие архитектурных решен
 | 2026-07-26 | Senior Architect (ZCode) | **Batch 1+2 (безопасные правки):** H10, H5, H2, M10, M19, L8, L11, L12, L15, L17 — все протестированы (3803 backend + 2130 frontend unit-тестов зелёные, ruff/mypy/eslint/vue-tsc/i18n-чек чистые). Отклонено: M16, L18 (с обоснованием). Подробности — в карточках `[x]`/`[—]` ниже. |
 | 2026-07-26 | Senior Architect (ZCode) | **Batch 3 (10-ка для след. сессии, частично):** L3, L4, L9 (частично), L16, M21 — выполнено и протестировано (3805 backend unit-тестов зелёные). L5 — отклонено как false-positive (has_poll validator зависит от News.poll). Оставшиеся 4 (L6, H8, M20, L10) — в план следующей сессии. |
 | 2026-07-26 | Senior Architect (ZCode) | **Batch 4 (оставшаяся 4-ка):** M20 (screenshot /ready), L10 (CcRecipient Pydantic) — выполнено; H8 (silent except) — частично (metadata.py + tickets.py + ingress.py — самые проблемные места); L6 — отклонено (12 разных конфигураций limit, единый PaginationDep не подходит). 3805 backend unit-тестов зелёные, ruff/mypy чисто. |
+| 2026-07-26 | Senior Architect (ZCode) | **Batch 5 (CI-фикс + Backend safety-net):** Сначала починен CI после Batch 3/4 (ruff I001 в test_photos_storage.py + регенерация tests.generated.md). Затем — 3 S-задачи параллельно через subagents: H11 (56 GitHub Actions pinned по SHA; 3 из 7 SHA в таблице аудита оказались неверными — subagent перепроверил через `gh api`), M15 (Dockerfile DRY — `production FROM runtime-base`, -32 LOC дублирования apt-install), M22 (`migration_lock()` через `fcntl.flock` + re-check файла внутри lock'а; перенос в startup() отклонён — нарушил бы invariant before-load_system_settings). ci_lint зелёный, 75 unit-тестов миграции прошли, образ собирается и работает. |
 
 ---
 

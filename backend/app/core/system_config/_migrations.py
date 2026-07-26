@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os as _os
 from typing import Any
 
 from app.core.logging import get_logger
@@ -31,6 +32,38 @@ _LEGACY_ENV_MAP: dict[str, str] = {
 }
 
 
+def _collect_legacy_env() -> dict[str, str]:
+    """Return ``{ENV_VAR: raw_value}`` for every legacy env var currently set.
+
+    Empty/None values are treated as unset.
+    """
+    return {
+        env_key: _os.environ[env_key]
+        for env_key in _LEGACY_ENV_MAP
+        if _os.environ.get(env_key) not in (None, "")
+    }
+
+
+def _log_deprecated_if_present(present_legacy: dict[str, str]) -> None:
+    """Warn the operator that legacy env vars are being ignored.
+
+    Called when `system.json` already exists but legacy env vars still linger
+    in the environment — they're no longer read at runtime, so the operator
+    should remove them from `.env`.
+    """
+    if not present_legacy:
+        return
+    logger.warning(
+        "config.deprecated_env_vars_ignored",
+        vars=sorted(present_legacy.keys()),
+        note=(
+            "These env vars are deprecated — runtime settings are now "
+            "stored in /data/settings/system.json. Manage them via the "
+            "Admin UI and remove them from .env."
+        ),
+    )
+
+
 def migrate_env_to_system_settings() -> bool:
     """One-shot migration from legacy env vars to `system.json`.
 
@@ -46,62 +79,62 @@ def migrate_env_to_system_settings() -> bool:
     Safe to call multiple times — idempotent after first successful migration.
     Must be called BEFORE the first `load_system_settings()` for the migrated
     values to take effect on this process start.
+
+    Concurrency: the read-modify-write is serialized through a kernel-level
+    `flock` on `<settings_dir>/.migration.lock` (see `_migration_lock`). This
+    handles the `docker compose up` race where backend, worker and migrations
+    start in parallel and would otherwise all write `system.json`. The file
+    existence check is re-run *inside* the lock so a process that waited while
+    a peer migrated observes the freshly-created file and returns False.
     """
-    import os as _os
-
     from app.core import system_config as _root
+    from app.core.system_config._migration_lock import migration_lock
 
-    present_legacy = {
-        env_key: _os.environ[env_key]
-        for env_key in _LEGACY_ENV_MAP
-        if _os.environ.get(env_key) not in (None, "")
-    }
+    settings_file = _root._SYSTEM_SETTINGS_FILE
+    settings_dir = settings_file.parent
 
-    if _root._SYSTEM_SETTINGS_FILE.exists():
-        if present_legacy:
-            logger.warning(
-                "config.deprecated_env_vars_ignored",
+    with migration_lock(settings_dir):
+        # Re-check inside the lock — another process may have migrated
+        # while we were waiting. Both the legacy-env snapshot AND the
+        # file-existence check must be re-read here to avoid a stale view.
+        present_legacy = _collect_legacy_env()
+
+        if settings_file.exists():
+            _log_deprecated_if_present(present_legacy)
+            return False
+
+        if not present_legacy:
+            return False
+
+        kwargs: dict[str, Any] = {}
+        for env_key, raw_value in present_legacy.items():
+            field = _LEGACY_ENV_MAP[env_key]
+            kwargs[field] = raw_value
+
+        try:
+            data = SystemSettings(**kwargs)
+        except Exception as exc:
+            logger.error(
+                "config.env_migration_failed",
+                error=str(exc),
                 vars=sorted(present_legacy.keys()),
-                note=(
-                    "These env vars are deprecated — runtime settings are now "
-                    "stored in /data/settings/system.json. Manage them via the "
-                    "Admin UI and remove them from .env."
-                ),
             )
-        return False
+            return False
 
-    if not present_legacy:
-        return False
+        try:
+            _root._save_system_settings(data)
+        except Exception as exc:
+            logger.error(
+                "config.env_migration_persist_failed",
+                error=str(exc),
+                path=str(settings_file),
+            )
+            return False
 
-    kwargs: dict[str, Any] = {}
-    for env_key, raw_value in present_legacy.items():
-        field = _LEGACY_ENV_MAP[env_key]
-        kwargs[field] = raw_value
-
-    try:
-        data = SystemSettings(**kwargs)
-    except Exception as exc:
-        logger.error(
-            "config.env_migration_failed",
-            error=str(exc),
+        logger.info(
+            "config.env_migrated_to_json",
             vars=sorted(present_legacy.keys()),
+            path=str(settings_file),
+            note="Legacy env vars copied to system.json; remove them from .env on next deploy.",
         )
-        return False
-
-    try:
-        _root._save_system_settings(data)
-    except Exception as exc:
-        logger.error(
-            "config.env_migration_persist_failed",
-            error=str(exc),
-            path=str(_root._SYSTEM_SETTINGS_FILE),
-        )
-        return False
-
-    logger.info(
-        "config.env_migrated_to_json",
-        vars=sorted(present_legacy.keys()),
-        path=str(_root._SYSTEM_SETTINGS_FILE),
-        note="Legacy env vars copied to system.json; remove them from .env on next deploy.",
-    )
-    return True
+        return True
