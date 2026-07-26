@@ -1071,6 +1071,6 @@ jobs:
         # Pinned by SHA (supply-chain hardening): v2.6.2 — коммит 3bb12739.
         # У action contents: write (аттач asset'а к Release) — менее критичен,
         # чем packages:write, но для консистентности с publish-images пиним SHA.
-        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228
         with:
           files: portal-deploy-bundle-${{ github.ref_name }}.tar.gz
