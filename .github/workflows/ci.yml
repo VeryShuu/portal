@@ -294,7 +294,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     needs: [backend-coverage, frontend-unit]
-    if: github.event_name == 'pull_request' && always() && needs.backend-coverage.result == 'success'
+    # Только PR из того же репо (не из fork) — защита от fork-based
+    # exfiltration coverage-данных через PR-comment. У fork-PR
+    # github.event.pull_request.head.repo.full_name != github.repository.
+    if: github.event_name == 'pull_request' && always() && needs.backend-coverage.result == 'success' && github.event.pull_request.head.repo.full_name == github.repository
     permissions:
       contents: read
       pull-requests: write

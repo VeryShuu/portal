@@ -22,6 +22,12 @@ from email.utils import formatdate
 
 import aiofiles
 
+from app.core.constants import (
+    EMAIL_OUTBOX_DISPATCH_BATCH_SIZE as DISPATCH_BATCH_SIZE,
+)
+from app.core.constants import (
+    EMAIL_OUTBOX_STALE_SENDING_TIMEOUT_SECONDS as STALE_SENDING_TIMEOUT_SECONDS,
+)
 from app.core.database import AsyncSessionLocal
 from app.core.logging import get_logger
 from app.services.email_outbox import (
@@ -42,8 +48,10 @@ from app.worker.tasks.email_utils import (
 
 logger = get_logger(__name__)
 
-DISPATCH_BATCH_SIZE = 20
-STALE_SENDING_TIMEOUT_SECONDS = 600
+# Параметры диспетчеризации вынесены в централизованный реестр констант
+# (audit [M10]): когда понадобиться tuning без redeploy, можно вынести в
+# SystemSettings. Выше — re-export под короткими именами для обратной
+# совместимости с остальным кодом модуля.
 
 
 async def process_email_outbox(ctx: dict) -> int:

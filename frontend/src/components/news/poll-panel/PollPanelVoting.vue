@@ -239,14 +239,14 @@
       :loading="saving"
       @click="$emit('save')"
     >
-      {{ t('common.save', 'Сохранить') }}
+      {{ t('common.save') }}
     </n-button>
     <n-button
       v-if="showCancelButton"
       quaternary
       @click="$emit('cancel')"
     >
-      {{ t('common.cancel', 'Отмена') }}
+      {{ t('common.cancel') }}
     </n-button>
   </div>
 </template>

@@ -177,7 +177,8 @@ cd backend
 pip install ".[dev]"
 ruff check . && ruff format --check . && mypy app
 pytest tests/unit tests/security
-pytest tests/integration  # требует postgres + redis
+pytest tests/integration  # требует postgres + redis (DSN-based)
+./scripts/run-testcontainers-tests.sh  # миграции + local_auth (testcontainers-based)
 
 # Frontend
 cd frontend

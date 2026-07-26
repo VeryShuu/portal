@@ -3,7 +3,7 @@
 Чистая логика переходов без побочных эффектов и БД — её удобно
 unit-тестировать (см. ``tests/unit/test_helpdesk_lifecycle.py``). Рантайм-окна
 (``HELPDESK_REOPEN_WINDOW_DAYS`` и т.д.) лежат в ``app/core/constants.py``;
-правилаreopen из ``closed`` по времени enforcement-ятся здесь.
+правила reopen из ``closed`` по времени применяются здесь.
 """
 
 from __future__ import annotations

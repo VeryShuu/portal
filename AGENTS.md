@@ -101,9 +101,10 @@
 | Назначение | Команда |
 |---|---|
 | Тесты (unit) | `pytest tests/unit` |
-| Тесты (integration, нужен Docker) | `pytest tests/integration -m integration` |
+| Тесты (integration DSN-based) | `INTEGRATION_DB=true INTEGRATION_REDIS=true pytest tests/integration` — нужны поднятые postgres/redis (DSN-based, ~37 файлов) |
+| Тесты (integration testcontainers-based) | `./scripts/run-testcontainers-tests.sh` — миграции + local_auth (поднимают свою БД через Docker API; `test_helpdesk_ingress.py` гибридный — отдельно) |
 | Тесты (security) | `pytest tests/security -m security` |
-| Все тесты | `pytest` |
+| Все тесты | `pytest` (⚠️ integration-часть упадёт без Docker, см. `docs/testing.md` §«Две категории») |
 | Тесты с покрытием | `pytest --cov=app --cov-report=term-missing` |
 | Lint (проверка) | `ruff check .` |
 | Lint (автофикс) | `ruff check . --fix` |
@@ -386,7 +387,7 @@ portal/
 ├── backend/certs/             ← russian_trusted_root_ca.crt (Минцифры — для TLS к российским endpoint'ам; вкомпилируется в образ)
 ├── backend/scripts/           ← export_openapi, generate_{db_schema,api_contracts}_doc, create_audit_partitions,
 │                              ← ci_lint (локальный CI-эквивалент), migrate.sh (entrypoint), create_admin, backfill_news_covers
-├── scripts/                   ← release.sh (semver-релиз, ADR-047), mcp/ (wrapper'ы с секретами), test-integration.sh, ...
+├── scripts/                   ← release.sh (semver-релиз, ADR-047), mcp/ (wrapper'ы с секретами), test-integration.sh (DSN-stack), run-testcontainers-tests.sh (testcontainers-тесты), ...
 ├── backend/migrations/        ← init.sql (hunspell + FTS) + versions/ (001..084)
 ├── screenshot-service/        ← aiohttp + Playwright/Chromium (PDF/screenshot; main.py + cookie_utils.py)
 ├── nginx/                     ← Dockerfile, Dockerfile.config (sidecar), templates/, render-config.sh

@@ -215,15 +215,17 @@ load/                            ← k6
 
 ### Backend — все тесты
 
+> ⚠️ Integration-тесты делятся на **две категории** с разными требованиями к окружению (DSN-based vs testcontainers-based). Перед произвольным `pytest tests/integration` прочитайте раздел [«Две категории integration-тестов»](#две-категории-integration-тестов) ниже — иначе 4 testcontainers-файла упадут с `docker.errors.DockerException`.
+
 ```bash
 cd backend
 pip install -e ".[dev]"
-pytest                                 # unit + integration + security
-./scripts/run_pytest_unit.sh           # запуск unit-тестов
-./scripts/run_pytest_integration.sh    # запуск integration-тестов
+pytest                                 # unit + integration + security (⚠️ integration упадёт без Docker)
+./scripts/run_pytest_unit.sh           # запуск unit-тестов (без Docker, ~3-10s)
+./scripts/run_pytest_integration.sh    # запуск DSN-integration (нужна поднятая БД + Redis)
 pytest tests/unit                      # только unit (без Docker)
 pytest tests/security                  # только security (на in-memory app)
-INTEGRATION_DB=true INTEGRATION_REDIS=true pytest tests/integration
+INTEGRATION_DB=true INTEGRATION_REDIS=true pytest tests/integration  # ⚠️ только DSN-based; testcontainers-см. ниже
 pytest -m "not integration"            # unit + security без integration
 pytest -m unit_with_db                 # REVIEW-2.1 кандидаты с реальной БД
 pytest -n auto                         # параллельно через pytest-xdist
@@ -236,12 +238,32 @@ pytest --cov=app --cov-report=html     # покрытие → htmlcov/index.html
 
 ```bash
 # Из репозитория:
-docker compose exec backend /app/scripts/run_pytest_unit.sh           # unit
-docker compose exec backend /app/scripts/run_pytest_integration.sh    # unit + security + integration (INTEGRATION_DB=true INTEGRATION_REDIS=true)
-docker compose exec backend pytest tests/integration/test_news_db.py  # точечный прогон
+docker compose exec backend /app/scripts/run_pytest_unit.sh           # unit + security
+docker compose exec backend /app/scripts/run_pytest_integration.sh    # DSN-integration (INTEGRATION_DB=true INTEGRATION_REDIS=true)
+docker compose exec backend pytest tests/integration/test_news_db.py  # точечный прогон (DSN-based)
+./scripts/run-testcontainers-tests.sh                                 # testcontainers-based (см. ниже)
 ```
 
-Хелперы `./backend/scripts/run_pytest_unit.sh` и `./backend/scripts/run_pytest_integration.sh` гарантируют единообразие флагов (`--no-cov -p no:cacheprovider`) между локалкой и CI.
+Хелперы `./backend/scripts/run_pytest_unit.sh` и `./backend/scripts/run_pytest_integration.sh` гарантируют единообразие флагов (`--no-cov -p no:cacheprovider`) между локалкой и CI. `run_pytest_integration.sh` покрывает **только DSN-based** integration (он запускается в живом `portal-backend-1`, где нет docker.sock); для testcontainers-based используйте отдельный `./scripts/run-testcontainers-tests.sh`.
+
+#### Две категории integration-тестов
+
+> ⚠️ **Не все 41 integration-файл запустится из dev-контейнера** через `docker compose exec backend …`. Они делятся на две группы:
+>
+> | Категория | Как работает | Локальный запуск |
+> |---|---|---|
+> | **DSN-based** (~37 файлов: `test_news_db.py`, `test_analytics_db.py`, `test_kb_acl_integration.py`, `test_bookmarks_race.py`, …) | Подключается к **уже поднятой** portal-БД (`portal-postgres-1`, `portal-redis-1`) через `DATABASE_URL`/`REDIS_URL` из env контейнера | ✅ из dev-контейнера: `INTEGRATION_DB=true INTEGRATION_REDIS=true` |
+> | **testcontainers-based** (`test_migrations.py`, `test_local_auth.py`, `test_migrations_nightly.py`) | Сам поднимает **свежую** Postgres/Redis через `PostgresContainer(...)` — нужен доступ к Docker API (docker.sock), которого **намеренно нет** в dev-контейнере (проброс сокета = root на хосте) | ✅ через `./scripts/run-testcontainers-tests.sh` — запускает ephemeral-контейнер в host-сети с проброшенным сокетом (см. ниже). `test_helpdesk_ingress.py` — гибридный (testcontainers-IMAP + portal-БД), требует доп. env. |
+>
+> **`./scripts/run-testcontainers-tests.sh`** — локальный прогон testcontainers-тестов (миграции, local_auth). Запускает ephemeral-контейнер `portal-backend:dev` с `--network host` и проброшенным `docker.sock`, где testcontainers корректно поднимает sibling-Postgres. Не трогает живой portal-backend (host-сеть ломает DNS имён сервисов, поэтому не применимо к контейнеру из compose). Не требует локального python/deps.
+>
+> ```bash
+> ./scripts/run-testcontainers-tests.sh                                       # миграции + local_auth (≈2 мин)
+> ./scripts/run-testcontainers-tests.sh tests/integration/test_migrations.py  # один файл
+> NIGHTLY=true ./scripts/run-testcontainers-tests.sh                          # включить test_migrations_nightly
+> ```
+>
+> Если `docker compose exec backend run_pytest_integration.sh` падает на testcontainers-файлах с `docker.errors.DockerException: FileNotFoundError('/var/run/docker.sock)` — это **ожидаемое поведение окружения**, а не сломанный код. Используйте отдельный скрипт выше.
 
 ### Frontend — unit
 

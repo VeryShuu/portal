@@ -71,9 +71,9 @@ async def import_scan_run(ctx: dict, user_id: str) -> dict:
                 folder_cache[abs_str] = existing
                 return existing
 
-            from app.api.photos import folder_service
+            from app.services.photos_folder_naming import resolve_unique_fs_seg
 
-            fs_seg = await folder_service.resolve_unique_fs_seg(db, name=name, parent_id=parent_id)
+            fs_seg = await resolve_unique_fs_seg(db, name=name, parent_id=parent_id)
             parent_fs = (parent_folder.fs_path if parent_folder else "") or ""
             new_fs_path = f"{parent_fs}/{fs_seg}" if parent_fs else fs_seg
 

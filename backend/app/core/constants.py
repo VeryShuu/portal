@@ -62,3 +62,12 @@ HELPDESK_ATTACHMENT_ALLOWED_MIMES: frozenset[str] = frozenset(
 HELPDESK_INLINE_IMAGE_MIMES: frozenset[str] = frozenset(
     {"image/jpeg", "image/png", "image/gif", "image/webp"}
 )
+
+# ── Email outbox / диспетчеризация (docs/email.md) ──────────────────────────
+# Параметры cron'а process_email_outbox. Вынесены из worker/tasks/email_outbox.py
+# в централизованный реестр (audit [M10]) — раньше были захардкожены в воркере.
+# BATCH_SIZE — сколько PENDING-писем за один claim (FOR UPDATE SKIP LOCKED).
+# STALE_SENDING_TIMEOUT — через сколько секунд SENDING-письмо считается
+# зависшим (воркер упал во время SMTP) и перевыделяется watchdog'ом.
+EMAIL_OUTBOX_DISPATCH_BATCH_SIZE = 20
+EMAIL_OUTBOX_STALE_SENDING_TIMEOUT_SECONDS = 600

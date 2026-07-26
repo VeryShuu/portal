@@ -136,9 +136,17 @@ cd ./backend
 ruff check . && ruff format --check .
 mypy app
 pytest ./tests/unit ./tests/security
-# integration требует реальной БД + Redis:
+# integration DSN-based — требуют поднятой БД + Redis (dev-стек или CI):
 INTEGRATION_DB=true INTEGRATION_REDIS=true pytest ./tests/integration
+# integration testcontainers-based (миграции, local_auth) — отдельный скрипт,
+# т.к. им нужен docker.sock, которого нет в dev-контейнере:
+./scripts/run-testcontainers-tests.sh
 ```
+
+> ⚠️ Integration-тесты делятся на две категории с разными требованиями к окружению
+> (DSN-based vs testcontainers-based). См. [`./docs/testing.md`](./testing.md)
+> §«Две категории integration-тестов» — иначе часть файлов упадёт с
+> `docker.errors.DockerException`.
 
 ### Frontend
 ```bash

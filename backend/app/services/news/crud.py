@@ -53,10 +53,14 @@ async def get_news_list(
         stmt = stmt.where(News.is_pinned == is_pinned)
 
     if q:
-        from sqlalchemy import or_
-
-        pattern = f"%{q}%"
-        stmt = stmt.where(or_(News.title.ilike(pattern), News.body.ilike(pattern)))
+        # Полнотекстовый поиск через готовый GIN-индекс idx_news_fts
+        # (body_tsvector — generated column над coalesce(title,'') || coalesce(body,''),
+        # конфигурация russian_hunspell). Раньше был ILIKE '%q%' — Seq Scan по всей
+        # таблице включая огромное Markdown-поле body; websearch_to_tsquery использует
+        # GIN Bitmap scan + даёт бесплатную лемматизацию (см. audit [H2]).
+        # websearch_to_tsquery поддерживает кавычки/булевы операторы (UX-friendly).
+        tsq = func.websearch_to_tsquery("russian_hunspell", q)
+        stmt = stmt.where(News.body_tsvector.op("@@")(tsq))
 
     if user.role not in ("editor", "admin"):
         stmt = _targeting_filter(stmt, user)

@@ -45,6 +45,21 @@ SENSITIVE_KEY_SUBSTRINGS: tuple[str, ...] = (
     "jwt",
     "csrf",
     "bearer",
+    # Доменные секреты портала (см. audit [H10]):
+    # nc_service_app_password (Nextcloud service account, ADR-032),
+    # mailbox_password / imap_password (helpdesk IMAP),
+    # smtp_password, sync_client_secret (Keycloak sync).
+    "app_password",
+    "apppassword",
+    "nc_password",
+    "mailbox_password",
+    "smtp_password",
+    "imap_password",
+    # Общие криптографические ключи/идентификаторы клиентов.
+    "client_id",
+    "cert_key",
+    "ssl_key",
+    "private_key_data",
 )
 
 REDACTED = "***REDACTED***"

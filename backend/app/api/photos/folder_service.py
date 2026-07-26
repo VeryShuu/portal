@@ -12,50 +12,26 @@ from app.models.user import User
 from app.services import photos_folder_repo as folder_repo
 from app.services import photos_storage
 from app.services.photos_acl import require_folder_permission
+from app.services.photos_folder_naming import (
+    resolve_unique_fs_seg,
+    resolve_unique_slug,
+)
 
-from ._common import _slugify, _would_create_cycle, logger
+from ._common import _would_create_cycle, logger
 
-
-async def resolve_unique_slug(
-    db: AsyncSession,
-    *,
-    base_name: str,
-    parent_id: uuid.UUID | None,
-    exclude_id: uuid.UUID | None = None,
-) -> str:
-    base_slug = _slugify(base_name)
-    slug = base_slug
-    i = 1
-    while True:
-        if not await folder_repo.count_siblings_with_slug(
-            db, parent_id=parent_id, slug=slug, exclude_id=exclude_id
-        ):
-            return slug
-        i += 1
-        slug = f"{base_slug}-{i}"
-        if i > 9999:
-            return f"{base_slug}-{uuid.uuid4().hex[:8]}"
-
-
-async def resolve_unique_fs_seg(
-    db: AsyncSession,
-    *,
-    name: str,
-    parent_id: uuid.UUID | None,
-    exclude_id: uuid.UUID | None = None,
-) -> str:
-    fs_seg = photos_storage.sanitize_folder_name(name)
-    base_seg = fs_seg
-    used_segs = await folder_repo.fetch_sibling_fs_segments(
-        db, parent_id=parent_id, exclude_id=exclude_id
-    )
-    j = 2
-    while fs_seg in used_segs:
-        fs_seg = f"{base_seg} ({j})"
-        j += 1
-        if j > 9999:
-            return f"{base_seg}-{uuid.uuid4().hex[:8]}"
-    return fs_seg
+# Re-export из photos_folder_naming для backward-compat с существующими
+# импортами ``from app.api.photos.folder_service import resolve_unique_*``.
+# Имена явно перечислены в __all__, чтобы mypy распознавал их как публичный
+# API модуля (без этого --strict экспорт через import даёт attr-defined).
+__all__ = (
+    "apply_cover_photo",
+    "apply_folder_move",
+    "apply_folder_rename",
+    "commit_with_fs_rename",
+    "resolve_new_parent",
+    "resolve_unique_fs_seg",
+    "resolve_unique_slug",
+)
 
 
 async def resolve_new_parent(

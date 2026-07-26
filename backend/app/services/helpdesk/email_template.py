@@ -191,15 +191,13 @@ def _wrap(
 # ── Блок таймлайна ───────────────────────────────────────────────────────────
 
 
-def _role_prefix(*, is_outbound: bool, is_assignee: bool) -> str:
+def _role_prefix() -> str:
     """Префикс перед именем автора сообщения: единое «Сообщение от — » для всех
     (и агента, и заявителя). Роль/направление больше не различаются — имя автора
     само по себе идентифицирует отправителя.
 
     Раньше было «Исполнитель — »/«Специалист поддержки — » для outbound и пусто
     для inbound (заявителя). По запросу унифицировано: «Сообщение от — {ФИО}».
-    ``is_outbound``/``is_assignee`` сохранены в сигнатуре для совместимости
-    вызовов, но не используются.
     """
     label = "Сообщение от"
     return f'<span style="color:{_ROLE_LABEL};font-weight:400;">{_esc(label)} — </span>'
@@ -268,17 +266,10 @@ def render_history_block(
     больше не влияет на префикс (унифицированное «Сообщение от — » для всех).
     """
     is_outbound = msg.direction == "outbound"
-    author_user_id = getattr(msg, "author_user_id", None)
-    is_assignee = (
-        is_outbound
-        and author_user_id is not None
-        and assignee_user_id is not None
-        and author_user_id == assignee_user_id
-    )
     who = _esc(msg.author_name or msg.author_email or "?")
     body = _message_body_html(msg)
     attachments_html = _attachments_html(msg)
-    role_prefix = _role_prefix(is_outbound=is_outbound, is_assignee=is_assignee)
+    role_prefix = _role_prefix()
     return _timeline_block(
         who=who,
         body=body,
@@ -577,13 +568,8 @@ def render_reply_email(
     # Блок ответа агента — таймлайн outbound-стиля: префикс «Сообщение от — » +
     # accent-имя, единый визуальный язык с историей.
     # Тело — основным цветом (не secondary), чтобы ответ визуально лидировал.
-    # Дата/время не выводятся (по запросу — дата есть в письме).
-    is_assignee_reply = (
-        assignee_user_id is not None
-        and message_author_user_id is not None
-        and assignee_user_id == message_author_user_id
-    )
-    role_prefix = _role_prefix(is_outbound=True, is_assignee=is_assignee_reply)
+    # Дата/время не выводаются (по запросу — дата есть в письме).
+    role_prefix = _role_prefix()
     body_html = _timeline_block(
         who=_esc(message_author),
         body=agent_body_html,

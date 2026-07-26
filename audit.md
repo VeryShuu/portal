@@ -69,17 +69,24 @@
 ### 🟢 Этап 1 — Quick Wins (1–2 дня, низкий риск)
 XS-S правки, не требующие архитектурных решений. Параллелятся.
 
-- **[C1]** `.env.example` дефолт-секреты + валидатор `Settings` · XS · критично
-- **[C2]** Redis `user:` в compose · S · критично
-- **[H2]** news ILIKE → FTS · XS
-- **[H5]** worker→api цикл · S
-- **[H10]** `redact_secrets_processor` расширить · XS
-- **[H11]** Pin GitHub Actions по SHA · S
-- **[H12]** Backup retention · S
-- **[M5]** Drop redundant indexes · S
-- **[M10]** Magic numbers → constants · XS
-- **[M15]** Dockerfile DRY · S
-- **[M16]** Compose volumes DRY · XS
+- **[C1]** `.env.example` дефолт-секреты + валидатор `Settings` · XS · критично · [ ] ⚠️прод
+- **[C2]** Redis `user:` в compose · S · критично · [ ] ⚠️прод
+- **[H2]** news ILIKE → FTS · XS · **[x] сделано**
+- **[H5]** worker→api цикл · S · **[x] сделано**
+- **[H10]** `redact_secrets_processor` расширить · XS · **[x] сделано**
+- **[H11]** Pin GitHub Actions по SHA · S · [ ]
+- **[H12]** Backup retention · S · [ ] ⚠️прод
+- **[M5]** Drop redundant indexes · S · [ ] ⚠️прод
+- **[M10]** Magic numbers → constants · XS · **[x] частично** (email_outbox; осталось: email_images, notifications)
+- **[M15]** Dockerfile DRY · S · [ ]
+- **[M16]** Compose volumes DRY · XS · **[—] отклонено**
+- **[M19]** useModulesState watchers · XS · **[x] сделано**
+- **[L8]** _role_prefix dead params · XS · **[x] сделано**
+- **[L11]** docstring typo · XS · **[x] сделано**
+- **[L12]** PollPanelVoting i18n fallback · XS · **[x] сделано**
+- **[L15]** proxy_connect_timeout · XS · **[x] сделано**
+- **[L17]** coverage-comment fork guard · XS · **[x] сделано**
+- **[L18]** logging non-blocking · XS · **[—] отклонено**
 
 ### 🟡 Этап 2 — Средний рефакторинг (1–2 недели)
 Требуют characterization-тестов, локализованы.
@@ -128,39 +135,39 @@ XS-S правки, не требующие архитектурных решен
 
 | ID  | Приоритет | Категория | Задача | Сложн. | Этап | Статус |
 |-----|-----------|-----------|--------|--------|------|--------|
-| C1  | 🔴 Critical | Config/Sec | `.env.example` дефолт-секреты | XS | 1 | [ ] |
-| C2  | 🔴 Critical | Docker/Sec | Redis от root | S | 1 | [ ] |
+| C1  | 🔴 Critical | Config/Sec | `.env.example` дефолт-секреты | XS | 1 | [ ] ⚠️ прод |
+| C2  | 🔴 Critical | Docker/Sec | Redis от root | S | 1 | [ ] ⚠️ прод |
 | H1  | 🟠 High | Security | SSRF favicon | M | 2 | [ ] |
-| H2  | 🟠 High | DB/Perf | news ILIKE → FTS | XS | 1 | [ ] |
+| H2  | 🟠 High | DB/Perf | news ILIKE → FTS | XS | 1 | [x] 2026-07-26 |
 | H3  | 🟠 High | DB/Perf | audit metadata::text → jsonb GIN | S | 2 | [ ] |
 | H4  | 🟠 High | Backend | Sync I/O в async | M | 3 | [ ] |
-| H5  | 🟠 High | Architecture | worker→api цикл | S | 1 | [ ] |
-| H6  | 🟠 High | Architecture | EventType enum half-done | M/S | 3 | [ ] |
+| H5  | 🟠 High | Architecture | worker→api цикл | S | 1 | [x] 2026-07-26 |
+| H6  | 🟠 High | Architecture | EventType enum half-done | M/S | 3 | [ ] ⚠️ decision |
 | H7  | 🟠 High | Code Smell | Primitive Obsession (строки) | M | 3 | [ ] |
 | H8  | 🟠 High | Backend/Obs | silent except | S | 2 | [ ] |
 | H9  | 🟠 High | Logging | PII-маскинг | M | 2 | [ ] |
-| H10 | 🟠 High | Logging | redact_secrets_processor | XS | 1 | [ ] |
+| H10 | 🟠 High | Logging | redact_secrets_processor | XS | 1 | [x] 2026-07-26 |
 | H11 | 🟠 High | CI/CD | Pin Actions по SHA | S | 1 | [ ] |
-| H12 | 🟠 High | Infra | Backup retention | M | 1 | [ ] |
-| M1  | 🟡 Medium | DB | Comments list/count ⚠️UX | S | 2 | [ ] |
+| H12 | 🟠 High | Infra | Backup retention | M | 1 | [ ] ⚠️ прод |
+| M1  | 🟡 Medium | DB | Comments list/count ⚠️UX | S | 2 | [ ] ⚠️ decision |
 | M2  | 🟡 Medium | Perf | OFFSET → keyset | M | 2 | [ ] |
 | M3  | 🟡 Medium | Perf | Batch INSERT outbox | M | 2 | [ ] |
 | M4  | 🟡 Medium | Perf | meetings limit=100 | S | 2 | [ ] |
-| M5  | 🟡 Medium | DB | Drop redundant indexes | S | 1 | [ ] |
+| M5  | 🟡 Medium | DB | Drop redundant indexes | S | 1 | [ ] ⚠️ прод |
 | M6  | 🟡 Medium | Code Smell | `_ingest_message` Long Method | M | 2 | [ ] |
 | M7  | 🟡 Medium | Code Smell | helpdesk email/notification sprawl | M | 3 | [ ] |
 | M8  | 🟡 Medium | Code Smell | analytics boilerplate | S-M | 3 | [ ] |
 | M9  | 🟡 Medium | Architecture | keycloak_admin God Module | M | 2 | [ ] |
-| M10 | 🟡 Medium | Code Smell | Magic numbers | XS | 1 | [ ] |
-| M11 | 🟡 Medium | Architecture | Service Locator → DI | M | 3 | [ ] |
+| M10 | 🟡 Medium | Code Smell | Magic numbers | XS | 1 | [x] 2026-07-26 |
+| M11 | 🟡 Medium | Architecture | Service Locator → DI | M | 3 | [ ] ⚠️ decision |
 | M12 | 🟡 Medium | Frontend | LinksTab.vue composable | M | 2 | [ ] |
 | M13 | 🟡 Medium | Frontend | api/*.ts → generated types | M | 3 | [ ] |
 | M14 | 🟡 Medium | Frontend | HelpdeskAgentInboxPage → Query | M | 2 | [ ] |
 | M15 | 🟡 Medium | Docker | Dockerfile DRY | S | 1 | [ ] |
-| M16 | 🟡 Medium | Docker | Compose volumes DRY | XS | 1 | [ ] |
-| M17 | 🟡 Medium | Config | secret_crypto KDF | L | 3 | [ ] |
-| M18 | 🟡 Medium | Infra | nginx rate limiting | S | 4 | [ ] |
-| M19 | 🟡 Medium | Frontend | useModulesState watchers | XS | 2 | [ ] |
+| M16 | 🟡 Medium | Docker | Compose volumes DRY | XS | 1 | [—] 2026-07-26 отклонено |
+| M17 | 🟡 Medium | Config | secret_crypto KDF | L | 3 | [ ] ⚠️ прод |
+| M18 | 🟡 Medium | Infra | nginx rate limiting | S | 4 | [ ] ⚠️ прод |
+| M19 | 🟡 Medium | Frontend | useModulesState watchers | XS | 2 | [x] 2026-07-26 |
 | M20 | 🟡 Medium | Docker | screenshot-service /ready | S | 2 | [ ] |
 | M21 | 🟡 Medium | CI/CD | gitleaks/trivy pin | XS | 2 | [ ] |
 | M22 | 🟡 Medium | Config | migrate_env race | S | 2 | [ ] |
@@ -171,17 +178,23 @@ XS-S правки, не требующие архитектурных решен
 | L5  | 🟢 Low | Perf | news selectinload(poll) | XS | 4 | [ ] |
 | L6  | 🟢 Low | Code Smell | Pagination Deps | XS | 4 | [ ] |
 | L7  | 🟢 Low | Security | keycloak_admin allowlist | M | 4 | [ ] |
-| L8  | 🟢 Low | Code Smell | _role_prefix dead params | XS | 4 | [ ] |
+| L8  | 🟢 Low | Code Smell | _role_prefix dead params | XS | 4 | [x] 2026-07-26 |
 | L9  | 🟢 Low | Code Smell | openpyxl Feature Envy | XS | 4 | [ ] |
 | L10 | 🟢 Low | Code Smell | CcRecipient Pydantic | S | 4 | [ ] |
-| L11 | 🟢 Low | Docs | опечатки в docstrings | XS | 4 | [ ] |
-| L12 | 🟢 Low | i18n | PollPanelVoting fallback | XS | 4 | [ ] |
+| L11 | 🟢 Low | Docs | опечатки в docstrings | XS | 4 | [x] 2026-07-26 |
+| L12 | 🟢 Low | i18n | PollPanelVoting fallback | XS | 4 | [x] 2026-07-26 |
 | L13 | 🟢 Low | Frontend | useFilesData type cast | S | 4 | [ ] |
 | L14 | 🟢 Low | Docker | digest pinning | S | 4 | [ ] |
-| L15 | 🟢 Low | Infra | proxy_connect_timeout | XS | 4 | [ ] |
+| L15 | 🟢 Low | Infra | proxy_connect_timeout | XS | 4 | [x] 2026-07-26 |
 | L16 | 🟢 Low | Config | _get_fernet thread-safety | XS | 4 | [ ] |
-| L17 | 🟢 Low | CI/CD | coverage-comment fork guard | XS | 4 | [ ] |
-| L18 | 🟢 Low | Docker | logging non-blocking mode | XS | 4 | [ ] |
+| L17 | 🟢 Low | CI/CD | coverage-comment fork guard | XS | 4 | [x] 2026-07-26 |
+| L18 | 🟢 Low | Docker | logging non-blocking mode | XS | 4 | [—] 2026-07-26 отклонено |
+
+### Условные обозначения статусов
+- `[x]` — выполнено и проверено (тесты + lint зелёные)
+- `[—]` — отклонено с обоснованием (см. карточку)
+- `⚠️ прод` — требует действий на продакшене (см. раздел «Инструкция для продакшена»)
+- `⚠️ decision` — требует решения команды перед реализацией
 
 ---
 
@@ -216,7 +229,7 @@ XS-S правки, не требующие архитектурных решен
 - **Сложность:** XS
 - **Риск регрессии:** Очень низкий — существующие проды не затронуты.
 - **Ожидаемый эффект:** Защита новых деплоев от «забыл сменить дефолт».
-- **Статус:** [ ]
+- **Статус:** [ ] ⚠️ прод — см. раздел «Инструкция для продакшена»
 
 ---
 
@@ -243,7 +256,7 @@ XS-S правки, не требующие архитектурных решен
 - **Сложность:** S
 - **Риск регрессии:** Низкий. Стратегия: blue-green — проверить `id redis` в образе, поднять второй redis-контейнер с `user:`, прогнать healthcheck, переключить.
 - **Ожидаемый эффект:** blast-radius компрометации Redis: root → unprivileged.
-- **Статус:** [ ]
+- **Статус:** [ ] ⚠️ прод — см. раздел «Инструкция для продакшена»
 
 ---
 
@@ -319,7 +332,7 @@ XS-S правки, не требующие архитектурных решен
 - **Сложность:** XS
 - **Риск регрессии:** Низкий.
 - **Ожидаемый эффект:** 10–100× на росте; бесплатная лемматизация.
-- **Статус:** [ ]
+- **Статус:** [x] 2026-07-26 — выполнено (services/news/crud.py:55-64)
 
 ---
 
@@ -413,7 +426,7 @@ XS-S правки, не требующие архитектурных решен
 - **Сложность:** S
 - **Риск регрессии:** Низкий.
 - **Ожидаемый эффект:** Worker не зависит от FastAPI/HTTP; isolation ↑; cold-start быстрее.
-- **Статус:** [ ]
+- **Статус:** [x] 2026-07-26 — выполнено (новый services/photos_folder_naming.py, folder_service.py re-export, import_scan.py:74)
 
 ---
 
@@ -574,7 +587,7 @@ XS-S правки, не требующие архитектурных решен
 - **Сложность:** XS
 - **Риск регрессии:** Очень низкий (additive).
 - **Ожидаемый эффект:** Покрытие реальных секретов портала.
-- **Статус:** [ ]
+- **Статус:** [x] 2026-07-26 — выполнено (logging.py:29-59)
 
 ---
 
@@ -630,7 +643,7 @@ XS-S правки, не требующие архитектурных решен
 - **Сложность:** M
 - **Риск регрессии:** Низкий.
 - **Ожидаемый эффект:** Реализуемая стратегия восстановления; защита от потери хоста.
-- **Статус:** [ ]
+- **Статус:** [ ] ⚠️ прод — см. раздел «Инструкция для продакшена»
 
 ---
 
@@ -766,7 +779,7 @@ XS-S правки, не требующие архитектурных решен
 - **Сложность:** S
 - **Риск регрессии:** Низкий, но требует EXPLAIN ANALYZE каждого затронутого запроса.
 - **Ожидаемый эффект:** Меньше writes, меньше planning time.
-- **Статус:** [ ]
+- **Статус:** [ ] ⚠️ прод — см. раздел «Инструкция для продакшена»
 
 ---
 
@@ -913,7 +926,7 @@ XS-S правки, не требующие архитектурных решен
 - **Сложность:** XS
 - **Риск регрессии:** Low.
 - **Ожидаемый эффект:** Тюнинг без redeploy; единое место magic-numbers.
-- **Статус:** [ ]
+- **Статус:** [x] 2026-07-26 — частично выполнено (email_outbox constants → core/constants.py). Остальные magic numbers (email_images, notifications) — в следующей итерации.
 
 ---
 
@@ -1086,7 +1099,7 @@ XS-S правки, не требующие архитектурных решен
 - **Сложность:** XS
 - **Риск регрессии:** Низкий.
 - **Ожидаемый эффект:** Поддерживаемость, единый source of truth.
-- **Статус:** [ ]
+- **Статус:** [—] 2026-07-26 — отклонено (см. раздел «Отклонённые задачи»)
 
 ---
 
@@ -1122,7 +1135,7 @@ XS-S правки, не требующие архитектурных решен
 - **Сложность:** L (с key-versioning)
 - **Риск регрессии:** Высокий — инвалидирует существующие шифр-тексты. Стратегия: blue-green, v1+v2并存, миграция.
 - **Ожидаемый эффект:** Современная деривация; возможность ротации.
-- **Статус:** [ ] ⚠️ high risk
+- **Статус:** [ ] ⚠️ прод + high risk — см. раздел «Инструкция для продакшена»
 
 ---
 
@@ -1155,7 +1168,7 @@ XS-S правки, не требующие архитектурных решен
 - **Сложность:** S
 - **Риск регрессии:** Средний. Стратегия: generous burst, мониторить неделю.
 - **Ожидаемый эффект:** Defence-in-depth для backend и auth.
-- **Статус:** [ ]
+- **Статус:** [ ] ⚠️ прод — нужен мониторинг 429 после ввода
 
 ---
 
@@ -1185,7 +1198,7 @@ XS-S правки, не требующие архитектурных решен
 - **Сложность:** XS
 - **Риск регрессии:** Низкий.
 - **Ожидаемый эффект:** Устранение гонки.
-- **Статус:** [ ]
+- **Статус:** [x] 2026-07-26 — выполнено (useModulesState.ts:93-115)
 
 ---
 
@@ -1316,7 +1329,7 @@ XS-S правки, не требующие архитектурных решен
 - **Где:** `backend/app/services/helpdesk/email_template.py:194-205` + call-sites `:281, :586`
 - **Что найдено:** Параметры `is_outbound`, `is_assignee` сохранены «для совместимости», не используются.
 - **Действие:** Удалить параметры + call-sites.
-- **Сложность:** XS · **Статус:** [ ]
+- **Сложность:** XS · **Статус:** [x] 2026-07-26 — выполнено (email_template.py:194-205 + 2 call-сайта, попутно почищены неиспользуемые локальные `is_assignee`/`is_assignee_reply`)
 
 ### [L9] — Feature Envy: `directories.build_xlsx` + `analytics.py` openpyxl-стилизация
 - **Категория:** Code Smell
@@ -1337,14 +1350,14 @@ XS-S правки, не требующие архитектурных решен
 - **Где:** `backend/app/services/helpdesk/lifecycle.py:5-7`
 - **Что найдено:** `"правилаreopen из closed по времени enforcement-яются здесь"`.
 - **Действие:** Поправить: «правила reopen из closed по времени применяются здесь».
-- **Сложность:** XS · **Статус:** [ ]
+- **Сложность:** XS · **Статус:** [x] 2026-07-26 — выполнено (lifecycle.py:5-6)
 
 ### [L12] — `PollPanelVoting.vue`: мёртвый i18n fallback
 - **Категория:** i18n
 - **Где:** `frontend/src/components/news/poll-panel/PollPanelVoting.vue:242,249`
 - **Что найдено:** `t('common.save', 'Сохранить')` — второй аргумент (fallback) никогда не сработает, ключ существует.
 - **Действие:** Убрать второй аргумент: `t('common.save')`.
-- **Сложность:** XS · **Статус:** [ ]
+- **Сложность:** XS · **Статус:** [x] 2026-07-26 — выполнено (PollPanelVoting.vue:242,249 — оба `common.save` и `common.cancel`)
 
 ### [L13] — `useFilesData.ts`: `reactive({...refs}) as unknown as UseFilesData`
 - **Категория:** Frontend
@@ -1365,7 +1378,7 @@ XS-S правки, не требующие архитектурных решен
 - **Где:** `nginx/templates/proxy_locations.conf.tmpl:47-61`
 - **Что найдено:** Указаны `proxy_read_timeout 300s`, `proxy_send_timeout 300s`, но `proxy_connect_timeout` default 60s.
 - **Действие:** Добавить `proxy_connect_timeout 10s;` для `/api/`.
-- **Сложность:** XS · **Статус:** [ ]
+- **Сложность:** XS · **Статус:** [x] 2026-07-26 — выполнено (proxy_locations.conf.tmpl:57-61)
 
 ### [L16] — `secret_crypto._get_fernet()` module-level cache без thread-safety
 - **Категория:** Configuration
@@ -1379,14 +1392,14 @@ XS-S правки, не требующие архитектурных решен
 - **Где:** `.github/workflows/ci.yml:292-337`
 - **Что найдено:** `pull-requests: write` без `if: github.event.pull_request.head.repo.full_name == github.repository`.
 - **Действие:** Добавить fork-guard + branch protection на main.
-- **Сложность:** XS · **Статус:** [ ]
+- **Сложность:** XS · **Статус:** [x] 2026-07-26 — выполнено (ci.yml:297 — добавлен fork-guard в `if`)
 
 ### [L18] — Docker logging driver без `mode: non-blocking`
 - **Категория:** Docker
 - **Где:** `docker-compose.yml:1-7` (`x-logging`)
 - **Что найдено:** `json-file` без `mode: non-blocking` — subtle backpressure при verbose-логах.
 - **Действие:** Добавить `mode: "non-blocking"`, `max-buffer-size: "4m"` для backend/worker.
-- **Сложность:** XS · **Статус:** [ ]
+- **Сложность:** XS · **Статус:** [—] 2026-07-26 — отклонено (см. раздел «Отклонённые задачи»)
 
 ---
 
@@ -1444,3 +1457,98 @@ XS-S правки, не требующие архитектурных решен
 | Дата | Кто | Что сделано |
 |---|---|---|
 | 2026-07-26 | Senior Architect (ZCode) | Первичное создание плана. 40 находок, 4 этапа, все карточки с DoD. |
+| 2026-07-26 | Senior Architect (ZCode) | **Batch 1+2 (безопасные правки):** H10, H5, H2, M10, M19, L8, L11, L12, L15, L17 — все протестированы (3803 backend + 2130 frontend unit-тестов зелёные, ruff/mypy/eslint/vue-tsc/i18n-чек чистые). Отклонено: M16, L18 (с обоснованием). Подробности — в карточках `[x]`/`[—]` ниже. |
+
+---
+
+## Инструкция для продакшена (задачи, требующие действий на проде)
+
+> Эти задачи нельзя выполнить «молча» через CI/CD — они требуют координированных
+> действий оператора продакшена. Текст ниже — готовый runbook.
+
+### Перед началом
+- Прочитать `docs/deploy.md` (ADR-045/046/047 — registry-pull, deploy-bundle, semver-lock).
+- Создать резервную копию БД (`setup.sh` → backup) **перед** любым изменением.
+- Проверить, что в `.env` продакшена стоят уже изменённые значения (не дефолты из `.env.example`).
+
+### Очередность внедрения (предлагаемая)
+1. **C1 (.env.example)** — безопасно для текущего прода (он не трогает существующий `.env`), но защищает новые деплои. Можно в любой момент.
+2. **C2 (Redis user)** — требует рестарта redis-контейнера. Делать в maintenance window.
+3. **M5 (drop redundant indexes)** — миграция `CONCURRENTLY`, без блокировок, но проверять нагрузку.
+4. **H12 (backup retention)** — безопасно, добавляет только cron-job.
+5. **M17 (secret_crypto KDF)** — самый рискованный, требует blue-green migration. Делать последним.
+
+### Подробные runbook'и по каждой задаче
+
+#### [C1] — `.env.example` дефолт-секреты
+**Что меняется в коде:** `.env.example` получит пустые значения по умолчанию + `Settings` начнёт валидировать block-list для `SECRET_KEY`/`ADMIN_PASSWORD` в production-режиме.
+
+**Что нужно сделать на проде:**
+1. Убедиться, что в `/path/to/portal/.env`:
+   - `SECRET_KEY` — не `change_me_32_chars_minimum_secret_key_here` (это просто проверить: `grep SECRET_KEY .env`)
+   - `ADMIN_PASSWORD` — не `change_me_on_first_login`
+   - Если да — сгенерировать новые: `openssl rand -hex 48` для SECRET_KEY; для admin-пароля — сменить через Admin UI после старта.
+2. Применить обновлённый образ (стандартный `docker compose pull && docker compose up -d`).
+3. Если валидатор `Settings` упадёт со словами «SECRET_KEY matches known default» — это значит, что прод использует дефолт. Срочно сменить и перезапустить.
+
+**Откат:** вернуть старый `.env` + старый образ. Данные не затронуты.
+
+#### [C2] — Redis от root
+**Что меняется в коде:** в `docker-compose.yml` сервис `redis` получит `user: "999:999"` (UID redis-юзера в alpine-образе).
+
+**Что нужно сделать на проде:**
+1. Перед деплоем проверить UID: `docker run --rm redis:7-alpine id redis` → должно вывести `uid=999(redis) gid=999(redis)`. Если другое число — поменять в compose.
+2. Проверить, кто владелец `/tmp/redis.acl` после старта: если root-owned и redis-юзер не может прочитать — нужно скорректировать entrypoint (детали — в карточке C2).
+3. Деплой: `docker compose pull redis && docker compose up -d redis`.
+4. Проверка: `docker compose exec redis id` → `uid=999(redis)`; `docker compose exec redis redis-cli -a $REDIS_PASSWORD ping` → `PONG`.
+5. Проверить, что приложение работает (логин, любая операция с session_id).
+
+**Откат:** убрать `user:` из compose, `docker compose up -d redis`. Данные не затронуты.
+
+#### [M5] — Drop redundant indexes
+**Что меняется в коде:** миграция с `DROP INDEX CONCURRENTLY` для подтверждённых дубликатов.
+
+**⚠️ Важно:** до деплоя каждый drop должен быть подтверждён `EXPLAIN ANALYZE` на **прод-данных**, что non-partial индекс не используется реальными запросами.
+
+**Что нужно сделать на проде:**
+1. До деплоя: для каждой пары индексов прогнать `EXPLAIN ANALYZE` list-запросов (см. карточку M5). Если non-partial индекс используется — НЕ дропать.
+2. Деплой стандартный (миграция применится автоматически при старте backend).
+3. После: проверить `pg_stat_user_indexes` — индексы действительно отпали, новые запросы используют partial.
+4. Мониторить производительность list-endpoint'ов 1-2 дня.
+
+**Откат:** восстановить индекс миграцией `CREATE INDEX CONCURRENTLY`. Данные не затронуты.
+
+#### [H12] — Backup retention
+**Что меняется в коде:** добавится `scripts/rotate-backups.sh` + документация в `docs/deploy.md`.
+
+**Что нужно сделать на проде:**
+1. После деплоя: настроить cron на хосте (или через sidecar) ежесуточный запуск `pg_backup` + `rotate-backups.sh`.
+2. Настроить off-site copy (`rsync`/`rclone` на отдельный носитель).
+3. Провести первый restore-drill: `pg_restore` в staging + smoke-тест schema.
+4. Установить ежемесячный drill в календарь.
+
+**Откат:** отключить cron. Существующие бэкапы не тронуты.
+
+#### [M17] — secret_crypto KDF
+**⚠️ Самый рискованный.** Меняет деривацию Fernet-ключа → инвалидирует существующие шифр-тексты (helpdesk-mailbox password) без migration path.
+
+**Что нужно сделать на проде (только при blue-green migration):**
+1. Деплой v1+v2并存 (legacy decrypt + new encrypt).
+2. Через Admin UI обновить helpdesk mailbox settings (любое сохранение) → пароль перешифруется v2.
+3. После подтверждения, что все секреты v2 — деплой v3, удаляющего legacy path.
+
+**Откат на любой стадии:** вернуть предыдущий образ. Если уже пошли v2-шифр-тексты — нужна ручная миграция.
+
+---
+
+## Отклонённые задачи (с обоснованием)
+
+### [M16] — Compose volumes DRY через YAML anchor — ОТКЛОНЕНО
+**Обоснование:** backend и worker share 13 общих volumes, но backend имеет 2 дополнительных (`nginx_reload`, `certs`). Конструкция `volumes: *data-volumes` + доп. элементы не парсится стандартным `yaml.safe_load` (parser error: expected <block end>, but found '<block sequence start>') и хрупко работает с compose merge-семантикой. Риск инцидента на проде при деплое превышает ценность убираемого дублирования (25 строк).
+
+**Альтернатива:** можно реализовать через `extends` (compose v2) или отдельный `docker-compose.override.yml`, но это меняет UX оператора. Оставить как есть; при следующем добавлении `/data/...` каталога — просто быть внимательным (git diff покажет оба сервиса).
+
+### [L18] — Docker logging non-blocking mode — ОТКЛОНЕНО
+**Обоснование:** Global switch на `mode: non-blocking` создаст риск потери логов при переполнении буфера (4MB). Для production-форензики (расследование инцидентов) потеря логов хуже, чем редкое backpressure при verbose-логах. Все 9 сервисов используют один anchor `*default-logging`, поэтому частичное применение (только к backend/worker) усложнит конфиг без явной пользы.
+
+**Альтернатива:** если backpressure станет реальной проблемой (видно по `docker logs` latency в мониторинге) — пересмотреть с тюнингом `max-buffer-size` и feature-flag. Сейчас не обосновано.

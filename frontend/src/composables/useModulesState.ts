@@ -90,21 +90,26 @@ export function useModulesState() {
     if (failed) sysLoadError.value = true
   })
 
-  watch(modulesData, () => {
-    if (!ncLoaded.value && modulesData.value && sysSettingsData.value) {
-      ncLoaded.value = true
-      watch(ncForm, () => { if (ncLoaded.value) ncDirty.value = true }, { deep: true })
-      watch(() => modulesForm.value.nextcloud.enabled, () => { if (ncLoaded.value) ncDirty.value = true })
-    }
-  })
+  // Setup NC dirty-trackers ровно один раз, когда оба источника данных
+  // (modules + system settings) прогрузились. Раньше было два одинаковых
+  // watcher'а (на modulesData и на sysSettingsData) с идентичным телом —
+  // при синхронной загрузке обоих (initial load) оба успевали сработать
+  // до установки ncLoaded=true и регистрировали deep-watcher'ы дважды.
+  function setupNcDirtyWatchers() {
+    watch(ncForm, () => { if (ncLoaded.value) ncDirty.value = true }, { deep: true })
+    watch(() => modulesForm.value.nextcloud.enabled, () => { if (ncLoaded.value) ncDirty.value = true })
+  }
 
-  watch(sysSettingsData, () => {
-    if (!ncLoaded.value && modulesData.value && sysSettingsData.value) {
-      ncLoaded.value = true
-      watch(ncForm, () => { if (ncLoaded.value) ncDirty.value = true }, { deep: true })
-      watch(() => modulesForm.value.nextcloud.enabled, () => { if (ncLoaded.value) ncDirty.value = true })
-    }
-  })
+  watch(
+    [modulesData, sysSettingsData],
+    () => {
+      if (!ncLoaded.value && modulesData.value && sysSettingsData.value) {
+        ncLoaded.value = true
+        setupNcDirtyWatchers()
+      }
+    },
+    { immediate: true },
+  )
 
   const manage = useManageDrawer(['onboarding'])
   const onboardingToggling = ref(false)
