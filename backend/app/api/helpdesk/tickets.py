@@ -34,6 +34,7 @@ from app.models.helpdesk import HelpdeskTicket
 from app.schemas.helpdesk import (
     AgentOptionListOut,
     AgentOptionOut,
+    CcRecipient,
     MarkTicketReadOut,
     MessageCreateIn,
     MessageOut,
@@ -110,8 +111,8 @@ def _normalize_cc_emails(
     *,
     exclude: set[str],
     support_address: str | None,
-) -> list[dict[str, str | None]]:
-    """Нормализовать список Cc-адресов из Form-поля в ``[{email, name}]``.
+) -> list[CcRecipient]:
+    """Нормализовать список Cc-адресов из Form-поля в ``list[CcRecipient]``.
 
     Операции:
     * ``strip``/``lower`` каждого адреса; пропуск пустых и без ``@``;
@@ -124,6 +125,9 @@ def _normalize_cc_emails(
 
     Лимит ``HELPDESK_CC_MAX_RECIPIENTS`` → 422 (явная ошибка, не молчаливое
     обрезание — агент должен видеть, что список слишком большой).
+
+    Возвращает типизированный ``list[CcRecipient]`` (audit [L10]) — Pydantic
+    ловит typo в ключах на границе Producer → JSONB-storage → Consumer.
     """
     if not cc_raw:
         return []
@@ -131,7 +135,7 @@ def _normalize_cc_emails(
     if support_address:
         exclude_lc.add(support_address.strip().lower())
 
-    result: list[dict[str, str | None]] = []
+    result: list[CcRecipient] = []
     seen: set[str] = set()
     for entry in cc_raw:
         # Form-поле может прийти как "Иван <a@x>" или голый "a@x". Берём адрес.
@@ -144,7 +148,7 @@ def _normalize_cc_emails(
         if email in exclude_lc or email in seen:
             continue
         seen.add(email)
-        result.append({"email": email, "name": None})
+        result.append(CcRecipient(email=email, name=None))
 
     if len(result) > HELPDESK_CC_MAX_RECIPIENTS:
         raise HTTPException(

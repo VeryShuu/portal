@@ -34,7 +34,10 @@ def compute_blurhash(image_path: Path) -> str | None:
     try:
         import blurhash as _blurhash
         from PIL import Image  # lazy
-    except Exception:
+    except ImportError:
+        # blurhash/PIL не установлены — фича опциональна, не падаем.
+        # Логируем на debug: это не runtime-ошибка, а конфигурация окружения.
+        logger.debug("photos.blurhash_lib_missing")
         return None
     try:
         with Image.open(image_path) as img:
@@ -43,7 +46,18 @@ def compute_blurhash(image_path: Path) -> str | None:
             rgb.thumbnail((64, 64), Image.Resampling.LANCZOS)
             encoded: str = _blurhash.encode(rgb, x_components=4, y_components=3)
             return encoded
-    except Exception:
+    except (OSError, ValueError, Image.UnidentifiedImageError) as exc:
+        # Повреждённый файл / неподдерживаемый формат / некорректные данные
+        # изображения. Audit [H8]: раньше был silent ``except Exception: return
+        # None`` — оператор не видел, почему конкретная картинка осталась без
+        # blurhash. Debug-лог с путем + классом ошибки даёт diagnostics без
+        # спама (один log на каждый проблемный файл при загрузке).
+        logger.debug(
+            "photos.blurhash_failed",
+            path=str(image_path),
+            error=str(exc),
+            error_type=type(exc).__name__,
+        )
         return None
 
 
@@ -75,7 +89,17 @@ def extract_exif(
                     if isinstance(val, bytes):
                         val = val.decode("utf-8", errors="ignore")
                     exif[tag] = val if isinstance(val, (str, int, float, bool)) else str(val)
-                except Exception:
+                except (UnicodeDecodeError, ValueError, TypeError) as exc:
+                    # Один EXIF-тег не декодировался — пропускаем, остальные
+                    # остаются. Audit [H8]: debug-лог для диагностики (без него
+                    # невозможно понять, какие теги «теряются» на проблемных
+                    # файлах). ValueError/TypeError покрывают str(val)-ошибки.
+                    logger.debug(
+                        "photos.exif_tag_skipped",
+                        tag=tag,
+                        path=str(original_path),
+                        error=str(exc),
+                    )
                     continue
             dt = exif.get("DateTimeOriginal") or exif.get("DateTime")
             if isinstance(dt, str):
@@ -84,7 +108,17 @@ def extract_exif(
                     import datetime as _dt
 
                     taken_at_iso = _dt.datetime.strptime(dt, "%Y:%m:%d %H:%M:%S").isoformat()
-                except Exception:
+                except ValueError as exc:
+                    # Нестандартный формат DateTimeOriginal (не "YYYY:MM:DD
+                    # HH:MM:SS") — частая ситуация на старых камерах. Audit
+                    # [H8]: debug-лог для диагностики (без него taken_at
+                    # «молча» терялся).
+                    logger.debug(
+                        "photos.exif_taken_at_parse_failed",
+                        raw_value=dt,
+                        path=str(original_path),
+                        error=str(exc),
+                    )
                     taken_at_iso = None
     except Exception as exc:
         logger.warning("photos.exif_extract_failed", path=str(original_path), error=str(exc))

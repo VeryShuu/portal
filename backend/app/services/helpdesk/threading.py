@@ -28,6 +28,8 @@ import uuid
 from email.header import decode_header, make_header
 from email.message import Message
 
+from app.schemas.helpdesk import CcRecipient
+
 # [#TKT-123] в теме (с опциональными пробелами). Fallback matching.
 _SUBJECT_TOKEN_RE = re.compile(r"\[#TKT-(\d+)\]")
 
@@ -131,10 +133,10 @@ def extract_recipient_token(msg: Message) -> int | None:
     return None
 
 
-def extract_cc(msg: Message, *, exclude: str | None = None) -> list[dict[str, str | None]]:
+def extract_cc(msg: Message, *, exclude: str | None = None) -> list[CcRecipient]:
     """Список адресатов из заголовка ``Cc`` входящего письма (миграция 083).
 
-    Возвращает ``[{"email": "a@x", "name": "Иван"}, ...]`` — нормализованный,
+    Возвращает ``[CcRecipient(email="a@x", name="Иван"), ...]`` — нормализованный,
     дедуплицированный (по lowercased email). Порядок сохранён (как в письме).
     ``name`` — декодированный display-name (RFC 2047, как ``decode_mime_header``
     для ``Subject``/``From``); ``None`` для голого ``user@host`` без имени.
@@ -154,7 +156,7 @@ def extract_cc(msg: Message, *, exclude: str | None = None) -> list[dict[str, st
     raw_values = msg.get_all("Cc", [])
     if not raw_values:
         return []
-    participants: list[dict[str, str | None]] = []
+    participants: list[CcRecipient] = []
     seen: set[str] = set()
     exclude_lc = (exclude or "").strip().lower()
     for name, addr in getaddresses(raw_values):
@@ -167,7 +169,7 @@ def extract_cc(msg: Message, *, exclude: str | None = None) -> list[dict[str, st
             continue
         seen.add(email)
         decoded_name = (decode_mime_header(name) if name else "").strip()
-        participants.append({"email": email, "name": decoded_name or None})
+        participants.append(CcRecipient(email=email, name=decoded_name or None))
     return participants
 
 

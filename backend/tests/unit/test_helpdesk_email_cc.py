@@ -27,6 +27,7 @@ import pytest
 # ──────────────────────────────────────────────────────────────────────────────
 # 1. threading.extract_cc
 # ──────────────────────────────────────────────────────────────────────────────
+from app.schemas.helpdesk import CcRecipient
 from app.services.helpdesk.threading import extract_cc
 
 
@@ -40,37 +41,37 @@ def _msg(headers: dict[str, str]) -> Message:
 class TestExtractCc:
     def test_single_address(self) -> None:
         out = extract_cc(_msg({"Cc": "colleague@company.local"}))
-        assert out == [{"email": "colleague@company.local", "name": None}]
+        assert out == [CcRecipient(email="colleague@company.local", name=None)]
 
     def test_name_and_address(self) -> None:
         out = extract_cc(_msg({"Cc": "Иван Петров <ivan@company.local>"}))
-        assert out == [{"email": "ivan@company.local", "name": "Иван Петров"}]
+        assert out == [CcRecipient(email="ivan@company.local", name="Иван Петров")]
 
     def test_multiple_addresses(self) -> None:
         msg = _msg({"Cc": "a@x.local, b@y.local"})
         assert extract_cc(msg) == [
-            {"email": "a@x.local", "name": None},
-            {"email": "b@y.local", "name": None},
+            CcRecipient(email="a@x.local", name=None),
+            CcRecipient(email="b@y.local", name=None),
         ]
 
     def test_lowercased_and_deduplicated(self) -> None:
         # Повтор (в разном регистре) → дедупликация по lowercased email.
         msg = _msg({"Cc": "A@X.local, a@x.local, B@y.local"})
         assert extract_cc(msg) == [
-            {"email": "a@x.local", "name": None},
-            {"email": "b@y.local", "name": None},
+            CcRecipient(email="a@x.local", name=None),
+            CcRecipient(email="b@y.local", name=None),
         ]
 
     def test_rfc2047_encoded_name(self) -> None:
         # Кириллическое имя в RFC 2047 (как Subject/From) — декодируется.
         out = extract_cc(_msg({"Cc": "=?utf-8?B?0KLQuNCy0LXRgg==?= <a@x.local>"}))
-        assert out == [{"email": "a@x.local", "name": "Тивет"}]
+        assert out == [CcRecipient(email="a@x.local", name="Тивет")]
 
     def test_excludes_support_address(self) -> None:
         # support_address выкидывается (петля) — case-insensitive.
         msg = _msg({"Cc": "support@company.local, other@x.local"})
         out = extract_cc(msg, exclude="Support@Company.Local")
-        assert out == [{"email": "other@x.local", "name": None}]
+        assert out == [CcRecipient(email="other@x.local", name=None)]
 
     def test_no_cc_header(self) -> None:
         assert extract_cc(_msg({})) == []
@@ -81,13 +82,13 @@ class TestExtractCc:
     def test_invalid_entries_skipped(self) -> None:
         # Без @, пустые — пропускаются.
         msg = _msg({"Cc": "notanemail, , valid@x.local"})
-        assert extract_cc(msg) == [{"email": "valid@x.local", "name": None}]
+        assert extract_cc(msg) == [CcRecipient(email="valid@x.local", name=None)]
 
     def test_order_preserved(self) -> None:
         # Порядок как в письме (важно для «ответить всем» — получатель видит
         # привычный порядок адресатов).
         msg = _msg({"Cc": "z@x.local, a@x.local, m@x.local"})
-        emails = [p["email"] for p in extract_cc(msg)]
+        emails = [p.email for p in extract_cc(msg)]
         assert emails == ["z@x.local", "a@x.local", "m@x.local"]
 
 
@@ -402,18 +403,18 @@ class TestNormalizeCcEmails:
             support_address=None,
         )
         assert out == [
-            {"email": "a@x.local", "name": None},
-            {"email": "b@y.local", "name": None},
+            CcRecipient(email="a@x.local", name=None),
+            CcRecipient(email="b@y.local", name=None),
         ]
 
     def test_lowercases(self) -> None:
         out = _normalize_cc_emails(["A@X.LOCAL"], exclude=set(), support_address=None)
-        assert out == [{"email": "a@x.local", "name": None}]
+        assert out == [CcRecipient(email="a@x.local", name=None)]
 
     def test_strips_name_from_angle_form(self) -> None:
         # "Иван <a@x.local>" → только адрес.
         out = _normalize_cc_emails(["Иван <a@x.local>"], exclude=set(), support_address=None)
-        assert out == [{"email": "a@x.local", "name": None}]
+        assert out == [CcRecipient(email="a@x.local", name=None)]
 
     def test_excludes_requester_and_agent(self) -> None:
         out = _normalize_cc_emails(
@@ -421,7 +422,7 @@ class TestNormalizeCcEmails:
             exclude={"agent@company.local", "client@company.local"},
             support_address=None,
         )
-        assert out == [{"email": "other@x.local", "name": None}]
+        assert out == [CcRecipient(email="other@x.local", name=None)]
 
     def test_excludes_support_address(self) -> None:
         out = _normalize_cc_emails(
@@ -429,7 +430,7 @@ class TestNormalizeCcEmails:
             exclude=set(),
             support_address="support@company.local",
         )
-        assert out == [{"email": "other@x.local", "name": None}]
+        assert out == [CcRecipient(email="other@x.local", name=None)]
 
     def test_deduplicates(self) -> None:
         out = _normalize_cc_emails(
@@ -437,7 +438,7 @@ class TestNormalizeCcEmails:
             exclude=set(),
             support_address=None,
         )
-        assert out == [{"email": "a@x.local", "name": None}]
+        assert out == [CcRecipient(email="a@x.local", name=None)]
 
     def test_skips_invalid(self) -> None:
         out = _normalize_cc_emails(
@@ -445,7 +446,7 @@ class TestNormalizeCcEmails:
             exclude=set(),
             support_address=None,
         )
-        assert out == [{"email": "a@x.local", "name": None}]
+        assert out == [CcRecipient(email="a@x.local", name=None)]
 
     def test_empty_input(self) -> None:
         assert _normalize_cc_emails([], exclude=set(), support_address=None) == []

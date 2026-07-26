@@ -191,6 +191,25 @@ class TicketCountsOut(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+class CcRecipient(BaseModel):
+    """Внутренний контракт Cc-получателя между сервисами (audit [L10]).
+
+    Используется в потоке:
+    * inbound: ``services/helpdesk/threading.extract_cc`` → list[CcRecipient];
+    * outbound: ``api/helpdesk/tickets._normalize_cc_emails`` → list[CcRecipient];
+    * storage: JSONB ``helpdesk_messages.payload.cc`` (миграция 083);
+    * consumer: ``worker/tasks/email_outbox._format_cc_header``.
+
+    Раньше это был ``list[dict[str, str | None]]`` без явной схемы — typo в
+    ключе ("emial" вместо "email") или отсутствие "name" проходили незамеченными
+    до runtime на стороне consumer'а. Pydantic-модель ловит это на границе
+    Producer → Storage.
+    """
+
+    email: str
+    name: str | None = None
+
+
 class ParticipantOut(BaseModel):
     """Адресат письма: email + опциональное имя.
 

@@ -45,8 +45,12 @@ async def _try_enqueue_created_email(db: AsyncSession, *, ticket: HelpdeskTicket
         if mailbox is None or not support_domain(mailbox):
             return
         await enqueue_created_email(db, ticket=ticket, mailbox=mailbox)
-    except Exception as exc:
-        logger.warning("helpdesk.created_email_enqueue_failed", error=str(exc))
+    except Exception:
+        # Audit [H8]: добавлен exc_info=True — раньше ``error=str(exc)`` терял
+        # stacktrace, что затрудняло диагностику (не видно, в каком именно вызове
+        # enqueue_created_email упало). Warning (не exception) — фоновая задача
+        # best-effort: заявка уже создана и сохранена, письмо можно дослать.
+        logger.warning("helpdesk.created_email_enqueue_failed", exc_info=True)
 
 
 async def create_ticket(

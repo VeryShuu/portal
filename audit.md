@@ -144,7 +144,7 @@ XS-S правки, не требующие архитектурных решен
 | H5  | 🟠 High | Architecture | worker→api цикл | S | 1 | [x] 2026-07-26 |
 | H6  | 🟠 High | Architecture | EventType enum half-done | M/S | 3 | [ ] ⚠️ decision |
 | H7  | 🟠 High | Code Smell | Primitive Obsession (строки) | M | 3 | [ ] |
-| H8  | 🟠 High | Backend/Obs | silent except | S | 2 | [ ] |
+| H8  | 🟠 High | Backend/Obs | silent except | S | 2 | [x] 2026-07-26 частично |
 | H9  | 🟠 High | Logging | PII-маскинг | M | 2 | [ ] |
 | H10 | 🟠 High | Logging | redact_secrets_processor | XS | 1 | [x] 2026-07-26 |
 | H11 | 🟠 High | CI/CD | Pin Actions по SHA | S | 1 | [ ] |
@@ -168,7 +168,7 @@ XS-S правки, не требующие архитектурных решен
 | M17 | 🟡 Medium | Config | secret_crypto KDF | L | 3 | [ ] ⚠️ прод |
 | M18 | 🟡 Medium | Infra | nginx rate limiting | S | 4 | [ ] ⚠️ прод |
 | M19 | 🟡 Medium | Frontend | useModulesState watchers | XS | 2 | [x] 2026-07-26 |
-| M20 | 🟡 Medium | Docker | screenshot-service /ready | S | 2 | [ ] |
+| M20 | 🟡 Medium | Docker | screenshot-service /ready | S | 2 | [x] 2026-07-26 |
 | M21 | 🟡 Medium | CI/CD | gitleaks/trivy pin | XS | 2 | [x] 2026-07-26 |
 | M22 | 🟡 Medium | Config | migrate_env race | S | 2 | [ ] |
 | L1  | 🟢 Low | DB | миграции zero-downtime паттерн | XS | 4 | [ ] |
@@ -176,11 +176,11 @@ XS-S правки, не требующие архитектурных решен
 | L3  | 🟢 Low | Perf | search offset лимит | XS | 4 | [x] 2026-07-26 |
 | L4  | 🟢 Low | DB | outbox watchdog lock | XS | 4 | [x] 2026-07-26 |
 | L5  | 🟢 Low | Perf | news selectinload(poll) | XS | 4 | [—] 2026-07-26 false-positive |
-| L6  | 🟢 Low | Code Smell | Pagination Deps | XS | 4 | [ ] |
+| L6  | 🟢 Low | Code Smell | Pagination Deps | XS | 4 | [—] 2026-07-26 отклонено |
 | L7  | 🟢 Low | Security | keycloak_admin allowlist | M | 4 | [ ] |
 | L8  | 🟢 Low | Code Smell | _role_prefix dead params | XS | 4 | [x] 2026-07-26 |
 | L9  | 🟢 Low | Code Smell | openpyxl Feature Envy | XS | 4 | [x] 2026-07-26 частично |
-| L10 | 🟢 Low | Code Smell | CcRecipient Pydantic | S | 4 | [ ] |
+| L10 | 🟢 Low | Code Smell | CcRecipient Pydantic | S | 4 | [x] 2026-07-26 |
 | L11 | 🟢 Low | Docs | опечатки в docstrings | XS | 4 | [x] 2026-07-26 |
 | L12 | 🟢 Low | i18n | PollPanelVoting fallback | XS | 4 | [x] 2026-07-26 |
 | L13 | 🟢 Low | Frontend | useFilesData type cast | S | 4 | [ ] |
@@ -526,7 +526,12 @@ XS-S правки, не требующие архитектурных решен
 - **Сложность:** S
 - **Риск регрессии:** Низкий.
 - **Ожидаемый эффект:** ~30 мест observability-friendly.
-- **Статус:** [ ]
+- **Статус:** [x] 2026-07-26 — **частично**. Закрыты самые проблемные места из subagent-списка:
+  - `services/helpdesk/ingress.py` — все 5 `with suppress(Exception)` заменены на try/except с логированием (rollback/expunge — debug, logout/`_safe_seen`/`_safe_delete` — warning; logout и mark_* влияют на IMAP-state сервера).
+  - `services/helpdesk/tickets.py:48` `_try_enqueue_created_email` — добавлен `exc_info=True` (раньше терялся stacktrace).
+  - `services/photos_storage/metadata.py` — все 4 silent except сужены до конкретных типов (`ImportError`, `(OSError, ValueError, Image.UnidentifiedImageError)`, `(UnicodeDecodeError, ValueError, TypeError)`, `ValueError`) + debug-логирование с контекстом (path/tag/raw_value).
+  - Тест `test_compute_blurhash_exception_returns_none` обновлён под суженные типы (OSError вместо голого Exception).
+  **Остаток** (~20 мест в `meetings/recurrence`, `files_shares_persistence`, `nextcloud/webdav/_client`, `keycloak_admin`, `health.py` и др.) — отдельная итерация. Включение ruff `BLE001` отложено (даст ~200 finding'ов по всему коду — нужен отдельный PR с классификацией каждый).
 
 ---
 
@@ -1221,7 +1226,7 @@ XS-S правки, не требующие архитектурных решен
 - **Сложность:** S
 - **Риск регрессии:** Низкий.
 - **Ожидаемый эффект:** Реальная проверка готовности.
-- **Статус:** [ ]
+- **Статус:** [x] 2026-07-26 — выполнено: добавлен `/ready` endpoint в screenshot-service (проверка `app["browser"]` не None + `browser.is_connected()` для CDP), compose healthcheck переведён с `/health` на `/ready`. `/health` оставлен (liveness для ручной проверки).
 
 ---
 
@@ -1315,7 +1320,7 @@ XS-S правки, не требующие архитектурных решен
 - **Где:** `api/helpdesk/tickets.py:225,425`, `news/comments.py:59`, `feedback/routes.py:57,102`, `kb/comments.py:35`, `kb/versions.py:32`, `kb/articles/_list.py:29`, `search.py:45`, `meetings/participants.py:23`, `helpdesk/users.py:35`
 - **Что найдено:** `limit: int = Query(default=20, ge=1, le=100)`, `offset: int = Query(default=0, ge=0)` копируется.
 - **Действие:** `PaginationDep = Annotated[PaginationParams, Depends()]`.
-- **Сложность:** XS · **Статус:** [ ]
+- **Сложность:** XS · **Статус:** [—] 2026-07-26 — отклонено. Фактический анализ показал 12+ разных конфигураций `limit` (default {5,8,20,50,100,500} × max {50,100,200,500,1000}), каждая обоснована контекстом endpoint'а (helpdesk ≠ photo ≠ staff). Единый `PaginationDep` с одним max не подходит; parameterised dependency через `Annotated[...]` усложнит читаемость vs явный `Query`. Реальная ценность появится только при переходе на cursor-pagination ([M2]) — тогда и пересмотреть.
 
 ### [L7] — `keycloak_admin._is_unsafe_ip` разрешает приватные диапазоны
 - **Категория:** Security
@@ -1343,7 +1348,7 @@ XS-S правки, не требующие архитектурных решен
 - **Где:** `api/helpdesk/tickets.py:108-154`, `worker/tasks/email_outbox.py:533-553`
 - **Что найдено:** Cc-нормализация в роутере, форматирование в заголовок в worker'е, формат через dict в JSONB.
 - **Действие:** Ввести `CcRecipient(BaseModel)`.
-- **Сложность:** S · **Статус:** [ ]
+- **Сложность:** S · **Статус:** [x] 2026-07-26 — выполнено: добавлен `CcRecipient` Pydantic (schemas/helpdesk.py), применён в producer'ах (`threading.extract_cc`, `_normalize_cc_emails`), в `add_agent_reply` (cc → model_dump для JSONB), consumer `_format_cc_header` поддерживает и CcRecipient, и dict (legacy JSONB). Тесты обновлены под CcRecipient-сравнения.
 
 ### [L11] — Опечатки/англицизмы в docstrings
 - **Категория:** Docs
@@ -1459,6 +1464,7 @@ XS-S правки, не требующие архитектурных решен
 | 2026-07-26 | Senior Architect (ZCode) | Первичное создание плана. 40 находок, 4 этапа, все карточки с DoD. |
 | 2026-07-26 | Senior Architect (ZCode) | **Batch 1+2 (безопасные правки):** H10, H5, H2, M10, M19, L8, L11, L12, L15, L17 — все протестированы (3803 backend + 2130 frontend unit-тестов зелёные, ruff/mypy/eslint/vue-tsc/i18n-чек чистые). Отклонено: M16, L18 (с обоснованием). Подробности — в карточках `[x]`/`[—]` ниже. |
 | 2026-07-26 | Senior Architect (ZCode) | **Batch 3 (10-ка для след. сессии, частично):** L3, L4, L9 (частично), L16, M21 — выполнено и протестировано (3805 backend unit-тестов зелёные). L5 — отклонено как false-positive (has_poll validator зависит от News.poll). Оставшиеся 4 (L6, H8, M20, L10) — в план следующей сессии. |
+| 2026-07-26 | Senior Architect (ZCode) | **Batch 4 (оставшаяся 4-ка):** M20 (screenshot /ready), L10 (CcRecipient Pydantic) — выполнено; H8 (silent except) — частично (metadata.py + tickets.py + ingress.py — самые проблемные места); L6 — отклонено (12 разных конфигураций limit, единый PaginationDep не подходит). 3805 backend unit-тестов зелёные, ruff/mypy чисто. |
 
 ---
 

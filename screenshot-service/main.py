@@ -187,6 +187,42 @@ async def health(request: web.Request) -> web.Response:
     )
 
 
+async def ready(request: web.Request) -> web.Response:
+    """Readiness-проверка: процесс жив + Chromium запущен и доступен.
+
+    В отличие от ``/health`` (liveness — процесс отвечает), ``/ready`` проверяет
+    зависимости (см. audit [M20]): если Playwright/Chromium не стартанул
+    (упал при launch, OOM-kill, несовместимость libs), ``app["browser"]`` либо
+    отсутствует, либо not None, но фактически не работает. Docker compose
+    healthcheck использует именно ``/ready`` (политика проекта, AGENTS.md
+    §«Чего НЕ делать» — «❌ не использовать healthcheck на /health»).
+
+    Возвращает 503 при неготовности — это даёт compose сигнал рестартовать
+    контейнер, а ``depends_on: condition: service_healthy`` в backend'е
+    блокирует старт до восстановления screenshot-service.
+    """
+    browser = request.app.get("browser")
+    if browser is None:
+        return web.json_response(
+            {"status": "not_ready", "reason": "browser_not_initialized"},
+            status=503,
+        )
+    # ``is_connected()`` проверяет, что CDP-соединение с Chromium живое
+    # (не упал child-процесс). Дёшево, без реального navigation-запроса.
+    try:
+        if not browser.is_connected():
+            return web.json_response(
+                {"status": "not_ready", "reason": "browser_disconnected"},
+                status=503,
+            )
+    except Exception as exc:  # noqa: BLE001 — readiness не должен падать на саму проверке
+        return web.json_response(
+            {"status": "not_ready", "reason": f"browser_check_failed: {type(exc).__name__}"},
+            status=503,
+        )
+    return web.json_response({"status": "ready"})
+
+
 async def take_screenshot(request: web.Request) -> web.Response:
     auth_err = _check_secret(request)
     if auth_err:
@@ -461,6 +497,7 @@ def build_app() -> web.Application:
     app.on_startup.append(_startup)
     app.on_cleanup.append(_shutdown)
     app.router.add_get("/health", health)
+    app.router.add_get("/ready", ready)
     app.router.add_get("/screenshot", take_screenshot)
     app.router.add_post("/screenshot", take_screenshot)
     app.router.add_post("/pdf", render_pdf)

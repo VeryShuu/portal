@@ -23,7 +23,7 @@ from sqlalchemy.orm import selectinload
 from app.core.sanitize import sanitize_html
 from app.models.helpdesk import HelpdeskMessage, HelpdeskTicket
 from app.models.user import User
-from app.schemas.helpdesk import MessageCreateIn
+from app.schemas.helpdesk import CcRecipient, MessageCreateIn
 
 # Статусы, из которых ответ клиента реопенит тикет в ``open`` (ТЗ §4.2.1).
 # ``closed`` реопенится отдельно — только в окне HELPDESK_REOPEN_WINDOW_DAYS
@@ -172,7 +172,7 @@ async def add_agent_reply(
     payload: MessageCreateIn,
     files: list | None = None,
     support_domain: str | None = None,
-    cc: list[dict[str, str | None]] | None = None,
+    cc: list[CcRecipient] | None = None,
 ) -> HelpdeskMessage:
     """Ответ агента — ``direction=outbound``, переводит тикет в ``pending`` и
     уйдёт в ``email_outbox`` при наличии ``support_domain``. ``files``
@@ -182,10 +182,11 @@ async def add_agent_reply(
     если передан, генерируется канонический ``email_message_id`` (ТЗ §1.3.3,
     §5.2) и сохраняется в сообщении для threading.
 
-    ``cc`` (опционально, миграция 083) — список ``{"email", "name"}`` адресатов
-    в копии, если агент включил «Ответить всем». Сохраняется в сообщении и
-    прокидывается в outbox-продюсером (``enqueue_reply_outbound``) для заголовка
-    ``Cc`` исходящего письма.
+    ``cc`` (опционально, миграция 083) — список ``CcRecipient`` адресатов
+    в копии, если агент включил «Ответить всем». Сохраняется в сообщении
+    (JSONB — сериализуется через ``model_dump()``) и прокидывается в
+    outbox-продюсером (``enqueue_reply_outbound``) для заголовка ``Cc``
+    исходящего письма.
 
     При первом ответе без assignee — агент назначает себя (ТЗ §4.2.1: «если
     нет assignee — назначить текущего агента»).
@@ -203,6 +204,9 @@ async def add_agent_reply(
         _make_outbound_message_id(ticket.number, support_domain) if support_domain else None
     )
 
+    # cc — list[CcRecipient] (audit [L10]); сериализуем в list[dict] для JSONB.
+    cc_payload = [c.model_dump() for c in cc] if cc else None
+
     message = HelpdeskMessage(
         ticket_id=ticket.id,
         author_user_id=agent.id,
@@ -214,7 +218,7 @@ async def add_agent_reply(
         source="web",
         email_message_id=email_message_id,
         created_at=now,
-        cc=cc or None,
+        cc=cc_payload,
     )
     db.add(message)
     await db.flush()  # нужен message.id/email_message_id для вложений и outbox

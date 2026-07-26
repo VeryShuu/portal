@@ -85,7 +85,11 @@ services:
           cpus: "1.0"
           memory: 1g
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:9000/health', timeout=5)"]
+      # /ready (а не /health) — проверяет что Chromium стартовал и CDP-соединение
+      # живое (audit [M20]). /health = liveness (процесс отвечает), не ловит
+      # падение Playwright внутри процесса → compose мог считать контейнер
+      # healthy при сломанном Chromium и backend получал 503 на все /pdf.
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:9000/ready', timeout=5)"]
       interval: 30s
       timeout: 10s
       retries: 3

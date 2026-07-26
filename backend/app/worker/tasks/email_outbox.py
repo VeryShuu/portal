@@ -592,6 +592,11 @@ def _apply_helpdesk_headers(
 def _format_cc_header(cc: list) -> str:
     """Собрать значение заголовка ``Cc`` из списка участников.
 
+    Принимает ``list[CcRecipient | dict]`` — Pydantic-модели (новый код, audit
+    [L10]) или dict (старые записи в JSONB до миграции на типизированный
+    контракт). JSONB-сериализация превращает CcRecipient в dict, поэтому
+    consumer работает с обоими форматами.
+
     ``[{"email": "a@x", "name": "Иван"}, {"email": "b@y", "name": None}]`` →
     ``"Иван <a@x>, b@y"``. Пустая строка для пустого списка — заголовок не
     ставится (см. ``_apply_helpdesk_headers``). ``formataddr`` корректно
@@ -600,14 +605,20 @@ def _format_cc_header(cc: list) -> str:
     """
     from email.utils import formataddr
 
+    def _get(p: object, key: str) -> str | None:
+        # Pydantic v2 BaseModel: __getitem__ отсутствует, используем getattr.
+        # dict: ключи. Покрывает оба представления Cc (модель + JSONB-dict).
+        if isinstance(p, dict):
+            return p.get(key)
+        return getattr(p, key, None)
+
     parts = []
     for p in cc:
-        if not isinstance(p, dict):
-            continue
-        email = (p.get("email") or "").strip()
+        email = (_get(p, "email") or "").strip() if _get(p, "email") else ""
         if not email:
             continue
-        name = (p.get("name") or "").strip() or None
+        name_raw = _get(p, "name")
+        name = (name_raw or "").strip() or None
         parts.append(formataddr((name, email)))
     return ", ".join(parts)
 

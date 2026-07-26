@@ -20,7 +20,6 @@ from __future__ import annotations
 import asyncio
 import re
 import uuid
-from contextlib import suppress
 from email import message_from_bytes
 from email.message import Message
 from email.utils import getaddresses
@@ -178,8 +177,13 @@ async def poll_mailbox(
                 # failed-state → все последующие UID падают с
                 # PendingRollbackError. Явный rollback сбрасывает состояние,
                 # один битый UID не роняет весь батч.
-                with suppress(Exception):
+                # Audit [H8]: debug-лог на случай если сам rollback упадёт
+                # (маскировать оригинальную ошибку не хотим, но диагностика
+                # «rollback тоже сломался» ценна).
+                try:
                     await db.rollback()
+                except Exception:
+                    logger.debug("helpdesk.ingress.rollback_failed", exc_info=True)
                 # Помечаем прочитанным, но не удаляем — оставляем для разбора.
                 # (Фильтр по \Seen больше не используется, но сохраняем флаг для
                 # совместимости с почтовыми клиентами оператора.)
@@ -188,11 +192,22 @@ async def poll_mailbox(
         # (работает только при settings_row.delete_after_fetch). Без EXPUNGE
         # STORE +FLAGS \Deleted лишь вешает флаг, но письмо остаётся в папке.
         if settings_row.delete_after_fetch and uids:
-            with suppress(Exception):
+            # Audit [H8]: expunge best-effort — если упадёт, письма останутся
+            # с \Deleted-флагом (не критично, оператор дочистит), но debug-лог
+            # даёт диагностику почему физическое удаление не состоялось.
+            try:
                 await client.expunge()
+            except Exception:
+                logger.debug("helpdesk.ingress.expunge_failed", exc_info=True)
     finally:
-        with suppress(Exception):
+        # Logout в finally — обязателен даже при ошибке выше. Audit [H8]:
+        # warning-уровень, потому что неудачный logout оставляет IMAP-сессию
+        # висеть на сервере (пока не истечёт idle-timeout сервера), что
+        # съедает connection-slot и может блокировать другие poll'ы.
+        try:
             await client.logout()
+        except Exception:
+            logger.warning("helpdesk.ingress.logout_failed", exc_info=True)
 
     logger.info("helpdesk.ingress.poll_done", **summary)
     return summary
@@ -476,7 +491,9 @@ def _parse_inbound_headers(msg: Message, *, support_address: str | None = None) 
         "recipient_token": threading_utils.extract_recipient_token(msg),
         "sender_email": threading_utils.normalize_email(from_raw),
         "sender_name": threading_utils.extract_display_name(from_raw),
-        "cc": threading_utils.extract_cc(msg, exclude=support_address),
+        # extract_cc возвращает list[CcRecipient] (audit [L10]); сериализуем в
+        # list[dict] для JSONB-колонки payload (Pydantic-модель не JSON-native).
+        "cc": [c.model_dump() for c in threading_utils.extract_cc(msg, exclude=support_address)],
     }
 
 
@@ -927,8 +944,17 @@ async def _write_log(
 
 
 async def _safe_seen(client: Any, uid: str) -> None:
-    with suppress(Exception):
+    """Пометить письмо ``\\Seen`` (best-effort, audit [H8]).
+
+    Падение STORE \\Seen означает, что письмо останется непрочитанным на
+    сервере и может быть переобработано в следующем poll'е (дубль тикета
+    ловится по message_id, но IMAP-логин оператора увидит «непрочитанное»).
+    Warning-лог даёт диагностику, почему флаг не выставился.
+    """
+    try:
         await client.store(uid, "+FLAGS", "\\Seen")
+    except Exception:
+        logger.warning("helpdesk.ingress.mark_seen_failed", uid=uid, exc_info=True)
 
 
 async def _safe_delete(client: Any, uid: str) -> None:
@@ -938,6 +964,13 @@ async def _safe_delete(client: Any, uid: str) -> None:
     **папку целиком** по имени, а не сообщение. Для удаления письма нужно
     ``STORE +FLAGS \\Deleted`` (пометка) + ``EXPUNGE`` (физическое удаление,
     выполняется в ``poll_mailbox`` после обработки всех UID'ов).
+
+    Audit [H8]: падение STORE \\Deleted означает, что письмо останется в
+    папке и при следующем poll'е будет обработано повторно (если
+    ``delete_after_fetch=True`` — иначе оно бы не удалялось вообще).
+    Warning-лог для диагностики потенциального loop'а.
     """
-    with suppress(Exception):
+    try:
         await client.store(uid, "+FLAGS", "\\Deleted")
+    except Exception:
+        logger.warning("helpdesk.ingress.mark_deleted_failed", uid=uid, exc_info=True)

@@ -652,10 +652,16 @@ def test_compute_blurhash_import_error_returns_none(tmp_path):
 
 
 def test_compute_blurhash_exception_returns_none(tmp_path):
+    """Audit [H8]: compute_blurhash ловит реальные ошибки PIL (OSError,
+    UnidentifiedImageError), а не голый Exception (маскирует баги).
+    Тест обновлён: Image.open в реальности поднимает OSError для
+    битых/нечитаемых файлов (PIL.UnidentifiedImageError — его подкласс).
+    """
+    from PIL import UnidentifiedImageError  # noqa: F401 — re-exported через PIL
     from unittest.mock import MagicMock
 
     mock_bh = MagicMock()
-    mock_bh.encode.side_effect = Exception("fail")
+    mock_bh.encode.side_effect = ValueError("bad image data")
 
     mock_img = MagicMock()
     mock_img.__enter__ = MagicMock(return_value=mock_img)
@@ -665,7 +671,7 @@ def test_compute_blurhash_exception_returns_none(tmp_path):
     mock_img.encode = None
 
     with (
-        patch("PIL.Image.open", side_effect=Exception("io error")),
+        patch("PIL.Image.open", side_effect=OSError("io error")),
         patch.dict("sys.modules", {"blurhash": mock_bh}),
     ):
         from app.services.photos_storage import compute_blurhash
