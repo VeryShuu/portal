@@ -55,7 +55,11 @@ async def run_multi_search(
     concurrent executes), fetches the first ``offset + limit`` rows ordered by
     recency, then results are merged, sorted by ``created_at`` and windowed.
     """
-    fetch_limit = offset + limit
+    # Защита от滥用: каждый per-entity подзапрос читает fetch_limit строк,
+    # поэтому при большом offset нагрузка растёт линейно (audit [L3]).
+    # Для глобального multi-search 200 результатов покрывает любой разумный UX:
+    # глубже пользователь идёт в single-type search (там keyset pagination).
+    fetch_limit = min(offset + limit, 200)
 
     async def _run(fn: _EntityQuery) -> tuple[int, list[SearchResultItem]]:
         async with session_factory() as sess:

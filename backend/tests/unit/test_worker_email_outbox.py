@@ -47,6 +47,19 @@ class _FakeSession:
         yield self
 
 
+class _FakeRedis:
+    """Fake redis для distributed lock в process_email_outbox (audit [L4]).
+
+    По образцу tests/unit/test_worker_messenger_outbox.py::_FakeRedis:
+    set(nx=True) → lock_acquired; eval (Lua-release) → no-op.
+    """
+
+    def __init__(self, *, lock_acquired: bool = True):
+        self._lock_acquired = lock_acquired
+        self.set = AsyncMock(return_value=lock_acquired)
+        self.eval = AsyncMock(return_value=1)
+
+
 @asynccontextmanager
 async def _session_cm(sess):
     yield sess
@@ -95,6 +108,28 @@ def _mk_row(
 
 @pytest.mark.asyncio
 class TestProcessEmailOutbox:
+    async def test_no_redis_in_context_returns_zero(self):
+        """audit [L4]: без redis в ctx distributed lock невозможен — ранний выход."""
+        from app.worker.tasks import email_outbox as eo
+
+        result = await eo.process_email_outbox({})
+        assert result == 0
+
+    async def test_lock_already_acquired_returns_zero(self, monkeypatch):
+        """audit [L4]: если лок занят другим воркером — пропускаем tick."""
+        from app.worker.tasks import email_outbox as eo
+
+        sess = _FakeSession()
+        _patch_session_local(monkeypatch, sess)
+        claim_mock = AsyncMock(return_value=[])
+        monkeypatch.setattr(eo, "claim_pending", claim_mock)
+
+        redis = _FakeRedis(lock_acquired=False)
+        result = await eo.process_email_outbox({"redis": redis})
+        assert result == 0
+        # claim не должен вызываться — вышли раньше.
+        claim_mock.assert_not_called()
+
     async def test_no_claimed_returns_zero(self, monkeypatch):
         from app.worker.tasks import email_outbox as eo
 
@@ -103,7 +138,7 @@ class TestProcessEmailOutbox:
         claim_mock = AsyncMock(return_value=[])
         monkeypatch.setattr(eo, "claim_pending", claim_mock)
 
-        result = await eo.process_email_outbox({})
+        result = await eo.process_email_outbox({"redis": _FakeRedis()})
         assert result == 0
         claim_mock.assert_awaited_once()
 
@@ -121,7 +156,7 @@ class TestProcessEmailOutbox:
         send_mock = AsyncMock()
         monkeypatch.setattr(eo, "smtp_send", send_mock)
 
-        result = await eo.process_email_outbox({})
+        result = await eo.process_email_outbox({"redis": _FakeRedis()})
         assert result == 0
         assert mark_failed_mock.await_count == 2
         # Не пытались отправлять.
@@ -150,7 +185,7 @@ class TestProcessEmailOutbox:
         mark_failed_mock = AsyncMock()
         monkeypatch.setattr(eo, "mark_failed", mark_failed_mock)
 
-        result = await eo.process_email_outbox({})
+        result = await eo.process_email_outbox({"redis": _FakeRedis()})
         assert result == 2
         assert mark_sent_mock.await_count == 2
         mark_failed_mock.assert_not_called()
@@ -178,7 +213,7 @@ class TestProcessEmailOutbox:
         mark_sent_mock = AsyncMock()
         monkeypatch.setattr(eo, "mark_sent", mark_sent_mock)
 
-        result = await eo.process_email_outbox({})
+        result = await eo.process_email_outbox({"redis": _FakeRedis()})
         assert result == 0
         mark_sent_mock.assert_not_called()
         mark_failed_mock.assert_awaited_once()
@@ -203,7 +238,7 @@ class TestProcessEmailOutbox:
         mark_failed_mock = AsyncMock()
         monkeypatch.setattr(eo, "mark_failed", mark_failed_mock)
 
-        result = await eo.process_email_outbox({})
+        result = await eo.process_email_outbox({"redis": _FakeRedis()})
         assert result == 0
         mark_failed_mock.assert_awaited_once()
         assert mark_failed_mock.await_args.kwargs["error_class"] == "transient"
@@ -219,7 +254,7 @@ class TestProcessEmailOutbox:
         monkeypatch.setattr(eo, "requeue_stale_sending", requeue_mock)
         monkeypatch.setattr(eo, "claim_pending", AsyncMock(return_value=[]))
 
-        result = await eo.process_email_outbox({})
+        result = await eo.process_email_outbox({"redis": _FakeRedis()})
         assert result == 0
         requeue_mock.assert_awaited_once()
         assert (
@@ -234,7 +269,7 @@ class TestProcessEmailOutbox:
         monkeypatch.setattr(eo, "claim_pending", AsyncMock(side_effect=RuntimeError("boom")))
 
         # Не должен пробросить — outer try/except.
-        result = await eo.process_email_outbox({})
+        result = await eo.process_email_outbox({"redis": _FakeRedis()})
         assert result == 0
 
 

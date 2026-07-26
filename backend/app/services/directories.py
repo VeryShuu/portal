@@ -460,8 +460,12 @@ def build_csv(directory: ObjectDirectory, entries: list[ObjectDirectoryEntry]) -
 
 def build_xlsx(directory: ObjectDirectory, entries: list[ObjectDirectoryEntry]) -> bytes:
     from openpyxl import Workbook
-    from openpyxl.styles import Alignment, Font, PatternFill
-    from openpyxl.utils import get_column_letter
+
+    from app.services.export.xlsx_helpers import (
+        fill_body_cells,
+        freeze_header,
+        style_header_row,
+    )
 
     headers, rows = build_export_table(directory, entries)
 
@@ -469,23 +473,16 @@ def build_xlsx(directory: ObjectDirectory, entries: list[ObjectDirectoryEntry]) 
     ws = wb.active
     ws.title = directory.label_ru[:31] or "Справочник"
 
-    header_font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
-    header_fill = PatternFill("solid", fgColor="305496")
-    wrap = Alignment(horizontal="left", vertical="center", wrap_text=True)
-
-    for idx, h in enumerate(headers, start=1):
-        cell = ws.cell(row=1, column=idx, value=h)
-        cell.font = header_font
-        cell.fill = header_fill
-        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
-        ws.column_dimensions[get_column_letter(idx)].width = 28 if idx == len(headers) - 1 else 22
+    # Последняя колонка шире (обычно — длинное текстовое поле типа «Комментарий»).
+    widths = [28 if idx == len(headers) - 1 else 22 for idx in range(len(headers))]
+    style_header_row(ws, headers=headers, column_widths=widths)
 
     for r_idx, row in enumerate(rows, start=2):
         for c_idx, value in enumerate(row, start=1):
-            cell = ws.cell(row=r_idx, column=c_idx, value=value)
-            cell.alignment = wrap
+            ws.cell(row=r_idx, column=c_idx, value=value)
+    fill_body_cells(ws, ncols=len(headers))
 
-    ws.freeze_panes = "A2"
+    freeze_header(ws)
     buf = io.BytesIO()
     wb.save(buf)
     return buf.getvalue()

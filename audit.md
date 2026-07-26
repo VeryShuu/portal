@@ -169,24 +169,24 @@ XS-S правки, не требующие архитектурных решен
 | M18 | 🟡 Medium | Infra | nginx rate limiting | S | 4 | [ ] ⚠️ прод |
 | M19 | 🟡 Medium | Frontend | useModulesState watchers | XS | 2 | [x] 2026-07-26 |
 | M20 | 🟡 Medium | Docker | screenshot-service /ready | S | 2 | [ ] |
-| M21 | 🟡 Medium | CI/CD | gitleaks/trivy pin | XS | 2 | [ ] |
+| M21 | 🟡 Medium | CI/CD | gitleaks/trivy pin | XS | 2 | [x] 2026-07-26 |
 | M22 | 🟡 Medium | Config | migrate_env race | S | 2 | [ ] |
 | L1  | 🟢 Low | DB | миграции zero-downtime паттерн | XS | 4 | [ ] |
 | L2  | 🟢 Low | Perf | analytics Redis-кеш | M | 4 | [ ] |
-| L3  | 🟢 Low | Perf | search offset лимит | XS | 4 | [ ] |
-| L4  | 🟢 Low | DB | outbox watchdog lock | XS | 4 | [ ] |
-| L5  | 🟢 Low | Perf | news selectinload(poll) | XS | 4 | [ ] |
+| L3  | 🟢 Low | Perf | search offset лимит | XS | 4 | [x] 2026-07-26 |
+| L4  | 🟢 Low | DB | outbox watchdog lock | XS | 4 | [x] 2026-07-26 |
+| L5  | 🟢 Low | Perf | news selectinload(poll) | XS | 4 | [—] 2026-07-26 false-positive |
 | L6  | 🟢 Low | Code Smell | Pagination Deps | XS | 4 | [ ] |
 | L7  | 🟢 Low | Security | keycloak_admin allowlist | M | 4 | [ ] |
 | L8  | 🟢 Low | Code Smell | _role_prefix dead params | XS | 4 | [x] 2026-07-26 |
-| L9  | 🟢 Low | Code Smell | openpyxl Feature Envy | XS | 4 | [ ] |
+| L9  | 🟢 Low | Code Smell | openpyxl Feature Envy | XS | 4 | [x] 2026-07-26 частично |
 | L10 | 🟢 Low | Code Smell | CcRecipient Pydantic | S | 4 | [ ] |
 | L11 | 🟢 Low | Docs | опечатки в docstrings | XS | 4 | [x] 2026-07-26 |
 | L12 | 🟢 Low | i18n | PollPanelVoting fallback | XS | 4 | [x] 2026-07-26 |
 | L13 | 🟢 Low | Frontend | useFilesData type cast | S | 4 | [ ] |
 | L14 | 🟢 Low | Docker | digest pinning | S | 4 | [ ] |
 | L15 | 🟢 Low | Infra | proxy_connect_timeout | XS | 4 | [x] 2026-07-26 |
-| L16 | 🟢 Low | Config | _get_fernet thread-safety | XS | 4 | [ ] |
+| L16 | 🟢 Low | Config | _get_fernet thread-safety | XS | 4 | [x] 2026-07-26 |
 | L17 | 🟢 Low | CI/CD | coverage-comment fork guard | XS | 4 | [x] 2026-07-26 |
 | L18 | 🟢 Low | Docker | logging non-blocking mode | XS | 4 | [—] 2026-07-26 отклонено |
 
@@ -615,7 +615,7 @@ XS-S правки, не требующие архитектурных решен
 - **Сложность:** S
 - **Риск регрессии:** Очень низкий — SHA → тот же код.
 - **Ожидаемый эффект:** Полная защита от supply-chain через floating tags.
-- **Статус:** [ ]
+- **Статус:** [ ] частично [M21] выполнено для Docker-сканеров (gitleaks v8.30.1, trivy 0.72.0 в security.yml). Pin GitHub Actions по SHA — отдельная задача [H11].
 
 ---
 
@@ -1294,21 +1294,21 @@ XS-S правки, не требующие архитектурных решен
 - **Где:** `backend/app/services/search/aggregate.py:113-119`
 - **Что найдено:** Каждый подзапрос читает `offset+limit` строк, на выходе 20.
 - **Действие:** Лимит `offset+limit ≤ 200` для global search; глубже — single-type search с keyset.
-- **Сложность:** XS · **Статус:** [ ]
+- **Сложность:** XS · **Статус:** [x] 2026-07-26 — выполнено (services/search/aggregate.py:58 — `fetch_limit = min(offset + limit, 200)`)
 
 ### [L4] — `email_outbox.requeue_stale_sending` без distributed-lock
 - **Категория:** Database
 - **Где:** `backend/app/services/email_outbox.py:130-156`
 - **Что найдено:** Массовый UPDATE по `status='SENDING' AND updated_at < ...` без SKIP LOCKED. Race при рестарте пула воркеров.
 - **Действие:** Redis SET NX EX (как в `worker/tasks/helpdesk.py`).
-- **Сложность:** XS · **Статус:** [ ]
+- **Сложность:** XS · **Статус:** [x] 2026-07-26 — выполнено (worker/tasks/email_outbox.py: добавлен `_acquire_lock`/`_release_lock` по образцу messenger_outbox, lock_key `email:outbox:dispatch:lock`, TTL 180s; покрыто 2 новыми unit-тестами: no-redis + lock-busy)
 
 ### [L5] — `news/crud.py:38`: `selectinload(News.poll)` в list-endpoint
 - **Категория:** Performance
 - **Где:** `backend/app/services/news/crud.py:38,85,192`
 - **Что найдено:** Poll грузится даже когда list его не отображает. Каскад poll → questions → options = 3 доп. SELECT.
 - **Действие:** Убрать `selectinload(News.poll)` из `get_news_list`. Если нужен индикатор «есть опрос» — добавить колонку-флаг.
-- **Сложность:** XS · **Статус:** [ ]
+- **Сложность:** XS · **Статус:** [—] 2026-07-26 — отклонено как false-positive: `NewsOut` имеет поле `has_poll: bool` (schemas/news.py:50) и validator `check_poll` (стр.56-61) обращается к `data.poll` для выставления has_poll. Убрать selectinload → `has_poll` всегда False в списке. Требует миграции (добавить колонку-флаг `has_poll` в таблицу `news`) — отложить к M5 / M8.
 
 ### [L6] — Дублирование пагинации Query-deps (12 мест)
 - **Категория:** Code Smell
@@ -1336,7 +1336,7 @@ XS-S правки, не требующие архитектурных решен
 - **Где:** `backend/app/services/directories.py:461-491`, `api/analytics.py:346-354`
 - **Что найдено:** Сервисный слой работает с openpyxl.styles, хардкодит цвета.
 - **Действие:** Вынести в `app/services/export/xlsx_helpers.py` (`style_header_row`, `freeze_header`).
-- **Сложность:** XS · **Статус:** [ ]
+- **Сложность:** XS · **Статус:** [x] 2026-07-26 — частично: создан `services/export/xlsx_helpers.py` + `directories.build_xlsx` мигрирован. `analytics.py` оставлен осознанно — там другая визуальная палитра (plain bold vs corporate blue), DRY-объединение было бы regression.
 
 ### [L10] — Cc-формат `{email,name}` без Pydantic-модели
 - **Категория:** Code Smell
@@ -1385,7 +1385,7 @@ XS-S правки, не требующие архитектурных решен
 - **Где:** `backend/app/core/secret_crypto.py:24-34`
 - **Что найдено:** Глобальный mutable без lock. Теоретическая race при thread-pool.
 - **Действие:** `functools.lru_cache` или инициализация в `lifespan` startup.
-- **Сложность:** XS · **Статус:** [ ]
+- **Сложность:** XS · **Статус:** [x] 2026-07-26 — выполнено (core/secret_crypto.py: `_build_fernet()` через `@lru_cache(maxsize=1)`, `rotate_key_cache()` → `cache_clear()`)
 
 ### [L17] — `coverage-comment` job без fork-guard
 - **Категория:** CI/CD
@@ -1458,6 +1458,7 @@ XS-S правки, не требующие архитектурных решен
 |---|---|---|
 | 2026-07-26 | Senior Architect (ZCode) | Первичное создание плана. 40 находок, 4 этапа, все карточки с DoD. |
 | 2026-07-26 | Senior Architect (ZCode) | **Batch 1+2 (безопасные правки):** H10, H5, H2, M10, M19, L8, L11, L12, L15, L17 — все протестированы (3803 backend + 2130 frontend unit-тестов зелёные, ruff/mypy/eslint/vue-tsc/i18n-чек чистые). Отклонено: M16, L18 (с обоснованием). Подробности — в карточках `[x]`/`[—]` ниже. |
+| 2026-07-26 | Senior Architect (ZCode) | **Batch 3 (10-ка для след. сессии, частично):** L3, L4, L9 (частично), L16, M21 — выполнено и протестировано (3805 backend unit-тестов зелёные). L5 — отклонено как false-positive (has_poll validator зависит от News.poll). Оставшиеся 4 (L6, H8, M20, L10) — в план следующей сессии. |
 
 ---
 

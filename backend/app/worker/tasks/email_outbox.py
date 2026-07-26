@@ -12,7 +12,9 @@ from __future__ import annotations
 
 import base64
 import re
+import secrets
 import uuid
+from contextlib import suppress
 from email import encoders
 from email.mime.base import MIMEBase
 from email.mime.image import MIMEImage
@@ -21,6 +23,7 @@ from email.mime.text import MIMEText
 from email.utils import formatdate
 
 import aiofiles
+from redis.asyncio import Redis
 
 from app.core.constants import (
     EMAIL_OUTBOX_DISPATCH_BATCH_SIZE as DISPATCH_BATCH_SIZE,
@@ -53,10 +56,56 @@ logger = get_logger(__name__)
 # SystemSettings. Выше — re-export под короткими именами для обратной
 # совместимости с остальным кодом модуля.
 
+# Distributed lock для watchdog-фазы (audit [L4]): requeue_stale_sending делает
+# массовый UPDATE по WHERE status='SENDING' AND updated_at<... БЕЗ SKIP LOCKED.
+# Если два воркера одновременно запустят диспетчер (рестарт пула, deploy),
+# оба выполнят UPDATE по одним строкам. Lock по образцу messenger_outbox /
+# helpdesk.poll_lock защищает от этой race.
+EMAIL_OUTBOX_LOCK_KEY = "email:outbox:dispatch:lock"
+# 3 минуты: batch до 20 писем × SMTP timeout ~5s = ~100s worst case + overhead.
+EMAIL_OUTBOX_LOCK_TTL = 180
+
+_LOCK_RELEASE_LUA = (
+    "if redis.call('get', KEYS[1]) == ARGV[1] "
+    "then return redis.call('del', KEYS[1]) "
+    "else return 0 end"
+)
+
+
+async def _acquire_lock(redis: Redis, key: str, ttl: int) -> str | None:
+    """Тот же паттерн, что в ``app.worker.tasks.helpdesk._acquire_lock``."""
+    token = secrets.token_hex(16)
+    acquired = await redis.set(key, token, nx=True, ex=ttl)
+    if not acquired:
+        return None
+    return token
+
+
+async def _release_lock(redis: Redis, key: str, token: str) -> None:
+    with suppress(Exception):
+        # ``redis.asyncio.Redis.eval`` асинхронен, но в stub'е redis-py имеет
+        # перегрузку, возвращающую ``Awaitable[str] | str`` → mypy-error на
+        # ``await`` (см. ``tasks/helpdesk.py:_release_lock``).
+        await redis.eval(_LOCK_RELEASE_LUA, 1, key, token)  # type: ignore[misc]  # redis-py async-overload typing
+
 
 async def process_email_outbox(ctx: dict) -> int:
     """Обрабатывает очередную пачку PENDING писем. Возвращает кол-во отправленных."""
     sent_ok = 0
+    # Distributed lock на всю диспетчеризацию (audit [L4]): watchdog-фаза
+    # ``requeue_stale_sending`` делает массовый UPDATE без SKIP LOCKED — без
+    # lock два одновременно стартовавших воркера (рестарт пула, deploy)
+    # выполнят UPDATE по одним строкам. claim_pending защищён SKIP LOCKED,
+    # но watchdog — нет. Lock живёт EMAIL_OUTBOX_LOCK_TTL (180s), чтобы
+    # пережить worst-case batch (20 писем × SMTP timeout ~5s).
+    redis = ctx.get("redis")
+    if redis is None:
+        logger.warning("email_outbox.no_redis_in_context")
+        return 0
+    lock_token = await _acquire_lock(redis, EMAIL_OUTBOX_LOCK_KEY, EMAIL_OUTBOX_LOCK_TTL)
+    if lock_token is None:
+        # Другой воркер уже обрабатывает батч — пропускаем этот tick.
+        return 0
     try:
         async with AsyncSessionLocal() as session:
             async with session.begin():
@@ -130,6 +179,8 @@ async def process_email_outbox(ctx: dict) -> int:
                 )
     except Exception as exc:
         logger.exception("email_outbox.dispatch_failed", error=str(exc))
+    finally:
+        await _release_lock(redis, EMAIL_OUTBOX_LOCK_KEY, lock_token)
     return sent_ok
 
 

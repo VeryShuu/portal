@@ -31,9 +31,13 @@ jobs:
         with:
           fetch-depth: 0
       - name: gitleaks detect (full history)
+        # Pinned by semver (audit [M21]): floating :latest даёт невоспроизводимые
+        # сканирования — новые правила gitleaks могут пропустить секрет, который
+        # ловила предыдущая. Dependabot (docker ecosystem) обновит тег.
+        # v8.30.1 — последний стабильный на 2026-07-26.
         run: |
           docker run --rm -v "${{ github.workspace }}:/repo" \
-            ghcr.io/gitleaks/gitleaks:latest \
+            ghcr.io/gitleaks/gitleaks:v8.30.1 \
             detect --source=/repo --redact -v
 
   # --- Уязвимости в зависимостях (информационно, не блокирует) --------------
@@ -93,11 +97,14 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - name: Trivy filesystem scan (table)
+        # Pinned by semver (audit [M21]): floating :latest даёт невоспроизводимые
+        # сканирования. Dependabot (docker ecosystem) обновит тег.
+        # v0.72.0 — последний стабильный на 2026-07-26.
         run: |
           docker run --rm \
             -v "${{ github.workspace }}:/workspace" \
             -w /workspace \
-            ghcr.io/aquasecurity/trivy:latest \
+            ghcr.io/aquasecurity/trivy:0.72.0 \
             fs \
               --scanners vuln,misconfig \
               --severity HIGH,CRITICAL \
