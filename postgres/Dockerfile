@@ -1,4 +1,4 @@
-FROM postgres:16
+FROM postgres:16@sha256:33f923b05f64ca54ac4401c01126a6b92afe839a0aa0a52bc5aeb5cc958e5f20 # pinned 2026-07-26
 
 # NOTE: build context = корень репо (см. docker-compose.yml, ADR-046). Раньше
 # context был ./postgres, но чтобы запечь backend/migrations/init.sql в образ

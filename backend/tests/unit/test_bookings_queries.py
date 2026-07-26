@@ -122,7 +122,8 @@ class TestListBookings:
         load_settings_mock.assert_not_called()
         assert results == []
 
-    async def test_limit_capped_at_500(self):
+    async def test_limit_capped_at_max(self):
+        from app.services.meetings.bookings_service import BOOKINGS_LIMIT_MAX
         from app.services.meetings.bookings_service._queries import list_bookings
 
         db, _ = _make_db([])
@@ -132,6 +133,16 @@ class TestListBookings:
             results = await list_bookings(db, limit=9999)
         assert results == []
         db.execute.assert_awaited_once()
+        # The SQL clamp must mirror the endpoint's `le` cap. An oversized limit
+        # is truncated to BOOKINGS_LIMIT_MAX, not the legacy 500.
+        executed_stmt = db.execute.await_args.args[0]
+        compiled = str(
+            executed_stmt.compile(
+                compile_kwargs={"literal_binds": True},
+            )
+        )
+        assert str(BOOKINGS_LIMIT_MAX) in compiled
+        assert str(BOOKINGS_LIMIT_MAX + 1) not in compiled
 
 
 class TestListMyBookings:

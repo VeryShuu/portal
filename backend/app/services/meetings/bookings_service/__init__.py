@@ -13,6 +13,7 @@ from ._helpers import (
 )
 from ._queries import get_booking, list_bookings, list_my_bookings
 from ._types import (
+    BOOKINGS_LIMIT_MAX,
     MY_BOOKINGS_LIMIT_MAX,
     BookingConflict,
     BookingDiff,
@@ -22,6 +23,7 @@ from ._types import (
 logger = get_logger(__name__)
 
 __all__ = [
+    "BOOKINGS_LIMIT_MAX",
     "MY_BOOKINGS_LIMIT_MAX",
     "BookingConflict",
     "BookingDiff",

@@ -86,12 +86,31 @@ def migrate_env_to_system_settings() -> bool:
     start in parallel and would otherwise all write `system.json`. The file
     existence check is re-run *inside* the lock so a process that waited while
     a peer migrated observes the freshly-created file and returns False.
+
+    Fast path: when no legacy env vars are present AND the settings file
+    doesn't exist, we return False *without touching the filesystem* — no
+    lock acquisition, no `mkdir`. This keeps `import app.main` side-effect-free
+    on CI/test runners where `/data` is absent or read-only (openapi-export
+    job, unit tests, ad-hoc `uvicorn` launches).
     """
     from app.core import system_config as _root
-    from app.core.system_config._migration_lock import migration_lock
 
     settings_file = _root._SYSTEM_SETTINGS_FILE
     settings_dir = settings_file.parent
+
+    # Fast path (no FS writes, no lock): the common case on CI/test/dev where
+    # no legacy env vars are set. We must NOT touch the filesystem here —
+    # `settings_dir` resolves to `/data/settings`, which doesn't exist and
+    # isn't writable outside the container (e.g. openapi-export job, unit
+    # tests, `uvicorn app.main:app` on a CI runner). Creating it eagerly would
+    # raise PermissionError and crash any process that imports `app.main`.
+    present_legacy = _collect_legacy_env()
+    # No legacy env AND no existing settings file → nothing to migrate and
+    # nothing to warn about; bail out without any I/O (no mkdir, no lock).
+    if not present_legacy and not settings_file.exists():
+        return False
+
+    from app.core.system_config._migration_lock import migration_lock
 
     with migration_lock(settings_dir):
         # Re-check inside the lock — another process may have migrated

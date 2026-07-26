@@ -129,6 +129,9 @@ export function useFilesData(): UseFilesData {
     }
   }
 
+  // `reactive()` unwraps refs at runtime (so `tree` becomes `FileFolderTreeNode[]`,
+  // not `Ref<FileFolderTreeNode[]>`), which structurally matches `UseFilesData`.
+  // TypeScript cannot verify the ref-unwrapping, so a single cast is needed.
   return reactive({
     tree,
     loadingTree,
@@ -150,5 +153,5 @@ export function useFilesData(): UseFilesData {
     deleteFolder,
     syncFromNextcloud,
     refreshCurrent,
-  }) as unknown as UseFilesData
+  }) as UseFilesData
 }

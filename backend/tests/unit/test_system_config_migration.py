@@ -85,15 +85,27 @@ class TestMigrateEnvToSystemSettings:
         self, tmp_settings_dir, clean_legacy_env, monkeypatch
     ):
         """Spec case 3: file already exists → False, no rewrite, deprecation
-        warning emitted (structlog capture, since caplog doesn't see structlog).
+        warning emitted.
+
+        Intercepts the bound structlog logger of the module directly via
+        ``patch.object`` rather than ``structlog.testing.capture_logs()`` or
+        pytest's ``caplog``: the former is unreliable once
+        ``structlog.configure(cache_logger_on_first_use=True)`` has run (which
+        importing ``app.main`` triggers), so under ``pytest-randomly`` the
+        captured-events list flips between empty and populated depending on
+        test order; the latter doesn't see structlog at all because structlog's
+        ``LoggerFactory`` writes through its own sink. Patching the bound logger
+        is deterministic regardless of caching/ordering — same pattern as
+        ``tests/unit/test_webdav.py``.
         """
-        import structlog
+        from unittest.mock import patch
 
         from app.core.system_config import (
             SystemSettings,
             _save_system_settings,
             migrate_env_to_system_settings,
         )
+        from app.core.system_config import _migrations as migrations_module
 
         existing = SystemSettings(portal_base_url="https://existing.example")
         _save_system_settings(existing)
@@ -102,18 +114,18 @@ class TestMigrateEnvToSystemSettings:
         monkeypatch.setenv("PORTAL_BASE_URL", "https://should.be.ignored")
         monkeypatch.setenv("MAX_UPLOAD_SIZE_MB", "999")
 
-        with structlog.testing.capture_logs() as caplog:
+        with patch.object(migrations_module.logger, "warning", autospec=True) as mock_warning:
             result = migrate_env_to_system_settings()
 
         assert result is False
         # File untouched — same bytes, same mtime semantics.
         assert tmp_settings_dir["settings_file"].read_text("utf-8") == original_content
 
-        deprecated_events = [
-            e for e in caplog if e["event"] == "config.deprecated_env_vars_ignored"
-        ]
-        assert len(deprecated_events) == 1, f"expected one deprecation log, got {caplog!r}"
-        warned_vars = set(deprecated_events[0]["vars"])
+        # Exactly one warning emitted, with the deprecation event name.
+        mock_warning.assert_called_once()
+        event_name = mock_warning.call_args.args[0]
+        assert event_name == "config.deprecated_env_vars_ignored"
+        warned_vars = set(mock_warning.call_args.kwargs.get("vars", []) or [])
         assert "PORTAL_BASE_URL" in warned_vars
         assert "MAX_UPLOAD_SIZE_MB" in warned_vars
 

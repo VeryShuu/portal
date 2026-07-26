@@ -43,10 +43,29 @@ def migration_lock(settings_dir: Path, *, timeout_s: float = 30.0) -> Iterator[b
        semantics where the migration ran unconditionally at import time.
 
     The lock is released on context exit (or any exception) via ``flock(UN)``.
+
+    Graceful degradation: if the settings directory or lock file cannot be
+    created (read-only FS, missing `/data` outside the container — e.g. CI
+    openapi-export job, unit tests, ad-hoc `uvicorn`), we log a warning and
+    yield as a no-op lock instead of crashing process startup. This is safe
+    because if nothing can write to `settings_dir`, no process can compete
+    for the migration either — the downstream `_save_system_settings` call
+    is already wrapped in try/except by the caller and will log + return False.
     """
-    settings_dir.mkdir(parents=True, exist_ok=True)
-    lock_path = settings_dir / ".migration.lock"
-    fd = os.open(str(lock_path), os.O_CREAT | os.O_RDWR, 0o600)
+    try:
+        settings_dir.mkdir(parents=True, exist_ok=True)
+        lock_path = settings_dir / ".migration.lock"
+        fd = os.open(str(lock_path), os.O_CREAT | os.O_RDWR, 0o600)
+    except (PermissionError, OSError) as exc:
+        logger.warning(
+            "config.migration_lock_unavailable",
+            settings_dir=str(settings_dir),
+            error=str(exc),
+        )
+        # No-op: nothing to lock against when the FS isn't writable. Skip the
+        # flock dance entirely — no fd was opened, nothing to release.
+        yield True
+        return
     acquired = False
     try:
         try:

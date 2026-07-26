@@ -10,7 +10,7 @@ from sqlalchemy.orm import selectinload
 from app.models.meetings import MeetingBooking, MeetingBookingRoom
 
 from ._helpers import _date_range, _load_booking
-from ._types import MY_BOOKINGS_LIMIT_MAX
+from ._types import BOOKINGS_LIMIT_MAX, MY_BOOKINGS_LIMIT_MAX
 
 
 async def list_bookings(
@@ -21,7 +21,7 @@ async def list_bookings(
     end_date: date | None = None,
     room_id: uuid.UUID | None = None,
     creator_id: uuid.UUID | None = None,
-    limit: int = 500,
+    limit: int = BOOKINGS_LIMIT_MAX,
     offset: int = 0,
     tz: str | None = None,
 ) -> list[MeetingBooking]:
@@ -60,7 +60,11 @@ async def list_bookings(
     if creator_id is not None:
         stmt = stmt.where(MeetingBooking.creator_id == creator_id)
 
-    stmt = stmt.order_by(MeetingBooking.start_time).limit(min(limit, 500)).offset(offset)
+    stmt = (
+        stmt.order_by(MeetingBooking.start_time)
+        .limit(min(limit, BOOKINGS_LIMIT_MAX))
+        .offset(offset)
+    )
     result = await db.execute(stmt)
     return list(result.scalars().unique().all())
 

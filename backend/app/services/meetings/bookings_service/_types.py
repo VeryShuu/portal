@@ -7,6 +7,10 @@ from app.schemas.meetings import InvitedUser
 
 MY_BOOKINGS_LIMIT_MAX = 50
 
+# Hard cap for the GET /meetings/bookings calendar endpoint. Mirrors the
+# `le` on the Query param in app/api/meetings/bookings.py — keep in lockstep.
+BOOKINGS_LIMIT_MAX = 200
+
 
 @dataclass
 class ConflictInfo:

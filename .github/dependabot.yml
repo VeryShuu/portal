@@ -78,6 +78,10 @@ updates:
       prefix: "chore(ci)"
 
   # --- Docker base images (все Dockerfile проекта) ---
+  # NOTE: nginx/Dockerfile.config не сканируется Dependabot (имя файла не
+  # Dockerfile/*.dockerfile) — digest там обновляется вручную в lockstep с
+  # monitoring/node-exporter-textfile (оба pin alpine:3.20). См. комментарий
+  # в самом nginx/Dockerfile.config.
   - package-ecosystem: docker
     directories:
       - /backend
@@ -85,6 +89,25 @@ updates:
       - /nginx
       - /postgres
       - /screenshot-service
+      - /monitoring
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Moscow
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - docker
+    commit-message:
+      prefix: "chore(docker)"
+
+  # --- Docker compose (внешние base images в docker-compose.yml) ---
+  # Сканирует docker-compose.yml в корне репо на предмет внешних тегов
+  # (redis:7-alpine). portal-* образы исключены — они локально-собираемые
+  # и пинятся через semver-tag, а не digest (ADR-047).
+  - package-ecosystem: docker
+    directory: /
     schedule:
       interval: weekly
       day: monday

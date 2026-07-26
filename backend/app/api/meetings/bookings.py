@@ -28,6 +28,7 @@ from app.services.meetings.audit import (
     push_meetings_audit,
 )
 from app.services.meetings.bookings_service import (
+    BOOKINGS_LIMIT_MAX,
     MY_BOOKINGS_LIMIT_MAX,
     BookingConflict,
     delete_booking,
@@ -88,7 +89,7 @@ async def list_bookings_endpoint(
     end_date: date | None = Query(default=None),
     room_id: uuid.UUID | None = Query(default=None),
     creator_id: uuid.UUID | None = Query(default=None),
-    limit: int = Query(default=500, ge=1, le=500),
+    limit: int = Query(default=100, ge=1, le=BOOKINGS_LIMIT_MAX),
     offset: int = Query(default=0, ge=0),
 ) -> list[BookingOut]:
     if start_date is not None and end_date is not None and (end_date - start_date).days > 90:
