@@ -2,7 +2,7 @@
 
 > **Когда читать:** при работе с заявками, перепиской и вложениями тикетов; при изменении таблиц `helpdesk_*`; при правках IMAP-ingress, статус-машины, mailbox-settings, архива; при модификации мастер-флага `helpdesk` и агентов поддержки; при правках страниц/роутов/меню helpdesk.
 > **Ключевой код:** `./backend/app/api/helpdesk/`, `./backend/app/services/helpdesk/` (вкл. `email_quote.py` — отсечение цитат), `./backend/app/models/helpdesk.py`, `./backend/app/worker/tasks/helpdesk.py`, `./frontend/src/pages/helpdesk/`, `./frontend/src/components/helpdesk/`.
-> **ADR:** —. **См. также:** `./docs/wip/helpdesk.md` (исходное ТЗ), `./docs/email.md`, `./docs/api-contracts.md`, `./docs/db-schema.md`, `./docs/roles-matrix.md`.
+> **ADR:** —. **См. также:** `./docs/email.md`, `./docs/api-contracts.md`, `./docs/db-schema.md`, `./docs/roles-matrix.md`.
 
 > Замена OTRS внутри портала. Полный жизненный цикл заявки: приём из email (IMAP-polling support-ящика) или веб-формы → назначение ответственного → переписка с инициатором (двусторонний email-thread через `[#TKT-{number}]` в теме и `Message-ID`/`In-Reply-To`/`References`) → закрытие → архив. Вложения хранятся **локально** в `/data/helpdesk/TKT-{number}/` (по образцу feedback), Nextcloud не используется. Стартовое состояние модуля — выключен (`helpdesk.enabled=false`); включение = флаг в `modules.json` + заполненный `helpdesk_mailbox_settings`.
 

@@ -295,7 +295,7 @@ cd backend && ./scripts/ci_lint.sh
 - **Gotcha:** агенты — отдельная сущность `helpdesk_agents` (не роль `users.role`); права через `require_helpdesk_agent` (admin — суперсет).
 - **Gotcha:** вложения локально `/data/helpdesk/TKT-{number}/` (не NC), download — `StreamingResponse` (не `FileResponse`/`X-Accel-Redirect`).
 - Mailbox-settings singleton, пароль write-only (Fernet из `SECRET_KEY`). Гостевые заявители линкуются к аккаунту в OIDC-callback.
-- **MAX-messenger оповещения** (миграция 081): при включённой настройке `helpdesk_max_bot_settings` новые заявки дублируются в общий чат MAX (max.ru) через отдельный outbox `messenger_outbox` (mirror `email_outbox`). См. `docs/wip/helpdesk-max-messenger.md`.
+- **MAX-messenger оповещения** (миграция 081): при включённой настройке `helpdesk_max_bot_settings` новые заявки дублируются в общий чат MAX (max.ru) через отдельный outbox `messenger_outbox` (mirror `email_outbox`). См. `docs/helpdesk.md` §«MAX-messenger оповещения».
 - **Gotcha (TLS):** сертификат `*.max.ru` подписан Russian Trusted Root CA (Минцифры), не входит в Mozilla CA Bundle / `certifi`. Корневой сертификат лежит в `backend/certs/russian_trusted_root_ca.crt` и устанавливается в Docker-образ через `update-ca-certificates`. httpx-клиент использует `ssl.create_default_context()` (системный trust store). Общий фикс для всех российских TLS-endpoint'ов.
 
 ### Брендинг и системные настройки

@@ -2,10 +2,10 @@
 
 > **Когда читать:** спорное/новое архитектурное решение — нужен контекст и обоснование «почему так».
 > **Ключевой код:** зависит от ADR (ссылки на файлы внутри каждого решения).
-> **ADR:** активные 001–044; отменённые/заменённые — `adr-archive.md`.
+> **ADR:** активные 001–047; отменённые/заменённые — `adr-archive.md`.
 
 > Корпоративный интранет-портал
-> Последнее обновление: июль 2026 (ADR-043 — fastapi-limiter + starlette 1.x monkey-patch; ADR-044 — observability-стек Grafana + Loki + Prometheus + Alloy, удаление Sentry)
+> Последнее обновление: июль 2026 (ADR-045 — CI-built images в GHCR + pull-based deploy; ADR-046 — prod-контур без клона репозитория; ADR-047 — semver-lock прод-деплоя)
 
 Каждый ADR описывает одно архитектурное решение: контекст, альтернативы, выбор и обоснование.
 
@@ -55,6 +55,9 @@
 - [ADR-042: Stable session_id при /auth/refresh — мультитаб-устойчивый silent refresh (июнь 2026)](#adr-042-stable-session_id-при-authrefresh--мультитаб-устойчивый-silent-refresh-июнь-2026)
 - [ADR-043: fastapi-limiter 0.1.6 + starlette 1.x — monkey-patch совместимости (июль 2026)](#adr-043-fastapi-limiter-016--starlette-1x--monkey-patch-совместимости-июль-2026)
 - [ADR-044: Observability-стек — Grafana + Loki + Prometheus + Alloy, удаление Sentry (июль 2026)](#adr-044-observability-стек--grafana--loki--prometheus--alloy-удаление-sentry-июль-2026)
+- [ADR-045: CI-built images в GHCR + pull-based deploy (июль 2026)](#adr-045-ci-built-images-в-ghcr--pull-based-deploy-июль-2026)
+- [ADR-046: Разделение контуров dev/prod — prod без клона репозитория (июль 2026)](#adr-046-разделение-контуров-devprod--prod-без-клона-репозитория-июль-2026)
+- [ADR-047: Semver-lock прод-деплоя (июль 2026)](#adr-047-semver-lock-прод-деплоя-июль-2026)
 
 ---
 

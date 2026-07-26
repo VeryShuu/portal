@@ -3029,7 +3029,7 @@ Query: `?folder_id=<uuid>&filename=<имя_файла>`.
 
 ## Справочники объектов (`/api/v1/directories`)
 
-> Универсальный движок справочников объектов с контактами (план — [`wip/directories.md`](./wip/directories.md), первый кейс — «Флот»). Встраивается вкладками в `/staff`. Код: `app/api/directories.py`, схемы — `app/schemas/object_directory.py`, сервис — `app/services/directories.py`.
+> Универсальный движок справочников объектов с контактами (подробности — [`./directories.md`](./directories.md), первый кейс — «Флот»). Встраивается вкладками в `/staff`. Код: `app/api/directories.py`, схемы — `app/schemas/object_directory.py`, сервис — `app/services/directories.py`.
 >
 > **Гейтинг двухуровневый:** мастер-флаг `modules.json` (`directories.enabled`) выключен → весь раздел 404 (`PUT /admin/modules/directories`); отдельный тип с `enabled=false` → его вкладка скрыта для обычных пользователей, но видна editor/admin.
 >
@@ -3209,7 +3209,7 @@ Soft-delete объекта.
 > «Открыть на портале» → абсолютный URL из `SystemSettings.portal_base_url`).
 > Доставка — через отдельный transactional outbox `messenger_outbox`
 > (retry/backoff/DLQ, mirror `email_outbox`). Подробнее —
-> [`./wip/helpdesk-max-messenger.md`](./wip/helpdesk-max-messenger.md).
+> [`./helpdesk.md`](./helpdesk.md) §«MAX-messenger оповещения».
 
 ---
 

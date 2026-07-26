@@ -550,6 +550,7 @@ Workflow определён в `./.github/workflows/ci.yml`. Реализова�
 | Job | Триггер | Что делает |
 |-----|---------|-----------|
 | `backend-lint` | push/PR | ruff check + format + mypy |
+| `screenshot-unit` | push/PR | unit-тесты `screenshot-service/` (pytest, только `requirements-dev.txt` — `cookie_utils.py` не зависит от aiohttp/playwright, тяжёлый образ не нужен) |
 | `backend-unit` | push/PR | unit + security, собирает `.coverage.unit` (`--cov=app --cov-report=`), без гейта на этом шаге; артефакт `coverage-data-unit` (retention 1 день) |
 | `backend-integration` | push/PR (после `backend-lint` + `backend-unit`) | строит `portal-postgres:ci` (postgres:16 + hunspell-ru), поднимает postgres+redis, `alembic upgrade head`, `pytest tests/integration -rs --cov=app --cov-report= --reruns 2 --reruns-delay 1 --only-rerun "OperationalError\|ConnectionRefused\|ConnectionReset\|TimeoutError\|asyncpg\\..*Error\|redis\\.exceptions\\.ConnectionError"` (`INTEGRATION_DB=true INTEGRATION_REDIS=true`); артефакт `coverage-data-integration` |
 | `backend-coverage` | push/PR (после `backend-unit` + `backend-integration`) | скачивает оба `coverage-data-*` артефакта, `coverage combine` → `coverage report` → `coverage xml + html`, енфорсит gate `--fail-under=75` (см. `[tool.coverage.run] parallel = true, relative_files = true` и `[tool.coverage.paths]` в `./backend/pyproject.toml`; `[tool.coverage.report] fail_under = 75`); артефакт `backend-coverage` (htmlcov + xml, retention 14 дней) |
@@ -563,6 +564,7 @@ Workflow определён в `./.github/workflows/ci.yml`. Реализова�
 | `frontend-e2e` | push/PR (после `backend-lint` + `frontend-lint`, timeout 20 мин) | строит `portal-postgres:ci` + redis, `alembic upgrade head`, поднимает uvicorn в фоне, `playwright install --with-deps chromium`, прогоняет `chromium`-проект в `E2E_MODE=dev` + `VITE_API_TARGET=http://localhost:8000` (vite-dev проксирует `/api`); артефакт `playwright-report/` (retention 14 дней) |
 | `fake-db-allowlist` | push/PR | проверяет, что `authed_client_factory` (с no-op `_fake_db`) используется только из файлов в `./backend/tests/fake_db_allowlist.txt`; новые файлы вне списка фейлят CI. Stale-записи (есть в allowlist, нет в коде) — `::notice::`, не фейл, чтобы можно было постепенно сокращать |
 | `compose-smoke` | push/PR | создаёт `base_data/upload_data/system_data/`, минимальный `.env`, поднимает `docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d postgres redis migrations backend`, smoke-проверяет `GET /docs`, `GET /openapi.json`, `GET /api/v1/users/me` (ожидает 401/403); tear-down на `always()` |
+| `quality-gates` | push/PR | комплексный quality-gate: **complexity** (`radon cc app -n D` — блокирует любые rank-D+ функции с CC>10, фиксирует результат декомпозиции аудита 2026-07-20); **duplication** (`jscpd` frontend, fail >4%, см. `frontend/.jscpd.json`); **dead-code** (`knip` frontend, informational — `continue-on-error`, ложноположительные на публичных хук/тип-экспортах) |
 
 ### Nightly workflows
 
@@ -570,6 +572,23 @@ Workflow определён в `./.github/workflows/ci.yml`. Реализова�
 |----------|---------|-----------|
 | `./.github/workflows/nightly-flakes.yml` (`flake-detect`) | cron `17 2 * * *` + `workflow_dispatch` | поднимает PG+Redis, `alembic upgrade head`, прогоняет полный suite (`tests/unit tests/security tests/integration`) **5 раз** с `-p no:randomly -p no:cacheprovider`, агрегирует `FAILED `-строки из лога каждого прогона, печатает таблицу «тест → сколько раз упал» в `$GITHUB_STEP_SUMMARY`; артефакт `flake-reports/` (junit XML + логи, retention 30 дней) |
 | `./.github/workflows/nightly-security.yml` (`zap-baseline`) | cron `37 3 * * *` + `workflow_dispatch` | поднимает PG+redis+uvicorn, запускает `ghcr.io/zaproxy/zaproxy:stable zap-baseline.py -t http://localhost:8000 -c zap-baseline.conf` с конфигом `./security/zap-baseline.conf`; парсит `zap-report.json` (High/Medium/Low/Info) в `$GITHUB_STEP_SUMMARY`; артефакт `zap-report/` (HTML+JSON, retention 30 дней); фейлит job при наличии High-risk alerts |
+
+### Релизный конвейер (ADR-045 / ADR-046 / ADR-047)
+
+Три job'а в `ci.yml`, формирующих pull-based деплой. Подробное обоснование и состав — в
+[`adr.md`](./adr.md) (ADR-045 — GHCR + pull-deploy, ADR-046 — prod без клона репо,
+ADR-047 — semver-lock).
+
+| Job | Триггер | Что делает |
+|-----|---------|-----------|
+| `validate-release-tag` | только тег `v*` (на main-push — `skipped`, считается success) | валидирует формат semver (`^v[0-9]+\.[0-9]+\.[0-9]+(-rc[0-9]+)?$`, согласован с `scripts/release.sh`) и что тег указывает на коммит из истории `origin/main` (защита от релиза feature-ветки). `~10 сек`, `fetch-depth: 0` |
+| `publish-images` | push в `main` **и** тег `v*` (НЕ на PR) | gate `needs: [backend-lint, backend-unit, backend-integration, frontend-lint, frontend-unit, frontend-e2e, compose-smoke, screenshot-unit, validate-release-tag]` — образ с упавшими интеграционными/e2e не уйдёт в GHCR. Matrix из 6 образов (`portal-backend`, `-frontend`, `-nginx`, `-nginx-config`, `-screenshot`, `-postgres`) с `cache-from/cache-to: type=gha`. Теги: на main — `sha-<7>` + `latest`; на `v1.2.3` — дополнительно `v1.2.3`, `v1.2`, `v1`. `permissions: packages: write`, actions пинены по SHA. `~8–12 мин` (с кэшем ~3–5 мин) |
+| `deploy-bundle` | только тег `v*`, после `publish-images == success` | собирает `portal-deploy-bundle-<tag>.tar.gz` (~80 КБ): `docker-compose.yml` + `.env.example` + `setup.sh` + `monitoring/` целиком (overlay-конфиги + `node-exporter-textfile/` для локальной сборки `portal-storage-collector`, который не в registry). Аттачит к GitHub Release через `softprops/action-gh-release@<sha>`. `permissions: contents: write`. `~30 сек` |
+
+> **Семантика тегов** (ADR-047): `latest` продолжаeт пушиться, но prod-контур
+> (`setup.sh::preflight`) отвергает `IMAGE_TAG=latest` как implicit-deploy —
+> прод обязан пиниться к релизному тегу `v1.x.x`. См. `docs/deploy.md` §12
+> «Миграция с :latest на semver-lock».
 
 ### CODEOWNERS
 

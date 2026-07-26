@@ -1236,7 +1236,7 @@ CREATE INDEX idx_file_shares_expires_at      ON file_shares(expires_at);
 
 ## Справочники объектов (миграция 064_object_directories)
 
-Универсальный движок справочников объектов с контактами (план — [`wip/directories.md`](./wip/directories.md), первый кейс — «Флот»). Встраивается вкладками в `/staff`. Три таблицы: **тип** справочника (= вкладка), **объект** (судно/склад) и его **контакты** (роль × канал × значение). Схема полей идентификации (`field_schema`) и набор каналов связи (`channels`) хранятся как JSONB на самом типе — низкая кардинальность, добавление поля не требует миграции; валидация — на уровне Pydantic (`type ∈ {text, number, email, url, multiline}`).
+Универсальный движок справочников объектов с контактами (подробности — [`./directories.md`](./directories.md), первый кейс — «Флот»). Встраивается вкладками в `/staff`. Три таблицы: **тип** справочника (= вкладка), **объект** (судно/склад) и его **контакты** (роль × канал × значение). Схема полей идентификации (`field_schema`) и набор каналов связи (`channels`) хранятся как JSONB на самом типе — низкая кардинальность, добавление поля не требует миграции; валидация — на уровне Pydantic (`type ∈ {text, number, email, url, multiline}`).
 
 Гейтинг двухуровневый: мастер-флаг `modules.json` (`directories.enabled`) → весь раздел 404; per-type `enabled` → скрытие отдельной вкладки. Soft-delete (`deleted_at`) на типах и объектах; контакты удаляются жёстко через `ON DELETE CASCADE`. Миграция сидит тип `fleet` с готовой схемой и объект «Академик Казанин».
 
@@ -1309,7 +1309,7 @@ CREATE INDEX idx_oec_entry ON object_entry_contacts(entry_id, sort_order);
 ## Справочник получателей рассылки (миграция 071_mailing_recipients)
 
 Курируемая адресная книга для рассылки новостей по email (фича «Сделать
-рассылку» из карточки новости, см. `docs/wip/news-email-share.md`). Редактор
+рассылку» из карточки новости, см. `docs/news.md` §«Справочник получателей рассылки»). Редактор
 выбирает получателей **только** из этого справочника — ad-hoc-ввод адреса в
 модалке запрещён (анти-спам/анти-фишинг от имени портала). Управление —
 `editor`/`admin`.
@@ -1617,5 +1617,5 @@ CREATE UNIQUE INDEX idx_users_email_ci_active ON users (LOWER(email)) WHERE dele
 | 078 | `add_helpdesk_fts` | `helpdesk_tickets.search_tsvector` + `helpdesk_messages.body_tsvector` (GIN) | `./helpdesk.md` §3, §4 (поиск) |
 | 079 | `drop_helpdesk_resolved` | Упразднён статус `resolved` (data-mig → `closed`) | `./helpdesk.md` §5 |
 | 080 | `add_helpdesk_ticket_reads` | `helpdesk_ticket_reads` — per-agent read-state | `./helpdesk.md` §3 |
-| 081 | `add_messenger_outbox_and_max_bot_settings` | `messenger_outbox` + `helpdesk_max_bot_settings` (MAX-бот) — см. [§«MAX-messenger»](#max-messenger--messenger_outbox-миграция-081) | `./helpdesk.md` §3, `./wip/helpdesk-max-messenger.md` |
+| 081 | `add_messenger_outbox_and_max_bot_settings` | `messenger_outbox` + `helpdesk_max_bot_settings` (MAX-бот) — см. [§«MAX-messenger»](#max-messenger--messenger_outbox-миграция-081) | `./helpdesk.md` §«MAX-messenger оповещения» |
 
