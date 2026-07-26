@@ -74,6 +74,11 @@ dev = [
     "testcontainers[postgres,redis]>=4.7.0",
     "httpx>=0.27.0",
     "fakeredis>=2.23.0",
+    # Hypothesis — property-based testing для алгоритмов с чёткими инвариантами
+    # (например, meetings/bookings_service._compute_diff: симметрия множеств,
+    # conservation of users, idempotency). Только unit-тесты. Версия на >=
+    # (как pytest): hypothesis обратно совместима, не вводит жёстких правил.
+    "hypothesis>=6.100.0",
     # Инструменты статического анализа — ТОЧНО зафискированы (==), не >=.
     # Причина: ruff/mypy добавляют новые правила в minor-версиях. Открытый >=
     # означает, что каждый CI-run ставит новейшую версию → правила меняются под

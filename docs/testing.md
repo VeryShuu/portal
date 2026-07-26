@@ -6,7 +6,14 @@
 > **Активный план доработки:** `wip/test-coverage-hardening.md`.
 > **ADR:** 037.
 
-> Последнее обновление: июль 2026 — итерация 17 (test-coverage hardening: нижний хвост backend + frontend smoke refactor + utils-тесты + поведенческие тесты). Замеры 2026-07-20: Backend — **3669** unit + **76** security тестов (0 failures, 5 skipped по jq-unavailable, 8 warnings), покрытие **81.08%** по merged unit+security (гейт 75%, было 78.95% в итерации 16). Frontend — **2111** Vitest-тест в **214** spec-файлах (было 1884 в 161 файле); покрытие **66.67% lines / 60.58% branches / 54.26% funcs / 68.31% stmts**; пороги подняты и зафиксированы: `lines 65 / functions 52 / branches 59 / statements 66` (с запасом 2% на CI-флуктуации). Smoke-файлы `pages-smoke.spec.ts` и `components-smoke-extra{1..5}.spec.ts` растащены в 35 отдельных файлов по правилу «one component per file». Playwright e2e — 11 спеков (включая `@a11y` пилот через `@axe-core/playwright`), проекты chromium/firefox/webkit/mobile. Lint/типизация: `ruff` 0 errors, `mypy app` 0 issues, `i18n:check` OK. Итерация 16 (test-coverage audit & hardening) — см. git-историю.
+> Последнее обновление: июль 2026 — итерация 18 (test-audit remediation: устранены фейк-тесты admin-tabs-smoke + property-based tests через Hypothesis + nightly-marker для jq/envsubst-тестов). Замеры 2026-07-26: Backend — **3814** unit + **77** security тестов (0 failures, 5 skipped по `@pytest.mark.nightly`-маркеру, 14 warnings), покрытие **81.32%** по merged unit+security (гейт 75%). Frontend — **2130** Vitest-тест в **216** spec-файлах; пороги зафиксированы: `lines 65 / functions 52 / branches 59 / statements 66`. Playwright e2e — 11 спеков (включая `@a11y` пилот через `@axe-core/playwright`), проекты chromium/firefox/webkit/mobile. Lint/типизация: `ruff` 0 errors, `mypy .` 0 issues, `i18n:check` OK. Итерации 16-17 — см. git-историю.
+
+> **Итерация 18 (test-audit remediation):** по результатам аудита системы тестирования устранены:
+> - **7 фейк-тестов** в `admin-tabs-smoke.spec.ts` (`catch { expect(true).toBe(true) }` проглатывал любую ошибку mount'а → тесты были всегда «зелёными», но ничего не проверяли). Честный mount теперь работает; вскрыт дефект мокинга `@vicons/ionicons5` (Proxy ломался на named-export validation) — заменён на явный список иконок.
+> - **Property-based tests (Hypothesis)** для `meetings/bookings_service._compute_diff` — 5 инвариантов (conservation, disjoint, reflexive, symmetric direction-swap, non_participant_changed passthrough) на 280+ примерах каждый. Зависимость `hypothesis>=6.100.0` добавлена в dev-extras.
+> - **`kb_markdown.py` покрытие 36% → 64%** через async-mock тесты `get_section_path` / `get_or_create_section_by_path` / `zip_section` (ранее нетестируемые async DB-функции).
+> - **`@pytest.mark.nightly` для nginx render-config.sh тестов** (требуют jq/envsubst/POSIX sh) — auto-skip через хук `pytest_collection_modifyitems` в `conftest.py`; skip-причина стала самодокументируемой («nightly marker: set NIGHTLY=true» вместо «jq not available»).
+> - Регенерирован `docs/tests.generated.md` (+20 тестов).
 
 > В итерации 17 найден и исправлен production-баг: `app/core/limiter.py` ловил несуществующее исключение `pyredis.exceptions.NoScriptException` (правильное имя `NoScriptError`) → при FLUSH Redis'а лимитер падал вместо перезагрузки Lua-скрипта. Покрыто регрессионным тестом `test_patched_call_reloads_lua_script_on_noscripterror`. См. обновлённый ADR-043 (грабли №4, №5).
 
@@ -335,7 +342,7 @@ BASE_URL=https://portal.staging \
 
 ## Покрытие
 
-### Backend Unit (3745 unit+security тестов по замеру 2026-07-20, gate 75% на merged unit+integration; фактическое merged unit+security покрытие 81.08%)
+### Backend Unit (3891 unit+security тестов по замеру 2026-07-26, gate 75% на merged unit+integration; фактическое merged unit+security покрытие 81.32%)
 
 | Файл | Что покрывается |
 |------|-----------------|

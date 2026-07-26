@@ -81,8 +81,22 @@ vi.mock('../../src/api', () => ({
   BASE_URL: '/api/v1',
 }))
 
-vi.mock('@vicons/ionicons5', () => new Proxy({}, { get: () => ({ template: '<span />' }) }))
-vi.mock('@vicons/fluent', () => new Proxy({}, { get: () => ({ template: '<span />' }) }))
+// Иконки перечислены явно (не Proxy) — vitest валидирует named-exports и
+// кидает понятную ошибку, если в табе появится новая иконка без записи тут.
+// Proxy-подход (прежняя версия) молча возвращал стаб для любого имени, но
+// vitest при import-validation всё равно бросал "[vitest] No X export is
+// defined", из-за чего mount падал — а обман-тест try/catch это маскировал.
+// Список собран из 7 табов ниже: rg "from '@vicons" src/pages/admin/tabs/.
+const _iconStub = { template: '<span />' }
+vi.mock('@vicons/ionicons5', () => ({
+  AddOutline: _iconStub,
+  CreateOutline: _iconStub,
+  LocationOutline: _iconStub,
+  RefreshOutline: _iconStub,
+  ReorderThreeOutline: _iconStub,
+  TrashOutline: _iconStub,
+}))
+vi.mock('@vicons/fluent', () => ({}))
 
 const globalPlugins = {
   plugins: [i18n],
@@ -112,12 +126,14 @@ describe.each(tabs)('%s', (name, path) => {
   })
 
   it(`${name} mounts without throwing`, async () => {
+    // ВАЖНО: никаких try/catch с `expect(true).toBe(true)` — это был обман,
+    // проглатывавший ЛЮБУЮ ошибку mount'а и оставлявший тест «зелёным» даже
+    // при сломанном компоненте. Теперь ошибка валит тест честно (AGENTS.md
+    // §Coding Conventions: «line-coverage обманчив — mount/smoke при func-cov
+    // 0–11%»). Если этот тест падает — компонент реально сломан, чинить код,
+    // а не возвращать try/catch.
     const Component = (await import(/* @vite-ignore */ path)).default
-    try {
-      const wrapper = mount(Component, { global: globalPlugins })
-      expect(wrapper.exists()).toBe(true)
-    } catch {
-      expect(true).toBe(true)
-    }
+    const wrapper = mount(Component, { global: globalPlugins })
+    expect(wrapper.exists()).toBe(true)
   })
 })

@@ -557,6 +557,24 @@ def pytest_configure(config: pytest.Config) -> None:
     )
 
 
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    """Auto-skip `nightly`-marked tests unless NIGHTLY=true.
+
+    Симметрично с integration-маркером: тяжёлые/зависящие от окружения тесты
+    (например, nginx render-config.sh, требующий jq/envsubst/POSIX sh) помечаются
+    `@pytest.mark.nightly` и гоняются только в nightly-CI. В обычных прогонах
+    (unit/security) они auto-skip'аются с понятной причиной, а не падают с
+    "jq not available" — это убирает шум из daily-отчётов и делает skip-причину
+    самодокументируемой (см. ADR про маркеры в pyproject.toml).
+    """
+    if os.environ.get("NIGHTLY", "false").lower() in ("1", "true", "yes"):
+        return
+    nightly_skip = pytest.mark.skip(reason="nightly marker: set NIGHTLY=true to run")
+    for item in items:
+        if item.get_closest_marker("nightly") is not None:
+            item.add_marker(nightly_skip)
+
+
 # ── Shared DB fixtures (REVIEW-2.1) ─────────────────────────────────────────
 # Re-export from tests/db_fixtures.py so that any test (unit, integration, security)
 # can request `real_db_session`/`real_user`/`real_editor`/`real_admin`. Fixtures

@@ -507,3 +507,252 @@ def test_slugify_special_chars_removed():
     slug = _slugify("hello!@#$%world")
     assert "!" not in slug
     assert "@" not in slug
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# get_section_path / get_or_create_section_by_path — async DB-функции.
+# Покрывают ранее нетестируемые ветки kb_markdown.py (строки 70-125) через
+# async-mock сессии: эмулируем result.fetchall() / scalar_one_or_none() /
+# flush(), без реальной БД. Это закрывает провал покрытия (был 36%) —
+# чистая бизнес-логика (рекурсивный path-resolution, advisory-lock, upsert)
+# теперь проверяется детерминированно.
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class _FakeResult:
+    """Минимальный async-mock SQLAlchemy Result для KB-section запросов.
+
+    Эмулирует два варианта ответа БД:
+    - ``rows`` для ``fetchall()`` (рекурсивный ancestors-CTE в get_section_path);
+    - ``scalar`` для ``scalar_one_or_none()`` (lookup существующей секции).
+    """
+
+    def __init__(self, rows=None, scalar=None):
+        self._rows = rows or []
+        self._scalar = scalar
+
+    def fetchall(self):
+        return self._rows
+
+    def scalar_one_or_none(self):
+        return self._scalar
+
+    def all(self):
+        return self._rows
+
+    # selectinload-пути_kb_markdown не используют single()/first(), но
+    # оставляем для устойчивости к изменению запроса.
+    def scalars(self):
+        return self
+
+
+class _FakeDB:
+    """Async mock SQLAlchemy сессии: записывает вызовы execute() и flush().
+
+    Каждому вызову execute сопоставляет предзаготовленный результат через
+    очередь ответов: либо по сигнатуре SQL (advisory_lock / ancestors /
+    lookup), либо FIFO. Это позволяет воспроизводить многошаговые сценарии
+    get_or_create_section_by_path без реальной транзакции.
+    """
+
+    def __init__(self, responses=None):
+        # responses: list of _FakeResult, возвращается по порядку вызовов execute
+        self._responses = list(responses or [])
+        self.calls: list[tuple] = []  # (sql_str, params)
+
+    async def execute(self, stmt, params=None):
+        # SQLAlchemy text() / select() → нормализуем до строки для инспекции
+        sql_str = str(stmt)
+        self.calls.append((sql_str, params))
+        if self._responses:
+            return self._responses.pop(0)
+        return _FakeResult()
+
+    async def flush(self):
+        self.calls.append(("<flush>", None))
+
+    def add(self, obj):
+        self.calls.append(("<add>", obj))
+
+
+@pytest.mark.asyncio
+async def test_get_section_path_returns_none_for_none_id():
+    """section_id=None → None, без запросов к БД (ранний return)."""
+    from app.services.kb_markdown import get_section_path
+
+    db = _FakeDB()
+    result = await get_section_path(db, None)
+    assert result is None
+    assert db.calls == []  # ни одного execute
+
+
+@pytest.mark.asyncio
+async def test_get_section_path_returns_slash_joined_ancestors():
+    """Рекурсивный ancestors-CTE возвращает путь /root/child/leaf."""
+    from app.services.kb_markdown import get_section_path
+
+    # Имитация result.fetchall(): кортежи (title,), отсортированные ancestors'ом
+    db = _FakeDB(responses=[_FakeResult(rows=[("Root",), ("Child",), ("Leaf",)])])
+    path = await get_section_path(db, uuid.uuid4())
+    assert path == "/Root/Child/Leaf"
+    assert len(db.calls) == 1
+    # Убедимся, что SQL содержит рекурсивный ancestors-CTE
+    assert "ancestors" in db.calls[0][0].lower()
+
+
+@pytest.mark.asyncio
+async def test_get_section_path_returns_none_when_section_not_found():
+    """Пустой result → None (секция удалена или не существует)."""
+    from app.services.kb_markdown import get_section_path
+
+    db = _FakeDB(responses=[_FakeResult(rows=[])])
+    path = await get_section_path(db, uuid.uuid4())
+    assert path is None
+
+
+@pytest.mark.asyncio
+async def test_get_or_create_section_by_path_returns_none_for_empty_path():
+    """Пустой путь ('', '/', '///') → None без advisory-lock.
+
+    `'   '` (только пробелы) сюда НЕ относится: ``path.strip('/')`` оставляет
+    пробелы, после split — сегмент `'   '`, который slugify'ится в fallback
+    `'section'` и создаёт секцию. Это отдельный кейс (см. тест ниже).
+    """
+    from app.services.kb_markdown import get_or_create_section_by_path
+
+    for empty in ("", "/", "///"):
+        db = _FakeDB()
+        result = await get_or_create_section_by_path(db, empty, uuid.uuid4())
+        assert result is None
+        assert db.calls == []  # ни одного execute для пустых путей
+
+
+@pytest.mark.asyncio
+async def test_get_or_create_section_by_path_whitespace_uses_slug_fallback():
+    """Пробельный путь `'   '` → slugify fallback `'section'`, создаётся секция.
+
+    Документированное поведение: ``_slugify`` возвращает fallback для пустых
+    после нормализации строк. Это не баг — UI не отправляет такие пути, но
+    бизнес-логика детерминированно создаёт `section` вместо падения.
+    """
+    from app.models.kb import KbSection
+    from app.services.kb_markdown import get_or_create_section_by_path
+
+    db = _FakeDB(
+        responses=[
+            _FakeResult(),  # advisory_lock
+            _FakeResult(scalar=None),  # lookup: такой slug не найден
+        ]
+    )
+    result = await get_or_create_section_by_path(db, "   ", uuid.uuid4())
+    added = next(c[1] for c in db.calls if c[0] == "<add>")
+    assert isinstance(added, KbSection)
+    assert added.slug == "section"  # slugify fallback для пустого/пробельного
+    assert result == added.id
+
+
+@pytest.mark.asyncio
+async def test_get_or_create_section_by_path_resolves_existing_section():
+    """Существующая секция (scalar_one_or_none не None) → её id, без создания."""
+    from app.services.kb_markdown import get_or_create_section_by_path
+
+    existing_id = uuid.uuid4()
+    # На каждый part пути: advisory_lock ответ + lookup (возвращает секцию)
+    existing_section = SimpleNamespace(id=existing_id)
+    db = _FakeDB(
+        responses=[
+            _FakeResult(),  # pg_advisory_xact_lock для "root/section-slug"
+            _FakeResult(scalar=existing_section),  # lookup нашёл секцию
+        ]
+    )
+    user_id = uuid.uuid4()
+    result = await get_or_create_section_by_path(db, "Section Name", user_id)
+    assert result == existing_id
+    # Проверяем, что создание не происходило (нет flush/add)
+    assert not any(call[0] == "<flush>" for call in db.calls)
+    assert not any(call[0] == "<add>" for call in db.calls)
+
+
+@pytest.mark.asyncio
+async def test_get_or_create_section_by_path_creates_missing_section():
+    """Секции нет → создаётся новая через db.add + flush, возвращается её id."""
+    from app.models.kb import KbSection
+    from app.services.kb_markdown import get_or_create_section_by_path
+
+    db = _FakeDB(
+        responses=[
+            _FakeResult(),  # advisory_lock
+            _FakeResult(scalar=None),  # lookup: секция не найдена
+        ]
+    )
+    user_id = uuid.uuid4()
+    result = await get_or_create_section_by_path(db, "New Section", user_id)
+    # Создание прошло через add + flush
+    added = next(c[1] for c in db.calls if c[0] == "<add>")
+    assert isinstance(added, KbSection)
+    assert added.slug == "new-section"
+    assert added.title == "New Section"
+    assert added.parent_id is None
+    assert added.created_by == user_id
+    # Возвращается id созданной секции
+    assert result == added.id
+    assert any(call[0] == "<flush>" for call in db.calls)
+
+
+@pytest.mark.asyncio
+async def test_get_or_create_section_by_path_handles_nested_path():
+    """Многоуровневый путь 'a/b/c' → 3 итерации, parent_id прокидывается."""
+    from app.services.kb_markdown import get_or_create_section_by_path
+
+    parent_id = uuid.uuid4()
+    child_id = uuid.uuid4()
+    leaf_id = uuid.uuid4()
+
+    # 3 уровня × (advisory_lock + lookup) = 6 ответов
+    db = _FakeDB(
+        responses=[
+            _FakeResult(),  # lock a
+            _FakeResult(scalar=SimpleNamespace(id=parent_id)),  # a found
+            _FakeResult(),  # lock a/b
+            _FakeResult(scalar=SimpleNamespace(id=child_id)),  # b found
+            _FakeResult(),  # lock a/b/c
+            _FakeResult(scalar=SimpleNamespace(id=leaf_id)),  # c found
+        ]
+    )
+    result = await get_or_create_section_by_path(db, "A/B/C", uuid.uuid4())
+    assert result == leaf_id
+    # Должно быть 6 execute-вызовов (3 lock + 3 lookup), без создания
+    execute_calls = [c for c in db.calls if c[0] not in ("<flush>", "<add>")]
+    assert len(execute_calls) == 6
+    assert not any(c[0] == "<add>" for c in db.calls)
+
+
+@pytest.mark.asyncio
+async def test_zip_section_respects_max_depth():
+    """zip_section обрывает рекурсию на depth > 20 (защита от циклов)."""
+    import zipfile
+
+    from app.services.kb_markdown import zip_section
+
+    zf = zipfile.ZipFile(io.BytesIO(), "w", zipfile.ZIP_DEFLATED)
+    root_section = SimpleNamespace(
+        id=uuid.uuid4(), title="Root", sort_order=0, parent_id=None, created_by=uuid.uuid4()
+    )
+    db = _FakeDB(
+        responses=[
+            _FakeResult(rows=[]),  # articles: пусто
+            _FakeResult(rows=[]),  # children: пусто (нет рекурсии)
+        ]
+    )
+    # Вызов на depth=21 → ранний return без execute
+    await zip_section(
+        zf,
+        root_section,
+        db,
+        SimpleNamespace(role="admin"),
+        None,
+        prefix="",
+        depth=21,
+        current_section_path="/Root",
+    )
+    assert db.calls == []  # ранний return на depth > 20

@@ -159,10 +159,20 @@ class TestSaveAndToOut:
         assert out.nc_service_app_password_set is False
 
 
+@pytest.mark.nightly
 class TestRenderNginxConfigsScript:
     """Smoke tests for nginx/render-config.sh — the rendering shell script
-    invoked by the nginx-config sidecar. Skipped when no POSIX shell is
-    available (e.g. Windows CI without WSL/git-bash)."""
+    invoked by the nginx-config sidecar.
+
+    Помечены ``@pytest.mark.nightly``: требуют внешние инструменты (POSIX sh,
+    jq, envsubst), которых нет в prod-backend образе и не всегда достаточно в
+    dev-окружении. Гоняются в nightly-CI (где окружение контролируемо), а в
+    daily-прогонах auto-skip'аются хуком ``pytest_collection_modifyitems`` в
+    ``conftest.py`` (причина: "nightly marker: set NIGHTLY=true to run") — это
+    убирает шум из ежедневных отчётов и делает skip самодокументируемым.
+    Defence-in-depth: ``_skip_if_missing_tools`` остаётся как запасная проверка
+    на случай, если nightly-маркер будет снят, а инструментов всё ещё нет.
+    """
 
     @staticmethod
     def _have_sh() -> bool:
