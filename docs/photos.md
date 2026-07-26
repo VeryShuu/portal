@@ -77,6 +77,8 @@
 
 ## 3. Модель данных
 
+> **Миграции модуля** (`./backend/migrations/versions/`): `014_photos` (базовые таблицы), `015_photo_share_tokens`, `016_photo_folders_fs_path`, `017_photo_zip_jobs`, `018_photo_tags`, `019_photo_folder_share_tokens`, `031_photo_folders_fk_restrict` (parent_id → RESTRICT), `035_photo_folders_path_unique` (path → partial-unique), `045_soft_delete_partial_indexes`, `046_kb_users_partial_indexes`, `056_photo_folder_perm_unique_subject_type`, `057_photo_folder_storage_kind` (storage_kind/storage_root), `060_photos_blurhash`.
+
 ### Схема таблиц БД (SQLAlchemy)
 
 ```
@@ -97,7 +99,7 @@ photo_folders
   deleted_at (DateTime)      -- Мягкое удаление (nullable)
   -- Ограничения и индексы:
   -- UNIQUE (parent_id, slug)
-  -- INDEX (path)
+  -- UNIQUE (path) WHERE deleted_at IS NULL   -- uq_photo_folders_path (миграция 035; ранее — обычный INDEX)
   -- INDEX active (parent_id) WHERE deleted_at IS NULL
   -- CHECK (storage_kind IN ('originals','import'))
 

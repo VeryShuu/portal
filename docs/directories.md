@@ -15,7 +15,7 @@
 | Backend | FastAPI (`./backend/app/api/directories.py`), SQLAlchemy, PostgreSQL |
 | Frontend | Vue 3 + Pinia + Naive UI (`./frontend/src/pages/StaffDirectoryPage.vue`, `./frontend/src/pages/staff/DirectoryTab.vue`) |
 | Воркер | — |
-| Хранилище | База данных (PostgreSQL), внешние папки в `./backend/app/models/files.py` (привязка `folder_id` к `/files`), аватары (при наличии) сохраняются в `/data` |
+| Хранилище | База данных (PostgreSQL), внешние папки в `./backend/app/models/files.py` (привязка `folder_id` к `/files`) |
 | Префикс API | `/api/v1/directories` |
 | ACL-кэш | Redis (используется для проверки настроек модулей из `./backend/app/core/modules_config.py`) |
 
@@ -215,7 +215,7 @@
 
 - **Валидация форматов**: Валидация форматов полей и контактов происходит на уровне Pydantic-схем в `./backend/app/schemas/object_directory.py`. Паттерны: `slug` матчит регулярное выражение `^[a-z][a-z0-9_-]*$`, `key` матчит `^[a-z][a-z0-9_]*$`.
 - **Избегание `EmailStr`**: Для хранения email-адресов в полях атрибутов и контактов используется обычный тип `String(255)`, а не Pydantic-тип `EmailStr`, так как DNS-валидация ломается на внутренних `.local` корпоративных доменах. Валидация выполняется через простую проверку наличия символа `@`.
-- **Доступ к медиа**: Хранение аватаров (если применимо к сотрудникам/объектам в будущем) происходит в локальной ФС в `/data` (НЕ в Nextcloud), файлы раздаются через nginx.
+- **Доступ к медиа**: у объектов нет аватаров (фича убрана миграцией `065_directory_entry_folder`) — вместо них используется привязка `folder_id` к модулю «Файлы» (см. §«Привязка к разделу файлов»).
 
 ---
 

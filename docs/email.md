@@ -47,7 +47,7 @@
 | Поле | Тип | Назначение |
 |---|---|---|
 | `id` | UUID PK | `gen_random_uuid()` |
-| `kind` | varchar(64) | Тип письма: `meeting`, `news`, `kb_suggestion`, `file_share`, `generic` |
+| `kind` | varchar(64) | Тип письма: `meeting`, `news`, `file_share`, `helpdesk`, `generic` (константы `KIND_*` в `./backend/app/services/email_outbox.py`). `generic` — для писем без специализированного шаблона (включая helpdesk-дайджесты и уведомления заявителям). |
 | `to_email` | varchar(320) | Получатель |
 | `subject` | varchar(998) | Тема письма |
 | `body_html` | text | HTML-тело письма |
@@ -130,6 +130,7 @@ PENDING ──[claim_pending]──> SENDING ──[success]──> SENT (sent_a
    - Пытается отправить сообщение через `smtp_send(...)` (обёртка над `aiosmtplib.send`).
    - При успехе: `mark_sent(session, id)` (статус `SENT`, `sent_at=NOW`, `attempts += 1`).
    - При ошибке: `classify_smtp_error(...)` классифицирует её, затем `mark_failed(...)` рассчитывает время повтора через `compute_retry_defer(...)` и переводит письмо в `PENDING` с новым `next_attempt_at` либо отправляет в `DLQ`.
+   - **Watchdog (восстановление застрявших):** перед `claim_pending` диспетчер вызывает `requeue_stale_sending(session, older_than_seconds=600)` (`./backend/app/services/email_outbox.py`) — записи в статусе `SENDING`, зависшие дольше 10 минут (воркер упал посреди отправки, OOM, restart), возвращаются в `PENDING` для повторного захвата. Без этого шага письмо, не дошедшее до `mark_sent`/`mark_failed`, навсегда осталось бы в `SENDING` и потерялось.
 
 2. **`cleanup_email_outbox`** — выполняется раз в сутки в 04:15 (cron `hour=4, minute=15`).
    - Вызывает `cleanup_old_sent(session, older_than_days=30)` для безвозвратного удаления записей со статусом `SENT`, созданных более 30 дней назад.
@@ -178,6 +179,7 @@ PENDING ──[claim_pending]──> SENDING ──[success]──> SENT (sent_a
 |---|---|---|
 | **Meetings** | `./backend/app/services/meetings/notifications.py::enqueue_meeting_emails` | Вызывается роутами (`./backend/app/api/meetings/bookings.py`, `series.py`) **в той же сессии и до `db.commit()`**, что и бронирование — письма коммитятся атомарно с бизнес-операцией (outbox-инвариант). Создаёт записи в outbox для каждого приглашённого участника, организатора и `room.email`. iCal календарь кодируется в Base64 и сохраняется в `payload.ical_b64`. Standalone-обёртка `dispatch_meeting_emails` (своя сессия+транзакция) сохранена для legacy/ARQ-fallback. |
 | **News (рассылка по кнопке)** | `./backend/app/services/news/email_share.py::share_news_by_email` | Ручная рассылка: редактор выбирает получателей и отправляет письмо о новости (тема `Новость: {title}`, `kind=KIND_NEWS`). Шаблон — `build_share_email_content` (брендированный, dark-safe, с inline-обложкой в `payload.inline_images`). Это **единственный** путь отправки email по новостям. |
+| **Helpdesk** (тяжёлый producer) | `./backend/app/services/helpdesk/outbound.py` (`kind=KIND_HELPDESK`, 3 точки: отправка ответа агента, уведомление заявителя о новом сообщении, авто-ответ при создании заявки), `./backend/app/services/helpdesk/digest.py` (`kind=KIND_GENERIC` — сводка), `./backend/app/services/helpdesk/notifications.py` (`kind=KIND_GENERIC` — уведомления) | Двусторонний email-thread тикетов (`[#TKT-{number}]`, заголовки `Message-ID`/`In-Reply-To`/`References` строятся в `./backend/app/services/helpdesk/outbound.py` + `worker/tasks/email_outbox.py`). Inline-картинки из ответов агента встраиваются как `cid:`-attach (`multipart/related`). Подробности — `./docs/helpdesk.md` §«Email-thread». |
 
 ### Унаследованные (Legacy) задачи
 ARQ-задачи `send_meeting_email` (в `./backend/app/worker/tasks/meetings/email.py`) и `send_email_notification` (в `./backend/app/worker/tasks/notifications.py`) сохранены в качестве fallback-пути. Они также используют хелперы из `./backend/app/worker/tasks/email_utils.py` (классификацию ошибок, `arq.Retry(defer=...)`, `max_tries=6`, `job_timeout=60`), но не задействуют механизм outbox. Все новые модули должны отправлять письма исключительно через `enqueue_outbox_email(...)`.

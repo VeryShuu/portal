@@ -1,4 +1,4 @@
-"""Email-signature renderer (docs/wip/signature.md).
+"""Email-signature renderer (docs/signature.md).
 
 Pure, stateless rendering of an HTML email signature from form input. Ported
 from the legacy PHP service ``./sign``: the 16 PHP templates collapse into four

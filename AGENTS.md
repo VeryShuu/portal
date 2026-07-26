@@ -2,11 +2,33 @@
 
 Ты — AI-разработчик корпоративного интранет-портала с полным доступом к файлам проекта.
 
+## ⚡ Быстрый старт (читать ПЕРВЫМ, ~5 мин)
+
+Холодный ориентир для новой сессии без памяти. Подробности — в разделах ниже.
+
+**Что это:** корпоративный интранет-портал на ~300 сотрудников (FastAPI + Vue 3 + PostgreSQL/Redis, intranet/VPN-only). Стек зафиксирован — не менять без обсуждения (см. §«Стек»).
+
+**3 обязательных чтения под задачу** (роутер «задача → что читать» — в [`./docs/README.md`](./docs/README.md)):
+- Работа с БД → [`docs/db-schema.md`](./docs/db-schema.md) (84 миграции, актуальная схема)
+- Новый/изменённый API → [`docs/api-contracts.md`](./docs/api-contracts.md) (296 endpoints)
+- Права доступа → [`docs/roles-matrix.md`](./docs/roles-matrix.md)
+- Спорное решение → [`docs/adr.md`](./docs/adr.md) (ADR-001–047)
+- **Модульная задача → модульный док `docs/<module>.md`** (helpdesk/files/photos/kb/news/meetings/… — полный список в docs/README.md). Не начинай модуль без чтения его дока.
+
+**Поднять dev:** `./setup.sh` → п.2 «Разработка» (Docker, hot-reload, postgres/redis на 5432/6379, backend на :8000, Vue HMR на :5173). Команды тестов/lint — в §«Команды разработки».
+
+**Контракты не меняем без явного подтверждения.** API/БД-контракты — в `docs/api-contracts.md` и `docs/db-schema.md`; `*.generated.md` и `openapi.json` — авто-генерация (не править руками, регенерировать скриптами `backend/scripts/`).
+
+**Граф кода:** `codebase-memory` (MCP, project=`portal`) — для impact-анализа, callers/callees, поиска хотспотов. В начале сессии проверь свежесть через `.codebase-memory/artifact.json` vs `git rev-parse HEAD`; отстаёт — переиндексируй.
+
+---
+
 **Принципы работы:**
 - Никаких костылей и временных решений — только качественный код по best practices.
 - Пиши тесты, проверяй их до и после правок кода.
 - При крупных изменениях — пересборка контейнеров без кэша (`docker compose build --no-cache <service>`). На проде образы не собираются локально — пушатся в GHCR через CI и тянутся `docker compose pull` (ADR-045); локальная сборка — только dev/staging.
 - **Prod-контур не требует клон репозитория** (ADR-046): образы из GHCR + deploy-bundle (`docker-compose.yml` + `.env.example` + `setup.sh` + `monitoring/`) из GitHub Release. Профиль контура фиксируется в `.portal-profile` (`prod`/`dev`, default `dev`); `setup.sh` гейтит пункты меню и блокирует local-build в prod-контуре. `init.sql` запечён в postgres-образ (`/docker-entrypoint-initdb.d/01-init.sql`), bind-mount убран.
+- **Semver-lock прода** (ADR-047): prod-контур обязан пиниться к релизному тегу `IMAGE_TAG=v1.x.x` в `.env` — `latest` в prod-профиле отвергается `setup.sh::preflight()` (защита от implicit-deploy). Релиз — через `./scripts/release.sh <ver>` (валидирует semver + чистое дерево + sync с main → annotated tag → CI публикует образы + deploy-bundle). Откат = смена `IMAGE_TAG` на предыдущий релиз.
 ---
 
 ## Приоритет инструкций (от высшего к низшему)
@@ -28,6 +50,8 @@
 ## Доступные инструменты (MCP)
 
 Конфигурация: **workspace** серверы — в `.zcode/config.json` (auto-connect при открытии проекта, локальный файл, не в git); **user** серверы — в `~/.zcode/cli/config.json`. Секреты **никогда** в конфиг-файлах — только через env / wrapper-скрипты.
+
+> **Настройка на новой машине:** пошаговый рецепт (установка бинарников, wrapper-скрипты `scripts/mcp/`, диагностика «тул не появился») — в [`./docs/mcp-setup.md`](./docs/mcp-setup.md). Эта таблица — справочник «что есть и когда звать»; mcp-setup — «как поставить и починить».
 
 | Инструмент | Scope | Назначение | Когда использовать |
 |---|---|---|---|
@@ -145,14 +169,16 @@ cd backend && ./scripts/ci_lint.sh
 
 ## Перед каждой задачей
 
-1. Прочитай этот файл — он даёт общую картину
-2. В зависимости от задачи читай:
-   - Работа с БД → `docs/db-schema.md`
-   - Новый/изменённый API → `docs/api-contracts.md`
+1. Прочитай этот файл (особенно §«⚡ Быстрый старт» вверху) — он даёт общую картину
+2. **Модульная задача → модульный док `docs/<module>.md` ПЕРВЫМ** (helpdesk/files/photos/kb/news/meetings/directories/…). Полный роутер «задача → что читать» — в [`docs/README.md`](./docs/README.md). Не лезь в код модуля, не прочитав его док.
+3. В зависимости от задачи дополнительно читай:
+   - Работа с БД → `docs/db-schema.md` (84 миграции; перед новой — проверь следующий свободный номер)
+   - Новый/изменённый API → `docs/api-contracts.md` + сверка с `openapi.json` / `*.generated.md`
    - Изменение прав доступа → `docs/roles-matrix.md`
    - Логирование/метрики/мониторинг/alerting → `docs/monitoring.md` + `monitoring/README.md` (ADR-044)
-   - Спорное архитектурное решение → `docs/adr.md`
-3. Не меняй API-контракты без явного подтверждения
+   - Спорное архитектурное решение → `docs/adr.md` (ADR-001–047)
+   - Production-деплой/релиз → `docs/deploy.md` (ADR-045/046/047 — registry-pull, deploy-bundle, semver-lock)
+4. Не меняй API-контракты без явного подтверждения
 
 ---
 
@@ -289,7 +315,7 @@ cd backend && ./scripts/ci_lint.sh
 - Универсальный движок (Флот/Склады/…), встраивается вкладками в `/staff` (`?tab=<slug>`). Двухуровневый гейтинг: мастер `modules.json` (`directories.enabled`) → per-type `enabled`. Мутации — `editor`/`admin`.
 
 ### Техподдержка (Helpdesk)
-> Полный разбор: `./docs/helpdesk.md`. Миграции `075`–`081`.
+> Полный разбор: `./docs/helpdesk.md`. Миграции `075`–`084`.
 
 - Замена OTRS: заявки из веб-формы **или** email (IMAP-polling), статус-машина `new→open→pending→closed` (запрещённый переход → 409; статус `resolved` упразднён миграцией 079 — единый финал `closed`), двусторонний email-thread (`[#TKT-{number}]`, outbox `kind=helpdesk`).
 - **Gotcha:** агенты — отдельная сущность `helpdesk_agents` (не роль `users.role`); права через `require_helpdesk_agent` (admin — суперсет).
@@ -328,12 +354,14 @@ portal/
 ├── AGENTS.md                  ← этот файл (операционный playbook)
 ├── docs/                      ← архитектурная документация (источник истины)
 │   ├── README.md              ← полный индекс всех доков (включая модульные) + роутер «задача → что читать»
-│   ├── adr.md / adr-archive.md          ← ADR (активные / архивные)
+│   ├── adr.md / adr-archive.md          ← ADR (активные 001–047 / архивные)
 │   ├── db-schema.md / db-schema.generated.md    ← схема БД (curated / auto-gen)
 │   ├── api-contracts.md / api-contracts.generated.md  ← API (curated / auto-gen)
 │   ├── roles-matrix.md        ← матрица прав
-│   ├── testing.md / deploy.md ← стратегия тестирования / production-чеклист
-│   ├── wip/                   ← планы активных многосессионных фич (handoff)
+│   ├── testing.md / deploy.md / monitoring.md ← тесты / production-чеклист / observability
+│   ├── mcp-setup.md           ← настройка MCP-серверов ZCode на новой машине
+│   ├── <module>.md            ← модульные доки: helpdesk, files, photos, kb, news, meetings, directories, ...
+│   ├── wip/                   ← планы активных многосессионных фич (handoff; удаляются после мёржа)
 │   └── integration-keycloak-nextcloud.md
 ├── frontend/src/
 │   ├── components/            ← Vue-компоненты (admin/, files/, layout/, links/, photos/, editor/, widgets/, ...)
@@ -341,22 +369,26 @@ portal/
 │   ├── queries/               ← TanStack Query composables (keys.ts, admin/files/kb/news/...)
 │   ├── stores/                ← Pinia stores (auth, branding, files, layout, modules, notifications, photos, theme)
 │   ├── composables/           ← useFilesData, useFilesUpload, useFilesBulkOps, useFilesTree, useGlobalSearch, useManageDrawer, ...
-│   ├── api/                   ← типизированные API-клиенты
-│   ├── i18n/                  ← ru.json (мастер), en.json
-│   └── api/types.gen.d.ts     ← auto-gen из openapi.json (в .gitignore)
+│   ├── api/                   ← типизированные API-клиенты (+ types.gen.d.ts — auto-gen из openapi.json, в .gitignore)
+│   ├── utils/ styles/         ← утилиты (url, formatDate, sanitize) / design-tokens + utilities.css
+│   └── i18n/                  ← ru.json (мастер), en.json
 ├── backend/app/
 │   ├── api/                   ← роутеры (files/, kb/, photos/, helpdesk/, auth/ — подпакеты; news, users, ...)
-│   ├── core/                  ← config, database, security, limiter, logging, metrics, system_config, secret_crypto, ...
+│   ├── core/                  ← config, database, security, limiter, logging, metrics, system_config, secret_crypto, constants, uploads, ...
 │   ├── middleware/            ← csrf, idempotency, session, security_headers, ...
 │   ├── models/                ← SQLAlchemy models (files, kb, links, news, notification, photos, helpdesk, email_outbox, user, ...)
 │   ├── schemas/               ← Pydantic schemas
 │   ├── services/              ← бизнес-логика (nextcloud/, files_acl, kb_acl/, photos_acl, photos_storage,
-│   │                          │   helpdesk/, max_messenger/, email_outbox, messenger_outbox, ...)
+│   │                          │   helpdesk/, max_messenger/, keycloak/, search/, meetings/, news/,
+│   │                          │   email_outbox, messenger_outbox, audit, audit_events, ...)
+│   ├── utils/                 ← keyboard_layout, phone (форматирование телефонов для staff/signature)
 │   └── worker/                ← ARQ tasks (audit, notifications, news, photos, files, helpdesk, messenger_outbox, metrics)
 ├── backend/certs/             ← russian_trusted_root_ca.crt (Минцифры — для TLS к российским endpoint'ам; вкомпилируется в образ)
-├── backend/scripts/           ← export_openapi.py, generate_db_schema_doc.py, generate_api_contracts_doc.py, create_audit_partitions.py
-├── backend/migrations/        ← init.sql (hunspell + FTS) + versions/ (001..081)
-├── screenshot-service/        ← aiohttp + Playwright/Chromium (PDF/screenshot; отдельный контейнер)
+├── backend/scripts/           ← export_openapi, generate_{db_schema,api_contracts}_doc, create_audit_partitions,
+│                              ← ci_lint (локальный CI-эквивалент), migrate.sh (entrypoint), create_admin, backfill_news_covers
+├── scripts/                   ← release.sh (semver-релиз, ADR-047), mcp/ (wrapper'ы с секретами), test-integration.sh, ...
+├── backend/migrations/        ← init.sql (hunspell + FTS) + versions/ (001..084)
+├── screenshot-service/        ← aiohttp + Playwright/Chromium (PDF/screenshot; main.py + cookie_utils.py)
 ├── nginx/                     ← Dockerfile, Dockerfile.config (sidecar), templates/, render-config.sh
 ├── postgres/                  ← Dockerfile с hunspell-ru словарями
 ├── system_data/               ← runtime-данные (volume): nginx/, nginx_conf/, certs/, secrets/, settings/

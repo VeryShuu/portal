@@ -25,8 +25,10 @@
 
 | Слой | Путь | Назначение |
 |---|---|---|
-| Router / API | `./backend/app/api/system_settings/_onboarding.py` | Публичный эндпоинт и административные роуты сброса |
-| Router / API | `./backend/app/api/system_settings/_settings.py` | Администрирование системных настроек и шагов онбординга |
+| Router / API | `./backend/app/api/system_settings/_onboarding.py` | Публичный эндпоинт (`GET /portal/onboarding`) и административные роуты сброса просмотров/шагов |
+| Router / API | `./backend/app/api/system_settings/_settings.py` | Администрирование системных настроек (`SystemSettings`) и шагов онбординга |
+| Router / API | `./backend/app/api/system_settings/_tls.py` | Управление TLS-сертификатом/ключом (загрузка, тест, применение) — `system_settings`-пакет разбит на 4 файла, см. `__init__.py` |
+| Router / API | `./backend/app/api/system_settings/_public.py` | Публичные read-only настройки: gallery-links, staff-settings, status Nextcloud |
 | Service | `./backend/app/api/users/users_me_service.py` | Логика обновления предпочтений пользователя (лимиты и сохранение) |
 | Model | `./backend/app/models/user.py` | SQLAlchemy-модель пользователя (поле `preferences` типа `JSONB`) |
 | Schema | `./backend/app/core/system_config/_schemas.py` | Pydantic-схемы настроек системы и шага онбординга |

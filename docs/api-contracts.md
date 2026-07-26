@@ -3228,6 +3228,58 @@ Soft-delete объекта.
 
 ---
 
+## Генератор email-подписей (`/api/v1/signature`)
+
+> Stateless-рендер HTML-подписи сотрудника из формы (матрица «устройство × язык → логотип/вёрстка», внешние mage.ru-логотипы, предзаполнение из профиля). Модуль обвязан мастер-флагом `signature.enabled`. Полная спецификация — [`./signature.md`](./signature.md); точные схемы/параметры — [`./api-contracts.generated.md`](./api-contracts.generated.md) §signature.
+
+| Метод | Путь | Назначение | Права |
+|---|---|---|---|
+| `GET` | `/signature/config` | Публичная конфигурация генератора (список городов/устройств/языков для формы) | `CurrentUser` |
+| `POST` | `/signature/generate` | Сгенерировать HTML-подпись из body формы (возвращает HTML-строку для preview) | `CurrentUser` |
+| `POST` | `/signature/download` | Скачать подпись как `.htm`-файл | `CurrentUser` |
+| `GET` | `/signature/admin/settings` | Admin-настройки городов/телефонов/домена | `admin` |
+| `PUT` | `/signature/admin/settings` | Обновить admin-настройки | `admin` |
+
+---
+
+## Обратная связь (`/api/v1/feedback`)
+
+> Модуль обращений сотрудников (баги/пожелания): статус-машина, вложения, ответы админа. Полная спецификация — [`./feedback.md`](./feedback.md); точные схемы/параметры — [`./api-contracts.generated.md`](./api-contracts.generated.md) §feedback.
+
+| Метод | Путь | Назначение | Права |
+|---|---|---|---|
+| `POST` | `/feedback` | Создать обращение (текст + опц. вложения) | `CurrentUser` |
+| `GET` | `/feedback/my` | Свои обращения | `CurrentUser` |
+| `GET` | `/feedback/my/{feedback_id}` | Карточка своего обращения | `CurrentUser` |
+| `GET` | `/feedback` | Все обращения (админ-лента с фильтрами) | `admin` |
+| `GET` | `/feedback/{feedback_id}` | Карточка обращения | `admin` |
+| `POST` | `/feedback/{feedback_id}/reply` | Ответ админа (с опц. вложениями) | `admin` |
+| `PATCH` | `/feedback/{feedback_id}/status` | Сменить статус (`new`/`in_progress`/`resolved`/`closed`) | `admin` |
+| `POST` | `/feedback/{feedback_id}/attachments` | Загрузить вложение к обращению | `CurrentUser` (автор) / `admin` |
+| `GET` | `/feedback/{feedback_id}/attachments/{attachment_id}` | Скачать вложение | `CurrentUser` (автор) / `admin` |
+| `DELETE` | `/feedback/{feedback_id}/attachments/{attachment_id}` | Удалить вложение | `admin` |
+
+---
+
+## Переговорные (`/api/v1/meetings`)
+
+> Бронирование переговорных комнат (физических/виртуальных), серии встреч, iCal-уведомления, конфликт-чек через PG EXCLUDE-констрейнт. Полная спецификация — [`./meetings.md`](./meetings.md); точные схемы/параметры — [`./api-contracts.generated.md`](./api-contracts.generated.md) §meetings.
+
+| Метод | Путь | Назначение | Права |
+|---|---|---|---|
+| `GET` | `/meetings/rooms` | Список активных комнат | `CurrentUser` |
+| `POST` | `/meetings/rooms` | Создать комнату | `admin` |
+| `GET`/`PUT`/`DELETE` | `/meetings/rooms/{room_id}` | CRUD комнаты | `CurrentUser` / `admin` / `admin` |
+| `GET` | `/meetings/bookings` | Список бронирований (с фильтром по комнате/периоду) | `CurrentUser` |
+| `POST` | `/meetings/bookings` | Создать бронирование (конфликт-чек, опц. серия) | `CurrentUser` |
+| `GET` | `/meetings/bookings/my` | Свои бронирования | `CurrentUser` |
+| `GET`/`PUT`/`DELETE` | `/meetings/bookings/{booking_id}` | CRUD бронирования | `CurrentUser` (владелец) |
+| `GET` | `/meetings/participants/search` | Поиск участников для приглашения (Keycloak + внешние по email) | `CurrentUser` |
+| `PUT`/`DELETE` | `/meetings/series/{series_id}` | Управление серией встреч | `CurrentUser` (владелец) |
+| `GET` | `/meetings/series/{series_id}/count` | Кол-во встреч в серии | `CurrentUser` |
+
+---
+
 ## Шаблоны документов (v2 — не реализуется в v1)
 
 > ⚠️ Модуль отложен до v2. Endpoint'ы ниже — проектные, не реализуются.

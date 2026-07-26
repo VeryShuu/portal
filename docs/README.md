@@ -37,6 +37,7 @@
 | Аутентификация (Keycloak/SSO) | `adr.md` (017/035/036) + `integration-keycloak-nextcloud.md` |
 | Runtime-настройка Keycloak + синк пользователей (Admin UI) | `integration-keycloak-nextcloud.md` (§2.5) |
 | Локальный запуск / окружение | `dev-onboarding.md` |
+| Настройка MCP-серверов ZCode (codebase-memory, postgres, github, docker, playwright) | `mcp-setup.md` |
 | Production-деплой / TLS / секреты | `deploy.md` |
 | Тесты, команды, покрытие | `testing.md` |
 | Аудит качества кода и техдолг | `code-audit.md` |

@@ -14,7 +14,7 @@
 |---|---|
 | Backend | FastAPI (`./backend/app/api/helpdesk/`), SQLAlchemy, PostgreSQL |
 | Frontend | Vue 3 + Pinia + Naive UI (`./frontend/src/pages/helpdesk/`, `./frontend/src/components/helpdesk/`, admin-вкладка `./frontend/src/pages/admin/tabs/HelpdeskTab.vue`) |
-| Воркер | ARQ (`./backend/app/worker/tasks/helpdesk.py`): 5 cron-задач |
+| Воркер | ARQ (`./backend/app/worker/tasks/helpdesk.py`): 6 cron-задач |
 | Хранилище | БД (PostgreSQL) + локальная ФС `/data/helpdesk/TKT-{number}/` (вложения) |
 | Префикс API | `/api/v1/helpdesk` |
 | Email | transactional outbox `kind=helpdesk` (см. `./docs/email.md`) |
@@ -59,14 +59,14 @@
 | Service | `./backend/app/services/helpdesk/email_images.py` | Локализация картинок входящего письма при ingress (Zammad/Freshdesk-подход): inline `cid:` (`multipart/related`/`Content-ID`) и внешние `http(s)://` сохраняются в локальный FS как `HelpdeskAttachment`, `src` в `body_html` переписывается на относительный `/api/v1/helpdesk/attachments/{id}`. SSRF-guard (private/loopback/link-local blocked), httpx-выкачка с таймаутом и лимитом, best-effort. |
 | Service | `./backend/app/services/helpdesk/ingress.py` | IMAP-фетчер: poll, anti-loop, matching, ingest, идемпотентность через `helpdesk_email_log`, `probe_imap_connection`. |
 | Service | `./backend/app/services/helpdesk/attachments.py` | Локальное хранение вложений: upload (`UploadFile` web-путь) / `save_image_bytes` (байты — inline/remote при ingress) / resolve / download-path / cleanup. |
-| Service | `./backend/app/services/helpdesk/archive.py` | Перенос closed → архив, cleanup файлов, read-only список/карточка архива. |
+| Service | `./backend/app/services/helpdesk/archive.py` | Перенос closed → архив, cleanup файлов. |
 | Service | `./backend/app/services/helpdesk/archive_partitions.py` | Помесячные партиции `helpdesk_tickets_archive` (raw asyncpg, аналог `audit_partitions`). |
 | Service | `./backend/app/services/helpdesk/notifications.py` | In-app уведомления по событиям (через `create_notification` + Redis SSE) + email-уведомление агентам о новой заявке (`notify_ticket_created_email`, через outbox `kind=generic`) + тела письма о назначении (`build_assigned_email_*`). |
 | Service | `./backend/app/services/helpdesk/digest.py` | Ежедневная email-сводка агентам: расписание (`should_send_today`), сбор данных, построение тел, оркестрация отправки через outbox `kind=generic`. |
 | Service | `./backend/app/services/helpdesk/reads.py` | Per-agent read-state (миграция 080): `mark_ticket_seen` (UPSERT `last_seen_at`, без commit), `has_unread_requester_messages` (EXISTS публичного inbound-сообщения новее `last_seen_at`), `enrich_with_unread` (один запрос для всего списка инбокса → map `{ticket_id: bool}`, защита от N+1). |
 | Model | `./backend/app/models/helpdesk.py` | 9 моделей: `HelpdeskTicket`, `HelpdeskMessage`, `HelpdeskAttachment`, `HelpdeskAgent`, `HelpdeskEmailLog`, `HelpdeskMailboxSettings`, `HelpdeskDigestSettings`, `HelpdeskTicketArchive`, `HelpdeskTicketRead`. |
 | Schema | `./backend/app/schemas/helpdesk.py` | Pydantic-схемы + StrEnum-наборы (`HelpdeskStatus`/`Source`/`Direction`/`Visibility`). |
-| Worker | `./backend/app/worker/tasks/helpdesk.py` | 5 cron: poll, archive, partition, cleanup, daily-digest. |
+| Worker | `./backend/app/worker/tasks/helpdesk.py` | 6 cron: poll, archive, partition, cleanup, daily-digest, draft-cleanup. |
 | Crypto | `./backend/app/core/secret_crypto.py` | `encrypt_secret`/`decrypt_secret` (Fernet, ключ из `SECRET_KEY`). |
 | Migration | `./backend/migrations/versions/075_add_helpdesk.py` | 7 таблиц + первая партиция архива. |
 | Migration | `./backend/migrations/versions/076_add_helpdesk_digest_settings.py` | Singleton `helpdesk_digest_settings` (расписание сводки) + seed. |
@@ -168,7 +168,7 @@
 | `message_id` | `String(998)` PK | Message-ID или synthetic id входящего письма |
 | `ticket_id` / `message_db_id` | UUID NULL → ... `SET NULL` | |
 | `received_at` | `TIMESTAMPTZ` | |
-| `status` | `String(20)` NOT NULL | `created` / `appended` / `skipped` / `error` |
+| `status` | `String(20)` NOT NULL | `created` / `appended` / `skipped` (ошибки ингеста увеличивают счётчик в run-summary, отдельной строки лога со `status='error'` не создаются) |
 | `error` | `Text` NULL | |
 
 ### `helpdesk_mailbox_settings` — singleton (id=1)
@@ -319,7 +319,7 @@ Retry-классификация (отличается от email): 429/5xx/time
 | `PUT` | `/settings/max-bot` | Обновить. Токен write-only (`bot_token` пусто = прежний шифр). При `enabled=True` требует токен + chat_id, иначе 400. Аудит `helpdesk.max_bot_settings_changed`. |
 | `POST` | `/settings/max-bot/test` | Отправляет реальное тестовое сообщение в чат через MAX Bot API (end-to-end: проверяет и токен, и права бота в чате, и сам chat_id). На успех — `{"ok": true, "detail": "Test message sent to chat <id>. Check MAX."}`; на неудачу — маскированная ошибка с подсказкой по HTTP-коду MAX (404 → бот не участник чата, 401 → токен, 403 → права). |
 
-> **Архив в UI** показывается отдельной страницей `/helpdesk/archive` (роут `helpdesk-archive`), которая ходит через общий `GET /tickets?status=closed` (живые закрытые тикеты, не партиционированная таблица). Эндпоинтов `/archive*` и `/email-log` **нет** — service-функции `fetch_archive_list`/`fetch_archive_item` зарезервированы, но не обвязаны роутером (будущее: просмотр тикетов, попавших в `helpdesk_tickets_archive` после `HELPDESK_ARCHIVE_AFTER_DAYS`).
+> **Архив в UI** показывается отдельной страницей `/helpdesk/archive` (роут `helpdesk-archive`), которая ходит через общий `GET /tickets?status=closed` (живые закрытые тикеты, не партиционированная таблица). Эндпоинтов `/archive*` и `/email-log` **нет** — service-функции `fetch_archive_list`/`fetch_archive_item` в `archive.py` **не реализованы** (планируются как будущий просмотр тикетов, попавших в `helpdesk_tickets_archive` после `HELPDESK_ARCHIVE_AFTER_DAYS`; сейчас `archive.py` содержит только `archive_closed_tickets`/`_archive_one`/`cleanup_archived_files`).
 
 Все мутации агентов/mailbox аудируются (`helpdesk.agent_*`, `helpdesk.mailbox_settings_changed`). Тикетные мутации — `helpdesk.message_added`/`assigned`/`status_changed`.
 
@@ -509,6 +509,10 @@ Retry-классификация (отличается от email): 429/5xx/time
 
 **Точка вызова** — `_extract_bodies` (`ingress.py`): strip применяется к `plain` и `html` до санитизации, и повторно — к деривации plain ← html. Сырьё (неочищенное тело) **не сохраняется** — при `delete_after_fetch=false` оригинал доступен в почтовом ящике.
 
+### Отсечение корпоративной email-подписи (`email_signature.py`)
+
+Корпоративная подпись отправителя (логотип `Mage_Ru.png` + ФИО/должность/телефоны/email в фирменных цветах `#00479D` / `#7B92AE`, маркеры `@mage.ru`) режется из тел **до** сохранения в БД: `strip_email_signature(html)` в `./backend/app/services/helpdesk/email_signature.py`. Вызывается из `ingress.py` (`_extract_bodies`, после отсечения цитат) и повторно — из `notifications.py` при построении превью для MAX-уведомления. Цель — чистые сохранённые тела ответов и чистое превью в MAX без служебного мусора подписи; полный список маркеров/констант (`SIGNATURE_LOGO_FILENAME` / `SIGNATURE_BORDER_COLOR` / `SIGNATURE_BLUE_COLOR` и т.д.) — в самом модуле `email_signature.py`.
+
 **Грабли:**
 - Эвристика может обрезать легитимный текст, если ответ начинается со слов `От:`/`From:` или содержит `-----`. Поэтому паттерны привязаны к началу строки (`re.M`) и описывают именно заголовок блока цитаты (а не одиночное слово). Универсальный `<blockquote>` в HTML не трогается — это легитимное форматирование.
 
@@ -526,7 +530,6 @@ In-app через общий `notifications`-движок (`create_notification`
 | Публичный ответ агента | Инициатор | ✅ | ✅ (это и есть «ответ», через outbox) | — |
 | Сообщение от клиента | Текущий assignee (или все агенты) | ✅ | — | — |
 | Статус → `closed` | Инициатор | ✅ | — | — |
-| Internal note | Агенты | ✅ (не email) | — | — |
 | Ежедневная сводка (cron) | Каждый агент (персонально) | — | ✅ через outbox `kind=generic` (не тред тикета) | — |
 
 **Email заявителю «заявка зарегистрирована»** (`enqueue_created_email` в `outbound.py`, тела — `build_created_email_bodies` в `notifications.py`): при создании заявки (web-форма или IMAP-ingress) заявителю отправляется подтверждение приёма обращения — номер `[#TKT-{number}]`, «обращение принято, с вами свяжется специалист», инструкция для ответа. Через outbox `kind=helpdesk` (входит в email-тред тикета): токен `[#TKT-{number}]` в теме + `Message-ID` (корень треда, на него ссылаются будущие ответы) + `References`/`Reply-To` → ответ заявителя вернётся в тот же тикет. Для нового тикета `references` пуст (это первое письмо треда), `in_reply_to=None`. Ставится в **ту же транзакцию**, что и создание тикета+сообщения (outbox-инвариант AGENTS.md — письмо коммитится атомарно с заявкой). Тема `"[#TKT-{number}] Заявка зарегистрирована"`. Только при сконфигурированном mailbox (`support_domain`); без mailbox (web-only) — no-op (`_try_enqueue_created_email` — best-effort, лог warning). Срабатывает для всех новых тикетов (web через `create_ticket`, email через `ingress._ingest_message` при `new_status == "created"`), не для ответов на существующие.
@@ -549,16 +552,15 @@ In-app через общий `notifications`-движок (`create_notification`
 
 **Контент сообщения** (markdown):
 ```
-🆕 Новая заявка #TKT-123
+**Заявка от <ФИО заявителя>**
+**Город:** <город заявителя из attributes>
 
-Тема: <subject>
-Заявитель: <ФИО или email — из User через resolve_requester_user, fallback на снимок тикета>
-Источник: веб / email
-
+**Тема:** <subject>
+**Текст заявки:**
 <превью тела первого сообщения, обрезанное до 500 символов>
 ```
 
-Inline-кнопка «Открыть на портале» (attachment `inline_keyboard`): ссылка на `{portal_base_url}/helpdesk/tickets/{id}`. Если `portal_base_url` не задан — fallback на относительный путь (MAX покажет как текст, отправка не упадёт).
+Inline-кнопка «Открыть заявку #TKT-N» (attachment `inline_keyboard`, лейбл параметризован номером заявки): ссылка на `{portal_base_url}/helpdesk/tickets/{id}`. Если `portal_base_url` не задан — fallback на относительный путь (MAX покажет как текст, отправка не упадёт).
 
 **Грабли:**
 - **TLS: Russian Trusted Root CA** (Минцифры). Сертификат `*.max.ru` подписан через `Russian Trusted Sub CA` → `Russian Trusted Root CA`. Этот Root CA **не входит** ни в Mozilla CA Bundle Debian, ни в `certifi` (который httpx использует по умолчанию). Решено в две части: (1) сертификат Минцифры лежит в `backend/certs/russian_trusted_root_ca.crt` и устанавливается в образ через `update-ca-certificates` (см. Dockerfile stages `runtime-base` и `production`); (2) httpx-клиент в `services/max_messenger/_client.py` создаётся с `verify=ssl.create_default_context()` — это заставляет httpx использовать системный trust store, а не свой `certifi`. Без второй части системный CA-bundle игнорируется, даже если сертификат добавлен в образ. Промежуточные сертификаты (Sub CA) **не добавляем** — MAX отдаёт их в TLS-handshake.
@@ -599,6 +601,7 @@ Cron `send_helpdesk_digest` (см. §10) раз в день шлёт **кажд�
 | `create_next_helpdesk_archive_partition` | `month=*, day=1, hour=2` | **да** | `helpdesk:partition:lock` / 2 мин | Помесячные партиции архива на 3 мес вперёд |
 | `cleanup_helpdesk_attachments_task` | `hour=4, minute=0` | нет | `helpdesk:cleanup:lock` / 10 мин | Удаление папок тикетов, архивированных > `HELPDESK_ARCHIVE_FILES_TTL_DAYS` (180) назад |
 | `send_helpdesk_digest` | `minute=0` (ежечасно) | нет | `helpdesk:digest:lock` / 5 мин | Ежедневная email-сводка агентам (реальное время — из `helpdesk_digest_settings`, см. §9.1) |
+| `cleanup_expired_drafts_task` | `hour=5, minute=0` (ежедневно) | нет | `helpdesk:cleanup-drafts:lock` / 2 мин | Удаление orphan-черновиков `helpdesk_draft_attachments` (inline-картинки не-отправленных форм создания заявки) старше `HELPDESK_DRAFT_TTL_HOURS` (24); lock защищает от параллельного запуска (миграция 082) |
 
 > Раньше только `poll_helpdesk_mailbox` и `send_helpdesk_digest` брали локи; archive/partition/cleanup были без защиты → при двух воркерах `archive_closed_tickets` дублировал работу (`SELECT` без `FOR UPDATE SKIP LOCKED`, оба выбирали одни и те же `closed`-тикеты до commit). Теперь локи продублированы на всё archive-семейство через общий хелпер `_acquire_lock`/`_release_lock` в `worker/tasks/helpdesk.py`.
 
@@ -615,8 +618,10 @@ Cron `send_helpdesk_digest` (см. §10) раз в день шлёт **кажд�
 | `HELPDESK_ARCHIVE_AFTER_DAYS` | 14 | Через сколько после `closed` → архив |
 | `HELPDESK_ARCHIVE_FILES_TTL_DAYS` | 180 | Через сколько физически удаляются файлы архива |
 | `HELPDESK_REOPEN_WINDOW_DAYS` | 7 | Окно auto-reopen из `closed` |
+| `HELPDESK_DRAFT_TTL_HOURS` | 24 | TTL orphan-черновиков `helpdesk_draft_attachments` (чистит cron `cleanup_expired_drafts_task`, см. §10) |
+| `HELPDESK_DRAFT_MAX_PER_USER` | 20 | Максимум активных draft-вложений на пользователя |
 | `HELPDESK_FILES_DIR` | `/data/helpdesk` | Корень локального хранилища вложений |
-| `HELPDESK_ATTACHMENT_ALLOWED_MIMES` | frozenset(15) | Разрешённые MIME вложений (png/jpeg/pdf/docx/xlsx/…) |
+| `HELPDESK_ATTACHMENT_ALLOWED_MIMES` | frozenset(16) | Разрешённые MIME вложений (png/jpeg/pdf/docx/xlsx/…) |
 | `HELPDESK_INLINE_IMAGE_MIMES` | frozenset(4) | Разрешённые MIME inline-картинок rich-редактора (jpeg/png/gif/webp — без SVG, без документов). Лимит — `HELPDESK_MAX_ATTACHMENT_MB`. |
 
 > Константы, а не `SystemSettings`: операционные окна меняются редко, а перенос в `system_config` требует правок 3–4 Pydantic-классов + Admin UI + фронта. Перенос лимитов вложений в runtime-настройки — будущее улучшение.

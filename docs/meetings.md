@@ -105,7 +105,8 @@ backend/app/
 migrations/versions/
 ├── 048_meetings.py             # rooms, bookings, booking_rooms + EXCLUDE
 ├── 049_meeting_rooms_add_email.py  # добавление колонки email к meeting_rooms
-└── 050_drop_meetings_audit_log.py  # удаление отдельной таблицы meetings_audit_log
+├── 050_drop_meetings_audit_log.py  # удаление отдельной таблицы meetings_audit_log
+└── 055_meeting_rooms_add_kind.py   # колонка kind ('physical'|'virtual') + CHECK ck_meeting_rooms_kind
 ```
 
 ```
@@ -160,6 +161,7 @@ class MeetingRoom(Base):
     id: UUID                          # PK, gen_random_uuid()
     name: str                         # unique, max_length=200
     kind: str                         # 'physical' | 'virtual', default 'physical'
+                                      #   CHECK ck_meeting_rooms_kind (kind IN ('physical','virtual')) — миграция 055
     email: str | None                 # email ответственного за комнату (max_length=320)
     link: str | None                  # постоянная ссылка на онлайн-встречу (max_length=2048)
     timezone: str                     # IANA, default 'Europe/Moscow' (max_length=64)

@@ -1,4 +1,4 @@
-"""Email-signature generator API (docs/wip/signature.md).
+"""Email-signature generator API (docs/signature.md).
 
 Stateless module ported from the legacy PHP service ``./sign``. Master-flag
 gated via ``modules.json`` (``signature.enabled``): when off, the whole section

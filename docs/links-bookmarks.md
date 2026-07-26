@@ -55,6 +55,7 @@
 - **`id`**: `UUID` — Уникальный идентификатор ярлыка (PK, server default: `gen_random_uuid()`).
 - **`title`**: `VARCHAR(200)` — Название ярлыка (non-nullable).
 - **`url`**: `VARCHAR(2048)` — Целевой URL-адрес (non-nullable). Допускается внешний `http`/`https` URL **или** внутренний root-relative путь портала (например, `/signature`); защита от open-redirect — protocol-relative `//host` запрещён (валидация `_validate_service_link_url`).
+- **`kb_url`**: `VARCHAR(2048)` — Опциональная «ссылка на инструкцию» в Базе Знаний (миграция `074`, nullable). Рисует на карточке ярлыка вторичную кнопку-«книгу», ведущую на статью/раздел KB с описанием сервиса. Подчиняется тем же правилам, что и `url`: внешний `http`/`https` или root-relative путь (например, `/kb/articles/123`), тот же валидатор `_validate_service_link_url`. См. [§6.7](#67-ссылка-на-инструкцию-в-базе-знаний-kb_url).
 - **`icon_url`**: `VARCHAR(2048)` — Ссылка на загруженное изображение иконки (nullable).
 - **`description`**: `VARCHAR(500)` — Краткое описание сервиса (nullable).
 - **`category`**: `VARCHAR(100)` — Категория ярлыка для группировки в интерфейсе (nullable).
@@ -108,6 +109,8 @@
 Все эндпоинты, кроме публичных, требуют авторизации (кука `portal_session`). Базовый префикс всех роутеров — `/api/v1`.
 
 ### 5.1. Корпоративные ярлыки (роутер `links` в `./backend/app/api/links.py`)
+
+> `POST /links` и `PUT /links/{id}` принимают body `CreateLinkRequest`/`UpdateLinkRequest` (`./backend/app/schemas/links.py`) с полями `title`/`url`/`icon_url`/`description`/`category`/`sort_order`/`supports_sso`/`is_active`/`show_on_home`/`kb_url`. Поле `kb_url` (миграция `074`) — опциональная ссылка на инструкцию в KB, валидируется тем же `_validate_service_link_url`, что и `url`.
 
 | Метод | Путь | Описание | Ограничение прав |
 |---|---|---|---|
@@ -184,6 +187,12 @@
   - чекбокс «Показывать на главной» в форме ярлыка — `./frontend/src/components/links/LinkFormModal.vue` (открывается с карточки) и `./frontend/src/pages/admin/tabs/LinksTab.vue` (админ-таблица);
   - в таблице `LinksTab.vue` есть колонка «На главной» (иконка-домик / «—») для быстрого обзора, какие ярлыки видны в виджете.
 - **i18n-ключи:** `admin.links.form.showOnHome` (чекбокс), `admin.links.columns.showOnHome` (колонка) — в `ru.json` + `en.json`.
+
+### 6.7. Ссылка на инструкцию в Базе Знаний (`kb_url`)
+Корпоративный ярлык может нести вторую, опциональную ссылку — на статью/раздел Базы Знаний с инструкцией для сервиса. Поле `kb_url` (миграция `074`) рисует на карточке ярлыка (`LinkCard.vue`) вторичную кнопку-«книгу», которая ведёт к инструкции рядом с основным переходом.
+- **Бэкенд** (`./backend/app/schemas/links.py`): поле в `CreateLinkRequest`/`UpdateLinkRequest`, `max_length=2048`, валидируется тем же `_validate_service_link_url`, что и `url` (внешний `http`/`https` **или** root-relative путь, например `/kb/articles/123`).
+- **Фронтенд**: карточка ярлыка (`./frontend/src/components/links/LinkCard.vue`, `v-if="item.kbUrl"`) рендерит вторичную кнопку. Навигация повторяет логику основного ярлыка: root-relative путь → SPA-`router.push(...)` в той же вкладке, внешний URL → `window.open(..., '_blank', 'noopener,noreferrer')`. Поле формы — `./frontend/src/components/links/LinkFormModal.vue`.
+- **i18n-ключи:** `admin.links.form.kbUrlLabel` («Ссылка на инструкцию в Базе Знаний»), `admin.links.form.kbUrlPlaceholder` («Например: /kb/articles/123»), `admin.links.form.kbUrlHint` — в `ru.json` + `en.json`.
 
 ---
 

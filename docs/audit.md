@@ -25,11 +25,11 @@
 
 | Слой | Путь | Назначение |
 |---|---|---|
-| Router | `./backend/app/api/audit.py` | Эндпойнты просмотра и экспорта лога аудита |
-| Service | `./backend/app/services/audit.py`, `./backend/app/services/audit_partitions.py` | Вставка событий в очередь / управление партициями |
+| Router | `./backend/app/api/audit.py` (эндпойнты просмотра/экспорта) + `./backend/app/api/audit_repo.py` (repository: `count_events`/`list_events`/`list_event_types`/`stream_events` — SQL-запросы с фильтрами/пагинацией/стримингом) |
+| Service | `./backend/app/services/audit.py` (вставка событий в очередь), `./backend/app/services/audit_events.py` (реестр `EventType` StrEnum), `./backend/app/services/audit_partitions.py` (управление партициями) |
 | Model | — | Модель отсутствует, используется сырой SQL-мапинг / DDL в миграциях |
 | Schema | — | Схемы отсутствуют, используются сырые JSON/словари |
-| Worker | `./backend/app/worker/tasks/audit.py` | Периодические задачи сброса очереди в БД и ротации партиций |
+| Worker | `./backend/app/worker/tasks/audit.py` | Cron-задачи: `flush_audit_queue` (каждые 5с — сброс буфера), `create_next_audit_partition` / `drop_old_audit_partitions` (1-го числа месяца в 02:00 / 03:00 — партиции на 3 мес. вперёд / удаление старше 12 мес.), `cleanup_idempotency_keys` (ежедневно в 03:30 — уборка просроченных записей idempotency из соседнего модуля) |
 | Frontend | `./frontend/src/pages/admin/tabs/AuditTab.vue`, `./frontend/src/api/audit.ts` | Компоненты панели администратора и API-клиент |
 
 ---
@@ -79,7 +79,7 @@ CREATE TABLE audit_log (
 
 | Метод | Путь | Назначение | Права | Идемпотентность |
 |---|---|---|---|---|
-| **GET** | `/` | Получение пагинированного списка событий аудита с фильтрацией | `admin` (`AdminDep`) | Да |
+| **GET** | `` (без trailing slash) | Получение пагинированного списка событий аудита с фильтрацией (роутер `@router.get("")` под `prefix="/audit"`) | `admin` (`AdminDep`) | Да |
 | **GET** | `/event-types` | Список уникальных типов событий, зафиксированных за последние 90 дней | `admin` (`AdminDep`) | Да |
 | **GET** | `/queue/depth` | Текущая глубина очереди событий в Redis (ожидающие и обрабатываемые) | `admin` (`AdminDep`) | Да |
 | **GET** | `/export.csv` | Стриминговый экспорт отфильтрованных событий лога в формате CSV | `admin` (`AdminDep`) | Да |
@@ -149,9 +149,11 @@ flowchart TD
 
 - Создание партиций реализовано на нативных механизмах PostgreSQL без сторонних расширений (вроде `pg_partman`).
 - **Скрипт ручного создания**: `./backend/scripts/create_audit_partitions.py` запускается во время деплоя приложения. Поддерживает аргументы для создания партиций на несколько месяцев вперед и очистки устаревших таблиц.
-- **Автоматизация через воркер**:
-  - `create_next_audit_partition`: выполняется раз в месяц, создает пустые партиции на следующие 3 месяца вперед (`months_ahead=3`), исключая пропуск событий при смене месяцев. Имя таблицы имеет вид `audit_log_YYYY_MM`.
-  - `drop_old_audit_partitions`: выполняется раз в месяц, осуществляет ротацию данных. Удаляет партиции старше 12 месяцев через команду `DROP TABLE`.
+- **Автоматизация через воркер** (`./backend/app/worker/main.py`):
+  - `flush_audit_queue`: каждые 5 секунд (`second=set(range(0,60,5))`) + при старте — сброс буфера `audit_queue` → `audit_processing` → батч-вставка в БД.
+  - `create_next_audit_partition`: 1-го числа каждого месяца в 02:00 (+ при старте) — создаёт пустые партиции на следующие 3 месяца вперёд (`months_ahead=3`). Имя таблицы: `audit_log_YYYY_MM`.
+  - `drop_old_audit_partitions`: 1-го числа каждого месяца в 03:00 — удаляет партиции старше 12 месяцев через `DROP TABLE`.
+  - `cleanup_idempotency_keys`: ежедневно в 03:30 — уборка просроченных записей таблицы `idempotency_keys` (соседний модуль, живёт в том же `worker/tasks/audit.py`).
 
 ---
 

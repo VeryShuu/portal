@@ -545,6 +545,77 @@ def require_role(*roles: str):
 
 ---
 
+## Матрица: Переговорные (`/meetings`)
+
+> Module-gate: при выключенном `meetings.enabled` весь раздел 404.
+
+| Endpoint | reader | editor | admin | Примечание |
+|---------|:------:|:------:|:-----:|-----------|
+| `GET /meetings/rooms` | ✅ | ✅ | ✅ | Список активных комнат |
+| `POST/PUT/DELETE /meetings/rooms/{id}` | ❌ | ❌ | ✅ | Управление комнатами |
+| `GET /meetings/bookings`, `/bookings/my` | ✅ | ✅ | ✅ | Списки бронирований |
+| `POST /meetings/bookings` | ✅ | ✅ | ✅ | Создать бронирование (конфликт-чек PG EXCLUDE) |
+| `GET/PUT/DELETE /meetings/bookings/{id}` | ✅* | ✅* | ✅ | CRUD — только владелец (`*` чужие → 403) |
+| `GET /meetings/participants/search` | ✅ | ✅ | ✅ | Поиск участников (Keycloak + внешние по email) |
+| `PUT/DELETE /meetings/series/{id}`, `GET .../count` | ✅* | ✅* | ✅ | Серия — только владелец |
+
+---
+
+## Матрица: Обратная связь (`/feedback`)
+
+| Endpoint | reader | editor | admin | Примечание |
+|---------|:------:|:------:|:-----:|-----------|
+| `POST /feedback` | ✅ | ✅ | ✅ | Создать обращение |
+| `GET /feedback/my`, `/feedback/my/{id}` | ✅ | ✅ | ✅ | Только свои обращения |
+| `GET /feedback`, `/feedback/{id}` | ❌ | ❌ | ✅ | Лента всех обращений + карточка |
+| `POST /feedback/{id}/reply` | ❌ | ❌ | ✅ | Ответ админа |
+| `PATCH /feedback/{id}/status` | ❌ | ❌ | ✅ | Смена статуса |
+| `POST /feedback/{id}/attachments` | ✅* | ✅* | ✅ | Автор обращения или admin |
+| `GET /feedback/{id}/attachments/{aid}` | ✅* | ✅* | ✅ | Автор или admin |
+| `DELETE /feedback/{id}/attachments/{aid}` | ❌ | ❌ | ✅ | Удаление вложения |
+
+---
+
+## Матрица: Генератор email-подписей (`/signature`)
+
+> Module-gate: при выключенном `signature.enabled` весь раздел 404.
+
+| Endpoint | reader | editor | admin | Примечание |
+|---------|:------:|:------:|:-----:|-----------|
+| `GET /signature/config` | ✅ | ✅ | ✅ | Публичная конфигурация формы |
+| `POST /signature/generate` | ✅ | ✅ | ✅ | Сгенерировать HTML (preview) |
+| `POST /signature/download` | ✅ | ✅ | ✅ | Скачать `.htm` |
+| `GET/PUT /signature/admin/settings` | ❌ | ❌ | ✅ | Города/телефоны/домен |
+
+---
+
+## Матрица: Опросы в новостях (`/news/{id}/poll/*`)
+
+> Опросы живут внутри модуля новостей — права наследуются от news (создание/редактирование опроса = `editor+`; голосование = любой `CurrentUser`).
+
+| Endpoint | reader | editor | admin | Примечание |
+|---------|:------:|:------:|:-----:|-----------|
+| `GET /news/{id}/poll` | ✅ | ✅ | ✅ | Просмотр опроса (результаты — по `results_visibility`) |
+| `POST/PATCH/DELETE /news/{id}/poll` | ❌ | ✅ | ✅ | CRUD опроса — автор новости или admin |
+| `POST /news/{id}/poll/close`, `/reopen` | ❌ | ✅ | ✅ | Управление статусом опроса |
+| `POST /news/{id}/poll/vote`, `DELETE .../vote` | ✅ | ✅ | ✅ | Голосование / отзыв голоса (один пользователь — один голос) |
+| `GET /news/{id}/poll/voters` | ❌ | ✅ | ✅ | Кто проголосовал (только при открытой `results_visibility`) |
+
+---
+
+## Матрица: Онбординг (`/portal/onboarding`, `/admin/system/onboarding`)
+
+> Системные шаги экскурса по порталу. Module-gate не нужен (базовый модуль).
+
+| Endpoint | reader | editor | admin | Примечание |
+|---------|:------:|:------:|:-----:|-----------|
+| `GET /portal/onboarding` | ✅ | ✅ | ✅ | Публичные шаги + дельта-режим (`is_new`) |
+| `GET /admin/system/onboarding/steps` | ❌ | ❌ | ✅ | Список шагов (admin) |
+| `PUT /admin/system/onboarding/steps/{id}` | ❌ | ❌ | ✅ | Редактировать шаг |
+| `POST /admin/system/onboarding/reset-views` | ❌ | ❌ | ✅ | Сбросить счётчик просмотров шага |
+
+---
+
 ## Правила применения в коде
 
 1. **Всегда использовать `Depends(require_role(...))`** — не проверять роль внутри функции endpoint

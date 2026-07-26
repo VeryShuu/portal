@@ -78,7 +78,7 @@
 
 ## 3. Модель данных
 
-Четыре таблицы (`./backend/app/models/files.py`, миграции `020_files`, `038_file_items`, `042_file_folder_inherit_permissions`, `063_file_shares`). См. также подробную схему в `./docs/db-schema.md`.
+Четыре таблицы (`./backend/app/models/files.py`, миграции `020_files`, `038_file_items`, `042_file_folder_inherit_permissions`, `063_file_shares`, `066_file_items_unique_active_name`, `067_backfill_folder_creator_manager_perm`). См. также подробную схему в `./docs/db-schema.md`.
 
 ### `file_folders` — теневое дерево папок
 
@@ -122,6 +122,8 @@
 | `uploaded_by` | UUID FK `users.id` (SET NULL), nullable | |
 | `uploaded_at` | timestamptz | |
 | `deleted_at` | timestamptz, nullable | Soft-delete. |
+
+> **Индексы:** `idx_file_items_folder_active` (folder_id, `WHERE deleted_at IS NULL`), а также **частичный уникальный индекс** `uq_file_items_folder_name_active` на `(folder_id, name) WHERE deleted_at IS NULL` (миграция `066_file_items_unique_active_name`) — имя файла уникально среди не удалённых в пределах папки (NC-семантика: дубль через портал невозможен, повторная загрузка после soft-delete не создаёт вторую active-запись).
 
 > Файлы, залитые **напрямую в Nextcloud** (минуя портал), записи в `file_items` не имеют — в листинге они показываются без метаданных «кто/когда загрузил».
 
@@ -260,7 +262,7 @@
 
 ## 10. Персистентность ACL
 
-`./backend/app/services/files_acl_persistence.py` дублирует права в `/data/settings/files-acl.json` (ключ = `nc_path`, значение = список subject-прав). Файл пишется атомарно (tempfile + `os.replace`, chmod 0600, под `asyncio.Lock`). Цель — пережить полную очистку PostgreSQL: после wipe sync воссоздаёт дерево из NC и восстанавливает права из бэкапа. Запись вызывается при grant/revoke; удаление записи — при удалении папки (`drop_folder_perms`).
+`./backend/app/services/files_acl_persistence.py` дублирует права в `/data/settings/files-acl.json` (ключ = `nc_path`, значение = список subject-прав). Файл пишется атомарно (tempfile + `os.replace`, chmod 0600). Конкурентный доступ защищён двухуровнево (как и `files-shares.json` — см. `sharing.md` §6): per-process `asyncio.Lock` (fast-path) + межпроессный `interprocess_lock` из `./backend/app/services/_persistence_lock.py` (`fcntl.flock` на `files-acl.lock`), который держится на весь цикл read-modify-write — параллельные воркеры не затирают правки друг друга. Цель — пережить полную очистку PostgreSQL: после wipe sync воссоздаёт дерево из NC и восстанавливает права из бэкапа. Запись вызывается при grant/revoke; удаление записи — при удалении папки (`drop_folder_perms`).
 
 Аналогично шары файлов дублируются в `/data/settings/files-shares.json` (`./backend/app/services/files_shares_persistence.py`, ключ = `nc_path`, значение = список активных `{subject_type, subject_id, subject_name, permission, expires_at}`). Запись — при каждом create/upsert/revoke; восстановление — на старте воркера (`ON CONFLICT DO NOTHING`, `shared_by=NULL`, просроченные пропускаются).
 

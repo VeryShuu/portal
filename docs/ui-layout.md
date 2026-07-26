@@ -64,11 +64,12 @@
 
 ---
 
-## 7. Три класса ширины контента и Wrapper
+## 7. Классы ширины контента и Wrapper
 
 | Токен | Значение | Назначение |
 |---|---|---|
 | `--content-reading` | `768px` | проза: KB-статья, новость-детейл (45–75 символов в строке) |
+| `--content-narrow` | `1080px` | тикетинг: списки и карточки helpdesk (плотнее standard, но без wide-растяжки) |
 | `--content-standard` | `1280px` | большинство списков / страниц |
 | `--content-wide` | `1600px` | плотные сетки и таблицы: staff, photos, files, admin |
 
@@ -85,6 +86,7 @@
   margin-inline: auto;
 }
 .u-page-wrap--reading { --u-page-wrap-max: var(--content-reading); }
+.u-page-wrap--narrow  { --u-page-wrap-max: var(--content-narrow); }
 .u-page-wrap--wide    { --u-page-wrap-max: var(--content-wide); }
 ```
 
