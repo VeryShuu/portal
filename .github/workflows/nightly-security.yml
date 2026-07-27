@@ -93,12 +93,22 @@ jobs:
       - name: Run ZAP baseline scan
         id: zap
         continue-on-error: true
+        # audit [M21] — ZAP pinned по digest (не semver). ZAP не публикует свежие
+        # semver-теги: последний 2.15.0 — октябрь 2024, дальше только weekly-релизы
+        # через rolling :stable/:latest. Pin по digest даёт воспроизводимость без
+        # заморозки правил (тот же паттерн, что postgres:16@sha256:… в postgres/Dockerfile).
+        # ⚠️ Dependabot НЕ покрывает `docker pull` внутри run: | (только Dockerfiles/
+        # compose + actions/* в workflow). Обновление digest — ручной bump:
+        #   TOKEN=$(curl -sS "https://ghcr.io/token?scope=repository:zaproxy/zaproxy:pull&service=ghcr.io" | jq -r .token)
+        #   curl -sS -H "Authorization: Bearer $TOKEN" -I "https://ghcr.io/v2/zaproxy/zaproxy/manifests/stable" \
+        #     -H "Accept: application/vnd.oci.image.index.v1+json" | grep -i docker-content-digest
+        # Раз в месяц — по календарю (как restore-drill из [H12]).
         run: |
           mkdir -p security/out
           cp security/zap-baseline.conf security/out/zap-baseline.conf
           docker run --rm --network host \
             -v "${{ github.workspace }}/security/out:/zap/wrk/:rw" \
-            -t ghcr.io/zaproxy/zaproxy:stable \
+            -t ghcr.io/zaproxy/zaproxy:stable@sha256:8d387b1a63e3425beef4846e39719f5af2a787753af2d8b6558c6257d7a577a2 \
             zap-baseline.py \
               -t http://localhost:8000 \
               -c zap-baseline.conf \

@@ -105,7 +105,7 @@ XS-S правки, не требующие архитектурных решен
 - **[M12]** LinksTab.vue → composable · M
 - **[M19]** `useModulesState` дублированный watcher · XS
 - **[M20]** screenshot-service `/ready` · S
-- **[M21]** gitleaks/trivy pin versions · XS
+- **[M21]** gitleaks/trivy/ZAP pin versions · XS · **[x] сделано**
 - **[M22]** `migrate_env_to_system_settings` race · S · **[x] сделано**
 
 ### 🟠 Этап 3 — Архитектурные изменения (3–6 недель)
@@ -169,7 +169,7 @@ XS-S правки, не требующие архитектурных решен
 | M18 | 🟡 Medium | Infra | nginx rate limiting | S | 4 | [ ] ⚠️ прод |
 | M19 | 🟡 Medium | Frontend | useModulesState watchers | XS | 2 | [x] 2026-07-26 |
 | M20 | 🟡 Medium | Docker | screenshot-service /ready | S | 2 | [x] 2026-07-26 |
-| M21 | 🟡 Medium | CI/CD | gitleaks/trivy pin | XS | 2 | [x] 2026-07-26 |
+| M21 | 🟡 Medium | CI/CD | gitleaks/trivy/ZAP pin | XS | 2 | [x] 2026-07-27 (ZAP добавлен) |
 | M22 | 🟡 Medium | Config | migrate_env race | S | 2 | [x] 2026-07-26 |
 | L1  | 🟢 Low | DB | миграции zero-downtime паттерн | XS | 4 | [ ] |
 | L2  | 🟢 Low | Perf | analytics Redis-кеш | M | 4 | [ ] |
@@ -1238,17 +1238,20 @@ XS-S правки, не требующие архитектурных решен
 - **Почему проблема:** Невоспроизводимость (новые правила), supply-chain, false-negatives при регрессии сканера.
 
 #### План действий
-- [ ] Pin по semver: `gitleaks:v8.21.2`, `trivy:0.55.2`, `zaproxy:v2.15.0`
-- [ ] Dependabot `docker` ecosystem для обновления
+- [x] Pin gitleaks/trivy по semver: `gitleaks:v8.30.1`, `trivy:0.72.0` (security.yml)
+- [x] Pin ZAP по **digest** (не semver) — ZAP не публикует свежие semver-теги: последний `2.15.0` — октябрь 2024, дальше только weekly-релизы через rolling `:stable`/`:latest`. Pin по semver заморозил бы правила на 2 года (хуже для безопасности). Digest-pin даёт воспроизводимость без заморозки правил — тот же паттерн, что `postgres:16@sha256:…`
+- [x] Dependabot `docker` ecosystem обновит digest gitleaks/trivy через PR
+- [⚠️] **Dependabot НЕ покрывает** digest ZAP (он не сканирует `docker pull` внутри workflow `run:`). Ручной bump по календарю — см. комментарий в `nightly-security.yml` (команда для получения свежего digest). В идеале — завести sidecar-CRON или issue-reminder.
 
 #### DoD
-- [ ] 0 `:latest`/`:stable` для сканеров
-- [ ] Dependabot обновит через PR
+- [x] 0 `:latest`/`:stable` без digest для сканеров (gitleaks/trivy по semver, ZAP по digest@sha256)
+- [~] Dependabot обновляет gitleaks/trivy; ZAP — ручной bump (ограничение Dependabot)
 
 - **Сложность:** XS
 - **Риск регрессии:** Очень низкий.
 - **Ожидаемый эффект:** Воспроизводимые сканирования.
-- **Статус:** [ ]
+- **Статус:** [x] 2026-07-27 — выполнено. gitleaks `v8.30.1` + trivy `0.72.0` pin по semver (security.yml, Batch 3); ZAP pin по digest `:stable@sha256:8d387b1a…` (nightly-security.yml, эта итерация — закрыт пропуск из Batch 3, где ZAP был забыт). Образ pull'ится по digest, YAML+bash-синтаксис валидны. Caveat: ZAP-digest не автообновляется (Dependabot не покрывает `docker pull` в `run:`), нужен ежемесячный ручной bump — команда в комментарии.
+
 
 ---
 
@@ -1466,6 +1469,7 @@ XS-S правки, не требующие архитектурных решен
 | 2026-07-26 | Senior Architect (ZCode) | **Batch 3 (10-ка для след. сессии, частично):** L3, L4, L9 (частично), L16, M21 — выполнено и протестировано (3805 backend unit-тестов зелёные). L5 — отклонено как false-positive (has_poll validator зависит от News.poll). Оставшиеся 4 (L6, H8, M20, L10) — в план следующей сессии. |
 | 2026-07-26 | Senior Architect (ZCode) | **Batch 4 (оставшаяся 4-ка):** M20 (screenshot /ready), L10 (CcRecipient Pydantic) — выполнено; H8 (silent except) — частично (metadata.py + tickets.py + ingress.py — самые проблемные места); L6 — отклонено (12 разных конфигураций limit, единый PaginationDep не подходит). 3805 backend unit-тестов зелёные, ruff/mypy чисто. |
 | 2026-07-26 | Senior Architect (ZCode) | **Batch 5 (CI-фикс + Backend safety-net):** Сначала починен CI после Batch 3/4 (ruff I001 в test_photos_storage.py + регенерация tests.generated.md). Затем — 3 S-задачи параллельно через subagents: H11 (56 GitHub Actions pinned по SHA; 3 из 7 SHA в таблице аудита оказались неверными — subagent перепроверил через `gh api`), M15 (Dockerfile DRY — `production FROM runtime-base`, -32 LOC дублирования apt-install), M22 (`migration_lock()` через `fcntl.flock` + re-check файла внутри lock'а; перенос в startup() отклонён — нарушил бы invariant before-load_system_settings). ci_lint зелёный, 75 unit-тестов миграции прошли, образ собирается и работает. |
+| 2026-07-27 | Reydan (ZCode) | **DoD-верификация аудита:** выборочно перепроверены все 19 задач `[x]` + 2 `[x] частично` — все подтверждены чтением кода (H2/H5/H10/H11/H8/M15/M19/M20/M21/M22/L3/L4/L9/L10/L15/L16/L8/L12). Найдено 1 несоответствие: **[M21] ZAP пропущен** в Batch 3 (в карточке перечислен, но `nightly-security.yml:101` остался `:stable`). Исправлено: ZAP pinned по digest `:stable@sha256:8d387b1a…` (ZAP не публикует свежие semver-теги — последний 2.15.0 октябрь 2024, дальше weekly-rolling; pin по semver заморозил бы правила на 2 года — выбран digest-pin по аналогии с `postgres:16@sha256:…`). Образ pull'ится, YAML/bash валидны. Caveat: Dependabot не покрывает `docker pull` в workflow `run:` → ZAP-digest обновляется ручным bump по календарю (команда в комментарии). Карточка M21 приведена в соответствие (раньше статус в таблице `[x]` расходился с телом карточки `[ ]`). Заодно по ходу починены 2 побочные CI-баги: inline-комментарии после `FROM` в 7 Dockerfile'ах (ломали BuildKit → падали nightly-flakes + Dependabot Docker) и `test-integration.sh` (не пробрасывал `SECRET_KEY` → alembic падал на `ValidationError`). |
 
 ---
 
