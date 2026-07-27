@@ -1,4 +1,5 @@
-FROM mcr.microsoft.com/playwright/python:v1.44.0-jammy@sha256:c257db7f706f31f852740b039dea4f4611418f1a6816c0ceae716dd20d4eddda # pinned 2026-07-26
+# pinned 2026-07-26
+FROM mcr.microsoft.com/playwright/python:v1.44.0-jammy@sha256:c257db7f706f31f852740b039dea4f4611418f1a6816c0ceae716dd20d4eddda
 
 WORKDIR /app
 

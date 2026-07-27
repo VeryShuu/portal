@@ -17,6 +17,19 @@ COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.test.yml}"
 PG_PORT="${PG_PORT:-5433}"
 REDIS_PORT="${REDIS_PORT:-6380}"
 
+# Bootstrap-настройки (SECRET_KEY и пр.) — из корневого .env, чтобы alembic и
+# pytest могли построить Settings(). Используем `set -a` чтобы экспортировать
+# все переменные файла, затем восстанавливаем режим (caller-override важнее:
+# DATABASE_URL/REDIS_URL ниже намеренно перенаправляются на test-stack).
+# Файл может отсутствовать (свежий checkout) — тогда ждём, что caller передаст
+# нужные env сам; в противном случае alembic упадёт с понятной ошибкой.
+if [[ -f "$ROOT_DIR/.env" ]]; then
+  set -a
+  # shellcheck disable=SC1091
+  source "$ROOT_DIR/.env"
+  set +a
+fi
+
 # docker-compose.test.yml — генерируемый файл (как dev/staging), он не в git.
 # Если его нет (свежий checkout без запуска setup.sh) — генерируем на лету.
 if [[ ! -f "$COMPOSE_FILE" ]]; then
