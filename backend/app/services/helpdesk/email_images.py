@@ -37,6 +37,13 @@ from urllib.parse import urlparse
 
 from app.core.logging import get_logger
 
+# audit [H1]: SSRF-валидация вынесена в app.core.net_guard (единый guard для
+# bookmarks/favicon, keycloak_admin [M9] и этого модуля). Re-export через `as`
+# сохраняет публичный API email_images для существующих потребителей (тестов,
+# `_assert_safe_to_fetch`) при `no_implicit_reexport = true` в mypy.
+from app.core.net_guard import is_public_ip as is_public_ip
+from app.core.net_guard import is_safe_remote_url as is_safe_remote_url
+
 logger = get_logger(__name__)
 
 # Префикс rewritten-src: относительный путь к endpoint скачивания вложений.
@@ -126,41 +133,15 @@ def replace_img_src(html: str, old_src: str, new_src: str) -> str:
     return (html or "").replace(old_src, new_src, 1)
 
 
-# ── SSRF guard (чистая функция) ──────────────────────────────────────────────
-
-
-def is_safe_remote_url(url: str) -> bool:
-    """Разрешить выкачку только public-адресов (защита от SSRF).
-
-    Блокируем private/loopback/link-local/multicast/reserved. DNS-резолв здесь
-    НЕ выполняется (чистая функция для тестов) — проверяем только схему и
-    host-как-IP; доменные имена проверяются в ``_fetch_remote`` через resolve.
-    Возвращает ``False`` для не-http(s), bare-IP из private-диапазонов и
-    ``localhost``.
-    """
-    try:
-        parsed = urlparse(url)
-    except ValueError:
-        return False
-    if parsed.scheme not in ("http", "https"):
-        return False
-    host = (parsed.hostname or "").lower()
-    if not host:
-        return False
-    if host in ("localhost",):
-        return False
-    # Если host — IP, проверяем диапазон.
-    try:
-        ip = ipaddress.ip_address(host)
-    except ValueError:
-        # Доменное имя — резолв в ``_fetch_remote``; здесь пропускаем.
-        return True
-    return _is_public_ip(ip)
-
-
-def _is_public_ip(ip: IPv4Address | IPv6Address) -> bool:
-    """True для global-адресов (не private/loopback/link-local/и т.п.)."""
-    return ip.is_global and not (ip.is_private or ip.is_loopback or ip.is_link_local)
+# ── SSRF guard ───────────────────────────────────────────────────────────────
+#
+# is_safe_remote_url / is_public_ip вынесены в app.core.net_guard (audit [H1]):
+# единая SSRF-валидация для bookmarks/favicon, keycloak_admin (план M9) и этого
+# модуля. Здесь оставлен тонкий alias `_is_public_ip` для совместимости со
+# старыми call-сайтами в _resolve_is_safe / _resolve_public_ips /
+# _resolve_stable_public_ip — после стабилизации net_guard их можно перевести
+# на is_public_ip напрямую.
+_is_public_ip = is_public_ip
 
 
 async def _resolve_is_safe(host: str) -> bool:

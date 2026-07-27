@@ -36,6 +36,9 @@ _FAVICON_CACHE_TTL_SUCCESS = 7 * 24 * 3600  # 7 дней для успешных
 _FAVICON_CACHE_TTL_FAILURE = 24 * 3600  # 1 день для ошибок (negative cache)
 _FAVICON_MAX_SIZE_BYTES = 500 * 1024  # 500 КБ — разумный лимит для иконок
 _FAVICON_FETCH_TIMEOUT = 5.0  # секунд
+# Лимит hops редиректов (был max_redirects=3 при follow_redirects=True; после
+# перехода на ручной обход с re-валидацией — тот же потолок для UX-консистентности).
+_FAVICON_MAX_REDIRECTS = 3
 _ALLOWED_FAVICON_CONTENT_TYPES = frozenset(
     {
         "image/x-icon",
@@ -55,17 +58,57 @@ def _favicon_cache_key(origin: str) -> str:
     return f"favicon:v1:{h}"
 
 
-async def _do_favicon_fetch(favicon_url: str) -> tuple[int, bytes, str]:
-    """Выполняет HTTP-запрос за favicon. Выделена для удобного мокирования в тестах."""
-    async with httpx.AsyncClient(
-        timeout=_FAVICON_FETCH_TIMEOUT,
-        follow_redirects=True,
-        max_redirects=3,
-    ) as client:
-        resp = await client.get(
-            favicon_url,
-            headers={"User-Agent": "Mozilla/5.0 (compatible; PortalBot/1.0)"},
-        )
+async def _do_favicon_fetch(favicon_url: str) -> tuple[int, bytes, str] | None:
+    """Безопасный HTTP-запрос за favicon (audit [H1] — SSRF-защита).
+
+    Защиты:
+      * **SSRF:** ``follow_redirects=False`` + ручной обход редиректов с
+        ре-валидацией каждого hop через ``net_guard.assert_url_safe`` +
+        двойной резолв с пиннингом IP (``resolve_stable_ip``) против
+        DNS-rebinding. Приватные/loopback/link-local/cloud-metadata адреса
+        блокируются. Возвращает ``None`` при небезопасном URL/редиректе.
+      * Size-cap и content-type-фильтрация — в caller (``_FAVICON_MAX_SIZE_BYTES``).
+
+    Возвращает ``(status, body, content_type)`` или ``None`` (SSRF-блок).
+    Выделена для удобного мокирования в тестах (``_FETCH_PATCH``).
+    """
+    from app.core.net_guard import assert_url_safe, resolve_stable_ip
+
+    headers = {"User-Agent": "Mozilla/5.0 (compatible; PortalBot/1.0)"}
+    try:
+        async with httpx.AsyncClient(
+            timeout=_FAVICON_FETCH_TIMEOUT,
+            follow_redirects=False,
+            headers=headers,
+        ) as client:
+            current = favicon_url
+            for _ in range(_FAVICON_MAX_REDIRECTS + 1):
+                # Ре-валидация на каждом hop (включая исходный URL): блокируем
+                # private/loopback/link-local/cloud-metadata + DNS-rebinding.
+                if not await assert_url_safe(current):
+                    logger.warning("favicon.ssrf_blocked", url=current)
+                    return None
+                parsed = urlparse(current)
+                host = (parsed.hostname or "").lower()
+                if not host or await resolve_stable_ip(host) is None:
+                    logger.warning("favicon.dns_rebinding_blocked", url=current)
+                    return None
+                resp = await client.get(current)
+                if resp.status_code in (301, 302, 303, 307, 308):
+                    location = resp.headers.get("location")
+                    if not location:
+                        return 404, b"", "image/x-icon"
+                    current = str(httpx.URL(current).join(location))
+                    continue
+                break
+            else:
+                # Цикл завершился без break → превышен лимит редиректов.
+                logger.warning("favicon.too_many_redirects", url=favicon_url)
+                return 404, b"", "image/x-icon"
+    except httpx.RequestError as exc:
+        logger.info("favicon.fetch_failed", url=favicon_url, error=str(exc))
+        raise
+
     ct = resp.headers.get("content-type", "image/x-icon").split(";")[0].strip()
     if ct not in _ALLOWED_FAVICON_CONTENT_TYPES:
         ct = "image/x-icon"
@@ -111,8 +154,22 @@ async def get_bookmark_favicon(
         except (json.JSONDecodeError, KeyError):
             pass
 
+    # SSRF-валидация origin только на cache-MISS (audit [H1]): bare-IP из
+    # private/loopback/link-local/cloud-metadata и домены, не резолвящиеся в
+    # public-IP, блокируются БЕЗ fetch. Negative-cache (TTL 1d) — иначе атакующий
+    # мог бы бомбить endpoint разными private-доменами, триггеря sync DNS-resolve
+    # в assert_url_safe при каждом запросе (SSRF-amplification / ReDoS-surface).
+    # Домены ре-проверяются на SSRF и в fetcher'е — после резолва (защита от
+    # DNS-rebinding); здесь — дешёвый early-filter до httpx.
+    from app.core.net_guard import assert_url_safe
+
+    if not await assert_url_safe(favicon_url):
+        logger.warning("favicon.ssrf_blocked", origin=origin)
+        await redis.setex(cache_key, _FAVICON_CACHE_TTL_FAILURE, json.dumps({"ok": False}))
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Favicon not available")
+
     try:
-        http_status, content, ct = await _do_favicon_fetch(favicon_url)
+        fetch_result = await _do_favicon_fetch(favicon_url)
     except httpx.RequestError as exc:
         await redis.setex(cache_key, _FAVICON_CACHE_TTL_FAILURE, json.dumps({"ok": False}))
         logger.info("favicon.fetch_failed", origin=origin, error=str(exc))
@@ -120,6 +177,14 @@ async def get_bookmark_favicon(
             status_code=status.HTTP_404_NOT_FOUND, detail="Favicon not available"
         ) from exc
 
+    # fetch_result is None → SSRF-блок во время fetch (redirect-to-private,
+    # DNS-rebinding). Кэшируем negative-result (TTL 1d) — иначе атакующий мог бы
+    # наносить нагрузку повторными запросами, меняя redirect-target.
+    if fetch_result is None:
+        await redis.setex(cache_key, _FAVICON_CACHE_TTL_FAILURE, json.dumps({"ok": False}))
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Favicon not available")
+
+    http_status, content, ct = fetch_result
     if http_status != 200:
         await redis.setex(cache_key, _FAVICON_CACHE_TTL_FAILURE, json.dumps({"ok": False}))
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Favicon not available")

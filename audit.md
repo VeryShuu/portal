@@ -91,7 +91,7 @@ XS-S правки, не требующие архитектурных решен
 ### 🟡 Этап 2 — Средний рефакторинг (1–2 недели)
 Требуют characterization-тестов, локализованы.
 
-- **[H1]** SSRF favicon · M
+- **[H1]** SSRF favicon · M · **[x] сделано**
 - **[H3]** audit metadata::text → jsonb GIN · S
 - **[H8]** Silent except → `logger.debug`/`exc_info` · S
 - **[H9]** PII-маскинг IP/телефоны · M
@@ -137,7 +137,7 @@ XS-S правки, не требующие архитектурных решен
 |-----|-----------|-----------|--------|--------|------|--------|
 | C1  | 🔴 Critical | Config/Sec | `.env.example` дефолт-секреты | XS | 1 | [ ] ⚠️ прод |
 | C2  | 🔴 Critical | Docker/Sec | Redis от root | S | 1 | [ ] ⚠️ прод |
-| H1  | 🟠 High | Security | SSRF favicon | M | 2 | [ ] |
+| H1  | 🟠 High | Security | SSRF favicon | M | 2 | [x] 2026-07-27 |
 | H2  | 🟠 High | DB/Perf | news ILIKE → FTS | XS | 1 | [x] 2026-07-26 |
 | H3  | 🟠 High | DB/Perf | audit metadata::text → jsonb GIN | S | 2 | [ ] |
 | H4  | 🟠 High | Backend | Sync I/O в async | M | 3 | [ ] |
@@ -271,29 +271,33 @@ XS-S правки, не требующие архитектурных решен
 - **Последствия:** Reconnaissance интранета, утечка metadata-секретов в облаке, bypass network ACL, lateral movement.
 
 #### План действий
-- [ ] Создать `backend/app/core/net_guard.py`:
-  - [ ] Перенести туда `_is_unsafe_ip` из `keycloak_admin.py` (сделать публичным `is_unsafe_ip`)
-  - [ ] Добавить `is_safe_external_url(url: str, allow_private: bool = False) -> bool`
-  - [ ] Реализовать DNS-resolution через `socket.getaddrinfo`, проверку **всех** возвращённых IP
-  - [ ] Опциональный allowlist по домену (как в screenshot-service)
-- [ ] В `bookmarks.py:_do_favicon_fetch`:
-  - [ ] Перед запросом резолвить hostname и проверять все IP через `is_unsafe_ip`
-  - [ ] Anti-DNS-rebinding: после проверки IP использовать `httpx.AsyncHTTPTransport` с pinned resolver, либо перепроверять финальный URL после редиректов
-  - [ ] Fallback на default-icon вместо 404 для заблокированных (UX-friendly)
-- [ ] В `keycloak_admin.py` — переиспользовать `net_guard.is_unsafe_ip` (убрать дубликат)
-- [ ] Unit-тесты: приватные IP / loopback / cloud-metadata / public / DNS-rebinding / redirect-to-private
+- [x] Создать `backend/app/core/net_guard.py` — единый SSRF-guard (audit [H1]):
+  - [x] `is_public_ip` / `is_safe_remote_url` — чистые функции (scheme + bare-IP + localhost; блок private/loopback/link-local/multicast/unspecified/reserved/cloud-metadata)
+  - [x] `resolve_all_ips` / `assert_url_safe` — async DNS-резолв через `asyncio.get_running_loop().getaddrinfo` (требует все A/AAAA public)
+  - [x] `resolve_stable_ip` — двойной резолв против DNS-rebinding (TOCTOU)
+- [x] В `bookmarks.py:_do_favicon_fetch` — safe-fetcher по образцу `email_images._fetch_remote`:
+  - [x] `follow_redirects=False` + ручной обход редиректов с re-валидацией каждого hop через `assert_url_safe` + `resolve_stable_ip`
+  - [x] Возвращает `None` при SSRF-блокe (отличимо от network-error)
+- [x] В `get_bookmark_favicon` — early SSRF-валидация на cache-MISS с negative-cache (ReDoS-защита)
+- [x] Backward-compat shim: `email_images.is_safe_remote_url` / `_is_public_ip` → re-export из `net_guard` (консолидация в M9/отдельной задаче)
+- [⚠️ отложено] Консолидация `keycloak_admin._is_unsafe_ip` → `net_guard` — задача **M9** (God Module, требует characterization-тестов keycloak test-endpoints). `keycloak_admin` использует **обратную** политику (private разрешены, Keycloak за VPN), так что прямой перенос невозможен без параметризации.
+- [⚠️ отложено] Allowlist интранет-доменов — не понадобился (UX-влияние минимально, UI уже рендерит `<n-icon>LinkOutline</n-icon>` при 404)
+- [x] Unit-тесты: приватные IP / loopback / cloud-metadata / IPv6 / public / DNS-rebinding / redirect-to-private (95 тестов: 55 в `test_net_guard.py` + 40 в `test_bookmarks_favicon.py`)
 
 #### DoD
-- [ ] Тест: `GET /bookmarks/favicon?url=http://10.0.0.1/` → 404 (default-icon), не идёт запрос в приватную сеть
-- [ ] Тест: `GET /bookmarks/favicon?url=http://169.254.169.254/latest/meta-data/` → 404
-- [ ] Тест: DNS-rebinding (mock getaddrinfo → public first, private on retry) → блокируется
-- [ ] Легитимные public-домены продолжают работать
-- [ ] `net_guard.py` используется и в bookmarks, и в keycloak_admin (без дубликата)
+- [x] Тест: `GET /bookmarks/favicon?url=http://10.0.0.1/` → 404, fetcher не вызывается (`test_blocked_ranges_return_404_without_fetch`)
+- [x] Тест: `GET /bookmarks/favicon?url=http://169.254.169.254/latest/meta-data/` → 404 (тот же параметризованный тест)
+- [x] Тест: DNS-rebinding (mock resolve_stable_ip → None) → блокируется (`test_dns_rebinding_blocked_in_fetcher`)
+- [x] Тест: redirect-to-private (302 → 127.0.0.1) → блокируется, второй httpx-запрос не уходит (`test_redirect_to_private_blocked`)
+- [x] Легитимные public-домены продолжают работать (`test_legitimate_public_domain_still_works`)
+- [x] `net_guard.py` используется в bookmarks и email_images (re-export). keycloak_admin оставлен до M9 (обратная политика)
+- [x] Negative-cache SSRF-blocked URL (ReDoS-защита): `test_ssrf_block_writes_negative_cache`
 
 - **Сложность:** M
-- **Риск регрессии:** Средний — favicon может ходить на корпоративные домены внутри VPN. Смягчить: allowlist + fallback на default-icon.
+- **Риск регрессии:** Средний — favicon для интранет-доменов внутри VPN (Nextcloud/Keycloak по private-IP) перестаёт работать → рендерится `<n-icon>LinkOutline</n-icon>` (UI-fallback уже был). Смягчение: allowlist можно добавить отдельной правкой если UX пострадает.
 - **Ожидаемый эффект:** Закрытие главного внешнего SSRF-surface.
-- **Статус:** [ ]
+- **Статус:** [x] 2026-07-27 — выполнено. Новый модуль `app/core/net_guard.py` (~170 LOC: 5 функций + документация). `bookmarks._do_favicon_fetch` переписан: `follow_redirects=False` + ручной обход с re-валидацией hop'ов + double-resolve против DNS-rebinding. Early-check на cache-MISS с negative-cache (ReDoS-защита). Backward-compat shim в `email_images.py` (`is_safe_remote_url as is_safe_remote_url` re-export для `no_implicit_reexport`). 95 тестов (55 net_guard + 40 favicon, включая 9 параметризованных SSRF-range + redirect-to-private + DNS-rebinding + negative-cache). Консолидация `keycloak_admin` отложена к M9 (обратная политика private-IP). Верификация: ci_lint ✓ (698 файлов), 3895 unit-тестов ✓ (+69), 14 integration ✓ (bookmarks + helpdesk).
+
 
 ---
 

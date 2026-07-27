@@ -28,6 +28,17 @@ pytest.importorskip("httpx", reason="httpx not installed locally")
 
 
 _FETCH_PATCH = "app.api.bookmarks._do_favicon_fetch"
+# audit [H1]: bookmarks.py делает early SSRF-валидацию через
+# app.core.net_guard.assert_url_safe (резолв домена). В тестах, где проверяется
+# fetcher-path (fetch вызывается и возвращает код/бросает RequestError), нужно
+# обойти early-check — патчим assert_url_safe → True. В SSRF-тестах (класс
+# TestFaviconSsrfGuard) НЕ патчим — там проверяется именно блокировка.
+_SSRF_SAFE_PATCH = "app.core.net_guard.assert_url_safe"
+
+
+def _ssrf_safe():
+    """Контекстный менеджер: assert_url_safe всегда возвращает True."""
+    return patch(_SSRF_SAFE_PATCH, new=AsyncMock(return_value=True))
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -262,7 +273,19 @@ class TestDoFaviconFetch:
         mock_client.__aexit__ = AsyncMock(return_value=None)
         mock_client.get = AsyncMock(return_value=mock_resp)
 
-        with patch("app.api.bookmarks.httpx.AsyncClient", return_value=mock_client):
+        # audit [H1]: _do_favicon_fetch теперь делает SSRF-check (assert_url_safe
+        # + resolve_stable_ip). Патчим оба, чтобы тестировать CT-normalization
+        # изолированно (без зависимости от DNS-resolve example.com в CI).
+        import ipaddress
+
+        with (
+            _ssrf_safe(),
+            patch(
+                "app.core.net_guard.resolve_stable_ip",
+                new=AsyncMock(return_value=ipaddress.ip_address("93.184.216.34")),
+            ),
+            patch("app.api.bookmarks.httpx.AsyncClient", return_value=mock_client),
+        ):
             from app.api.bookmarks import _do_favicon_fetch
 
             _, _, ct = await _do_favicon_fetch("https://example.com/favicon.ico")
@@ -282,7 +305,16 @@ class TestDoFaviconFetch:
         mock_client.__aexit__ = AsyncMock(return_value=None)
         mock_client.get = AsyncMock(return_value=mock_resp)
 
-        with patch("app.api.bookmarks.httpx.AsyncClient", return_value=mock_client):
+        import ipaddress
+
+        with (
+            _ssrf_safe(),
+            patch(
+                "app.core.net_guard.resolve_stable_ip",
+                new=AsyncMock(return_value=ipaddress.ip_address("93.184.216.34")),
+            ),
+            patch("app.api.bookmarks.httpx.AsyncClient", return_value=mock_client),
+        ):
             from app.api.bookmarks import _do_favicon_fetch
 
             _, _, ct = await _do_favicon_fetch("https://example.com/favicon.ico")
@@ -324,9 +356,15 @@ class TestFaviconFetchFailure:
         redis = _make_redis(None)
         app = _build_app(_make_user(), redis)
 
-        with patch(
-            _FETCH_PATCH,
-            new=AsyncMock(side_effect=_httpx.RequestError("Connection refused", request=None)),
+        # _ssrf_safe() — обходим early-check, чтобы fetcher реально вызывался
+        # и бросил RequestError (без этого unreachable.example.com блокируется
+        # на assert_url_safe, до fetcher'а).
+        with (
+            _ssrf_safe(),
+            patch(
+                _FETCH_PATCH,
+                new=AsyncMock(side_effect=_httpx.RequestError("Connection refused", request=None)),
+            ),
         ):
             resp = await _get(app, "https://unreachable.example.com")
 
@@ -340,9 +378,12 @@ class TestFaviconFetchFailure:
         redis = _make_redis(None)
         app = _build_app(_make_user(), redis)
 
-        with patch(
-            _FETCH_PATCH,
-            new=AsyncMock(side_effect=_httpx.RequestError("Timeout", request=None)),
+        with (
+            _ssrf_safe(),
+            patch(
+                _FETCH_PATCH,
+                new=AsyncMock(side_effect=_httpx.RequestError("Timeout", request=None)),
+            ),
         ):
             await _get(app, "https://unreachable.example.com")
 
@@ -411,11 +452,174 @@ class TestFaviconUrlValidation:
         assert resp.status_code == 400
 
     async def test_http_url_allowed(self):
+        # bare public IP — обходит DNS-resolve в early-check (audit [H1]).
+        # Раньше использовался intranet.company.local, но новый SSRF-guard
+        # блокирует домены, не резолвящиеся в public-IP (тестовое окружение).
         img_bytes = b"ICON"
         redis = _make_redis(None)
         app = _build_app(_make_user(), redis)
 
         with patch(_FETCH_PATCH, new=AsyncMock(return_value=(200, img_bytes, "image/x-icon"))):
-            resp = await _get(app, "http://intranet.company.local/page")
+            resp = await _get(app, "http://8.8.8.8/page")
 
         assert resp.status_code == 200
+
+
+# ── SSRF guard (audit [H1]) ───────────────────────────────────────────────────
+#
+# DoD из audit.md §[H1]:
+#   - GET /bookmarks/favicon?url=http://10.0.0.1/ → 404, не идёт запрос в private
+#   - GET /bookmarks/favicon?url=http://169.254.169.254/latest/meta-data/ → 404
+#   - DNS-rebinding (mock getaddrinfo: public first, private on retry) → блок
+#   - Redirect-to-private (302 → 127.0.0.1) → блок
+#   - Легитимные public-домены продолжают работать
+
+
+class TestFaviconSsrfGuard:
+    """Bare-IP и зарезервированные адреса блокируются до fetch (no httpx call)."""
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "http://127.0.0.1/",  # loopback
+            "http://10.0.0.1/",  # private 10/8 (audit DoD)
+            "http://192.168.1.1/",  # private 192.168/16
+            "http://172.16.0.1/",  # private 172.16/12
+            "http://169.254.169.254/latest/meta-data/",  # cloud-metadata (audit DoD)
+            "http://[::1]/",  # IPv6 loopback
+            "http://[fc00::1]/",  # IPv6 ULA
+            "http://localhost/",  # blocked hostname
+            "http://0.0.0.0/",  # blocked hostname (SSRF, не bind-адрес)
+        ],
+    )
+    async def test_blocked_ranges_return_404_without_fetch(self, url):
+        redis = _make_redis(None)
+        app = _build_app(_make_user(), redis)
+
+        with patch(_FETCH_PATCH) as patched:
+            resp = await _get(app, url)
+
+        assert resp.status_code == 404
+        patched.assert_not_called()  # fetcher не вызывается — early-check блокирует
+
+    async def test_ssrf_block_writes_negative_cache(self):
+        """SSRF-blocked URL кэшируется как {ok:false} TTL 1d (ReDoS-защита).
+
+        Иначе атакующий мог бы бомбить endpoint разными private-доменами,
+        триггеря sync DNS-resolve в assert_url_safe при каждом запросе.
+        """
+        from app.api.bookmarks import _FAVICON_CACHE_TTL_FAILURE
+
+        redis = _make_redis(None)
+        app = _build_app(_make_user(), redis)
+
+        with patch(_FETCH_PATCH):
+            await _get(app, "http://10.0.0.1/")
+
+        redis.setex.assert_called_once()
+        args = redis.setex.call_args[0]
+        assert args[1] == _FAVICON_CACHE_TTL_FAILURE
+        assert json.loads(args[2]) == {"ok": False}
+
+    async def test_ssrf_block_uses_negative_cache_on_repeat(self):
+        """Повторный запрос к SSRF-blocked URL — берётся из кэша, без re-валидации."""
+        redis = _make_redis(json.dumps({"ok": False}))  # уже в negative-cache
+        app = _build_app(_make_user(), redis)
+
+        with patch(_FETCH_PATCH) as patched:
+            resp = await _get(app, "http://10.0.0.1/")
+
+        assert resp.status_code == 404
+        patched.assert_not_called()
+        redis.setex.assert_not_called()  # cache-HIT — без re-write
+
+    async def test_redirect_to_private_blocked(self):
+        """302 → 127.0.0.1/admin блокируется; второй httpx-запрос не уходит.
+
+        Эмулируем httpx-клиент: первый GET возвращает 302 → private-URL,
+        fetcher должен заблокировать redirect-hop и вернуть None.
+        """
+        import ipaddress
+        from unittest.mock import MagicMock
+
+        redirect_resp = MagicMock()
+        redirect_resp.status_code = 302
+        redirect_resp.headers = {"location": "http://127.0.0.1/admin"}
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_client.get = AsyncMock(return_value=redirect_resp)
+
+        # assert_url_safe патчим как side_effect: исходный URL public (True),
+        # redirect-target private (False). resolve_stable_ip возвращает IP
+        # для исходного host — иначе блок будет на нём, а не на redirect.
+        safe_results = {"https://attacker.example.com/favicon.ico": True}
+
+        async def fake_safe(url):
+            return safe_results.get(url, False)
+
+        with (
+            patch("app.core.net_guard.assert_url_safe", side_effect=fake_safe),
+            patch(
+                "app.core.net_guard.resolve_stable_ip",
+                new=AsyncMock(return_value=ipaddress.ip_address("93.184.216.34")),
+            ),
+            patch("app.api.bookmarks.httpx.AsyncClient", return_value=mock_client),
+        ):
+            from app.api.bookmarks import _do_favicon_fetch
+
+            result = await _do_favicon_fetch("https://attacker.example.com/favicon.ico")
+
+        assert result is None  # SSRF-блок redirect-hop
+        # Только один httpx-запрос (на исходный URL); на 127.0.0.1 — не уходит.
+        assert mock_client.get.call_count == 1
+
+    async def test_dns_rebinding_blocked_in_fetcher(self):
+        """Двойной резолв с расхождением IP → блок (TOCTOU/DNS-rebinding).
+
+        resolve_stable_ip вызывается внутри fetcher'а; эмулируем, что первый
+        резолв даёт public IP, второй — private (classical rebinding).
+        """
+        from unittest.mock import MagicMock
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.content = b"DATA"
+        mock_resp.headers = {"content-type": "image/x-icon"}
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_client.get = AsyncMock(return_value=mock_resp)
+
+        with (
+            _ssrf_safe(),
+            patch(
+                "app.core.net_guard.resolve_stable_ip",
+                new=AsyncMock(return_value=None),  # rebinding detected → None
+            ),
+            patch("app.api.bookmarks.httpx.AsyncClient", return_value=mock_client),
+        ):
+            from app.api.bookmarks import _do_favicon_fetch
+
+            result = await _do_favicon_fetch("https://attacker.example.com/favicon.ico")
+
+        assert result is None
+        mock_client.get.assert_not_called()  # соединение не открывалось
+
+    async def test_legitimate_public_domain_still_works(self):
+        """Регресс: легитимный public-домен проходит через fetcher (200)."""
+        img_bytes = b"\x00\x00\x01\x00"
+        redis = _make_redis(None)
+        app = _build_app(_make_user(), redis)
+
+        # example.com может не резолвиться стабильно в CI → патчим early-check.
+        with (
+            _ssrf_safe(),
+            patch(_FETCH_PATCH, new=AsyncMock(return_value=(200, img_bytes, "image/x-icon"))),
+        ):
+            resp = await _get(app, "https://example.com")
+
+        assert resp.status_code == 200
+        assert resp.content == img_bytes
