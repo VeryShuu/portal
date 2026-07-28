@@ -152,7 +152,7 @@ XS-S правки, не требующие архитектурных решен
 | M1  | 🟡 Medium | DB | Comments list/count ⚠️UX | S | 2 | [ ] ⚠️ decision |
 | M2  | 🟡 Medium | Perf | OFFSET → keyset | M | 2 | [ ] |
 | M3  | 🟡 Medium | Perf | Batch INSERT outbox | M | 2 | [ ] |
-| M4  | 🟡 Medium | Perf | meetings limit=100 | S | 2 | [ ] |
+| M4  | 🟡 Medium | Perf | meetings limit=100 | S | 2 | [x] 2026-07-27 |
 | M5  | 🟡 Medium | DB | Drop redundant indexes | S | 1 | [ ] ⚠️ прод |
 | M6  | 🟡 Medium | Code Smell | `_ingest_message` Long Method | M | 2 | [ ] |
 | M7  | 🟡 Medium | Code Smell | helpdesk email/notification sprawl | M | 3 | [ ] |
@@ -183,8 +183,8 @@ XS-S правки, не требующие архитектурных решен
 | L10 | 🟢 Low | Code Smell | CcRecipient Pydantic | S | 4 | [x] 2026-07-26 |
 | L11 | 🟢 Low | Docs | опечатки в docstrings | XS | 4 | [x] 2026-07-26 |
 | L12 | 🟢 Low | i18n | PollPanelVoting fallback | XS | 4 | [x] 2026-07-26 |
-| L13 | 🟢 Low | Frontend | useFilesData type cast | S | 4 | [ ] |
-| L14 | 🟢 Low | Docker | digest pinning | S | 4 | [ ] |
+| L13 | 🟢 Low | Frontend | useFilesData type cast | S | 4 | [x] 2026-07-27 |
+| L14 | 🟢 Low | Docker | digest pinning | S | 4 | [x] 2026-07-27 |
 | L15 | 🟢 Low | Infra | proxy_connect_timeout | XS | 4 | [x] 2026-07-26 |
 | L16 | 🟢 Low | Config | _get_fernet thread-safety | XS | 4 | [x] 2026-07-26 |
 | L17 | 🟢 Low | CI/CD | coverage-comment fork guard | XS | 4 | [x] 2026-07-26 |
@@ -761,7 +761,7 @@ XS-S правки, не требующие архитектурных решен
 - **Сложность:** S
 - **Риск регрессии:** Низкий (frontend уже paginating).
 - **Ожидаемый эффект:** Меньше данных на клиент, меньше load на БД.
-- **Статус:** [ ]
+- **Статус:** [x] 2026-07-27 — выполнено. `limit: int = Query(default=100, ge=1, le=BOOKINGS_LIMIT_MAX=200)`. Service-слой `_queries.py` clamp обновлён в lockstep через общую константу `BOOKINGS_LIMIT_MAX` (mirror паттерна `MY_BOOKINGS_LIMIT_MAX`). Разведка подтвердила: frontend **не шлёт `limit`** вообще (календарь передаёт только `date`) — снижение безопасно. ⚠️ План-пункты «сделать start_date+end_date обязательными» и «keyset по (start_time, id)» **отклонены**: frontend-календарь шлёт только `date`, forcing range сломал бы UI; keyset отложен к M2. Contract-тест `test_meetings_bookings_limit.py` проверяет Query FieldInfo (default/ge/le), clamp-тест усилен до проверки compiled SQL LIMIT.
 
 ---
 
@@ -1376,14 +1376,14 @@ XS-S правки, не требующие архитектурных решен
 - **Где:** `frontend/src/composables/useFilesData.ts:132-153`
 - **Что найдено:** Единственный double type-cast во frontend (кроме вынужденных TipTap). `reactive()` разворачивает refs, искажая тип.
 - **Действие:** Убрать `reactive()`-обёртку, вернуть объект как есть, или изменить `UseFilesData` interface на `Ref<...>`.
-- **Сложность:** S · **Статус:** [ ]
+- **Сложность:** S · **Статус:** [x] 2026-07-27 — выполнено. Double cast `as unknown as UseFilesData` → single cast `as UseFilesData` (TypeScript не может вывести ref-unwrapping `reactive()`, но runtime-форма структурно соответствует `UseFilesData`). Добавлен explanatory-комментарий. Все 4 consumer'а (`useFilesBulkOps`, `useFilesUpload`, `useFilesTree`, `useFilesPageController`) используют unwrapped-форму — runtime unchanged. `npm run typecheck` + `lint:check` зелёные. Единственные оставшиеся `as unknown as` во frontend — вынужденные (TipTap `FigureImage.ts`, `Intl.supportedValuesOf` feature-detection).
 
 ### [L14] — Floating image tags без digest
 - **Категория:** Docker
 - **Где:** `frontend/Dockerfile:30`, `nginx/Dockerfile:1`, `nginx/Dockerfile.config:1`, `monitoring/node-exporter-textfile/Dockerfile:12`
 - **Что найдено:** `nginx:1.27-alpine`, `python:3.12-slim`, `node:24-alpine`, `redis:7-alpine`, `postgres:16` — все floating.
 - **Действие:** Pin по digest для prod-образов (`nginx:1.27-alpine@sha256:...`), обновлять через Dependabot.
-- **Сложность:** S · **Статус:** [ ]
+- **Сложность:** S · **Статус:** [x] 2026-07-27 — выполнено. 8 external base images pinned по digest: nginx:1.27-alpine, node:24-alpine, node:24-slim, python:3.12-slim, postgres:16, redis:7-alpine, alpine:3.20, mcr.microsoft.com/playwright/python:v1.44.0-jammy. Формат `image:tag@sha256:<full> # pinned 2026-07-27`. `portal-*` images в compose НЕ тронуты (semver-lock ADR-047). Dependabot `docker` ecosystem расширен: добавлен `/monitoring` + новый entry `/` для docker-compose.yml (redis). `nginx/Dockerfile.config` имеет sync-comment (Dependabot не сканирует нестандартное имя → bump вручную в lockstep с monitoring alpine:3.20).
 
 ### [L15] — Nginx: нет явного `proxy_connect_timeout`
 - **Категория:** Infrastructure
@@ -1474,6 +1474,8 @@ XS-S правки, не требующие архитектурных решен
 | 2026-07-26 | Senior Architect (ZCode) | **Batch 4 (оставшаяся 4-ка):** M20 (screenshot /ready), L10 (CcRecipient Pydantic) — выполнено; H8 (silent except) — частично (metadata.py + tickets.py + ingress.py — самые проблемные места); L6 — отклонено (12 разных конфигураций limit, единый PaginationDep не подходит). 3805 backend unit-тестов зелёные, ruff/mypy чисто. |
 | 2026-07-26 | Senior Architect (ZCode) | **Batch 5 (CI-фикс + Backend safety-net):** Сначала починен CI после Batch 3/4 (ruff I001 в test_photos_storage.py + регенерация tests.generated.md). Затем — 3 S-задачи параллельно через subagents: H11 (56 GitHub Actions pinned по SHA; 3 из 7 SHA в таблице аудита оказались неверными — subagent перепроверил через `gh api`), M15 (Dockerfile DRY — `production FROM runtime-base`, -32 LOC дублирования apt-install), M22 (`migration_lock()` через `fcntl.flock` + re-check файла внутри lock'а; перенос в startup() отклонён — нарушил бы invariant before-load_system_settings). ci_lint зелёный, 75 unit-тестов миграции прошли, образ собирается и работает. |
 | 2026-07-27 | Reydan (ZCode) | **DoD-верификация аудита:** выборочно перепроверены все 19 задач `[x]` + 2 `[x] частично` — все подтверждены чтением кода (H2/H5/H10/H11/H8/M15/M19/M20/M21/M22/L3/L4/L9/L10/L15/L16/L8/L12). Найдено 1 несоответствие: **[M21] ZAP пропущен** в Batch 3 (в карточке перечислен, но `nightly-security.yml:101` остался `:stable`). Исправлено: ZAP pinned по digest `:stable@sha256:8d387b1a…` (ZAP не публикует свежие semver-теги — последний 2.15.0 октябрь 2024, дальше weekly-rolling; pin по semver заморозил бы правила на 2 года — выбран digest-pin по аналогии с `postgres:16@sha256:…`). Образ pull'ится, YAML/bash валидны. Caveat: Dependabot не покрывает `docker pull` в workflow `run:` → ZAP-digest обновляется ручным bump по календарю (команда в комментарии). Карточка M21 приведена в соответствие (раньше статус в таблице `[x]` расходился с телом карточки `[ ]`). Заодно по ходу починены 2 побочные CI-баги: inline-комментарии после `FROM` в 7 Dockerfile'ах (ломали BuildKit → падали nightly-flakes + Dependabot Docker) и `test-integration.sh` (не пробрасывал `SECRET_KEY` → alembic падал на `ValidationError`). |
+| 2026-07-27 | Reydan (ZCode) | **[H1] SSRF через /bookmarks/favicon — выполнено.** Создан `backend/app/core/net_guard.py` (~170 LOC) — единый SSRF-guard: `is_public_ip` / `is_safe_remote_url` (чистые функции), `resolve_all_ips` / `assert_url_safe` (async DNS через `loop.getaddrinfo`), `resolve_stable_ip` (double-resolve против DNS-rebinding/TOCTOU). `bookmarks._do_favicon_fetch` переписан с `follow_redirects=True` (небезопасно) на `follow_redirects=False` + ручной обход редиректов с re-валидацией каждого hop через `assert_url_safe` + `resolve_stable_ip`. Early-валидация на cache-MISS с negative-cache (ReDoS-защита: иначе атакующий бомбит endpoint private-доменами, триггеря sync DNS). Backward-compat shim в `email_images.py` (`is_safe_remote_url as is_safe_remote_url` re-export для `no_implicit_reexport` в mypy) — полная консолидация отложена к M9 (keycloak_admin использует обратную политику private-IP для Keycloak за VPN). Политика: блокировать все private/loopback/link-local/multicast/unspecified/reserved/cloud-metadata (по audit DoD; интранет-домены по private-IP получают `<n-icon>LinkOutline</n-icon>` fallback — UI уже это делал). 95 новых тестов (55 `test_net_guard.py` + 40 в `test_bookmarks_favicon.py`, включая 9 параметризованных SSRF-range + redirect-to-private + DNS-rebinding + negative-cache). ci_lint ✓ (698 файлов), 3895 unit-тестов ✓ (+69), 14 integration ✓ (bookmarks + helpdesk email_images). Заодно исправлен latent-баг: `is_public_ip` в email_images пропускал multicast (224/4, ff00::/8 имеют `is_global=True`) — теперь явно блокируется. |
+| 2026-07-27 | Reydan (ZCode) | **M22-fix (регрессия Batch 5) + M4/L13/L14-верификация + CI drift-починка.** (1) **M22-fix**: `migration_lock()` падал в CI на `mkdir /data/settings` (нет `/data` вне контейнера) → ломал `openapi drift check`, 1 unit-тест structlog, playwright E2E. Добавлен graceful-degradation (no-op lock при PermissionError/OSError) + fast-path в `_migrations.py` (возврат без FS-touches когда нет legacy env и нет файла). Тест переписан на `patch.object(logger, "warning")` (детерминирован вне зависимости от `cache_logger_on_first_use` и pytest-randomly порядка). (2) **M4**: `limit` 500→200 (default 100), общая константа `BOOKINGS_LIMIT_MAX=200` в `_types.py` (mirror `MY_BOOKINGS_LIMIT_MAX`), service-clamp в lockstep. Разведка подтвердила: frontend не шлёт `limit` — безопасно. (3) **L13**: `as unknown as` → single `as UseFilesData`. (4) **L14**: 8 base images pinned по digest + Dependabot `/monitoring` + `/` (compose redis). (5) **CI drift-починка**: регенерированы `openapi.json` (limit 500→200 contract) и `tests.generated.md` (+72 строк: M4 + H1 SSRF-тесты). ci_lint ✓ (698 файлов), 105 unit-тестов затронутых модулей ✓. |
 
 ---
 
