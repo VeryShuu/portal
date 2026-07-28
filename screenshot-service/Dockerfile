@@ -2,6 +2,8 @@
 # Базовый образ Playwright должен совпадать по версии с requirements.txt (playwright==X.Y.Z),
 # иначе браузеры в образе не совместимы с Python-dep → "Executable doesn't exist at /ms-playwright/…"
 # (compose-smoke regression после #29: pip playwright 1.44→1.61 без обновления базового образа).
+# Dependabot не умеет обновлять MCR-теги → при bump playwright в requirements.txt
+# ОБЯЗАТЕЛЬНО поднять и этот тег (CI-чек playwright-sync-check ловит рассинхрон автоматически).
 FROM mcr.microsoft.com/playwright/python:v1.61.0-jammy@sha256:108b33fc1c785c056665b04c320a612526503b0b081209eea2e1ec89e3b69a8f
 
 WORKDIR /app
