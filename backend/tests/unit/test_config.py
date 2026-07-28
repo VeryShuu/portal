@@ -6,11 +6,18 @@ def make_env(**overrides) -> dict:
     base = {
         "DATABASE_URL": "postgresql+asyncpg://portal:secret@localhost:5432/portal",
         "REDIS_URL": "redis://localhost:6379/0",
+        # 33 символа — проходит Field.min_length=32; достаточно для dev/test.
+        # Для production-тестов передавайте SECRET_KEY явно (≥48 символов).
         "SECRET_KEY": "exactly_thirty_two_characters_ok!",
         "ENVIRONMENT": "development",
     }
     base.update(overrides)
     return base
+
+
+# Валидный SECRET_KEY для production-тестов: 96 hex = результат `openssl rand -hex 48`.
+# Не входит в block-list, длина ≥ 48.
+_VALID_PROD_SECRET = "a" * 96
 
 
 def test_valid_config(monkeypatch):
@@ -26,7 +33,7 @@ def test_valid_config(monkeypatch):
 
 
 def test_production_flag(monkeypatch):
-    env = make_env(ENVIRONMENT="production")
+    env = make_env(ENVIRONMENT="production", SECRET_KEY=_VALID_PROD_SECRET)
     for k, v in env.items():
         monkeypatch.setenv(k, v)
 
@@ -34,6 +41,109 @@ def test_production_flag(monkeypatch):
 
     s = Settings()
     assert s.is_production is True
+
+
+# ── audit [C1]: production-валидаторы секретов ─────────────────────────────
+
+
+def test_production_rejects_default_secret_key(monkeypatch):
+    """В production отвергается публично известный SECRET_KEY из .env.example."""
+    env = make_env(
+        ENVIRONMENT="production",
+        SECRET_KEY="change_me_32_chars_minimum_secret_key_here",
+    )
+    for k, v in env.items():
+        monkeypatch.setenv(k, v)
+
+    from app.core.config import Settings
+
+    with pytest.raises(ValidationError) as exc_info:
+        Settings()
+    assert "publicly-known default" in str(exc_info.value)
+
+
+def test_production_rejects_short_secret_key(monkeypatch):
+    """В production SECRET_KEY должен быть ≥48 символов (32-символьный отклонён)."""
+    env = make_env(
+        ENVIRONMENT="production",
+        SECRET_KEY="exactly_thirty_two_characters_ok!",  # 33 символа
+    )
+    for k, v in env.items():
+        monkeypatch.setenv(k, v)
+
+    from app.core.config import Settings
+
+    with pytest.raises(ValidationError) as exc_info:
+        Settings()
+    assert "at least 48 characters" in str(exc_info.value)
+
+
+def test_production_rejects_default_admin_password(monkeypatch):
+    """В production ADMIN_PASSWORD='change_me_on_first_login' отклоняется."""
+    env = make_env(
+        ENVIRONMENT="production",
+        SECRET_KEY=_VALID_PROD_SECRET,
+        ADMIN_PASSWORD="change_me_on_first_login",
+    )
+    for k, v in env.items():
+        monkeypatch.setenv(k, v)
+
+    from app.core.config import Settings
+
+    with pytest.raises(ValidationError) as exc_info:
+        Settings()
+    assert "change_me_on_first_login" in str(exc_info.value)
+
+
+def test_production_accepts_empty_admin_password(monkeypatch):
+    """Пустой ADMIN_PASSWORD допустим в production (bootstrap пропускается)."""
+    env = make_env(
+        ENVIRONMENT="production",
+        SECRET_KEY=_VALID_PROD_SECRET,
+        ADMIN_EMAIL="",
+        ADMIN_PASSWORD="",
+    )
+    for k, v in env.items():
+        monkeypatch.setenv(k, v)
+
+    from app.core.config import Settings
+
+    s = Settings()
+    assert s.is_production is True
+    assert s.admin_password in (None, "")
+
+
+def test_dev_accepts_short_secret_key(monkeypatch):
+    """Регресс: dev/test остаются на min_length=32 (CI-фикстуры, локальная разработка).
+
+    Валидатор production-секретов НЕ должен срабатывать вне production.
+    """
+    env = make_env(ENVIRONMENT="development")  # SECRET_KEY=33 символа из make_env
+    for k, v in env.items():
+        monkeypatch.setenv(k, v)
+
+    from app.core.config import Settings
+
+    s = Settings()
+    assert s.environment == "development"
+    assert s.is_production is False
+
+
+def test_dev_accepts_default_admin_password(monkeypatch):
+    """dev/staging не валидирует ADMIN_PASSWORD (обратная совместимость)."""
+    env = make_env(
+        ENVIRONMENT="staging",
+        SECRET_KEY="exactly_thirty_two_characters_ok!",
+        ADMIN_PASSWORD="change_me_on_first_login",
+    )
+    for k, v in env.items():
+        monkeypatch.setenv(k, v)
+
+    from app.core.config import Settings
+
+    s = Settings()
+    assert s.environment == "staging"
+    assert s.admin_password == "change_me_on_first_login"
 
 
 def test_secret_key_too_short_raises(monkeypatch):

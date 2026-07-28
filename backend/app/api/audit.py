@@ -34,6 +34,7 @@ def _build_filters(
     date_from: datetime | None,
     date_to: datetime | None,
     q: str | None,
+    extended_search: bool = False,
 ) -> tuple[str, dict[str, Any]]:
     clauses: list[str] = []
     params: dict[str, Any] = {}
@@ -57,12 +58,23 @@ def _build_filters(
         clauses.append("created_at < :date_to")
         params["date_to"] = date_to
     if q:
-        clauses.append(
-            "(coalesce(user_email,'') ILIKE :q "
-            "OR coalesce(resource_title,'') ILIKE :q "
-            "OR coalesce(metadata::text,'') ILIKE :q)"
-        )
+        # audit [H3]: по умолчанию q ищет только по user_email/resource_title
+        # (btree+trgm-индексы, быстро). Поиск по metadata::text ILIKE — Seq Scan
+        # по каждой партиции (игнорирует GIN), поэтому вынесен в опциональный
+        # ?extended_search=true. Админ включает осознанно, когда ищет событие по
+        # содержимому метаданных (ip, old/new_value и т.п.) и готов к медленному
+        # запросу на больших объёмах audit_log.
         params["q"] = f"%{q}%"
+        if extended_search:
+            clauses.append(
+                "(coalesce(user_email,'') ILIKE :q "
+                "OR coalesce(resource_title,'') ILIKE :q "
+                "OR coalesce(metadata::text,'') ILIKE :q)"
+            )
+        else:
+            clauses.append(
+                "(coalesce(user_email,'') ILIKE :q OR coalesce(resource_title,'') ILIKE :q)"
+            )
 
     where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
     return where, params
@@ -79,6 +91,7 @@ async def list_audit_events(
     date_from: Annotated[datetime | None, Query()] = None,
     date_to: Annotated[datetime | None, Query()] = None,
     q: Annotated[str | None, Query(max_length=200)] = None,
+    extended_search: Annotated[bool, Query()] = False,
     limit: int = Query(50, ge=1, le=_MAX_LIMIT),
     offset: int = Query(0, ge=0),
 ) -> dict[str, Any]:
@@ -90,6 +103,7 @@ async def list_audit_events(
         date_from=date_from,
         date_to=date_to,
         q=q,
+        extended_search=extended_search,
     )
 
     total = await audit_repo.count_events(db, where=where, params=params)
@@ -147,6 +161,7 @@ async def export_audit_csv(
     date_from: Annotated[datetime | None, Query()] = None,
     date_to: Annotated[datetime | None, Query()] = None,
     q: Annotated[str | None, Query(max_length=200)] = None,
+    extended_search: Annotated[bool, Query()] = False,
     max_rows: int = Query(_EXPORT_HARD_LIMIT, ge=1, le=_EXPORT_HARD_LIMIT),
 ) -> StreamingResponse:
     where, params = _build_filters(
@@ -157,6 +172,7 @@ async def export_audit_csv(
         date_from=date_from,
         date_to=date_to,
         q=q,
+        extended_search=extended_search,
     )
 
     import json as _json

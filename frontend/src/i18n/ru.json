@@ -707,7 +707,9 @@
         "ipPlaceholder": "192.168.1.1",
         "dateFrom": "С",
         "dateTo": "По",
-        "search": "Поиск (email, заголовок, metadata)",
+        "search": "Поиск (email, заголовок)",
+        "extendedSearch": "По metadata",
+        "extendedSearchHint": "Глубокий поиск по содержимому метаданных (IP, old/new_value и т.п.). Медленнее — сканирует JSON каждой записи. По умолчанию выключен.",
         "apply": "Применить",
         "reset": "Сбросить",
         "userIdInvalid": "Неверный формат UUID (ожидается xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)"

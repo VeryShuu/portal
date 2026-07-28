@@ -29,6 +29,9 @@ export interface AuditFilters {
   date_from?: string
   date_to?: string
   q?: string
+  /** audit [H3]: глубокий поиск по metadata::text (Seq Scan, медленно на больших объёмах).
+   * По умолчанию off — q ищет только по user_email/resource_title (btree+trgm). */
+  extended_search?: boolean
   limit?: number
   offset?: number
 }

@@ -1,10 +1,31 @@
+from __future__ import annotations
+
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 Environment = Literal["development", "staging", "production", "test"]
+
+# audit [C1]: block-list значений SECRET_KEY, которые публично известны
+# (из .env.example / CI-фикстур). В production такие значения отвергаются
+# Settings — защита новых деплоев от «забыл сменить дефолт».
+_INSECURE_SECRET_KEY_VALUES: frozenset[str] = frozenset(
+    {
+        "change_me_32_chars_minimum_secret_key_here",
+        "ci_secret_key_for_testing_only_32chars!",
+        "ci_test_secret_key_minimum_32_characters_!!",
+    }
+)
+
+# Минимальная длина SECRET_KEY в production. dev/test остаются на 32 (Field.min_length),
+# чтобы не сломать локальную разработку и CI-фикстуры. 96 hex = 48 байт энтропии
+# (результат `openssl rand -hex 48`).
+_PRODUCTION_SECRET_KEY_MIN_LENGTH = 48
+
+# audit [C1]: дефолт ADMIN_PASSWORD из .env.example — публично известен.
+_INSECURE_ADMIN_PASSWORDS: frozenset[str] = frozenset({"change_me_on_first_login"})
 
 
 class Settings(BaseSettings):
@@ -125,6 +146,37 @@ class Settings(BaseSettings):
         if not v.startswith("postgresql+asyncpg://"):
             raise ValueError("DATABASE_URL must use postgresql+asyncpg:// driver")
         return v
+
+    @model_validator(mode="after")
+    def _validate_production_secrets(self) -> Settings:
+        """audit [C1]: в production отвергаем публично известные дефолты.
+
+        В dev/staging/test валидация пропускается — существующие CI-фикстуры
+        и локальные окружения используют короткие/дефолтные значения (см.
+        ``_INSECURE_SECRET_KEY_VALUES``). При переходе на production Settings
+        fail-closed: оператор получает понятную ошибку вместо молчаливого
+        старта с компрометированным секретом.
+        """
+        if self.environment != "production":
+            return self
+
+        if self.secret_key in _INSECURE_SECRET_KEY_VALUES:
+            raise ValueError(
+                "SECRET_KEY matches a publicly-known default from .env.example. "
+                "Generate a new one: `openssl rand -hex 48`."
+            )
+        if len(self.secret_key) < _PRODUCTION_SECRET_KEY_MIN_LENGTH:
+            raise ValueError(
+                f"SECRET_KEY must be at least {_PRODUCTION_SECRET_KEY_MIN_LENGTH} characters "
+                f"in production (got {len(self.secret_key)}). "
+                "Generate one with `openssl rand -hex 48`."
+            )
+        if self.admin_password is not None and self.admin_password in _INSECURE_ADMIN_PASSWORDS:
+            raise ValueError(
+                "ADMIN_PASSWORD matches the publicly-known default 'change_me_on_first_login'. "
+                "Set a strong password or leave ADMIN_PASSWORD empty (bootstrap will be skipped)."
+            )
+        return self
 
     @property
     def is_production(self) -> bool:

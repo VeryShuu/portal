@@ -135,11 +135,11 @@ XS-S правки, не требующие архитектурных решен
 
 | ID  | Приоритет | Категория | Задача | Сложн. | Этап | Статус |
 |-----|-----------|-----------|--------|--------|------|--------|
-| C1  | 🔴 Critical | Config/Sec | `.env.example` дефолт-секреты | XS | 1 | [ ] ⚠️ прод |
-| C2  | 🔴 Critical | Docker/Sec | Redis от root | S | 1 | [ ] ⚠️ прод |
+| C1  | 🔴 Critical | Config/Sec | `.env.example` дефолт-секреты | XS | 1 | [x] 2026-07-28 ⚠️ прод |
+| C2  | 🔴 Critical | Docker/Sec | Redis от root | S | 1 | [x] 2026-07-28 ⚠️ прод |
 | H1  | 🟠 High | Security | SSRF favicon | M | 2 | [x] 2026-07-27 |
 | H2  | 🟠 High | DB/Perf | news ILIKE → FTS | XS | 1 | [x] 2026-07-26 |
-| H3  | 🟠 High | DB/Perf | audit metadata::text → jsonb GIN | S | 2 | [ ] |
+| H3  | 🟠 High | DB/Perf | audit metadata::text → jsonb GIN | S | 2 | [x] 2026-07-28 |
 | H4  | 🟠 High | Backend | Sync I/O в async | M | 3 | [ ] |
 | H5  | 🟠 High | Architecture | worker→api цикл | S | 1 | [x] 2026-07-26 |
 | H6  | 🟠 High | Architecture | EventType enum half-done | M/S | 3 | [ ] ⚠️ decision |
@@ -209,27 +209,28 @@ XS-S правки, не требующие архитектурных решен
 - **Последствия:** Полный admin-доступ злоумышленника из периметра; необратимая компрометация шифрования-at-rest.
 
 #### План действий
-- [ ] В `.env.example`:
-  - [ ] `LOCAL_AUTH_ENABLED=false` (backdoor закрыт по умолчанию)
-  - [ ] `ADMIN_EMAIL=` (пусто)
-  - [ ] `ADMIN_PASSWORD=` (пусто)
-  - [ ] `SECRET_KEY=<RUN: openssl rand -hex 48>` с инструкцией в комментарии
-- [ ] В `backend/app/core/config.py` (`Settings`) добавить валидатор:
-  - [ ] При `environment == "production"` — block-list для `SECRET_KEY` (значения из `.env.example`/`ci-*`)
-  - [ ] При `environment == "production"` — `len(SECRET_KEY) >= 48`
-  - [ ] При `environment == "production"` — reject если `ADMIN_PASSWORD == "change_me_on_first_login"`
-- [ ] В `setup.sh::preflight()` для prod-профиля — отказ стартовать с дефолтными значениями (по аналогии с semver-lock ADR-047)
-- [ ] Unit-тест: `tests/unit/test_config_validation.py` — каждый кейс валидатора
+- [x] В `.env.example`:
+  - [x] `LOCAL_AUTH_ENABLED=false` (backdoor закрыт по умолчанию)
+  - [x] `ADMIN_EMAIL=` (пусто), `ADMIN_PASSWORD=` (пусто)
+  - [x] `SECRET_KEY=` (пусто) с инструкцией `openssl rand -hex 48` в комментарии
+  - [x] Бонусом: `POSTGRES_PASSWORD=` / `REDIS_PASSWORD=` тоже пустые (целостно — все секреты пустыми)
+- [x] В `backend/app/core/config.py` (`Settings`) добавлен `@model_validator(mode="after")` `_validate_production_secrets`:
+  - [x] При `environment == "production"` — block-list `_INSECURE_SECRET_KEY_VALUES` (значения из `.env.example`/CI-фикстур)
+  - [x] При `environment == "production"` — `len(SECRET_KEY) >= 48`
+  - [x] При `environment == "production"` — reject `ADMIN_PASSWORD == "change_me_on_first_login"`
+  - [x] dev/staging/test НЕ валидируются (обратная совместимость с CI-фикстурами)
+- [x] В `setup.sh::preflight()` для prod-профиля — gate по аналогии с semver-lock (SECRET_KEY не дефолт + ≥48 символов; ADMIN_PASSWORD не дефолт если задан). Список `missing` скорректирован: ADMIN_* могут быть пустыми (bootstrap skip).
+- [x] Unit-тесты в `tests/unit/test_config.py` (+6 кейсов): rejects-default-secret-key, rejects-short-secret-key, rejects-default-admin-password, accepts-empty-admin-password, dev-accepts-short-secret-key, dev-accepts-default-admin-password
 
 #### DoD
-- [ ] `cp .env.example .env && docker compose up` на fresh-инсталляции в prod-профиле → отказ с понятной ошибкой
-- [ ] Существующий prod-`.env` не затронут (наличие block-list не ломает валидные ключи)
-- [ ] Тесты зелёные
+- [x] `cp .env.example .env && docker compose up` на fresh-инсталляции в prod-профиле → отказ с понятной ошибкой (валидатор Settings + preflight)
+- [x] Существующий prod-`.env` не затронут (валидация только при `environment == "production"`; валидные ключи проходят)
+- [x] Тесты зелёные (51 unit-тест audit+config пройден)
 
 - **Сложность:** XS
 - **Риск регрессии:** Очень низкий — существующие проды не затронуты.
 - **Ожидаемый эффект:** Защита новых деплоев от «забыл сменить дефолт».
-- **Статус:** [ ] ⚠️ прод — см. раздел «Инструкция для продакшена»
+- **Статус:** [x] 2026-07-28 — код-часть выполнена. ⚠️ прод-часть: оператор должен убедиться что prod-`.env` уже имеет валидный SECRET_KEY (не дефолт). См. runbook в разделе «Инструкция для продакшена».
 
 ---
 
@@ -242,21 +243,23 @@ XS-S правки, не требующие архитектурных решен
 - **Последствия:** Compromised Redis → compromised auth-сессии всего портала.
 
 #### План действий
-- [ ] Проверить UID redis-юзера: `docker run --rm redis:7-alpine id redis` (ожидается 999)
-- [ ] Добавить в `docker-compose.yml` сервис `redis`: `user: "999:999"` (или `user: redis`)
-- [ ] Проверить, что ACL-файл `/tmp/redis.acl` читается после дропа прав (если нет — пересоздать с правильным владельцем в entrypoint)
-- [ ] Прогнать локально: `docker compose up redis && docker compose exec redis id` → ожидается `uid=999(redis)`
+- [x] Проверить UID redis-юзера: `docker run --rm redis:7-alpine@sha256:... id redis` → `uid=999(redis) gid=1000(redis)` (UID 999, GID 1000 — важно: gid≠uid в этом образе)
+- [x] Добавить в `docker-compose.yml` сервис `redis`: `user: "999:1000"` (UID:GID из образа)
+- [x] Проверить, что ACL-файл `/tmp/redis.acl` создаётся redis-owned после дропа прав: `docker run --rm --user "999:1000" ...` → entrypoint (`printf > /tmp/redis.acl`) выполняется от redis-юзера → файл `-rw------- redis redis` ✓
+- [x] Проверить запись в `/data` (volume для AOF): `/data` принадлежит `redis:redis` → touch OK ✓
+- [x] Полный smoke-тест под `user: "999:1000"`: redis-server стартует, `Configuration loaded`, `Ready to accept connections tcp` ✓
+- [x] `docker compose config --quiet` → YAML валиден
 
 #### DoD
-- [ ] `docker compose exec redis ps aux | head` показывает redis-server от uid≠0
-- [ ] Healthcheck redis зелёный
-- [ ] ACL-аутентификация работает (`docker compose exec redis redis-cli AUTH ... ` → OK)
-- [ ] Приложение стартует, сессии работают
+- [x] Под `user: "999:1000"` redis-server стартует и принимает соединения (проверено через `docker run --rm --user "999:1000"`)
+- [x] ACL-файл создаётся redis-owned (`-rw------- redis redis`)
+- [x] `/data` доступен на запись (AOF работает)
+- [ ] **Прод-верификация (оператор):** `docker compose exec redis id` → `uid=999(redis)`, healthcheck зелёный, приложение стартует, сессии работают
 
 - **Сложность:** S
 - **Риск регрессии:** Низкий. Стратегия: blue-green — проверить `id redis` в образе, поднять второй redis-контейнер с `user:`, прогнать healthcheck, переключить.
 - **Ожидаемый эффект:** blast-radius компрометации Redis: root → unprivileged.
-- **Статус:** [ ] ⚠️ прод — см. раздел «Инструкция для продакшена»
+- **Статус:** [x] 2026-07-28 — код-часть выполнена (`docker-compose.yml` сервис redis: `user: "999:1000"`). ⚠️ прод-верификация после деплоя: см. runbook в разделе «Инструкция для продакшена». Важный нюанс: GID=1000 (не 999, как предполагал план) — уточнено по факту образа.
 
 ---
 
@@ -349,22 +352,26 @@ XS-S правки, не требующие архитектурных решен
 - **Последствия:** Таймауты на admin Audit tab при >500k строк.
 
 #### План действий
-- [ ] На проде: `EXPLAIN ANALYZE SELECT ... WHERE coalesce(metadata::text,'') ILIKE '%admin%'` → baseline
-- [ ] Решение (выбрать одно):
-  - **(A)** Для metadata — `metadata @? :jsonpath` или `metadata::jsonb @@ :jsonb_query` (использует GIN)
-  - **(B)** Вынести ILIKE по `metadata::text` в опциональный флаг `?extended_search=true`, по умолчанию только `user_email`/`resource_title` (btree+trgm)
-- [ ] На проде: `EXPLAIN ANALYZE` с новой версией
-- [ ] Integration-тесты с разными `q`: email, title, metadata-поле, несуществующее
+- [x] Разведка на тестовой PG (через testcontainers-контейнер): исследованы оба варианта
+- [x] **ВАЖНОЕ ОТКРЫТИЕ:** вариант (A) jsonpath `$.** ? (@ like_regex "q" flag "i")` **НЕ ускоряется GIN jsonb_path_ops** — документация PG подтверждает: `like_regex` применяется как post-filter после index scan, индекс для regex не используется. EXPLAIN показал Seq Scan даже с GIN-индексом миграции 033 (1500 строк × 3 партиции). Дополнительно: jsonpath-экранирование regex требует удвоения backslash (одинарный `\.` схлопывается в `.` → `.*` матчит всё — ReDoS). Вариант A отклонён как технически неработоспособный.
+- [x] Выбран **вариант (B)** — вынести `metadata::text ILIKE` в опциональный `?extended_search=true` (по умолчанию off). По умолчанию поиск только по `user_email`/`resource_title` (btree+trgm, быстро). Глубокий поиск по metadata — осознанный медленный режим.
+- [x] `backend/app/api/audit.py::_build_filters` — параметр `extended_search: bool = False`; в обоих endpoint'ах (`list_audit_events`, `export_audit_csv`) добавлен `extended_search: Annotated[bool, Query()] = False`
+- [x] Frontend `AuditTab.vue` — `n-switch` для extended_search + tooltip с объяснением; `AuditFilters` interface расширен; `_activeAuditFilters` передаёт `extended_search` только когда true (не засоряет query-string); `resetAuditFilters` сбрасывает
+- [x] i18n: `admin.audit.filters.search` обновлён («Поиск (email, заголовок)» — раньше упоминал metadata), добавлены `extendedSearch` + `extendedSearchHint` (ru + en)
+- [x] OpenAPI регенерирован — `extended_search` в обоих audit endpoint'ах; `api-contracts.generated.md` обновлён
+- [ ] **Прод-baseline (оператор, по runbook):** `EXPLAIN ANALYZE SELECT ... WHERE coalesce(metadata::text,'') ILIKE '%admin%'` до/после для подтверждения что быстрый путь (без extended_search) не триггерит Seq Scan по metadata
 
 #### DoD
-- [ ] `EXPLAIN ANALYZE` показывает GIN-scan вместо Seq Scan
-- [ ] Поиск по metadata работает (согласовать с админами scope)
-- [ ] Тесты зелёные
+- [x] По умолчанию (extended_search=false) `metadata::text ILIKE` НЕ в WHERE → нет Seq Scan (unit-тест `test_q_filter_extended_search_off_omits_metadata`)
+- [x] С extended_search=true поиск по metadata работает (`test_q_filter_extended_search_includes_metadata`)
+- [x] Гибкость сохранена: админ может включить глубокий поиск switch'ом
+- [x] Тесты зелёные (3 новых unit-теста `_build_filters`, 51 audit+config всего; 2130 frontend unit)
+- [x] openapi.json + api-contracts.generated.md + tests.generated.md регенерированы
 
 - **Сложность:** S
-- **Риск регрессии:** Средний — сохранить гибкость admin-поиска.
-- **Ожидаемый эффект:** −1 партиция Seq Scan на запрос; 5–50× на больших объёмах.
-- **Статус:** [ ]
+- **Риск регрессии:** Средний — семантика поиска по умолчанию сужена (metadata не ищется без extended_search). Смягчение: switch в UI с tooltip; старое поведение доступно одним кликом.
+- **Ожидаемый эффект:** Быстрый путь по умолчанию (btree+trgm по email/title), без Seq Scan по metadata. Глубокий поиск — осознанный выбор админа.
+- **Статус:** [x] 2026-07-28 — выполнено (вариант B). Вариант A (jsonpath) отклонён после разведки: `like_regex` не индексируется GIN (документация PG), плюс требует двойного экранирования backslash (одинарный → ReDoS). migrates к варианту B как единственно работоспособному.
 
 ---
 
@@ -935,7 +942,7 @@ XS-S правки, не требующие архитектурных решен
 - **Сложность:** XS
 - **Риск регрессии:** Low.
 - **Ожидаемый эффект:** Тюнинг без redeploy; единое место magic-numbers.
-- **Статус:** [x] 2026-07-26 — частично выполнено (email_outbox constants → core/constants.py). Остальные magic numbers (email_images, notifications) — в следующей итерации.
+- **Статус:** [x] 2026-07-26 — частично выполнено (email_outbox constants → core/constants.py, с namespace-префиксом `EMAIL_OUTBOX_DISPATCH_BATCH_SIZE` / `EMAIL_OUTBOX_STALE_SENDING_TIMEOUT_SECONDS` — лучше плоских имён из плана, конфликт имён в `constants.py` предотвращён; в `worker/tasks/email_outbox.py` импортируются с `as DISPATCH_BATCH_SIZE`/`as STALE_SENDING_TIMEOUT_SECONDS`). Остальные magic numbers (email_images, notifications) — в следующей итерации.
 
 ---
 
@@ -1207,7 +1214,7 @@ XS-S правки, не требующие архитектурных решен
 - **Сложность:** XS
 - **Риск регрессии:** Низкий.
 - **Ожидаемый эффект:** Устранение гонки.
-- **Статус:** [x] 2026-07-26 — выполнено (useModulesState.ts:93-115)
+- **Статус:** [x] 2026-07-26 — выполнено (useModulesState.ts:93-115). ⚠️ Вердикт-верификация 2026-07-28: фактически опция `{ immediate: true }`, а не `{ once: true }` из плана — это технически правильнее (нужно сработать на sync-данных при initial load), расхождение только в описании. Консолидация в один watch через `setupNcDirtyWatchers()` + guard `ncLoaded` подтверждена.
 
 ---
 
@@ -1383,7 +1390,7 @@ XS-S правки, не требующие архитектурных решен
 - **Где:** `frontend/Dockerfile:30`, `nginx/Dockerfile:1`, `nginx/Dockerfile.config:1`, `monitoring/node-exporter-textfile/Dockerfile:12`
 - **Что найдено:** `nginx:1.27-alpine`, `python:3.12-slim`, `node:24-alpine`, `redis:7-alpine`, `postgres:16` — все floating.
 - **Действие:** Pin по digest для prod-образов (`nginx:1.27-alpine@sha256:...`), обновлять через Dependabot.
-- **Сложность:** S · **Статус:** [x] 2026-07-27 — выполнено. 8 external base images pinned по digest: nginx:1.27-alpine, node:24-alpine, node:24-slim, python:3.12-slim, postgres:16, redis:7-alpine, alpine:3.20, mcr.microsoft.com/playwright/python:v1.44.0-jammy. Формат `image:tag@sha256:<full> # pinned 2026-07-27`. `portal-*` images в compose НЕ тронуты (semver-lock ADR-047). Dependabot `docker` ecosystem расширен: добавлен `/monitoring` + новый entry `/` для docker-compose.yml (redis). `nginx/Dockerfile.config` имеет sync-comment (Dependabot не сканирует нестандартное имя → bump вручную в lockstep с monitoring alpine:3.20).
+- **Сложность:** S · **Статус:** [x] 2026-07-27 — выполнено. 8 external base images pinned по digest: nginx:1.27-alpine, node:24-alpine, node:24-slim, python:3.12-slim, postgres:16, redis:7-alpine, alpine:3.20, mcr.microsoft.com/playwright/python:v1.44.0-jammy. Формат `image:tag@sha256:<full> # pinned 2026-07-27`. `portal-*` images в compose НЕ тронуты (semver-lock ADR-047). Dependabot `docker` ecosystem расширен: добавлен `/monitoring` + новый entry `/` для docker-compose.yml (redis). `nginx/Dockerfile.config` имеет sync-comment (Dependabot не сканирует нестандартное имя → bump вручную в lockstep с monitoring alpine:3.20). ⚠️ Верификация 2026-07-28 обнаружила doc-drift: `nginx/Dockerfile.config` реально на alpine **3.24** (Dependabot bump от 2026-07-26 — см. коммиты `0cb2346`/`fbe7ed9`), а monitoring/node-exporter-textfile остался на alpine **3.20** — lockstep нарушен, комментарий устарел. Безопасность не пострадала (оба digest-pinned). Нужно либо bump monitoring до 3.24, либо обновить комментарий.
 
 ### [L15] — Nginx: нет явного `proxy_connect_timeout`
 - **Категория:** Infrastructure
@@ -1476,6 +1483,8 @@ XS-S правки, не требующие архитектурных решен
 | 2026-07-27 | Reydan (ZCode) | **DoD-верификация аудита:** выборочно перепроверены все 19 задач `[x]` + 2 `[x] частично` — все подтверждены чтением кода (H2/H5/H10/H11/H8/M15/M19/M20/M21/M22/L3/L4/L9/L10/L15/L16/L8/L12). Найдено 1 несоответствие: **[M21] ZAP пропущен** в Batch 3 (в карточке перечислен, но `nightly-security.yml:101` остался `:stable`). Исправлено: ZAP pinned по digest `:stable@sha256:8d387b1a…` (ZAP не публикует свежие semver-теги — последний 2.15.0 октябрь 2024, дальше weekly-rolling; pin по semver заморозил бы правила на 2 года — выбран digest-pin по аналогии с `postgres:16@sha256:…`). Образ pull'ится, YAML/bash валидны. Caveat: Dependabot не покрывает `docker pull` в workflow `run:` → ZAP-digest обновляется ручным bump по календарю (команда в комментарии). Карточка M21 приведена в соответствие (раньше статус в таблице `[x]` расходился с телом карточки `[ ]`). Заодно по ходу починены 2 побочные CI-баги: inline-комментарии после `FROM` в 7 Dockerfile'ах (ломали BuildKit → падали nightly-flakes + Dependabot Docker) и `test-integration.sh` (не пробрасывал `SECRET_KEY` → alembic падал на `ValidationError`). |
 | 2026-07-27 | Reydan (ZCode) | **[H1] SSRF через /bookmarks/favicon — выполнено.** Создан `backend/app/core/net_guard.py` (~170 LOC) — единый SSRF-guard: `is_public_ip` / `is_safe_remote_url` (чистые функции), `resolve_all_ips` / `assert_url_safe` (async DNS через `loop.getaddrinfo`), `resolve_stable_ip` (double-resolve против DNS-rebinding/TOCTOU). `bookmarks._do_favicon_fetch` переписан с `follow_redirects=True` (небезопасно) на `follow_redirects=False` + ручной обход редиректов с re-валидацией каждого hop через `assert_url_safe` + `resolve_stable_ip`. Early-валидация на cache-MISS с negative-cache (ReDoS-защита: иначе атакующий бомбит endpoint private-доменами, триггеря sync DNS). Backward-compat shim в `email_images.py` (`is_safe_remote_url as is_safe_remote_url` re-export для `no_implicit_reexport` в mypy) — полная консолидация отложена к M9 (keycloak_admin использует обратную политику private-IP для Keycloak за VPN). Политика: блокировать все private/loopback/link-local/multicast/unspecified/reserved/cloud-metadata (по audit DoD; интранет-домены по private-IP получают `<n-icon>LinkOutline</n-icon>` fallback — UI уже это делал). 95 новых тестов (55 `test_net_guard.py` + 40 в `test_bookmarks_favicon.py`, включая 9 параметризованных SSRF-range + redirect-to-private + DNS-rebinding + negative-cache). ci_lint ✓ (698 файлов), 3895 unit-тестов ✓ (+69), 14 integration ✓ (bookmarks + helpdesk email_images). Заодно исправлен latent-баг: `is_public_ip` в email_images пропускал multicast (224/4, ff00::/8 имеют `is_global=True`) — теперь явно блокируется. |
 | 2026-07-27 | Reydan (ZCode) | **M22-fix (регрессия Batch 5) + M4/L13/L14-верификация + CI drift-починка.** (1) **M22-fix**: `migration_lock()` падал в CI на `mkdir /data/settings` (нет `/data` вне контейнера) → ломал `openapi drift check`, 1 unit-тест structlog, playwright E2E. Добавлен graceful-degradation (no-op lock при PermissionError/OSError) + fast-path в `_migrations.py` (возврат без FS-touches когда нет legacy env и нет файла). Тест переписан на `patch.object(logger, "warning")` (детерминирован вне зависимости от `cache_logger_on_first_use` и pytest-randomly порядка). (2) **M4**: `limit` 500→200 (default 100), общая константа `BOOKINGS_LIMIT_MAX=200` в `_types.py` (mirror `MY_BOOKINGS_LIMIT_MAX`), service-clamp в lockstep. Разведка подтвердила: frontend не шлёт `limit` — безопасно. (3) **L13**: `as unknown as` → single `as UseFilesData`. (4) **L14**: 8 base images pinned по digest + Dependabot `/monitoring` + `/` (compose redis). (5) **CI drift-починка**: регенерированы `openapi.json` (limit 500→200 contract) и `tests.generated.md` (+72 строк: M4 + H1 SSRF-тесты). ci_lint ✓ (698 файлов), 105 unit-тестов затронутых модулей ✓. |
+| 2026-07-28 | Reydan (ZCode) | **Полная re-верификация всех 28 задач `[x]`/`[x] частично` + план продолжения.** 3 параллельных субагента (backend / security+CI / frontend+infra) перепроверили каждую задачу чтением кода `file:line`. **Итог: 0 реальных регрессий** — все 28 фактически присутствуют в коде и выполняют заявленные функции. Найдено 3 косметических doc-расхождения (только в тексте аудита, не в коде), все исправлены в карточках: (1) **[M19]** — план описывал `{ once: true }`, в коде `{ immediate: true }` (что технически правильнее — нужно сработать на sync-данных initial load); (2) **[M10]** — константы названы с namespace-префиксом `EMAIL_OUTBOX_*` вместо плоских имён (улучшение: нет конфликта в `constants.py`); (3) **[L14]** — устаревший sync-комментарий: `nginx/Dockerfile.config` уже на alpine 3.24 (Dependabot bump от 2026-07-26, коммиты `0cb2346`/`fbe7ed9`), а `monitoring/node-exporter-textfile` остался на 3.20 — lockstep нарушен, но оба digest-pinned, безопасность не пострадала (нужно bump monitoring до 3.24 или обновить комментарий). Текущий статус: из 40+ находок **28 закрыто, 2 отклонено (M16/L18), 3 false-positive (L5/L6/M16)** → **12 активных задач**. План продолжения по 4 спринтам зафиксирован: **Спринт 1** (C1+C2+H3 — Critical + EXPLAIN-зависимые), **Спринт 2** (H9 PII + окончание H8), **Спринт 3** (M6/M9/M2/H4 — рефакторинг с characterization-тестами), **Спринт 4** (M12/M14 — frontend). Параллельные треки: решения команды по H6/M1/M11/M13; M7 после M6/M9. Низкий приоритет (Этап 4): H7/L1/L2/M18/M8/L7. |
+| 2026-07-28 | Reydan (ZCode) | **Спринт 1: C1 + C2 + H3 — все 3 выполнены.** **[C1]** `.env.example` дефолт-секреты убраны (SECRET_KEY/POSTGRES_PASSWORD/REDIS_PASSWORD/ADMIN_*/LOCAL_AUTH_ENABLED=false — все пустыми/закрыты). `config.py`: `@model_validator(mode="after") _validate_production_secrets` — в production (и только в production) block-list `_INSECURE_SECRET_KEY_VALUES` + `len(SECRET_KEY) ≥ 48` + reject `change_me_on_first_login` для ADMIN_PASSWORD. `setup.sh::preflight()`: prod-gate по образцу semver-lock (SECRET_KEY не дефолт + ≥48; ADMIN_PASSWORD не дефолт если задан). Список `missing` в preflight скорректирован: ADMIN_* могут быть пустыми (bootstrap skip — `app/core/bootstrap.py:28`). 6 unit-тестов (+ dev/staging regression-tests). **[C2]** `docker-compose.yml` redis: `user: "999:1000"` (UID 999, GID 1000 — уточнено по факту образа, не 999:999 из плана). Smoke-тест: entrypoint от redis-юзера создаёт ACL `/tmp/redis.acl` (`-rw------- redis redis`), redis-server стартует, `/data` доступен для AOF. `docker compose config --quiet` ✓. **[H3]** КРИТИЧЕСКАЯ НАХОДКА при разведке: вариант (A) jsonpath `$.** ? (@ like_regex ...)` **НЕ ускоряется GIN jsonb_path_ops** — документация PG: `like_regex` применяется как post-filter, индекс для regex не используется (EXPLAIN подтвердил Seq Scan даже с GIN миграции 033 на 1500 строк × 3 партиции). Дополнительно: jsonpath-экранирование regex требует удвоения backslash (одинарный `\.` → `.` → `.*` матчит всё = ReDoS). После консультации с пользователем выбран **вариант (B)**: `?extended_search=true` (по умолчанию off). По умолчанию `q` ищет только по `user_email`/`resource_title` (btree+trgm); `metadata::text ILIKE` — осознанный медленный режим. Frontend: `n-switch` + tooltip в `AuditTab.vue`, `AuditFilters` расширен, i18n ru+en (search placeholder обновлён, добавлены extendedSearch/extendedSearchHint). **Финальные проверки:** backend ci_lint ✓ (698 файлов, ruff+mypy+format), 51 unit-тест audit+config ✓; frontend lint:check ✓ (0 errors, 10 pre-existing warnings), typecheck ✓, i18n:check ✓ (2137 keys), 2130 unit ✓. Регенерированы: openapi.json (extended_search в 2 endpoints), api-contracts.generated.md (+2 строк extended_search), tests.generated.md (+9 тестов, hypothesis-тесты сохранены — локально не собираются без hypothesis, в CI есть). Карточки C1/C2/H3 обновлены до [x]. |
 
 ---
 

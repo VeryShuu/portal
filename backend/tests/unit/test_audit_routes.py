@@ -170,7 +170,7 @@ class TestBuildFilters:
         assert "date_to" in where
         assert params["date_to"] == dt
 
-    def test_q_filter(self):
+    def test_q_filter_default_searches_email_and_title_only(self):
         from app.api.audit import _build_filters
 
         where, params = _build_filters(
@@ -181,9 +181,64 @@ class TestBuildFilters:
             date_from=None,
             date_to=None,
             q="search term",
+            extended_search=False,
         )
+        # audit [H3]: по умолчанию (extended_search=False) q ищет только по
+        # user_email/resource_title (btree+trgm, быстро). metadata::text ILIKE
+        # (Seq Scan по партициям) вынесен в опциональный ?extended_search=true.
         assert "ILIKE" in where
         assert params["q"] == "%search term%"
+        assert "coalesce(user_email" in where
+        assert "coalesce(resource_title" in where
+        # metadata НЕ участвует в быстром пути.
+        assert "metadata" not in where
+
+    def test_q_filter_extended_search_includes_metadata(self):
+        """audit [H3]: ?extended_search=true добавляет metadata::text ILIKE.
+
+        Медленный путь (Seq Scan по партициям audit_log) — осознанный выбор админа
+        при поиске события по содержимому метаданных (ip, old/new_value и т.п.).
+        Без флага быстрый путь не триггерит Seq Scan.
+        """
+        from app.api.audit import _build_filters
+
+        where, params = _build_filters(
+            user_id=None,
+            event_type=None,
+            resource_type=None,
+            ip_address=None,
+            date_from=None,
+            date_to=None,
+            q="192.168.1.5",
+            extended_search=True,
+        )
+        assert "ILIKE" in where
+        assert params["q"] == "%192.168.1.5%"
+        # metadata::text ILIKE включён только в расширенном режиме.
+        assert "coalesce(metadata::text,'') ILIKE :q" in where
+
+    def test_q_filter_extended_search_off_omits_metadata(self):
+        """Регресс: без extended_search metadata::text НЕ попадает в WHERE.
+
+        Ключевое свойство фикса [H3] — быстрый путь по умолчанию не должен
+        триггерить Seq Scan по metadata. Только email/title (btree+trgm).
+        """
+        from app.api.audit import _build_filters
+
+        where, _params = _build_filters(
+            user_id=None,
+            event_type=None,
+            resource_type=None,
+            ip_address=None,
+            date_from=None,
+            date_to=None,
+            q="anything",
+            extended_search=False,
+        )
+        assert "metadata" not in where, (
+            "По умолчанию metadata::text ILIKE не должен быть в WHERE "
+            "(это Seq Scan по партициям). Используйте extended_search=true."
+        )
 
     def test_multiple_filters_joined_with_and(self):
         from app.api.audit import _build_filters

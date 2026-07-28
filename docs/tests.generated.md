@@ -666,7 +666,9 @@ tests/unit/test_audit_routes.py::TestBuildFilters::test_event_type_filter
 tests/unit/test_audit_routes.py::TestBuildFilters::test_ip_address_filter
 tests/unit/test_audit_routes.py::TestBuildFilters::test_multiple_filters_joined_with_and
 tests/unit/test_audit_routes.py::TestBuildFilters::test_no_filters_returns_empty_where
-tests/unit/test_audit_routes.py::TestBuildFilters::test_q_filter
+tests/unit/test_audit_routes.py::TestBuildFilters::test_q_filter_default_searches_email_and_title_only
+tests/unit/test_audit_routes.py::TestBuildFilters::test_q_filter_extended_search_includes_metadata
+tests/unit/test_audit_routes.py::TestBuildFilters::test_q_filter_extended_search_off_omits_metadata
 tests/unit/test_audit_routes.py::TestBuildFilters::test_resource_type_filter
 tests/unit/test_audit_routes.py::TestBuildFilters::test_user_id_filter
 tests/unit/test_audit_routes.py::TestBuildFilters::test_where_starts_with_where
@@ -952,6 +954,8 @@ tests/unit/test_concurrent_tasks.py::TestConcurrentTasksFixture::test_runs_all_t
 tests/unit/test_concurrent_tasks.py::TestIdempotencyMiddlewareConcurrency::test_different_keys_do_not_share_cache
 tests/unit/test_concurrent_tasks.py::TestIdempotencyMiddlewareConcurrency::test_same_key_replayed_from_cache
 tests/unit/test_config.py::test_defaults
+tests/unit/test_config.py::test_dev_accepts_default_admin_password
+tests/unit/test_config.py::test_dev_accepts_short_secret_key
 tests/unit/test_config.py::test_invalid_database_url_driver
 tests/unit/test_config.py::test_legacy_runtime_fields_removed
 tests/unit/test_config.py::test_photos_generate_avif_parsing_matches_legacy[-False]
@@ -965,7 +969,11 @@ tests/unit/test_config.py::test_photos_generate_avif_parsing_matches_legacy[true
 tests/unit/test_config.py::test_photos_generate_avif_parsing_matches_legacy[yes-True]
 tests/unit/test_config.py::test_photos_thumb_defaults
 tests/unit/test_config.py::test_photos_thumb_env_override
+tests/unit/test_config.py::test_production_accepts_empty_admin_password
 tests/unit/test_config.py::test_production_flag
+tests/unit/test_config.py::test_production_rejects_default_admin_password
+tests/unit/test_config.py::test_production_rejects_default_secret_key
+tests/unit/test_config.py::test_production_rejects_short_secret_key
 tests/unit/test_config.py::test_secret_key_too_short_raises
 tests/unit/test_config.py::test_valid_config
 tests/unit/test_core_utils.py::TestIterUploadChunks::test_empty_upload_yields_nothing

@@ -42,6 +42,16 @@
         :maxlength="200"
         style="min-width:240px;flex:1"
       />
+      <n-tooltip placement="bottom">
+        <template #trigger>
+          <n-switch
+            v-model:value="auditFilters.extended_search"
+            size="small"
+          />
+        </template>
+        {{ t('admin.audit.filters.extendedSearchHint') }}
+      </n-tooltip>
+      <span class="extended-search-label">{{ t('admin.audit.filters.extendedSearch') }}</span>
       <n-button
         size="small"
         type="primary"
@@ -127,6 +137,7 @@ const auditFilters = reactive<AuditFilters>({
   date_from: '',
   date_to: '',
   q: '',
+  extended_search: false,
 })
 
 const paginationState = reactive({ page: 1, pageSize: 50 })
@@ -230,6 +241,11 @@ function _activeAuditFilters(): AuditFilters {
       out[key] = v as string
     }
   }
+  // audit [H3]: extended_search передаём только когда true (boolean), чтобы
+  // не засорять query-string дефолтным false.
+  if (auditFilters.extended_search) {
+    out.extended_search = true
+  }
   return out
 }
 
@@ -254,6 +270,7 @@ function resetAuditFilters() {
   auditFilters.date_from = ''
   auditFilters.date_to = ''
   auditFilters.q = ''
+  auditFilters.extended_search = false
   reloadAudit()
 }
 
@@ -289,4 +306,12 @@ async function exportAuditCsv() {
 
 <style scoped>
 @import '../admin-tabs.css';
+
+/* audit [H3]: label рядом с n-switch для extended_search — мелкий шрифт,
+   чтобы визуально вписаться в ряд фильтров (size="small"). */
+.extended-search-label {
+  font-size: 12px;
+  color: var(--color-text-secondary, #666);
+  user-select: none;
+}
 </style>

@@ -17637,6 +17637,16 @@
           },
           {
             "in": "query",
+            "name": "extended_search",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Extended Search",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
             "name": "limit",
             "required": false,
             "schema": {
@@ -17878,6 +17888,16 @@
                 }
               ],
               "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "extended_search",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Extended Search",
+              "type": "boolean"
             }
           },
           {

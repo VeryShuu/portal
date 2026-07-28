@@ -1,5 +1,5 @@
 <!-- AUTO-GENERATED — do not edit manually. Run: cd backend && python -m scripts.generate_api_contracts_doc --output ../docs/api-contracts.generated.md -->
-<!-- Generated: 2026-07-22 16:54 UTC -->
+<!-- Generated: 2026-07-28 20:04 UTC -->
 
 # API Contracts (auto-generated)
 
@@ -355,6 +355,7 @@
 | `date_from` | query | `any` |  |  |
 | `date_to` | query | `any` |  |  |
 | `q` | query | `any` |  |  |
+| `extended_search` | query | `boolean` |  |  |
 | `limit` | query | `integer` |  |  |
 | `offset` | query | `integer` |  |  |
 | `portal_session` | cookie | `any` |  |  |
@@ -398,6 +399,7 @@
 | `date_from` | query | `any` |  |  |
 | `date_to` | query | `any` |  |  |
 | `q` | query | `any` |  |  |
+| `extended_search` | query | `boolean` |  |  |
 | `max_rows` | query | `integer` |  |  |
 | `portal_session` | cookie | `any` |  |  |
 

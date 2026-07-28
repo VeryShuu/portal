@@ -1255,14 +1255,45 @@ preflight() {
         else
             ok "prod-контур / IMAGE_TAG='${_pf_tag}': semver-lock активен (ADR-047)"
         fi
+
+        # ── prod-контур: секреты не должны быть публично известными дефолтами (audit [C1]).
+        # Защита новых деплоев от «скопировал .env.example → забыл сменить SECRET_KEY».
+        # Settings (app/core/config.py) делает ту же проверку при старте backend, но
+        # preflight даёт оператору понятную ошибку ДО попытки `docker compose up`.
+        local _pf_secret _pf_adminpw
+        _pf_secret=$(load_env_var SECRET_KEY)
+        _pf_adminpw=$(load_env_var ADMIN_PASSWORD)
+        # SECRET_KEY: не дефолт из .env.example и не слишком короткий.
+        if [[ "$_pf_secret" == "change_me_32_chars_minimum_secret_key_here" ]]; then
+            warn "prod-контур с SECRET_KEY по умолчанию из .env.example (запрещён, audit [C1])."
+            warn "  Этот ключ публично известен → компрометация всех сессий и at-rest секретов."
+            warn "  Сгенерируйте новый:  openssl rand -hex 48"
+            fatal=1
+        elif [[ ${#_pf_secret} -lt 48 ]]; then
+            warn "prod-контур: SECRET_KEY слишком короткий (${#_pf_secret} < 48 символов, audit [C1])."
+            warn "  Сгенерируйте новый:  openssl rand -hex 48"
+            fatal=1
+        else
+            ok "prod-контур / SECRET_KEY: не дефолт, длина ${#_pf_secret} ≥ 48"
+        fi
+        # ADMIN_PASSWORD: если задан — не должен быть дефолтом. Пустой допустим (bootstrap skip).
+        if [[ -n "$_pf_adminpw" && "$_pf_adminpw" == "change_me_on_first_login" ]]; then
+            warn "prod-контур с ADMIN_PASSWORD='change_me_on_first_login' (запрещён, audit [C1])."
+            warn "  Пароль публично известен → предсказуемый admin-доступ."
+            warn "  Задайте надёжный пароль или оставьте ADMIN_PASSWORD пустым (bootstrap пропускается)."
+            fatal=1
+        fi
     fi
 
     # ── .env (кроме первого запуска) ─────────────────────────────────────────
     if [[ -f .env ]]; then
-        # Проверяем обязательные ключи
+        # Проверяем обязательные ключи.
+        # ADMIN_EMAIL/ADMIN_PASSWORD могут быть пустыми — bootstrap пропускается
+        # (app/core/bootstrap.py:28). Если заданы — preflight выше (prod-блок)
+        # и Settings-валидатор проверяют, что они не публичные дефолты (audit [C1]).
         local missing=()
         for key in POSTGRES_DB POSTGRES_USER POSTGRES_PASSWORD REDIS_PASSWORD \
-                   SECRET_KEY ADMIN_EMAIL ADMIN_PASSWORD; do
+                   SECRET_KEY; do
             if [[ -z "$(load_env_var "$key")" ]]; then
                 missing+=("$key")
             fi

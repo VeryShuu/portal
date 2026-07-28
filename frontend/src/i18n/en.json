@@ -707,7 +707,9 @@
         "ipPlaceholder": "192.168.1.1",
         "dateFrom": "From",
         "dateTo": "To",
-        "search": "Search (email, title, metadata)",
+        "search": "Search (email, title)",
+        "extendedSearch": "In metadata",
+        "extendedSearchHint": "Deep search across metadata contents (IP, old/new_value, etc.). Slower — scans JSON of every record. Off by default.",
         "apply": "Apply",
         "reset": "Reset",
         "userIdInvalid": "Invalid UUID format (expected xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)"
