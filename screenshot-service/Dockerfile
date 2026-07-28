@@ -1,5 +1,8 @@
-# pinned 2026-07-26
-FROM mcr.microsoft.com/playwright/python:v1.44.0-jammy@sha256:c257db7f706f31f852740b039dea4f4611418f1a6816c0ceae716dd20d4eddda
+# pinned 2026-07-28
+# Базовый образ Playwright должен совпадать по версии с requirements.txt (playwright==X.Y.Z),
+# иначе браузеры в образе не совместимы с Python-dep → "Executable doesn't exist at /ms-playwright/…"
+# (compose-smoke regression после #29: pip playwright 1.44→1.61 без обновления базового образа).
+FROM mcr.microsoft.com/playwright/python:v1.61.0-jammy@sha256:108b33fc1c785c056665b04c320a612526503b0b081209eea2e1ec89e3b69a8f
 
 WORKDIR /app
 
