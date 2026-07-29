@@ -348,6 +348,61 @@ class TestDeleteBooking:
         assert snap.id == b.id
 
 
+class TestUpdateRoomChange:
+    """Regression: changing a booking's room must be reflected in the in-memory
+    ``booking.rooms`` that the iCal/HTML email builders read *before* commit.
+
+    Root cause: ``_rebuild_booking_rooms`` used a bulk DELETE + add(), which
+    bypasses the ORM identity map, leaving ``booking.rooms`` stale on the old
+    room — so the calendar email carried the previous room even though the DB
+    row was correct.
+    """
+
+    async def test_update_room_change_reflected_in_rooms_and_ical(
+        self, real_db_session, real_user, room, room2
+    ):
+        from app.schemas.meetings import BookingCreate, BookingUpdate
+        from app.services.meetings.bookings_service import create_booking, update_booking
+        from app.services.meetings.ical_builder import build_ical
+        from app.services.meetings.notifications import _build_html_body
+
+        start, end = _slot()
+        b = await create_booking(
+            real_db_session,
+            payload=BookingCreate(
+                title="Room Swap", start_time=start, end_time=end, room_ids=[room.id]
+            ),
+            user=real_user,
+        )
+
+        updated, diff = await update_booking(
+            real_db_session,
+            booking_id=b.id,
+            payload=BookingUpdate(room_ids=[room2.id]),
+            user=real_user,
+        )
+
+        # 1. In-memory rooms reflect the NEW room.
+        room_ids_after = {br.room_id for br in updated.rooms}
+        assert room_ids_after == {room2.id}, room_ids_after
+
+        # 2. iCal LOCATION / room-attendee carries the new room name.
+        ical_text = build_ical(
+            updated, method="REQUEST", company_domain="test", from_email="p@x"
+        ).decode("utf-8", errors="replace")
+        assert room2.name in ical_text
+        assert room.name not in ical_text
+
+        # 3. HTML email body "Комната:" carries the new room name.
+        html = _build_html_body(updated, "REQUEST")
+        assert room2.name in html
+        assert room.name not in html
+
+        # 4. This is a non-participant change → SEQUENCE must bump.
+        assert diff.non_participant_changed is True
+        assert updated.update_count == 1
+
+
 class TestListBookings:
     async def test_list_filtered_by_room_and_date(self, real_db_session, real_user, room, room2):
         from app.schemas.meetings import BookingCreate

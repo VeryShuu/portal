@@ -255,3 +255,70 @@ class TestUpdateSeriesTimestamp:
             assert b.start_time.hour == new_start.hour
             assert len(b.rooms) == 1
             assert b.rooms[0].room_id == original_room_id
+
+
+class TestUpdateSeriesRoomChange:
+    """Regression: changing a series' room must be reflected in the in-memory
+    ``booking.rooms`` that the iCal/HTML email builders read before commit.
+
+    Same root cause as TestUpdateRoomChange for single bookings: the bulk
+    DELETE in ``_rebuild_booking_rooms`` left ``booking.rooms`` stale, so the
+    series notification carried the previous room.
+    """
+
+    async def test_update_series_room_change_reflected_in_rooms_and_ical(
+        self, real_db_session, real_user, room
+    ):
+        from app.schemas.meetings import (
+            BookingCreate,
+            RecurrenceRule,
+            RoomCreate,
+            SeriesUpdate,
+        )
+        from app.services.meetings.ical_builder import build_ical
+        from app.services.meetings.notifications import _build_html_body
+        from app.services.meetings.rooms_service import create_room
+        from app.services.meetings.series_service import create_booking_series, update_series
+
+        room2 = await create_room(real_db_session, RoomCreate(name=f"S2-{uuid.uuid4().hex[:6]}"))
+
+        start, end = _slot(offset_days=4)
+        until = (start + timedelta(days=1)).date()
+        bookings = await create_booking_series(
+            real_db_session,
+            payload=BookingCreate(
+                title="Series Room Swap",
+                start_time=start,
+                end_time=end,
+                room_ids=[room.id],
+                recurrence=RecurrenceRule(freq="DAILY", until_date=until),
+            ),
+            user=real_user,
+        )
+        series_id = bookings[0].series_id
+
+        updated, diff = await update_series(
+            real_db_session,
+            series_id=series_id,
+            payload=SeriesUpdate(room_ids=[room2.id]),
+            user=real_user,
+        )
+
+        # Every instance reflects the NEW room in memory (what iCal/HTML read).
+        for b in updated:
+            assert {br.room_id for br in b.rooms} == {room2.id}
+
+        # The canonical first instance drives the iCal email; it must carry the
+        # new room in LOCATION and the HTML "Комната:" line.
+        first = updated[0]
+        ical_text = build_ical(
+            first, method="REQUEST", company_domain="test", from_email="p@x"
+        ).decode("utf-8", errors="replace")
+        assert room2.name in ical_text
+        assert room.name not in ical_text
+
+        html = _build_html_body(first, "REQUEST")
+        assert room2.name in html
+        assert room.name not in html
+
+        assert diff.non_participant_changed is True

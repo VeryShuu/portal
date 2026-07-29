@@ -196,6 +196,10 @@ async def _rebuild_booking_rooms(
                 end_time=new_end,
             )
         )
+    # Bulk DELETE bypasses the ORM identity map: the in-memory ``booking.rooms``
+    # collection would otherwise keep the previous rooms, so the series iCal /
+    # email notification carries stale rooms. Expire to force a refetch.
+    db.expire(booking, ["rooms"])
 
 
 async def _apply_series_update_to_booking(

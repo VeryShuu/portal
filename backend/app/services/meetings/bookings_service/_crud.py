@@ -102,6 +102,13 @@ async def _rebuild_booking_rooms(
                 end_time=new_end,
             )
         )
+    # The bulk DELETE above bypasses the ORM, so the in-memory ``booking.rooms``
+    # collection (identity map) keeps the OLD room rows. Expire it so the next
+    # access — including the post-update reload and the iCal/HTML builders that
+    # run before commit — refetches the freshly added rooms. Without this the
+    # calendar/email notification carries the previous room (see regression test
+    # test_update_room_change_reflected_in_rooms_and_ical).
+    db.expire(booking, ["rooms"])
 
 
 async def _apply_schedule_change(
