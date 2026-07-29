@@ -2627,6 +2627,21 @@ tests/unit/test_logging.py::test_logger_emits_valid_json_with_redaction
 tests/unit/test_logging.py::test_mask_email[USER@DOMAIN.RU-U***@DOMAIN.RU]
 tests/unit/test_logging.py::test_mask_email[a@b.com-a***@b.com]
 tests/unit/test_logging.py::test_mask_email[john.doe@company.local-j***@company.local]
+tests/unit/test_logging.py::test_mask_ipv4_in_message_key
+tests/unit/test_logging.py::test_mask_ipv4_last_octet[1.2.3.4 GET /api/ 5.6.7.8-1.2.3.x GET /api/ 5.6.7.x]
+tests/unit/test_logging.py::test_mask_ipv4_last_octet[10.0.0.1-10.0.0.x]
+tests/unit/test_logging.py::test_mask_ipv4_last_octet[127.0.0.1-127.0.0.x]
+tests/unit/test_logging.py::test_mask_ipv4_last_octet[172.16.0.42-172.16.0.x]
+tests/unit/test_logging.py::test_mask_ipv4_last_octet[192.168.1.100-192.168.1.x]
+tests/unit/test_logging.py::test_mask_ipv4_not_in_url_field
+tests/unit/test_logging.py::test_mask_ipv4_passthrough_non_ipv4[192.168.1]
+tests/unit/test_logging.py::test_mask_ipv4_passthrough_non_ipv4[::1]
+tests/unit/test_logging.py::test_mask_ipv4_passthrough_non_ipv4[None]
+tests/unit/test_logging.py::test_mask_ipv4_passthrough_non_ipv4[]
+tests/unit/test_logging.py::test_mask_ipv4_passthrough_non_ipv4[fe80::1]
+tests/unit/test_logging.py::test_mask_ipv4_passthrough_non_ipv4[localhost]
+tests/unit/test_logging.py::test_mask_ipv4_passthrough_non_ipv4[not-an-ip]
+tests/unit/test_logging.py::test_mask_ipv4_preserves_email_masking
 tests/unit/test_logging.py::test_mask_pii_does_not_touch_non_strings
 tests/unit/test_logging.py::test_mask_pii_processor_masks_email_in_event
 tests/unit/test_logging.py::test_mask_pii_processor_masks_email_in_list
