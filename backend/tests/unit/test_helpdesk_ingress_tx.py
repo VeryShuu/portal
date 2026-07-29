@@ -121,6 +121,88 @@ async def test_poll_does_not_rollback_on_success() -> None:
 
 
 # ---------------------------------------------------------------------------
+# poll_done уровень лога: DEBUG при пустом поллинге, INFO при наличии событий
+# ---------------------------------------------------------------------------
+
+
+class _FakeEmptyClient(_FakeClient):
+    """IMAP-клиент с пустым ящиком (SEARCH ALL → нет UID'ов)."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.search = AsyncMock(return_value=("OK", [b""]))
+
+
+@pytest.mark.asyncio
+async def test_poll_done_debug_when_mailbox_empty() -> None:
+    """Пустой poll (fetched=0, errors=0) — норма для ящика, опрашиваемого каждые
+    30с. poll_done должен логироваться на DEBUG, иначе ~95% worker-лога от
+    helpdesk — бесполезный шум (инцидент объёма логов 2026-07-29).
+    """
+    import app.services.helpdesk.ingress as ingress_mod
+
+    db = MagicMock()
+    redis = MagicMock()
+    debug_calls: list[str] = []
+    info_calls: list[str] = []
+
+    with (
+        patch.object(ingress_mod, "_make_imap_client", return_value=_FakeEmptyClient()),
+        patch.object(ingress_mod, "_decrypt_password", return_value="pw"),
+        patch.object(
+            ingress_mod.logger,
+            "debug",
+            side_effect=lambda *a, **k: debug_calls.append(a[0] if a else k.get("event", "")),
+        ),
+        patch.object(
+            ingress_mod.logger,
+            "info",
+            side_effect=lambda *a, **k: info_calls.append(a[0] if a else k.get("event", "")),
+        ),
+    ):
+        summary = await poll_mailbox(db, redis, settings_row=_settings_row())
+
+    assert summary == {"fetched": 0, "created": 0, "appended": 0, "skipped": 0, "errors": 0}
+    assert "helpdesk.ingress.poll_done" in debug_calls
+    assert "helpdesk.ingress.poll_done" not in info_calls
+
+
+@pytest.mark.asyncio
+async def test_poll_done_info_when_messages_present() -> None:
+    """Непустой poll (есть письма или ошибки) — реальное событие, остаётся на INFO."""
+    import app.services.helpdesk.ingress as ingress_mod
+
+    db = MagicMock()
+    redis = MagicMock()
+    debug_calls: list[str] = []
+    info_calls: list[str] = []
+
+    async def _process_uid(db_arg, redis_arg, client, uid, *, settings_row, summary):
+        summary["created"] += 1
+
+    with (
+        patch.object(ingress_mod, "_make_imap_client", return_value=_FakeClient()),
+        patch.object(ingress_mod, "_decrypt_password", return_value="pw"),
+        patch.object(ingress_mod, "_process_uid", side_effect=_process_uid),
+        patch.object(
+            ingress_mod.logger,
+            "debug",
+            side_effect=lambda *a, **k: debug_calls.append(a[0] if a else k.get("event", "")),
+        ),
+        patch.object(
+            ingress_mod.logger,
+            "info",
+            side_effect=lambda *a, **k: info_calls.append(a[0] if a else k.get("event", "")),
+        ),
+    ):
+        summary = await poll_mailbox(db, redis, settings_row=_settings_row())
+
+    assert summary["created"] == 2  # _FakeClient.search → UIDs "1 2"
+    assert "helpdesk.ingress.poll_done" in info_calls
+    assert "helpdesk.ingress.poll_done" not in debug_calls
+
+
+# ---------------------------------------------------------------------------
 # Split-commit / идемпотентность: лог в той же транзакции, что и сообщение
 # ---------------------------------------------------------------------------
 

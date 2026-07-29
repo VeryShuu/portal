@@ -16,6 +16,7 @@ from fastapi.responses import Response, StreamingResponse
 
 from app.api.deps import CurrentUser, DbDep, RedisDep
 from app.api.kb import export_import_repo
+from app.core.logging import get_logger
 from app.core.system_config import load_system_settings
 from app.schemas.kb_extra import ImportReport
 from app.services import kb_export, kb_import
@@ -37,6 +38,7 @@ from ._docx_export import render_article_docx
 from ._pdf_export import render_article_html_for_pdf
 
 _emit_audit = make_audit_emitter("kb_article")
+logger = get_logger(__name__)
 
 router = APIRouter(prefix="/kb", tags=["knowledge-base"])
 
@@ -271,7 +273,22 @@ async def export_article_pdf(
 
     from app.core.pdf import render_pdf
 
-    pdf_bytes = await render_pdf(render_article_html_for_pdf(article))
+    try:
+        pdf_bytes = await render_pdf(render_article_html_for_pdf(article))
+    except Exception as exc:
+        # screenshot-service недоступен / вернул 4xx (слишком большая статья, 413)
+        # или упал при рендере. Раньше HTTPStatusError пробрасывался наружу → 500 +
+        # «Exception in ASGI application». Возвращаем 503 — по образцу news/export.py.
+        logger.exception(
+            "kb.pdf_render_failed",
+            article_id=str(article_id),
+            error=str(exc),
+            error_type=type(exc).__name__,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="PDF generation failed",
+        ) from exc
     filename = f"{kb_export.document_stem(article.title)}.pdf"
     disposition = _rfc5987_filename(filename)
     await _emit_audit(

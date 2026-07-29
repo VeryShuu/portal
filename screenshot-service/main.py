@@ -28,6 +28,13 @@ DEFAULT_WIDTH = int(os.environ.get("DEFAULT_WIDTH", "1280"))
 DEFAULT_HEIGHT = int(os.environ.get("DEFAULT_HEIGHT", "720"))
 PAGE_TIMEOUT_MS = int(os.environ.get("PAGE_TIMEOUT_MS", "30000"))
 
+# Max size of a request body accepted by aiohttp (applies to /pdf, where the
+# backend POSTs the rendered article HTML — large KB articles with inlined
+# base64 media can exceed aiohttp's 1 MiB default → 413). 16 MiB covers typical
+# rich articles with a safety margin.
+PDF_MAX_BODY_MB = int(os.environ.get("PDF_MAX_BODY_MB", "16"))
+PDF_MAX_BODY_BYTES = PDF_MAX_BODY_MB * 1024 * 1024
+
 _SERVICE_SECRET: str = os.environ.get("SCREENSHOT_SERVICE_SECRET", "")
 
 _ALLOWED_ORIGINS_RAW: str = os.environ.get("SCREENSHOT_ALLOWED_ORIGINS", "")
@@ -493,7 +500,7 @@ async def run_probe(request: web.Request) -> web.Response:
 
 
 def build_app() -> web.Application:
-    app = web.Application()
+    app = web.Application(client_max_size=PDF_MAX_BODY_BYTES)
     app.on_startup.append(_startup)
     app.on_cleanup.append(_shutdown)
     app.router.add_get("/health", health)

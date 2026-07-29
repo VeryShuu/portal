@@ -6,9 +6,13 @@ builders.
 
 from __future__ import annotations
 
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import httpx
 import pytest
 from fastapi import HTTPException
 
+from app.api import directories as api
 from app.models.object_directory import ObjectDirectory, ObjectDirectoryEntry, ObjectEntryContact
 from app.schemas.object_directory import ContactInput
 from app.services import directories as svc
@@ -126,3 +130,47 @@ class TestExport:
         name = svc.export_filename(_directory(), "csv")
         assert name.startswith("fleet-")
         assert name.endswith(".csv")
+
+
+# ── Export route: PDF branch renders a 503 when screenshot-service fails ─────
+
+
+@pytest.mark.asyncio
+async def test_export_entries_pdf_503_on_render_failure():
+    """``GET /directories/{slug}/export?format=pdf`` делегирует рендер
+    screenshot-service. При ошибке последнего (413 на крупном экспорте,
+    недоступность, таймаут) ручка должна вернуть 503, а не пробрасывать
+    ``HTTPStatusError`` наружу → 500 + «Exception in ASGI application».
+
+    Регрессия инцидента 2026-07-29: KB/news/directories PDF-export падали с
+    ASGI-исключением; для KB/news фикс уже был, directories — нет.
+    """
+    directory = _directory()
+
+    db = MagicMock()
+    redis = MagicMock()
+
+    def _raise_413(_html: str) -> None:
+        raise httpx.HTTPStatusError(
+            "Client error '413 Request Entity Too Large'",
+            request=httpx.Request("POST", "http://screenshot-service:9000/pdf"),
+            response=httpx.Response(413),
+        )
+
+    with (
+        patch.object(api, "_resolve_directory", new_callable=AsyncMock, return_value=directory),
+        patch.object(api.svc, "list_entries", new_callable=AsyncMock, return_value=([], 0)),
+        patch.object(api.svc, "build_export_html", return_value="<html>big</html>"),
+        patch.object(api, "render_pdf", new_callable=AsyncMock, side_effect=_raise_413),
+        pytest.raises(HTTPException) as exc_info,
+    ):
+        await api.export_entries(
+            "fleet",
+            user=MagicMock(),
+            db=db,
+            redis=redis,
+            fmt="pdf",
+        )
+
+    assert exc_info.value.status_code == 503
+    assert exc_info.value.detail == "PDF generation failed"

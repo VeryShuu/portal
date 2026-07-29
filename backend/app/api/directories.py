@@ -359,7 +359,23 @@ async def export_entries(
         filename = svc.export_filename(directory, "xlsx")
     else:
         html = svc.build_export_html(directory, entries)
-        content = await render_pdf(html)
+        try:
+            content = await render_pdf(html)
+        except Exception as exc:
+            # screenshot-service недоступен / 4xx (слишком большой export, 413) /
+            # упал при рендере. Раньше HTTPStatusError пробрасывался наружу → 500 +
+            # «Exception in ASGI application». Возвращаем 503 — по образцу
+            # news/export.py и kb/export_import.py.
+            logger.exception(
+                "directories.pdf_render_failed",
+                directory_id=str(directory.id),
+                error=str(exc),
+                error_type=type(exc).__name__,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="PDF generation failed",
+            ) from exc
         media_type = "application/pdf"
         filename = svc.export_filename(directory, "pdf")
 

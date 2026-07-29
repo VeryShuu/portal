@@ -209,7 +209,15 @@ async def poll_mailbox(
         except Exception:
             logger.warning("helpdesk.ingress.logout_failed", exc_info=True)
 
-    logger.info("helpdesk.ingress.poll_done", **summary)
+    # Пустой poll (нет писем, нет ошибок) — это норма: ящик опрашивается каждую
+    # минуту, и подавляющее большинство poll'ов пустые. Логирование каждого на
+    # INFO генерирует килограммы бесполезного шума в prod (~95% worker-логов от
+    # helpdesk). Опускаем такие до DEBUG; INFO остаётся когда есть реальные
+    # события (fetched/created/...) или ошибки.
+    if summary["fetched"] == 0 and summary["errors"] == 0:
+        logger.debug("helpdesk.ingress.poll_done", **summary)
+    else:
+        logger.info("helpdesk.ingress.poll_done", **summary)
     return summary
 
 

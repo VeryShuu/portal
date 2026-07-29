@@ -895,6 +895,44 @@ class TestExportArticlePdf:
         assert data_uri in html
         assert f"/api/v1/kb/media/{article_id}/{media_name}" not in html
 
+    @pytest.mark.asyncio
+    async def test_export_pdf_503_on_render_failure(self):
+        """screenshot-service вернул 4xx (например 413 на крупной статье) или
+        недоступен — ручка должна вернуть 503, а не пробросить HTTPStatusError
+        наружу (500 + «Exception in ASGI application»). Регрессия инцидента
+        2026-07-29: 4 эпизода KB PDF-export падали с ASGI-исключением."""
+        import httpx
+
+        user = _make_user()
+        article_id = uuid.uuid4()
+        article = _make_article(id=article_id, title="Big Article", body="# x" * 500)
+        db = _make_db()
+        redis = _make_redis()
+        db.execute.return_value = MagicMock(scalar_one_or_none=MagicMock(return_value=article))
+
+        def _raise_413(_html: str) -> None:
+            # Эмуляция ответа screenshot-service: 413 Request Entity Too Large.
+            raise httpx.HTTPStatusError(
+                "Client error '413 Request Entity Too Large'",
+                request=httpx.Request("POST", "http://screenshot-service:9000/pdf"),
+                response=httpx.Response(413),
+            )
+
+        with (
+            patch(
+                "app.api.kb.export_import.resolve_article_permission",
+                new_callable=AsyncMock,
+                return_value="editor",
+            ),
+            patch("app.core.pdf.render_pdf", new_callable=AsyncMock, side_effect=_raise_413),
+            patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
+        ):
+            app = _build_app(user, db, redis)
+            resp = await _get(app, f"/kb/articles/{article_id}/export/pdf")
+
+        assert resp.status_code == 503
+        assert resp.json()["detail"] == "PDF generation failed"
+
 
 # ── GET /kb/articles/{id}/export/docx ────────────────────────────────────────
 

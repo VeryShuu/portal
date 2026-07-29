@@ -43,6 +43,23 @@ def test_quiet_cron_end_filtered() -> None:
         assert f.filter(rec) is False, f"должен гасить финиш {ref}"
 
 
+def test_helpdesk_poll_cron_filtered() -> None:
+    """helpdesk mailbox-poll — каждые 30с, ящик обычно пуст → старт/финиш
+    гасятся. Регрессия: ранее дублировал poll_done и плодил ~95% helpdesk-лога."""
+    f = QuietCronFilter()
+    ref = "cron:app.worker.tasks.helpdesk.poll_helpdesk_mailbox"
+    assert f.filter(_record(f"   0.07s → {ref}()")) is False
+    result_repr = repr({"fetched": 0, "errors": 0})
+    assert f.filter(_record(f"   0.07s ← {ref} ● {result_repr}")) is False
+
+
+def test_helpdesk_poll_failure_kept() -> None:
+    """Сбой helpdesk-poll (``! failed``) критичен — остаётся в логе."""
+    f = QuietCronFilter()
+    ref = "cron:app.worker.tasks.helpdesk.poll_helpdesk_mailbox"
+    assert f.filter(_record(f"   5.00s ! {ref} failed, RuntimeError: boom")) is True
+
+
 # ---------------------------------------------------------------------------
 # Редкие cron и ручные задачи → оставляем
 # ---------------------------------------------------------------------------

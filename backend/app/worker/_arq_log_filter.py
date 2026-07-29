@@ -7,12 +7,13 @@ handler. Кроме того, ARQ пишет по две INFO-строки на 
 (``→ ref()`` / ``← ref ● result``) через логгер ``arq.worker``.
 
 Для высокочастотных cron-задач это создаёт огромный бесполезный объём: на проде
-за ~2 месяца набегает ~145K таких строк, из них ~132K — четыре задачи:
+за ~2 месяца набегает ~145K таких строк, из них ~132K — пять задач:
 
-    flush_audit_queue        каждые 5с  → ~72K строк
-    process_email_outbox     каждые 10с → ~36K строк
-    worker_heartbeat         каждые 30с → ~12K строк
-    refresh_custom_metrics   каждые 30с → ~12K строк
+    flush_audit_queue          каждые 5с   → ~72K строк
+    process_email_outbox       каждые 10с  → ~36K строк
+    worker_heartbeat           каждые 30с  → ~12K строк
+    refresh_custom_metrics     каждые 30с  → ~12K строк
+    poll_helpdesk_mailbox      каждые 30с  → ~12K строк (пустой ящик — норма)
 
 ``QuietCronFilter`` приглушает только INFO-сообщения о старте/успешном завершении
 этих задач. Ошибки (``! failed``, logger.exception), ретраи (``↻``), прерывания
@@ -37,6 +38,10 @@ QUIET_CRON_REFS: frozenset[str] = frozenset(
         "cron:app.worker.tasks.email_outbox.process_email_outbox",
         "cron:app.worker.tasks.metrics.worker_heartbeat",
         "cron:app.worker.tasks.metrics.refresh_custom_metrics",
+        # helpdesk mailbox-poll — каждые 30с; в проде ящик почти всегда пуст
+        # (fetched=0, errors=0). poll_done в app.services.helpdesk.ingress
+        # опущен до DEBUG на таких no-op-прогонах; здесь глушим дубль от ARQ.
+        "cron:app.worker.tasks.helpdesk.poll_helpdesk_mailbox",
     }
 )
 

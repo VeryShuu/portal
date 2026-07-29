@@ -86,6 +86,9 @@ services:
     environment:
       SCREENSHOT_SERVICE_SECRET: ${SCREENSHOT_SERVICE_SECRET:-}
       SCREENSHOT_ALLOWED_ORIGINS: ${SCREENSHOT_ALLOWED_ORIGINS:-}
+      # Max POST body for /pdf (rendered article HTML with inlined base64 media).
+      # aiohttp default is 1 MiB → 413 on large KB articles. 16 MiB covers rich content.
+      PDF_MAX_BODY_MB: ${PDF_MAX_BODY_MB:-16}
       # Synthetic probe creds — local-auth login (для user-flow мониторинга).
       # Пусто → probe skip-ается (см. /probe endpoint).
       PROBE_ADMIN_EMAIL: ${PROBE_ADMIN_EMAIL:-}
