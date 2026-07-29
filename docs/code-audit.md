@@ -277,7 +277,7 @@
 | **L2** | `403 CSRF: Origin mismatch` | `portal_base_url="portal.local"` в `system.json` (без `https://`) → `urlparse().scheme=""` → CSRF Origin-проверка (`csrf.py:56-61`) ничему не матчит. | `system.json`: `"portal.local"` → `"https://portal.local"`. `_schemas.py`: `field_validator` на `portal_base_url` добавляет `https://`, если scheme отсутствует (защита от повторения). |
 | **L3** | `422 missing loc=["query","request"]` | Monkey-patch (L1) был объявлен в модуле с `from __future__ import annotations` → аннотации `_patched_call` (`request: Request`) стали **строками** (`'Request'`). После патча FastAPI видел `lenient_issubclass('Request', Request)` = `False` → переставал узнавать `Request`/`Response` как special-case → трактовал как query-параметры. | Убран `from __future__ import annotations` из `limiter.py` (с подробным комментарием-предупреждением, почему нельзя). |
 
-**Проверка:** `/auth/local/login` (bvs@mage.ru + ADMIN_PASSWORD) → **200** `{"ok":true,"user_id":"..."}`; 0 errors в логах; 8 limiter-тестов; `ruff` + `mypy` — 0 ошибок.
+**Проверка:** `/auth/local/login` (bvs@example.com + ADMIN_PASSWORD) → **200** `{"ok":true,"user_id":"..."}`; 0 errors в логах; 8 limiter-тестов; `ruff` + `mypy` — 0 ошибок.
 
 **Грабли для будущих сессий (важно):**
 - `fastapi-limiter` 0.2.0 не решает проблему (та же ошибка `route.path` + breaking changes API). Monkey-patch — единственный путь, пока библиотека не обновится.

@@ -184,7 +184,7 @@ i18n-проверки, синхронизация `docs/testing.md` с акту�
   - **Фикс**: явный `created_at=now` в `add_requester_reply`/`add_agent_reply`/`create_ticket` (Python-время, консистентно с `last_seen_at`). `now` уже вычислялся в `add_requester_reply` (строка 93), но не использовался — утечка переменной.
 - [x] 16.F **Верификация**:
   - 3669 unit-тестов PASS
-  - 472/473 integration PASS (1 падение = `test_get_before_put_returns_not_configured` — грязная dev-БД с прод-данными `mail.mage.ru`; в CI с чистой БД пройдёт)
+  - 472/473 integration PASS (1 падение = `test_get_before_put_returns_not_configured` — грязная dev-БД с прод-данными `mail.example.com`; в CI с чистой БД пройдёт)
   - ruff/mypy/format — clean (672 файла)
   - Все 10 ранее падавших тестов локально PASS
 

@@ -32,6 +32,12 @@ vi.mock('naive-ui', () => ({
     emits: ['click'],
   },
   NIcon: { name: 'NIcon', template: '<span class="n-icon"><slot /></span>', props: ['size', 'color'] },
+  NModal: {
+    name: 'NModal',
+    template: '<div v-if="show" class="n-modal"><slot /></div>',
+    props: { show: { type: Boolean, default: false }, autoFocus: { type: Boolean, default: false } },
+    emits: ['update:show'],
+  },
   useMessage: () => ({ success: mockMessageSuccess, error: mockMessageError, warning: vi.fn(), info: vi.fn() }),
 }))
 
