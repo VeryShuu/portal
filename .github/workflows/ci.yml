@@ -442,6 +442,23 @@ jobs:
           printf 'Checking:\n'; printf '  %s\n' "${files[@]}"
           shellcheck --severity=warning "${files[@]}"
 
+  bats:
+    # bats unit-тесты для setup.sh (авто-обновление deploy-bundle, ADR-046).
+    # setup.sh теперь source'ится через BASH_SOURCE-guard → функции проверяем
+    # напрямую, мокая curl stub'ом в tmp-PATH.
+    name: bats / tests/setup
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install bats
+        run: |
+          # apt-пакет bats бывает устаревшим — ставим из git (стабильный релиз).
+          git clone --depth 1 https://github.com/bats-core/bats-core.git /tmp/bats-core
+          sudo install -m 0755 /tmp/bats-core/bin/bats /usr/local/bin/bats
+      - name: bats tests/setup
+        run: bats tests/setup/
+
   quality-gates:
     name: quality / complexity + duplication + dead-code
     runs-on: ubuntu-latest
@@ -1104,11 +1121,16 @@ jobs:
 
           ## Обновление
 
+          Начиная с июля 2026 setup.sh п.6 сам скачивает и применяет свежий bundle
+          из GitHub Release (по IMAGE_TAG из .env). Ручная распаковка не нужна.
+
           ```bash
-          # Скачать свежий bundle и распаковать поверх (с заменой):
-          gh release download v1.2.3 -p 'portal-deploy-bundle-*.tar.gz'
-          tar xzf portal-deploy-bundle-*.tar.gz -C /opt/portal
-          cd /opt/portal && ./setup.sh   # → пункт 6 (Обновить Production)
+          cd /opt/portal
+          # 1. Выставить релизный тег в .env:
+          #    IMAGE_TAG=v1.2.3   (доступные: gh release list --repo VeryShuu/portal)
+          # 2. setup.sh п.6 сделает всё сам: preflight → скачать bundle → распаковать
+          #    → pg_dump (опц.) → compose pull → up -d → check_services.
+          ./setup.sh   # → пункт 6 (Обновить Production)
           ```
 
           ## Что в bundle, чего в нём НЕТ

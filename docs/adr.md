@@ -1514,6 +1514,21 @@ ADR-045 перевёл деплой на pull-based: образы едут из 
 - +1 CI-job (`deploy-bundle`), запускается только на теге `v*`, ~30 сек.
 - Миграции (`migrate.sh`, compose-сервис `migrations`) — без изменений, работают из образа backend.
 
+---
+
+### Amendment к ADR-046: авто-обновление deploy-bundle в setup.sh (июль 2026)
+
+**Что изменилось:** Ручной шаг обновления prod-конфигурации (`gh release download` → `tar xzf` перед запуском `setup.sh`) автоматизирован внутри `setup.sh` п.6 «Обновить Production».
+
+**Контекст:** Изначально (ADR-046) флоу обновления был двухшаговым — оператор вручную качал и распаковывал bundle, затем `setup.sh` тянул только образы. `update_production()` в prod-контуре без клона репо печатал «обновление конфигурации делается распаковкой bundle — пропускаю git pull». Это создавало рассинхрон: можно обновить образы (compose pull), оставшись на старом `docker-compose.yml` — например, без нового healthcheck `/ready` или без `PDF_MAX_BODY_MB`.
+
+**Решение:** В `update_production()` ветка «prod без клона» теперь вызывает `update_bundle_self <IMAGE_TAG>`:
+1. `download_bundle()` — `curl -fsSL` скачивает `portal-deploy-bundle-<tag>.tar.gz` из GitHub Release (репо публичный, токен не нужен; `gh` — только в тексте подсказок при ошибке).
+2. `apply_bundle()` — распаковывает во временный каталог и копирует `docker-compose.yml`/`setup.sh`/`.env.example`/`monitoring/` поверх CWD, с `.bak-pre-<tag>` для изменённых файлов. `.env`/`system_data`/`base_data`/`.portal-*` не входят в bundle и не перетираются.
+3. Self-update `setup.sh` безопасен: bash держит fd открытым на старый inode, `cp` нового файла поверх не ломает текущее исполнение — новый `setup.sh` подхватится при следующем вызове.
+
+**Что НЕ изменилось:** статус и решение ADR-046 прежние (prod без клона, deploy-bundle как артефакт, триада тег↔образ↔SHA). `IMAGE_TAG=v1.x.x` (ADR-047) — обязательный вход; `latest` отвергается (bundle с тегом `latest` не существует как Release). Откат — через `IMAGE_TAG=<старый тег>`, bundle того тега скачается автоматически. Покрытие — bats unit-тесты (`tests/setup/test_update_bundle.bats`, 18 кейсов), `main "$@"` обёрнут в `BASH_SOURCE`-guard для source'инга функций.
+
 
 ## ADR-047: Semver-lock прод-деплоя (июль 2026)
 

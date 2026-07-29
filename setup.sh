@@ -28,6 +28,12 @@ MODE_FILE=".portal-mode"
 #   dev   → полный клон репо; локальная сборка; мониторинг-overlay из дерева.
 PROFILE_FILE=".portal-profile"
 
+# ─── GitHub-источник deploy-bundle (ADR-046) ─────────────────────────────────
+# Репо публичное → curl без токена. Bundle = docker-compose.yml + .env.example
+# + setup.sh + monitoring/ (авто-обновляется в update_production, п.6).
+GITHUB_OWNER="VeryShuu"
+GITHUB_REPO="portal"
+
 current_profile() {
     # default dev — backward-compatible: без .portal-profile всё работает как
     # раньше (локальная сборка из полного клона).
@@ -112,8 +118,8 @@ show_menu() {
     # «обновлять production» бессмысленно (тут нет прода). См. ADR-046.
     if [[ "$_profile" == "prod" ]]; then
         echo -e "  ${BOLD}6.${RESET}  ${GREEN}Обновить Production${RESET}"
-        echo -e "  ${DIM}     (git pull если есть клон) → pg_dump (опц.) → docker compose pull → up -d.${RESET}"
-        echo -e "  ${DIM}     Миграции применяются автоматически. Текущий режим: $(current_mode_label).${RESET}"
+        echo -e "  ${DIM}     (bundle из Release → pg_dump опц. → docker compose pull → up -d).${RESET}"
+        echo -e "  ${DIM}     Конфигурация и образы тянутся автоматически по IMAGE_TAG. Миграции — авто.${RESET}"
         echo
     fi
 
@@ -1363,6 +1369,122 @@ preflight() {
     return $fatal
 }
 
+# ─── Авто-обновление deploy-bundle из GitHub Release (ADR-046) ─────────────────
+# В prod-контуре без клона репо конфигурацию (docker-compose.yml, setup.sh,
+# monitoring/) обновляем распаковкой свежего bundle из Release тега IMAGE_TAG.
+# Раньше это была ручная операция (gh release download → tar xzf); теперь
+# setup.sh п.6 делает её сам. Триада: образ ↔ bundle ↔ SHA одного тега (ADR-046).
+#
+# Состав bundle (формируется в CI, ci.yml::deploy-bundle):
+#   docker-compose.yml  .env.example  setup.sh  monitoring/  DEPLOY-BUNDLE-README.md
+# .env / system_data / base_data / .portal-* НЕ входят → перетереть нельзя.
+
+# bundle_url <tag> — URL релизного ассета portal-deploy-bundle-<tag>.tar.gz.
+# Репо публичный, GitHub отдаёт ассет анонимно (302 → objects.githubusercontent.com).
+bundle_url() {
+    local tag="$1"
+    printf 'https://github.com/%s/%s/releases/download/%s/portal-deploy-bundle-%s.tar.gz' \
+        "$GITHUB_OWNER" "$GITHUB_REPO" "$tag" "$tag"
+}
+
+# download_bundle <tag> <destdir> — качает bundle во временный файл в <destdir>.
+# Требует curl на проде (есть практически везде). Возвращает путь к tarball в stdout.
+# При ошибке (404/сеть/пустой файл) — фатальная ошибка с подсказкой про доступные теги.
+download_bundle() {
+    local tag="$1" destdir="$2"
+    local url tarball
+    url=$(bundle_url "$tag")
+    mkdir -p "$destdir"
+    tarball="${destdir}/portal-deploy-bundle-${tag}.tar.gz"
+
+    # curl: -f ошибка на HTTP ≥400, -sS тихо+сообщения об ошибках, -L следование
+    # редиректам, --retry 3 повтор при сетевых сбоях.
+    if ! command -v curl >/dev/null 2>&1; then
+        err "curl не найден — установите (apt-get install curl) для авто-обновления bundle." \
+            "Либо обновите конфигурацию вручную: gh release download ${tag}" \
+            "  -p 'portal-deploy-bundle-*.tar.gz' --repo ${GITHUB_OWNER}/${GITHUB_REPO}"
+    fi
+    if ! curl -fsSL --retry 3 -o "$tarball" "$url" 2>/dev/null; then
+        err "Не удалось скачать deploy-bundle ${tag}:" \
+            "  ${url}" \
+            "Проверьте IMAGE_TAG='${tag}' в .env (доступные теги:" \
+            "  gh release list --repo ${GITHUB_OWNER}/${GITHUB_REPO})."
+    fi
+    # Пустой/битый ответ (GitHub иногда отдаёт 200 + HTML-ошибку) — проверка размера.
+    if [[ ! -s "$tarball" ]]; then
+        err "Скачанный bundle пустой: ${tarball}. Проверьте тег '${tag}' и доступ к GitHub."
+    fi
+    printf '%s' "$tarball"
+}
+
+# apply_bundle <tarball> — распаковывает bundle и копирует конфигурацию поверх CWD.
+# Каждый перетираемый файл бэкапится в .<name>.bak-pre-<tag>; .env/runtime НЕ трогаем.
+# Self-update безопасен: bash держит fd открытым на старый inode setup.sh, атомарный
+# rename (cp) нового файла поверх не ломает текущее исполнение — новый setup.sh
+# подхватится при следующем вызове. Разворачиваться должен bundle той же версии,
+# что и образ (IMAGE_TAG), иначе рассинхрон compose ↔ образ.
+apply_bundle() {
+    local tarball="$1"
+    local tag tmpdir
+    # Тег извлекаем из имени файла (...-v1.2.3.tar.gz) — для подписи .bak-файлов.
+    tag=$(basename "$tarball" | sed -E 's/^portal-deploy-bundle-(.+)\.tar\.gz$/\1/')
+    tmpdir=$(mktemp -d)
+
+    if ! tar -xzf "$tarball" -C "$tmpdir" 2>/dev/null; then
+        rm -rf "$tmpdir"
+        err "Не удалось распаковать bundle: ${tarball} (битый архив?)."
+    fi
+    # Bundle пакуется как portal-deploy/<files> (см. ci.yml::deploy-bundle, -C ... portal-deploy).
+    local src="${tmpdir}/portal-deploy"
+    if [[ ! -d "$src" ]]; then
+        rm -rf "$tmpdir"
+        err "Структура bundle неожиданная: нет 'portal-deploy/' внутри. " \
+            "Обратитесь к разработчикам (ci.yml::deploy-bundle мог измениться)."
+    fi
+
+    # Копируем ровно то, что входит в bundle (defense-in-depth: даже если в архив
+    # что-то лишнее попадёт, оно не применится). .bak текущего состояния — на случай
+    # отката вручную. cp -r поверх существующего (monitoring/ мёрджится файлами).
+    local f
+    for f in docker-compose.yml .env.example setup.sh monitoring DEPLOY-BUNDLE-README.md; do
+        [[ -e "${src}/${f}" ]] || continue
+        # Бэкапим только если уже есть локальный файл И он отличается (иначе мусор).
+        if [[ -e "./${f}" ]] && ! diff -q "./${f}" "${src}/${f}" >/dev/null 2>&1; then
+            cp -r "./${f}" "./${f}.bak-pre-${tag}"
+        fi
+        cp -r "${src}/${f}" "./${f}"
+    done
+    rm -rf "$tmpdir"
+    ok "Конфигурация обновлена из deploy-bundle ${tag}" \
+        "(бэкапы изменённых файлов: .*.bak-pre-${tag})"
+}
+
+# update_bundle_self <tag> — оркестратор авто-обновления конфигурации в prod-контуре.
+# Гейты: тег обязателен и не latest (дублирует preflight, ADR-047 — bundle latest
+# не существует как Release-тег; latest живёт только как :latest в registry).
+#
+# cleanup tmpdir: err() делает exit 1 процесса. Чтобы tmpdir не оставался в /tmp при
+# ошибке, используем trap EXIT с восстановлением прежнего обработчика (trap EXIT в bash
+# НЕ auto-reset'ится после возврата функции, как RETURN — поэтому снимаем явно).
+update_bundle_self() {
+    local tag="$1"
+    if [[ -z "$tag" || "$tag" == "latest" ]]; then
+        err "Авто-обновление bundle требует релизный тег IMAGE_TAG=v1.x.x (запрещён" \
+            "empty/latest, ADR-047). Список тегов: gh release list --repo ${GITHUB_OWNER}/${GITHUB_REPO}"
+    fi
+    local tarball tmpdir _prev_exit_trap
+    tmpdir=$(mktemp -d)
+    # Запоминаем действующий EXIT-trap (если был), ставим свой, в конце — восстанавливаем.
+    _prev_exit_trap=$(trap -p EXIT)
+    trap 'rm -rf "$tmpdir"' EXIT
+    echo -e "  ${DIM}Скачиваю deploy-bundle ${tag} из GitHub Release ...${RESET}"
+    tarball=$(download_bundle "$tag" "$tmpdir")
+    apply_bundle "$tarball"
+    rm -rf "$tmpdir"
+    # Восстанавливаем прежний EXIT-trap (eval — чтобы корректно вернуть с кавычками).
+    if [[ -n "$_prev_exit_trap" ]]; then eval "$_prev_exit_trap"; else trap - EXIT; fi
+}
+
 # ─── Обновление Production до новой версии ─────────────────────────────────────
 update_production() {
     h2 "Обновление Production"
@@ -1398,15 +1520,14 @@ update_production() {
 
     # ── 2. Обновление конфигурации ───────────────────────────────────────────
     # В dev-контуре (полный клон репо) — это git pull. В prod-контуре
-    # (deploy-bundle без клона) обновление конфигурации делается распаковкой
-    # свежего bundle перед запуском setup.sh — здесь этот шаг пропускаем.
-    # Подробности: ADR-046.
-    local _profile
+    # (deploy-bundle без клона) конфигурацию обновляем авто-скачиванием свежего
+    # bundle из Release тега IMAGE_TAG (ADR-046). Подробности: apply_bundle().
+    local _profile _tag
     _profile=$(current_profile)
+    _tag=$(load_env_var IMAGE_TAG latest)
     if [[ "$_profile" == "prod" && ! -d .git ]]; then
-        echo -e "  ${BOLD}1/4. Конфигурация ...${RESET}"
-        echo -e "  ${DIM}prod-контур без клона репо — обновление конфигурации делается${RESET}"
-        echo -e "  ${DIM}распаковкой нового deploy-bundle (см. ADR-046). Пропускаю git pull.${RESET}"
+        echo -e "  ${BOLD}1/4. Обновление конфигурации (deploy-bundle ${_tag}) ...${RESET}"
+        update_bundle_self "$_tag"
     else
         echo -e "  ${BOLD}1/4. Git pull ...${RESET}"
         if git rev-parse --is-inside-work-tree &>/dev/null; then
@@ -1836,4 +1957,8 @@ main() {
     esac
 }
 
-main "$@"
+# Запускаем main только при прямом вызове (не при source) — позволяет bats-тестам
+# подключать функции (bundle_url, apply_bundle, ...) без запуска интерактивного меню.
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    main "$@"
+fi

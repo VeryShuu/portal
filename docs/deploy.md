@@ -256,26 +256,36 @@ deploy-bundle (ADR-046).
 
 #### 10.1.a Прод с deploy-bundle (без клона репо — ADR-046)
 
+Начиная с июля 2026 (amendment к ADR-046) `setup.sh` п.6 сам скачивает и применяет
+deploy-bundle из GitHub Release тега `IMAGE_TAG` — ручные `gh release download` /
+`tar xzf` больше не нужны. Достаточно сменить тег в `.env` и запустить п.6.
+
 ```bash
 cd /opt/portal
-# 1. Скачать свежий bundle и распаковать поверх (с заменой compose/setup/monitoring):
-gh release download v1.2.3 -p 'portal-deploy-bundle-*.tar.gz'
-tar xzf portal-deploy-bundle-v1.2.3.tar.gz   # распакует в ./portal-deploy/
-cp -r portal-deploy/* . && rm -rf portal-deploy
-
-# 2. ВЫСТАВИТЬ релизный тег в .env (обязательно для prod-контура, ADR-047):
+# 1. ВЫСТАВИТЬ релизный тег в .env (обязательно для prod-контура, ADR-047):
 #    IMAGE_TAG=v1.2.3
 #    (доступные теги: gh release list --repo VeryShuu/portal)
-#    Если .env уже содержит нужный тег — шаг пропустить.
 
-# 3. Pull новых образов + пересоздать контейнеры (setup.sh п.6 сделает обе команды,
-#    плюс проверит существование тега в registry через docker manifest inspect):
+# 2. setup.sh п.6 сделает всё сам одной командой:
+#    preflight → скачать portal-deploy-bundle-v1.2.3.tar.gz (curl, без токена)
+#      → распаковать поверх (docker-compose.yml/setup.sh/monitoring/, .env НЕ трогается)
+#      → pg_dump (опц.) → docker compose pull → up -d → check_services.
 ./setup.sh                       # → пункт 6 «Обновить Production»
-# или вручную:
-docker compose pull
-docker compose up -d             # migrations отработают сами (one-shot сервис)
-docker compose logs -f migrations
+docker compose logs -f migrations   # миграции — one-shot сервис, отработают сами
 ```
+
+Изменённые конфиг-файлы бэкапятся в `.<name>.bak-pre-v1.2.3` на случай ручного отката.
+`.env`, `system_data/`, `base_data/`, `.portal-*` в bundle не входят и не перетираются.
+
+> **Fallback (оффлайн / отладка / curl недоступен):** распаковать bundle вручную,
+> затем запустить п.6 (он увидит уже свежие файлы и не станет перекачивать,
+> если они идентичны — `.bak` не создаётся):
+> ```bash
+> gh release download v1.2.3 -p 'portal-deploy-bundle-*.tar.gz'
+> tar xzf portal-deploy-bundle-v1.2.3.tar.gz
+> cp -r portal-deploy/* . && rm -rf portal-deploy
+> ./setup.sh   # → п.6
+> ```
 
 #### 10.1.b Прод с полным клоном репо (legacy)
 
