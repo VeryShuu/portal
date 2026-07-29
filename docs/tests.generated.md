@@ -4625,6 +4625,7 @@ helpdesk-ticket-message-list.spec.ts
 hero-block.spec.ts
 home-links-preview.spec.ts
 home-page.spec.ts
+html-image-lightbox.spec.ts
 i18n-config.spec.ts
 kb-api.spec.ts
 kb-article-card.spec.ts
