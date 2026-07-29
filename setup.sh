@@ -1109,6 +1109,20 @@ load_env_var() {
     printf '%s' "${val:-$default}"
 }
 
+# port_owned_by_self <port> — true(0), если <port> публикуется контейнером
+# текущего compose-проекта (portal-*). Используется в preflight (port-check),
+# чтобы отличать «порт занят своим стеком при обновлении» (норма) от «занят
+# чужим процессом» (конфликт). docker compose ps --format '{{.Publishers}}'
+# отдаёт порты всех контейнеров проекта в формате {ip hostport containerport proto}.
+port_owned_by_self() {
+    local port="$1"
+    # docker compose ps требует docker-compose.yml в CWD (для prod это так).
+    # Тихо фейлим (return 1) если compose недоступен или нет compose-файла —
+    # тогда preflight отработает по старой логике (порт занят = потенциально чужой).
+    docker compose ps --format '{{.Publishers}}' 2>/dev/null \
+        | grep -qE "(^|[ {}])${port}([ {}]|$)"
+}
+
 # ─── Подобрать compose-флаги для текущего режима ───────────────────────────────
 compose_files_args() {
     local mode="$1"
@@ -1333,6 +1347,11 @@ preflight() {
 
     # ── Свободные порты ──────────────────────────────────────────────────────
     # Проверяем только prod/staging (dev использует переопределённые порты).
+    # ВАЖНО (update vs start): при обновлении (п.6) стек ещё работает → порты заняты
+    # самим порталом через nginx-контейнер. Это НЕ ошибка: compose down (шаг 2/4
+    # в update_production) освободит их. Поэтому различаем «занят своим стеком»
+    # (ok, продолжаем) vs «занят чужим процессом» (fatal, конфликт). Реализация:
+    # port_owned_by_self проверяет, публикует ли порт контейнер нашего compose-проекта.
     if [[ "$mode" == "prod" || "$mode" == "staging" ]] && [[ -f .env ]]; then
         local http_port https_port
         http_port=$(load_env_var HTTP_PORT 80)
@@ -1340,10 +1359,16 @@ preflight() {
         for p in "$http_port" "$https_port"; do
             # ss без root не показывает имя процесса; достаточно знать что порт занят.
             if ss -tlnH 2>/dev/null | awk '{print $4}' | grep -qE "[.:]${p}$"; then
-                warn "Порт ${p} уже занят (обычно это сам портал или другой веб-сервер)."
-                warn "Если это не сам портал — укажите другой порт в .env или освободите этот:"
-                warn "    sudo ss -tlnp | grep ':${p} '  (покажет PID/имя процесса)"
-                fatal=1
+                # Порт занят — но кем? Если контейнером нашего стека — это норма
+                # (update-сценарий), если чужим — конфликт.
+                if port_owned_by_self "$p"; then
+                    ok "Порт ${p}: занят своим стеком (будет освобождён при compose down)"
+                else
+                    warn "Порт ${p} уже занят ЧУЖИМ процессом (не контейнером портала)."
+                    warn "Если это не сам портал — укажите другой порт в .env или освободите этот:"
+                    warn "    sudo ss -tlnp | grep ':${p} '  (покажет PID/имя процесса)"
+                    fatal=1
+                fi
             else
                 ok "Порт ${p}: свободен"
             fi

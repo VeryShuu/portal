@@ -9,6 +9,10 @@
 # Setup.sh теперь source'ится безопасно — main() обёрнут в BASH_SOURCE-guard,
 # поэтому импорт функций не запускает интерактивное меню.
 
+# Используем `run -127` (флаг ожидаемого exit-кода) — требует bats ≥ 1.5.0.
+# CI ставит bats-core из git (1.14.0), требование выполняется.
+bats_require_minimum_version 1.5.0
+
 SETUP_SH="${BATS_TEST_DIRNAME}/../../setup.sh"
 
 # ─── setup/teardown: каждый тест в чистом tmp-CWD ─────────────────────────────
@@ -293,4 +297,67 @@ make_bundle_tarball() {
     local tmp_after
     tmp_after=$(find "${TMPDIR:-/tmp}" -maxdepth 1 -type d 2>/dev/null | wc -l)
     [[ "$tmp_after" -le "$tmp_before" ]]
+}
+
+# ─── port_owned_by_self ───────────────────────────────────────────────────────
+# Мокаем `docker compose ps` через функцию-обёртку (port_owned_by_self вызывает
+# именно `docker compose ps ...`, не bare `docker`).
+
+# Заменяем `docker` на stub, который для `compose ps` отдаёт фиктивные Publishers.
+# $1 — строка Publishers (как из реального compose ps --format '{{.Publishers}}').
+make_docker_stub() {
+    local publishers="$1"
+    mkdir -p stubbin
+    cat > stubbin/docker <<EOF
+#!/usr/bin/env bash
+# Только подкоманда `compose ps` возвращает заданные Publishers; остальное — пусто.
+if [[ "\$1" == "compose" && "\$2" == "ps" ]]; then
+    printf '%s\n' "$publishers"
+    exit 0
+fi
+exit 0
+EOF
+    chmod +x stubbin/docker
+    export PATH="$TEST_CWD/stubbin:$PATH"
+}
+
+@test "port_owned_by_self: true, если порт публикуется контейнером проекта" {
+    load_setup
+    # Publishers nginx: [{0.0.0.0 80 80 tcp} {0.0.0.0 443 443 tcp}] (как в реальности)
+    make_docker_stub '[{0.0.0.0 80 80 tcp} {0.0.0.0 443 443 tcp}]'
+    run port_owned_by_self 80
+    [[ "$status" -eq 0 ]]
+    run port_owned_by_self 443
+    [[ "$status" -eq 0 ]]
+}
+
+@test "port_owned_by_self: false для порта, который никто не публикует" {
+    load_setup
+    make_docker_stub '[{0.0.0.0 80 80 tcp}]'
+    run port_owned_by_self 9999
+    [[ "$status" -ne 0 ]]
+}
+
+@test "port_owned_by_self: false (не наш), если compose отдаёт чужие порты" {
+    load_setup
+    # Чужой процесс: порт 80 занят, но НЕ контейнером нашего проекта.
+    make_docker_stub '[{0.0.0.0 8080 8080 tcp}]'
+    run port_owned_by_self 80
+    [[ "$status" -ne 0 ]]
+}
+
+@test "port_owned_by_self: false если docker/compose недоступен (тихий fail)" {
+    load_setup
+    # PATH без docker вообще → функция должна вернуть false (не падать).
+    # exit 127 ожидаем (docker не найден) — `run -127` гасит bats-предупреждение BW01.
+    run -127 env PATH="/usr/bin:/bin" port_owned_by_self 80
+    [[ "$status" -ne 0 ]]
+}
+
+@test "port_owned_by_self: корректно парсит IPv6-формат Publishers" {
+    load_setup
+    # Реальный формат включает IPv6-записи: {:: 80 80 tcp}
+    make_docker_stub '[{0.0.0.0 80 80 tcp} {:: 80 80 tcp} {0.0.0.0 443 443 tcp}]'
+    run port_owned_by_self 80
+    [[ "$status" -eq 0 ]]
 }
