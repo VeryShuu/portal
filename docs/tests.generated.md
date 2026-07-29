@@ -626,6 +626,8 @@ tests/unit/test_analytics.py::test_top_links_response_schema
 tests/unit/test_analytics.py::test_top_news_response_schema
 tests/unit/test_arq_log_filter.py::test_arq_banner_kept
 tests/unit/test_arq_log_filter.py::test_empty_message_kept
+tests/unit/test_arq_log_filter.py::test_helpdesk_poll_cron_filtered
+tests/unit/test_arq_log_filter.py::test_helpdesk_poll_failure_kept
 tests/unit/test_arq_log_filter.py::test_manual_job_kept
 tests/unit/test_arq_log_filter.py::test_quiet_cron_end_filtered
 tests/unit/test_arq_log_filter.py::test_quiet_cron_failure_kept
@@ -1019,6 +1021,7 @@ tests/unit/test_directories_service.py::TestValidateAttributes::test_unknown_key
 tests/unit/test_directories_service.py::TestValidateAttributes::test_url_invalid_rejected
 tests/unit/test_directories_service.py::TestValidateChannels::test_known_channels_ok
 tests/unit/test_directories_service.py::TestValidateChannels::test_unknown_channel_rejected
+tests/unit/test_directories_service.py::test_export_entries_pdf_503_on_render_failure
 tests/unit/test_email_outbox_api.py::TestLikeEscape::test_escapes_backslash_first
 tests/unit/test_email_outbox_api.py::TestLikeEscape::test_escapes_percent
 tests/unit/test_email_outbox_api.py::TestLikeEscape::test_escapes_underscore
@@ -1678,6 +1681,8 @@ tests/unit/test_helpdesk_ingress_tx.py::test_ingest_commits_once_with_log_in_sam
 tests/unit/test_helpdesk_ingress_tx.py::test_ingest_does_not_call_write_log_separately
 tests/unit/test_helpdesk_ingress_tx.py::test_ingest_localizes_remote_post_commit_not_in_transaction
 tests/unit/test_helpdesk_ingress_tx.py::test_poll_does_not_rollback_on_success
+tests/unit/test_helpdesk_ingress_tx.py::test_poll_done_debug_when_mailbox_empty
+tests/unit/test_helpdesk_ingress_tx.py::test_poll_done_info_when_messages_present
 tests/unit/test_helpdesk_ingress_tx.py::test_poll_rollback_on_uid_error_continues_batch
 tests/unit/test_helpdesk_ingress_tx.py::test_post_commit_localize_skips_when_no_remote_images
 tests/unit/test_helpdesk_ingress_tx.py::test_post_commit_localize_uses_separate_session
@@ -2258,6 +2263,7 @@ tests/unit/test_kb_export_import.py::TestExportArticleMd::test_export_md_success
 tests/unit/test_kb_export_import.py::TestExportArticlePdf::test_export_pdf_403_draft_as_viewer
 tests/unit/test_kb_export_import.py::TestExportArticlePdf::test_export_pdf_403_no_perm
 tests/unit/test_kb_export_import.py::TestExportArticlePdf::test_export_pdf_404
+tests/unit/test_kb_export_import.py::TestExportArticlePdf::test_export_pdf_503_on_render_failure
 tests/unit/test_kb_export_import.py::TestExportArticlePdf::test_export_pdf_inlines_body_media
 tests/unit/test_kb_export_import.py::TestExportArticlePdf::test_export_pdf_success
 tests/unit/test_kb_export_import.py::TestExportSectionZip::test_export_zip_404_section

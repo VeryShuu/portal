@@ -453,9 +453,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install bats
         run: |
-          # apt-пакет bats бывает устаревшим — ставим из git (стабильный релиз).
+          # Ставим bats-core через штатный ./install.sh (НЕ копированием bin/bats —
+          # тот резолвит libexec/lib через пути относительно себя, single-file-copy
+          # ломает их → exit 127 "command not found" внутри bats).
           git clone --depth 1 https://github.com/bats-core/bats-core.git /tmp/bats-core
-          sudo install -m 0755 /tmp/bats-core/bin/bats /usr/local/bin/bats
+          sudo /tmp/bats-core/install.sh /usr/local
       - name: bats tests/setup
         run: bats tests/setup/
 
