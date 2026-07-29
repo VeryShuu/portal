@@ -177,38 +177,48 @@ class TestSaveBytesToPath:
     async def test_rejects_oversize(self, tmp_path):
         from app.core.uploads import save_bytes_to_path
 
-        dest = tmp_path / "out.bin"
         with pytest.raises(HTTPException) as exc:
-            await save_bytes_to_path(b"x" * 10, dest, max_size=5, allowed_mimes=set())
+            await save_bytes_to_path(
+                b"x" * 10, tmp_path, ("out.bin",), max_size=5, allowed_mimes=set()
+            )
         assert exc.value.status_code == 413
-        assert not dest.exists()
+        assert not (tmp_path / "out.bin").exists()
 
     async def test_rejects_disallowed_mime(self, tmp_path):
         from app.core.uploads import save_bytes_to_path
 
-        dest = tmp_path / "out.bin"
         with patch("app.core.uploads.magic") as mock_magic:
             mock_magic.from_buffer.return_value = "text/html"
             with pytest.raises(HTTPException) as exc:
                 await save_bytes_to_path(
                     b"data",
-                    dest,
+                    tmp_path,
+                    ("out.bin",),
                     max_size=100,
                     allowed_mimes={"image/png"},
                 )
         assert exc.value.status_code == 422
-        assert not dest.exists()
+        assert not (tmp_path / "out.bin").exists()
 
     async def test_writes_when_valid(self, tmp_path):
         from app.core.uploads import save_bytes_to_path
 
-        dest = tmp_path / "sub" / "out.bin"
         written, _detected = await save_bytes_to_path(
-            b"hello", dest, max_size=100, allowed_mimes=None
+            b"hello", tmp_path, ("sub", "out.bin"), max_size=100, allowed_mimes=None
         )
         assert written == 5
-        assert dest.read_bytes() == b"hello"
+        assert (tmp_path / "sub" / "out.bin").read_bytes() == b"hello"
         # detected зависит от libmagic; в CI/без magic может быть None — не фиксируем.
+
+    async def test_rejects_path_escape(self, tmp_path):
+        """rel_segments с .. — safe_join_within блокирует (path-traversal guard)."""
+        from app.core.uploads import save_bytes_to_path
+
+        with pytest.raises(HTTPException) as exc:
+            await save_bytes_to_path(
+                b"hello", tmp_path, ("..", "escape.bin"), max_size=100, allowed_mimes=None
+            )
+        assert exc.value.status_code == 404
 
 
 # ── Endpoint: SSRF / fetch behavior ───────────────────────────────────────────

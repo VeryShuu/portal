@@ -273,14 +273,13 @@ async def upload_remote_media(
 
     safe_name = _derive_remote_filename(payload.url, content_type)
     unique_name = f"{uuid.uuid4().hex[:8]}_{safe_name}"
-    dest = KB_MEDIA_DIR / str(article_id) / unique_name
 
     await save_bytes_to_path(
         data,
-        dest,
+        KB_MEDIA_DIR,
+        (str(article_id), unique_name),
         max_size=max_bytes,
         allowed_mimes=ALLOWED_IMAGE_MIMES,
-        base_dir=KB_MEDIA_DIR,
     )
 
     url = f"/api/v1/kb/media/{article_id}/{unique_name}"

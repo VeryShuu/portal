@@ -77,19 +77,21 @@ export function useEditorImageUpload(editor: Ref<Editor | undefined>, uploadEndp
    * «Копировать изображение» в браузере и Ctrl+C на <img> со страницы: в этих
    * случаях в буфере нет файла — только text/html с тегом <img src> (Firefox) или
    * голый URL (text/uri-list / text/plain). data:URI и blob: не обрабатываем.
+   *
+   * Извлечение ``src`` регуляркой (а не DOMParser.parseFromString) — намеренно:
+   * избегаем DOM-парсинга user-контролируемого HTML (CodeQL js/xss source) и
+   * берём ровно атрибут ``src`` первого ``<img>``. Сам URL валидируется в
+   * :func:`sanitizeRemoteUrl` и **никогда не вставляется в DOM напрямую** — он
+   * уходит на backend re-host, а в статью попадает уже наш внутренний URL.
    */
+  const IMG_SRC_RE = /<img\b[^>]*\bsrc\s*=\s*["']([^"']+)["']/i
+
   function extractRemoteImageUrl(html: string | null, uriList: string | null, plain: string | null): string | null {
     if (html) {
-      try {
-        const doc = new DOMParser().parseFromString(html, 'text/html')
-        const img = doc.querySelector('img[src]')
-        const src = img?.getAttribute('src')
-        if (src) {
-          const safe = sanitizeRemoteUrl(src)
-          if (safe && isRemoteUrl(safe)) return safe
-        }
-      } catch {
-        // Некорректный HTML — игнорируем, падаем на uri-list/plain ниже.
+      const match = html.match(IMG_SRC_RE)
+      if (match) {
+        const safe = sanitizeRemoteUrl(match[1])
+        if (safe && isRemoteUrl(safe)) return safe
       }
     }
     const candidate = uriList?.split('\n')[0]?.trim() ?? plain?.trim()

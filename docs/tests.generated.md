@@ -2337,6 +2337,7 @@ tests/unit/test_kb_media_remote.py::TestDeriveRemoteFilename::test_keeps_basenam
 tests/unit/test_kb_media_remote.py::TestDeriveRemoteFilename::test_sanitizes_unsafe_chars
 tests/unit/test_kb_media_remote.py::TestSaveBytesToPath::test_rejects_disallowed_mime
 tests/unit/test_kb_media_remote.py::TestSaveBytesToPath::test_rejects_oversize
+tests/unit/test_kb_media_remote.py::TestSaveBytesToPath::test_rejects_path_escape
 tests/unit/test_kb_media_remote.py::TestSaveBytesToPath::test_writes_when_valid
 tests/unit/test_kb_media_remote.py::TestUploadRemoteMediaRights::test_invalid_scheme_rejected
 tests/unit/test_kb_media_remote.py::TestUploadRemoteMediaRights::test_non_editor_forbidden
