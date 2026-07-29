@@ -120,6 +120,47 @@ class _RemoteFetchError(HTTPException):
         )
 
 
+async def _read_image_response(
+    resp: httpx.Response,
+    *,
+    current_url: str,
+    max_bytes: int,
+) -> tuple[bytes, str]:
+    """Прочитать тело ответа с Content-Type/size-валидацией (200 OK).
+
+    Поднятие ``_RemoteFetchError`` (422) для не-картинки, ``HTTPException(413)``
+    при превышении размера. Стриминг с бегущим счётчиком байт защищает от OOM
+    при ложном/отсутствующем ``Content-Length``. Выделено из
+    ``_fetch_remote_image`` для снижения цикломатической сложности.
+    """
+    ctype = (resp.headers.get("content-type") or "").split(";")[0].strip().lower()
+    if not ctype or not ctype.startswith("image/"):
+        logger.warning("kb.media.remote.not_image", url=current_url, content_type=ctype)
+        raise _RemoteFetchError()
+    # Ранняя проверка Content-Length (если указан) — экономит стриминг.
+    cl_raw = resp.headers.get("content-length")
+    if cl_raw and cl_raw.isdigit() and int(cl_raw) > max_bytes:
+        logger.warning("kb.media.remote.too_large_cl", url=current_url)
+        raise HTTPException(
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+            detail="Image too large",
+        )
+    buf = bytearray()
+    overflow = False
+    async for chunk in resp.aiter_raw():
+        buf.extend(chunk)
+        if len(buf) > max_bytes:
+            overflow = True
+            break
+    if overflow:
+        logger.warning("kb.media.remote.too_large", url=current_url)
+        raise HTTPException(
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+            detail="Image too large",
+        )
+    return bytes(buf), ctype
+
+
 async def _fetch_remote_image(
     url: str,
     *,
@@ -133,7 +174,8 @@ async def _fetch_remote_image(
         ре-валидацией каждого hop через ``assert_url_safe`` + двойной резолв с
         пиннингом IP (``resolve_stable_ip``) против DNS-rebinding.
       * **OOM (H-3):** стриминг тела + ранняя проверка ``Content-Length`` +
-        бегущий счётчик байт с abort при превышении ``max_bytes``.
+        бегущий счётчик байт с abort при превышении ``max_bytes``
+        (см. ``_read_image_response``).
       * Content-Type обязан начинаться с ``image/``.
 
     Возвращает ``(body, content_type)`` либо поднимает ``_RemoteFetchError`` /
@@ -170,36 +212,9 @@ async def _fetch_remote_image(
                             status=resp.status_code,
                         )
                         raise _RemoteFetchError()
-                    ctype = (resp.headers.get("content-type") or "").split(";")[0].strip().lower()
-                    if not ctype or not ctype.startswith("image/"):
-                        logger.warning(
-                            "kb.media.remote.not_image",
-                            url=current,
-                            content_type=ctype,
-                        )
-                        raise _RemoteFetchError()
-                    # Ранняя проверка Content-Length (если указан).
-                    cl_raw = resp.headers.get("content-length")
-                    if cl_raw and cl_raw.isdigit() and int(cl_raw) > max_bytes:
-                        logger.warning("kb.media.remote.too_large_cl", url=current)
-                        raise HTTPException(
-                            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
-                            detail="Image too large",
-                        )
-                    buf = bytearray()
-                    overflow = False
-                    async for chunk in resp.aiter_raw():
-                        buf.extend(chunk)
-                        if len(buf) > max_bytes:
-                            overflow = True
-                            break
-                    if overflow:
-                        logger.warning("kb.media.remote.too_large", url=current)
-                        raise HTTPException(
-                            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
-                            detail="Image too large",
-                        )
-                    return bytes(buf), ctype
+                    return await _read_image_response(
+                        resp, current_url=current, max_bytes=max_bytes
+                    )
             logger.warning("kb.media.remote.too_many_redirects", url=url)
             raise _RemoteFetchError()
     except _RemoteFetchError:

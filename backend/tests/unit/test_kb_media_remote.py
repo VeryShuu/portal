@@ -15,7 +15,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import uuid
 from pathlib import Path
 from types import SimpleNamespace
@@ -173,40 +172,39 @@ class TestDeriveRemoteFilename:
 # ── save_bytes_to_path ────────────────────────────────────────────────────────
 
 
+@pytest.mark.asyncio
 class TestSaveBytesToPath:
-    def test_rejects_oversize(self, tmp_path):
+    async def test_rejects_oversize(self, tmp_path):
         from app.core.uploads import save_bytes_to_path
 
         dest = tmp_path / "out.bin"
         with pytest.raises(HTTPException) as exc:
-            asyncio.run(save_bytes_to_path(b"x" * 10, dest, max_size=5, allowed_mimes=set()))
+            await save_bytes_to_path(b"x" * 10, dest, max_size=5, allowed_mimes=set())
         assert exc.value.status_code == 413
         assert not dest.exists()
 
-    def test_rejects_disallowed_mime(self, tmp_path):
+    async def test_rejects_disallowed_mime(self, tmp_path):
         from app.core.uploads import save_bytes_to_path
 
         dest = tmp_path / "out.bin"
         with patch("app.core.uploads.magic") as mock_magic:
             mock_magic.from_buffer.return_value = "text/html"
             with pytest.raises(HTTPException) as exc:
-                asyncio.run(
-                    save_bytes_to_path(
-                        b"data",
-                        dest,
-                        max_size=100,
-                        allowed_mimes={"image/png"},
-                    )
+                await save_bytes_to_path(
+                    b"data",
+                    dest,
+                    max_size=100,
+                    allowed_mimes={"image/png"},
                 )
         assert exc.value.status_code == 422
         assert not dest.exists()
 
-    def test_writes_when_valid(self, tmp_path):
+    async def test_writes_when_valid(self, tmp_path):
         from app.core.uploads import save_bytes_to_path
 
         dest = tmp_path / "sub" / "out.bin"
-        written, _detected = asyncio.run(
-            save_bytes_to_path(b"hello", dest, max_size=100, allowed_mimes=None)
+        written, _detected = await save_bytes_to_path(
+            b"hello", dest, max_size=100, allowed_mimes=None
         )
         assert written == 5
         assert dest.read_bytes() == b"hello"
