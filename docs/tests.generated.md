@@ -2331,6 +2331,28 @@ tests/unit/test_kb_markdown.py::test_zip_bad_file_is_detected
 tests/unit/test_kb_markdown.py::test_zip_contains_md_file
 tests/unit/test_kb_markdown.py::test_zip_folder_structure_matches_section
 tests/unit/test_kb_markdown.py::test_zip_section_respects_max_depth
+tests/unit/test_kb_media_remote.py::TestDeriveRemoteFilename::test_dot_only_basename_ignored
+tests/unit/test_kb_media_remote.py::TestDeriveRemoteFilename::test_fallback_ext_from_content_type
+tests/unit/test_kb_media_remote.py::TestDeriveRemoteFilename::test_keeps_basename_with_valid_ext
+tests/unit/test_kb_media_remote.py::TestDeriveRemoteFilename::test_sanitizes_unsafe_chars
+tests/unit/test_kb_media_remote.py::TestSaveBytesToPath::test_rejects_disallowed_mime
+tests/unit/test_kb_media_remote.py::TestSaveBytesToPath::test_rejects_oversize
+tests/unit/test_kb_media_remote.py::TestSaveBytesToPath::test_writes_when_valid
+tests/unit/test_kb_media_remote.py::TestUploadRemoteMediaRights::test_invalid_scheme_rejected
+tests/unit/test_kb_media_remote.py::TestUploadRemoteMediaRights::test_non_editor_forbidden
+tests/unit/test_kb_media_remote.py::TestUploadRemoteMediaSsrf::test_blocked_ranges_return_422_without_fetch[http://0.0.0.0/x.png]
+tests/unit/test_kb_media_remote.py::TestUploadRemoteMediaSsrf::test_blocked_ranges_return_422_without_fetch[http://10.0.0.1/x.png]
+tests/unit/test_kb_media_remote.py::TestUploadRemoteMediaSsrf::test_blocked_ranges_return_422_without_fetch[http://127.0.0.1/x.png]
+tests/unit/test_kb_media_remote.py::TestUploadRemoteMediaSsrf::test_blocked_ranges_return_422_without_fetch[http://169.254.169.254/latest/meta-data/x.png]
+tests/unit/test_kb_media_remote.py::TestUploadRemoteMediaSsrf::test_blocked_ranges_return_422_without_fetch[http://172.16.0.1/x.png]
+tests/unit/test_kb_media_remote.py::TestUploadRemoteMediaSsrf::test_blocked_ranges_return_422_without_fetch[http://192.168.1.1/x.png]
+tests/unit/test_kb_media_remote.py::TestUploadRemoteMediaSsrf::test_blocked_ranges_return_422_without_fetch[http://[::1]/x.png]
+tests/unit/test_kb_media_remote.py::TestUploadRemoteMediaSsrf::test_blocked_ranges_return_422_without_fetch[http://localhost/x.png]
+tests/unit/test_kb_media_remote.py::TestUploadRemoteMediaSsrf::test_dns_rebinding_blocked
+tests/unit/test_kb_media_remote.py::TestUploadRemoteMediaSsrf::test_happy_path
+tests/unit/test_kb_media_remote.py::TestUploadRemoteMediaSsrf::test_non_image_content_type_rejected
+tests/unit/test_kb_media_remote.py::TestUploadRemoteMediaSsrf::test_oversize_via_content_length
+tests/unit/test_kb_media_remote.py::TestUploadRemoteMediaSsrf::test_redirect_to_private_blocked
 tests/unit/test_kb_permissions.py::TestDeleteSectionPermission::test_delete_section_perm_rejects_creator
 tests/unit/test_kb_permissions.py::TestDeleteSectionPermission::test_delete_section_perm_success
 tests/unit/test_kb_permissions.py::TestInheritToggle::test_article_inherit_off_copies_section_perms
@@ -2741,17 +2763,6 @@ tests/unit/test_meetings_audit_unit.py::TestPushMeetingsAudit::test_db_failure_i
 tests/unit/test_meetings_audit_unit.py::TestPushMeetingsAudit::test_falls_back_to_client_host_when_no_forwarded_header
 tests/unit/test_meetings_audit_unit.py::TestPushMeetingsAudit::test_no_request_no_user
 tests/unit/test_meetings_audit_unit.py::TestPushMeetingsAudit::test_writes_row_with_forwarded_ip_and_user_metadata
-tests/unit/test_meetings_bookings_helpers.py::test_compute_diff_conservation_and_disjoint
-tests/unit/test_meetings_bookings_helpers.py::test_compute_diff_filters_all_malformed_entries
-tests/unit/test_meetings_bookings_helpers.py::test_compute_diff_non_participant_changed_passthrough
-tests/unit/test_meetings_bookings_helpers.py::test_compute_diff_reflexive_all_unchanged
-tests/unit/test_meetings_bookings_helpers.py::test_compute_diff_symmetric_direction_swap
-tests/unit/test_meetings_bookings_helpers.py::test_date_range_converts_non_utc_timezone_to_utc
-tests/unit/test_meetings_bookings_helpers.py::test_date_range_handles_dst_timezone
-tests/unit/test_meetings_bookings_helpers.py::test_date_range_returns_full_day_bounds_in_utc
-tests/unit/test_meetings_bookings_helpers.py::test_to_utc_assigns_utc_to_naive_datetime
-tests/unit/test_meetings_bookings_helpers.py::test_to_utc_converts_non_utc_aware_to_utc
-tests/unit/test_meetings_bookings_helpers.py::test_to_utc_keeps_aware_datetime_unchanged_in_utc
 tests/unit/test_meetings_bookings_limit.py::TestBookingsListLimitCap::test_default_and_bounds
 tests/unit/test_meetings_bookings_limit.py::TestBookingsListLimitCap::test_my_endpoint_cap_unchanged
 tests/unit/test_meetings_guard.py::TestMeetingsGuard::test_disabled_returns_404
@@ -4512,6 +4523,7 @@ tests/unit/test_worker_tasks.py::TestRefreshCustomMetrics::test_no_pool_skips_db
 tests/unit/test_worker_tasks.py::TestRefreshCustomMetrics::test_photo_storage_calculated
 tests/unit/test_worker_tasks.py::TestRefreshCustomMetrics::test_returns_snapshot_dict
 tests/unit/test_worker_tasks.py::TestRefreshCustomMetrics::test_saves_snapshot_to_redis
+(pytest collection failed; check backend venv)
 ```
 
 ## Frontend Vitest (tests/unit/*.spec.ts)

@@ -11,8 +11,10 @@ vi.mock('naive-ui', () => ({
 }))
 
 const apiUploadMock = vi.fn()
+const apiMock = vi.fn()
 vi.mock('@/api', () => ({
   apiUpload: (...args: unknown[]) => apiUploadMock(...args),
+  api: (...args: unknown[]) => apiMock(...args),
 }))
 
 import { useEditorImageUpload } from '@/components/editor/useEditorImageUpload'
@@ -53,6 +55,7 @@ function imageFile(type = 'image/png') {
 describe('useEditorImageUpload (RE-0 characterizing)', () => {
   beforeEach(() => {
     apiUploadMock.mockReset()
+    apiMock.mockReset()
     messageMock.warning.mockReset()
     messageMock.error.mockReset()
   })
@@ -125,12 +128,18 @@ describe('useEditorImageUpload (RE-0 characterizing)', () => {
     expect(u.showImageDialog.value).toBe(true)
   })
 
-  it('handleDrop: no image files does nothing', async () => {
+  it('handleDrop: no image files and no remote url does nothing', async () => {
     const { editor } = createFakeEditor()
     const u = useEditorImageUpload(editor, ref('/api/upload'))
-    const event = { dataTransfer: { files: [new File(['t'], 'a.txt', { type: 'text/plain' })] } }
+    const event = {
+      dataTransfer: {
+        files: [new File(['t'], 'a.txt', { type: 'text/plain' })],
+        getData: () => '',
+      },
+    }
     await u.handleDrop(event as unknown as DragEvent)
     expect(apiUploadMock).not.toHaveBeenCalled()
+    expect(apiMock).not.toHaveBeenCalled()
     expect(u.showImageDialog.value).toBe(false)
   })
 
@@ -149,12 +158,19 @@ describe('useEditorImageUpload (RE-0 characterizing)', () => {
     expect(u.showImageDialog.value).toBe(true)
   })
 
-  it('handlePaste: no image item is a no-op', async () => {
+  it('handlePaste: no image item and no remote url is a no-op', async () => {
     const { editor } = createFakeEditor()
     const u = useEditorImageUpload(editor, ref('/api/upload'))
-    const event = { preventDefault: vi.fn(), clipboardData: { items: [{ type: 'text/plain', getAsFile: () => null }] } }
+    const event = {
+      preventDefault: vi.fn(),
+      clipboardData: {
+        items: [{ type: 'text/plain', getAsFile: () => null }],
+        getData: () => '',
+      },
+    }
     await u.handlePaste(event as unknown as ClipboardEvent)
     expect(apiUploadMock).not.toHaveBeenCalled()
+    expect(apiMock).not.toHaveBeenCalled()
   })
 
   it('submitImageDialog: inserts new figure when no figure active', () => {
@@ -184,5 +200,139 @@ describe('useEditorImageUpload (RE-0 characterizing)', () => {
     u.cancelImageDialog()
     expect(u.showImageDialog.value).toBe(false)
     expect(u.imageForm.src).toBe('')
+  })
+})
+
+describe('useEditorImageUpload (remote re-host on paste/drop)', () => {
+  const LOCAL_URL = '/api/v1/kb/media/abc/local.png'
+
+  beforeEach(() => {
+    apiUploadMock.mockReset()
+    apiMock.mockReset()
+    messageMock.error.mockReset()
+    messageMock.warning.mockReset()
+  })
+
+  it('handlePaste: text/html <img> with external src re-hosts via remote endpoint', async () => {
+    const { editor } = createFakeEditor()
+    apiMock.mockResolvedValue({ url: LOCAL_URL })
+    const u = useEditorImageUpload(editor, ref('/api/v1/kb/articles/1/media'))
+    const preventDefault = vi.fn()
+    const event = {
+      preventDefault,
+      clipboardData: {
+        items: [],
+        getData: (kind: string) =>
+          kind === 'text/html' ? '<p><img src="https://site.example.com/pic.png"></p>' : '',
+      },
+    }
+    await u.handlePaste(event as unknown as ClipboardEvent)
+    expect(preventDefault).toHaveBeenCalled()
+    expect(apiMock).toHaveBeenCalledWith('/api/v1/kb/articles/1/media/remote', {
+      method: 'POST',
+      body: { url: 'https://site.example.com/pic.png' },
+    })
+    expect(u.imageForm.src).toBe(LOCAL_URL)
+    expect(u.showImageDialog.value).toBe(true)
+  })
+
+  it('handlePaste: bare external URL in text/plain re-hosts', async () => {
+    const { editor } = createFakeEditor()
+    apiMock.mockResolvedValue({ url: LOCAL_URL })
+    const u = useEditorImageUpload(editor, ref('/api/v1/kb/articles/1/media'))
+    const event = {
+      preventDefault: vi.fn(),
+      clipboardData: {
+        items: [],
+        getData: (kind: string) =>
+          kind === 'text/plain' ? 'https://cdn.example.com/x.jpg' : '',
+      },
+    }
+    await u.handlePaste(event as unknown as ClipboardEvent)
+    expect(apiMock).toHaveBeenCalledTimes(1)
+    expect(u.imageForm.src).toBe(LOCAL_URL)
+  })
+
+  it('handlePaste: internal /api/v1/ URL does NOT trigger remote (left to TipTap)', async () => {
+    const { editor } = createFakeEditor()
+    const u = useEditorImageUpload(editor, ref('/api/v1/kb/articles/1/media'))
+    const event = {
+      preventDefault: vi.fn(),
+      clipboardData: {
+        items: [],
+        getData: (kind: string) =>
+          kind === 'text/html'
+            ? '<img src="/api/v1/kb/media/abc/already-local.png">'
+            : '',
+      },
+    }
+    await u.handlePaste(event as unknown as ClipboardEvent)
+    expect(apiMock).not.toHaveBeenCalled()
+    expect(u.showImageDialog.value).toBe(false)
+  })
+
+  it('handleDrop: text/html external img re-hosts (drag <img> from another page)', async () => {
+    const { editor } = createFakeEditor()
+    apiMock.mockResolvedValue({ url: LOCAL_URL })
+    const u = useEditorImageUpload(editor, ref('/api/v1/kb/articles/1/media'))
+    const event = {
+      dataTransfer: {
+        files: [],
+        getData: (kind: string) =>
+          kind === 'text/html' ? '<img src="https://other.example.com/drag.png">' : '',
+      },
+    }
+    await u.handleDrop(event as unknown as DragEvent)
+    expect(apiMock).toHaveBeenCalledTimes(1)
+    expect(u.imageForm.src).toBe(LOCAL_URL)
+  })
+
+  it('handlePaste: remote endpoint failure shows toast and inserts nothing', async () => {
+    const { editor } = createFakeEditor()
+    apiMock.mockRejectedValue({ response: { status: 422 } })
+    const u = useEditorImageUpload(editor, ref('/api/v1/kb/articles/1/media'))
+    const event = {
+      preventDefault: vi.fn(),
+      clipboardData: {
+        items: [],
+        getData: (kind: string) =>
+          kind === 'text/html' ? '<img src="https://unreachable.example.com/x.png">' : '',
+      },
+    }
+    await u.handlePaste(event as unknown as ClipboardEvent)
+    expect(messageMock.error).toHaveBeenCalledWith('editor.imageFetchFailed')
+    expect(u.showImageDialog.value).toBe(false)
+  })
+
+  it('handlePaste: remote 413 shows imageTooLarge', async () => {
+    const { editor } = createFakeEditor()
+    apiMock.mockRejectedValue({ response: { status: 413 } })
+    const u = useEditorImageUpload(editor, ref('/api/v1/kb/articles/1/media'))
+    const event = {
+      preventDefault: vi.fn(),
+      clipboardData: {
+        items: [],
+        getData: (kind: string) =>
+          kind === 'text/html' ? '<img src="https://big.example.com/huge.png">' : '',
+      },
+    }
+    await u.handlePaste(event as unknown as ClipboardEvent)
+    expect(messageMock.error).toHaveBeenCalledWith('editor.imageTooLarge')
+  })
+
+  it('handlePaste: remote re-host disabled without uploadEndpoint (article not saved)', async () => {
+    const { editor } = createFakeEditor()
+    const u = useEditorImageUpload(editor, ref(undefined))
+    const event = {
+      preventDefault: vi.fn(),
+      clipboardData: {
+        items: [],
+        getData: (kind: string) =>
+          kind === 'text/html' ? '<img src="https://site.example.com/p.png">' : '',
+      },
+    }
+    await u.handlePaste(event as unknown as ClipboardEvent)
+    expect(messageMock.warning).toHaveBeenCalledWith('editor.imageUploadDisabled')
+    expect(apiMock).not.toHaveBeenCalled()
   })
 })

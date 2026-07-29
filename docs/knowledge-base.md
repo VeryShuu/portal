@@ -336,6 +336,7 @@ Hard-delete (purge) статьи:
 | DELETE | `/kb/articles/{id}/files/{file_id}` | Удалить (автор загрузки, editor или admin). |
 | GET | `/kb/files/{article_id}/{filename}` | Скачать через `X-Accel-Redirect`. Аудит через Redis SET NX EX 300. |
 | POST | `/kb/articles/{id}/media` | Загрузить inline-картинку (editor). Проверка расширения (.jpg/.jpeg/.png/.gif/.webp) и MIME. |
+| POST | `/kb/articles/{id}/media/remote` | Re-host внешней картинки при paste/drop из буфера (editor). Сервер скачивает URL (SSRF-guard) и сохраняет локально. Контракт ответа идентичен `media`. |
 | GET | `/kb/media/{article_id}/{filename}` | Раздать через `X-Accel-Redirect`. |
 
 ### Теги, поиск subjects
@@ -386,6 +387,21 @@ Hard-delete (purge) статьи:
 **Вложения (MIME white-list).** `./backend/app/api/kb/attachments.py` содержит `SAFE_MIME_TYPES` (изображения, документы, архивы, JSON). Если определённый тип не входит в список, сохраняется `application/octet-stream`.
 
 **Inline-медиа.** `./backend/app/api/kb/media.py`: двойная проверка — расширение файла (`.jpg`/`.jpeg`/`.png`/`.gif`/`.webp`) и MIME (`ALLOWED_IMAGE_MIMES`). Несоответствие → 400.
+
+**Re-host внешних картинок при paste/drop.** Когда пользователь копирует
+картинку через «Копировать изображение» в браузере или Ctrl+C на `<img>` со
+страницы, в буфере обычно нет файла — только `text/html` с тегом
+`<img src="https://...">`. Раньше TipTap вставлял такую **внешнюю ссылку как
+есть**, и она могла протухнуть / быть недоступной из VPN / тянуть трекеры.
+Теперь `useEditorImageUpload` перехватывает paste/drop: если файла нет, но есть
+внешний `http(s)`-URL (из `text/html`, `text/uri-list` или `text/plain`), он
+уходит на `POST /kb/articles/{id}/media/remote` (SSRF-guarded fetch на
+примитивах `app.core.net_guard`, см. `bookmarks._do_favicon_fetch`), сервер
+скачивает и сохраняет картинку локально, а в статью вставляется наш внутренний
+URL. Контракт ответа идентичен file-upload. **Ограничения:** внутренние URL
+(`/api/v1/...`) не re-host'ятся (вставляются как есть); `data:`/`blob:`-URI не
+обрабатываются; при неудаче скачивания показывается toast и ничего не
+вставляется (внешняя ссылка не плодится).
 
 **ZIP-импорт (`./backend/app/api/kb/export_import.py`).**
 - Лимит файлов в архиве: 1 000.

@@ -3,7 +3,7 @@ import type { Ref } from 'vue'
 import type { Editor } from '@tiptap/vue-3'
 import { useI18n } from 'vue-i18n'
 import { useMessage } from 'naive-ui'
-import { apiUpload } from '@/api'
+import { api, apiUpload } from '@/api'
 
 export function useEditorImageUpload(editor: Ref<Editor | undefined>, uploadEndpoint: Ref<string | undefined>) {
   const { t } = useI18n()
@@ -38,6 +38,71 @@ export function useEditorImageUpload(editor: Ref<Editor | undefined>, uploadEndp
       }
       return null
     }
+  }
+
+  /**
+   * Требует ли URL re-host: внешний http(s) (не наш локальный /api/v1/... и не
+   * data:/blob:). Такие ссылки при paste/drop подменяются на локальную копию,
+   * чтобы статья не зависела от стороннего URL (может протухнуть / быть
+   * недоступным из VPN / тянуть трекеры).
+   */
+  function isRemoteUrl(src: string): boolean {
+    return /^https?:\/\//i.test(src) && !src.toLowerCase().includes('/api/v1/')
+  }
+
+  /**
+   * Извлечь первый внешний image-URL из буфера обмена/перетаскивания. Покрывает
+   * «Копировать изображение» в браузере и Ctrl+C на <img> со страницы: в этих
+   * случаях в буфере нет файла — только text/html с тегом <img src> (Firefox) или
+   * голый URL (text/uri-list / text/plain). data:URI и blob: не обрабатываем.
+   */
+  function extractRemoteImageUrl(html: string | null, uriList: string | null, plain: string | null): string | null {
+    if (html) {
+      try {
+        const doc = new DOMParser().parseFromString(html, 'text/html')
+        const img = doc.querySelector('img[src]')
+        const src = img?.getAttribute('src')
+        if (src && isRemoteUrl(src)) return src
+      } catch {
+        // Некорректный HTML — игнорируем, падаем на uri-list/plain ниже.
+      }
+    }
+    const candidate = uriList?.split('\n')[0]?.trim() ?? plain?.trim()
+    if (candidate && isRemoteUrl(candidate)) return candidate
+    return null
+  }
+
+  async function uploadRemoteImage(url: string): Promise<string | null> {
+    if (!uploadEndpoint.value) {
+      message.warning(t('editor.imageUploadDisabled'))
+      return null
+    }
+    try {
+      const data = await api<{ url: string }>(`${uploadEndpoint.value}/remote`, {
+        method: 'POST',
+        body: { url },
+      })
+      return data.url
+    } catch (err) {
+      const errorObj = err as { response?: { status?: number }, status?: number, statusCode?: number }
+      const status = errorObj?.response?.status ?? errorObj?.status ?? errorObj?.statusCode
+      if (status === 413) {
+        message.error(t('editor.imageTooLarge'))
+      } else {
+        message.error(t('editor.imageFetchFailed'))
+      }
+      return null
+    }
+  }
+
+  /**
+   * Общий финальный шаг после получения локального URL (file-upload или
+   * re-host): открыть диалог alt/caption для вставки FigureImage.
+   */
+  function openDialogWithUrl(url: string): void {
+    resetImageForm()
+    imageForm.src = url
+    showImageDialog.value = true
   }
 
   function triggerImageUpload() {
@@ -101,39 +166,63 @@ export function useEditorImageUpload(editor: Ref<Editor | undefined>, uploadEndp
     input.value = ''
     const url = await uploadImage(file)
     if (!url) return
-    resetImageForm()
-    imageForm.src = url
-    showImageDialog.value = true
+    openDialogWithUrl(url)
   }
 
   async function handleDrop(event: DragEvent) {
-    const files = event.dataTransfer?.files
-    if (!files?.length) return
-    const file = Array.from(files).find((f) => f.type.startsWith('image/'))
-    if (!file) return
-    const url = await uploadImage(file)
+    const dt = event.dataTransfer
+    if (!dt) return
+    // Сначала пробуем локальный файл (перетащили файл с диска).
+    const file = Array.from(dt.files ?? []).find((f) => f.type.startsWith('image/'))
+    if (file) {
+      const url = await uploadImage(file)
+      if (!url) return
+      openDialogWithUrl(url)
+      return
+    }
+    // Иначе — перетаскивание <img> с другой страницы: в DataTransfer лежит
+    // text/html (Firefox) и/или text/uri-list. Re-host внешней картинки.
+    const remoteUrl = extractRemoteImageUrl(
+      dt.getData('text/html'),
+      dt.getData('text/uri-list'),
+      null,
+    )
+    if (!remoteUrl) return
+    const url = await uploadRemoteImage(remoteUrl)
     if (!url) return
-    resetImageForm()
-    imageForm.src = url
-    showImageDialog.value = true
+    openDialogWithUrl(url)
   }
 
   async function handlePaste(event: ClipboardEvent) {
-    const items = event.clipboardData?.items
-    if (!items) return
-    for (const item of Array.from(items)) {
+    const cd = event.clipboardData
+    if (!cd) return
+    // Сначала ищем файл-картинку (скриншот, «Копировать изображение» в Chrome —
+    // в буфере есть bitmap).
+    for (const item of Array.from(cd.items)) {
       if (item.type.startsWith('image/')) {
         event.preventDefault()
         const file = item.getAsFile()
         if (!file) continue
         const url = await uploadImage(file)
         if (!url) return
-        resetImageForm()
-        imageForm.src = url
-        showImageDialog.value = true
+        openDialogWithUrl(url)
         return
       }
     }
+    // Файла нет — значит «Копировать изображение» в Firefox или Ctrl+C на <img>
+    // со страницы кладёт в буфер text/html с <img src> (внешняя ссылка). Если её
+    // не перехватить, TipTap вставит внешний URL как есть → ссылка протухнет.
+    const html = cd.getData('text/html')
+    const remoteUrl = extractRemoteImageUrl(
+      html || null,
+      cd.getData('text/uri-list') || null,
+      cd.getData('text/plain') || null,
+    )
+    if (!remoteUrl) return
+    event.preventDefault()
+    const url = await uploadRemoteImage(remoteUrl)
+    if (!url) return
+    openDialogWithUrl(url)
   }
 
   return {
