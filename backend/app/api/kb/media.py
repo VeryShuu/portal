@@ -198,7 +198,11 @@ async def _fetch_remote_image(
                 if not host or await resolve_stable_ip(host) is None:
                     logger.warning("kb.media.remote.dns_rebinding_blocked", url=current)
                     raise _RemoteFetchError()
-                async with client.stream("GET", current) as resp:
+                # current уже прошёл полную SSRF-валидацию выше (assert_url_safe
+                # блокирует private/loopback/cloud-metadata, resolve_stable_ip —
+                # DNS-rebinding). CodeQL не отслеживает эту семантику → false
+                # positive на py/ssrf; подавляем с обоснованием.
+                async with client.stream("GET", current) as resp:  # lgtm[py/ssrf]
                     if resp.status_code in (301, 302, 303, 307, 308):
                         location = resp.headers.get("location")
                         if not location:
@@ -276,6 +280,7 @@ async def upload_remote_media(
         dest,
         max_size=max_bytes,
         allowed_mimes=ALLOWED_IMAGE_MIMES,
+        base_dir=KB_MEDIA_DIR,
     )
 
     url = f"/api/v1/kb/media/{article_id}/{unique_name}"

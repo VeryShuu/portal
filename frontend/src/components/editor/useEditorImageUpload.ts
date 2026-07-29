@@ -51,6 +51,28 @@ export function useEditorImageUpload(editor: Ref<Editor | undefined>, uploadEndp
   }
 
   /**
+   * Нормализовать и провалидировать внешний image-URL через конструктор URL.
+   * Возвращает канонический ``http(s)://host/...`` (отбрасывая мусор/невалидные
+   * схемы/относительные пути) либо ``null``. Извлечённый из буфера URL **никогда
+   * не вставляется в DOM напрямую**: он уходит на backend re-host, а в статью
+   * попадает уже наш внутренний URL. Эта валидация — defense-in-depth и разрывает
+   * CodeQL taint-flow (``js/xss``) на источнике.
+   */
+  function sanitizeRemoteUrl(raw: string): string | null {
+    try {
+      const u = new URL(raw.trim())
+      // Только http(s) с непустым хостом; внутренние /api/v1/ URL отсеиваются
+      // отдельно в isRemoteUrl (по pathname).
+      if ((u.protocol !== 'http:' && u.protocol !== 'https:') || !u.hostname) {
+        return null
+      }
+      return u.toString()
+    } catch {
+      return null
+    }
+  }
+
+  /**
    * Извлечь первый внешний image-URL из буфера обмена/перетаскивания. Покрывает
    * «Копировать изображение» в браузере и Ctrl+C на <img> со страницы: в этих
    * случаях в буфере нет файла — только text/html с тегом <img src> (Firefox) или
@@ -62,13 +84,19 @@ export function useEditorImageUpload(editor: Ref<Editor | undefined>, uploadEndp
         const doc = new DOMParser().parseFromString(html, 'text/html')
         const img = doc.querySelector('img[src]')
         const src = img?.getAttribute('src')
-        if (src && isRemoteUrl(src)) return src
+        if (src) {
+          const safe = sanitizeRemoteUrl(src)
+          if (safe && isRemoteUrl(safe)) return safe
+        }
       } catch {
         // Некорректный HTML — игнорируем, падаем на uri-list/plain ниже.
       }
     }
     const candidate = uriList?.split('\n')[0]?.trim() ?? plain?.trim()
-    if (candidate && isRemoteUrl(candidate)) return candidate
+    if (candidate) {
+      const safe = sanitizeRemoteUrl(candidate)
+      if (safe && isRemoteUrl(safe)) return safe
+    }
     return null
   }
 

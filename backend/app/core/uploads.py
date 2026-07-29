@@ -128,6 +128,7 @@ async def save_bytes_to_path(
     *,
     max_size: int,
     allowed_mimes: AbstractSet[str] | None = None,
+    base_dir: Path | None = None,
 ) -> tuple[int, str | None]:
     """Write already-in-memory ``data`` to ``dest`` with size/MIME guards.
 
@@ -136,8 +137,14 @@ async def save_bytes_to_path(
     ``UploadFile``. MIME detection uses libmagic on the head, identical to the
     streaming variant, so rejected payloads never reach the filesystem.
 
+    When ``base_dir`` is provided, ``dest`` is validated to stay within it via
+    :func:`safe_join_within` (path-traversal defense-in-depth; the caller
+    builds ``dest`` from server-generated components, but this closes the
+    CodeQL ``py/path-injection`` taint flow at the sink).
+
     Returns ``(bytes_written, detected_mime)``.
-    Raises ``413`` on overflow, ``422`` on disallowed real MIME.
+    Raises ``413`` on overflow, ``422`` on disallowed real MIME, ``404`` on
+    path escape.
     """
     if len(data) > max_size:
         logger.warning(
@@ -170,6 +177,20 @@ async def save_bytes_to_path(
             detail=f"Unsupported file type: {detected}",
         )
 
+    # Defense-in-depth: ensure dest cannot escape base_dir (path-traversal).
+    # Closes the CodeQL ``py/path-injection`` taint flow at the sink: callers
+    # build ``dest`` from server-generated components, but this guard blocks a
+    # future regression if a writer ever lets a raw user-supplied name through.
+    if base_dir is not None:
+        resolved_base = base_dir.resolve()
+        resolved_dest = dest.resolve()
+        if not resolved_dest.is_relative_to(resolved_base):
+            logger.warning(
+                "uploads.path_traversal_blocked",
+                base=str(resolved_base),
+                dest=str(resolved_dest),
+            )
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
     dest.parent.mkdir(parents=True, exist_ok=True)
     async with aiofiles.open(dest, "wb") as out:
         await out.write(data)
