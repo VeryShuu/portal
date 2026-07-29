@@ -177,8 +177,11 @@ class WebDAVClient:
                     try:
                         data = r.json()
                         result["nc_version"] = data.get("versionstring")
-                    except Exception:
-                        pass
+                    except (ValueError, KeyError) as exc:
+                        # audit [H8]: diagnostic-запрос version.json — если Nextcloud
+                        # вернул некорректный JSON или сменил схему, теряем только
+                        # nc_version (server_reachable уже True). Не критично.
+                        logger.debug("nextcloud.version_json_parse_failed", error=str(exc))
                 else:
                     result["details"] = f"Сервер вернул HTTP {r.status_code}"
                     return result

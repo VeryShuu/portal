@@ -109,6 +109,20 @@ NOISY_IN_PRODUCTION_LOGGERS: tuple[str, ...] = (
 
 _EMAIL_RE = re.compile(r"([A-Za-z0-9._%+-])[A-Za-z0-9._%+-]*(@[A-Za-z0-9.-]+\.[A-Za-z]{2,})")
 
+# audit [H9]: IPv4-маскинг. 4 октета, разделённых точками; каждый 0-255.
+# Захватываем первые 3 октета в группу, четвёртый заменяем на «x» —
+# сохраняет subnet для debug/security-расследований, скрывает конкретный хост.
+# Валидация октетов (≤255) опциональна: regex допускает «999.999.999.999», но
+# такие строки в логах не встречаются; stricter-check добавил бы overhead
+# без реальной пользы (документированное ограничение).
+_IPV4_RE = re.compile(r"\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.)\d{1,3}\b")
+
+# Ключи event_dict, к строковому ЗНАЧЕНИЮ которых применяем IPv4-маскинг.
+# Ограниченный список, чтобы НЕ трогать url=.../origin=... в SSRF/Security-логах
+# (bookmarks, email_images, collabora) — там IP load-bearing для расследований.
+# uvicorn.access пишет IP клиента в record.getMessage() → попадает в «event»/«message».
+_PII_IPV4_VALUE_KEYS: frozenset[str] = frozenset({"event", "message", "msg"})
+
 
 # ---------------------------------------------------------------------------
 # Кастомные processors.
@@ -148,26 +162,58 @@ def _mask_email(value: str) -> str:
     return _EMAIL_RE.sub(r"\1***\2", value)
 
 
-def _mask_pii_value(value: Any) -> Any:
-    """Рекурсивно маскирует email-адреса в строках, dict и list/tuple."""
+def mask_ipv4_last_octet(value: str | None) -> str | None:
+    """audit [H9]: маскирует последний октет IPv4 — ``192.168.1.100`` → ``192.168.1.x``.
+
+    Сохраняет subnet (первые 3 октета) для debug/security-расследований (отличить
+    двух клиентов из одной сети), скрывает конкретный хост. Не-IPv4 строки
+    возвращаются как есть (None → None). Используется в middleware при биндинге
+    ``client_ip`` contextvar — источник маскируется до попадания в логи, processor
+    не нужен. См. ``_PII_IPV4_VALUE_KEYS`` для контекста ограничений.
+    """
+    if not value:
+        return value
+    return _IPV4_RE.sub(r"\1x", value)
+
+
+def _mask_pii_value(value: Any, *, key: str | None = None) -> Any:
+    """Рекурсивно маскирует email-адреса и (для message-ключей) IPv4.
+
+    Email маскируется во всех строковых значениях (безопасно — `@` в URL и т.п.
+    редко, и `_EMAIL_RE` строго требует домен). IPv4 — только для ключей из
+    ``_PII_IPV4_VALUE_KEYS`` (event/message/msg), чтобы не сломать SSRF/Security-логи
+    где IP в ``url=``/``origin=`` load-bearing для расследований.
+    """
     if isinstance(value, str):
-        return _mask_email(value) if "@" in value else value
+        result = _mask_email(value) if "@" in value else value
+        # IPv4 — только в message-подобных полях (uvicorn.access, event=).
+        if key in _PII_IPV4_VALUE_KEYS:
+            result = mask_ipv4_last_octet(result) or result
+        return result
     if isinstance(value, dict):
-        return {k: _mask_pii_value(v) for k, v in value.items()}
+        return {k: _mask_pii_value(v, key=k) for k, v in value.items()}
     if isinstance(value, (list, tuple)):
-        return type(value)(_mask_pii_value(v) for v in value)
+        return type(value)(_mask_pii_value(v, key=key) for v in value)
     return value
 
 
 def mask_pii_processor(
     logger: logging.Logger, method_name: str, event_dict: EventDict
 ) -> EventDict:
-    """Маскирует email на любом уровне вложенности (строки, dict, list/tuple).
+    """Маскирует email (везде) и IPv4 (в message-подобных ключах) на любом уровне.
 
-    НЕ трогает поля ``user_id``/``sub``/``keycloak_id`` — они не содержат ``@``.
+    - Email: во всех строковых значениях через ``_EMAIL_RE`` (см. ``_mask_email``).
+    - IPv4: только в значениях ключей ``event``/``message``/``msg`` (uvicorn.access
+      пишет IP клиента в message). Для остальных ключей (url=, origin=) IP
+      сохраняется — он load-bearing для SSRF/Security-расследований (audit [H9]).
+    - ``client_ip`` contextvar маскируется в middleware ДО биндинга, поэтому в
+      processor обрабатывается как обычная строка (без повторной маскировки).
+
+    НЕ трогает поля ``user_id``/``sub``/``keycloak_id`` — они не содержат ``@``
+    и не являются IPv4-строками.
     """
     for key, value in list(event_dict.items()):
-        event_dict[key] = _mask_pii_value(value)
+        event_dict[key] = _mask_pii_value(value, key=key)
     return event_dict
 
 

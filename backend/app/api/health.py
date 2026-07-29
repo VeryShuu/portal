@@ -108,7 +108,10 @@ async def _probe_optional_integrations() -> dict[str, str]:
 
         kc = await _probe_keycloak()
         result["keycloak"] = "ok" if kc else "unconfigured" if kc is None else "error"
-    except Exception:
+    except Exception as exc:
+        # audit [H8]: probe-функция сама упала (не integration-down, а баг в probe).
+        # Оператор видит keycloak="error" в /ready, но причина терялась.
+        logger.debug("readiness_check.keycloak_probe_crashed", error=str(exc))
         result["keycloak"] = "error"
 
     # SMTP — TCP connect check.
@@ -117,7 +120,8 @@ async def _probe_optional_integrations() -> dict[str, str]:
 
         smtp = await _probe_smtp()
         result["smtp"] = "ok" if smtp else "unconfigured" if smtp is None else "error"
-    except Exception:
+    except Exception as exc:
+        logger.debug("readiness_check.smtp_probe_crashed", error=str(exc))
         result["smtp"] = "error"
 
     # Collabora — gated behind Nextcloud module (probed via richdocuments).
@@ -130,7 +134,8 @@ async def _probe_optional_integrations() -> dict[str, str]:
 
             coll = await _probe_collabora()
             result["collabora"] = "ok" if coll else "unconfigured" if coll is None else "error"
-    except Exception:
+    except Exception as exc:
+        logger.debug("readiness_check.collabora_probe_crashed", error=str(exc))
         result["collabora"] = "error"
 
     return result

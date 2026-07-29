@@ -386,5 +386,9 @@ async def get_sync_status(_: AdminDep, redis: RedisDep) -> SyncStatusOut:
             last_count=data.get("count"),
             last_status=data.get("status"),
         )
-    except Exception:
+    except (ValueError, TypeError) as exc:
+        # audit [H8]: diagnostic-эндпоинт статуса синка. Невалидный JSON в Redis
+        # (например после смены схемы) → показываем «нет данных», но без логирования
+        # это терялось. Сознательный fallback — админ видит empty status.
+        logger.debug("keycloak_admin.sync_status_parse_failed", error=str(exc))
         return SyncStatusOut(last_run_at=None, last_count=None, last_status=None)

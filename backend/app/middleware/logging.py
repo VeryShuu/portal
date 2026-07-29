@@ -9,6 +9,7 @@ from app.core.logging import (
     bind_request_context,
     clear_request_context,
     get_logger,
+    mask_ipv4_last_octet,
 )
 
 logger = get_logger(__name__)
@@ -34,13 +35,18 @@ async def request_logging(
         or (request.headers.get("X-Forwarded-For") or "").split(",")[0].strip()
         or (request.client.host if request.client else None)
     )
+    # audit [H9]: маскируем последний октет IP до биндинга в contextvar — все
+    # последующие structlog events получают уже маскированный client_ip без
+    # необходимости regex в processor. Полный IP сохраняется в audit_log (INET)
+    # для расследований, в логах — 192.168.1.x.
+    masked_ip = mask_ipv4_last_octet(client_ip) if client_ip else None
 
     clear_request_context()
     bind_request_context(
         request_id=request_id,
         method=request.method,
         path=request.url.path,
-        client_ip=client_ip,
+        client_ip=masked_ip,
     )
 
     try:

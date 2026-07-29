@@ -24,6 +24,7 @@ from app.core.logging import (
     clear_request_context,
     configure_logging,
     get_logger,
+    mask_ipv4_last_octet,
     mask_pii_processor,
     redact_secrets_processor,
     set_log_level,
@@ -123,6 +124,91 @@ def test_mask_pii_processor_masks_email_in_event() -> None:
 def test_mask_pii_does_not_touch_non_strings() -> None:
     ev = mask_pii_processor(None, "info", {"count": 42, "ok": True})  # type: ignore[arg-type]
     assert ev == {"count": 42, "ok": True}
+
+
+# ---------------------------------------------------------------------------
+# audit [H9]: mask_ipv4_last_octet + IPv4-маскинг в message-ключах
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("192.168.1.100", "192.168.1.x"),
+        ("10.0.0.1", "10.0.0.x"),
+        ("127.0.0.1", "127.0.0.x"),
+        ("172.16.0.42", "172.16.0.x"),
+        # Несколько IP в строке (uvicorn.access: "1.2.3.4 - GET /api/...")
+        ("1.2.3.4 GET /api/ 5.6.7.8", "1.2.3.x GET /api/ 5.6.7.x"),
+    ],
+)
+def test_mask_ipv4_last_octet(raw: str, expected: str) -> None:
+    """audit [H9]: последний октет заменяется на «x», subnet сохраняется."""
+    assert mask_ipv4_last_octet(raw) == expected
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        None,
+        "",
+        "not-an-ip",
+        "localhost",
+        "192.168.1",  # 3 октета, не 4
+        "::1",  # IPv6 loopback (не покрывается IPv4-regex)
+        "fe80::1",
+    ],
+)
+def test_mask_ipv4_passthrough_non_ipv4(raw: str | None) -> None:
+    """audit [H9]: не-IPv4 строки возвращаются как есть (None → None)."""
+    assert mask_ipv4_last_octet(raw) == raw
+
+
+def test_mask_ipv4_in_message_key() -> None:
+    """audit [H9]: IPv4 в «event»/«message» маскируется (uvicorn.access)."""
+    ev = mask_pii_processor(
+        None,  # type: ignore[arg-type]
+        "info",
+        {"event": "1.2.3.4 GET /api/v1/news 200", "level": "info"},
+    )
+    assert ev["event"] == "1.2.3.x GET /api/v1/news 200"
+    assert ev["level"] == "info"
+
+
+def test_mask_ipv4_not_in_url_field() -> None:
+    """audit [H9]: IPv4 в «url»/«origin» НЕ маскируется (SSRF/Security-логи).
+
+    IP в SSRF-логах (bookmarks, email_images, collabora) load-bearing для
+    расследований — маскирование сломало бы аудит. Только message-ключи.
+    """
+    ev = mask_pii_processor(
+        None,  # type: ignore[arg-type]
+        "warning",
+        {
+            "url": "http://192.168.1.1/path",
+            "origin": "https://10.0.0.5:8443",
+            "blocked_ip": "172.16.0.1",
+        },
+    )
+    # Все IP сохранены — это security-аудит логи.
+    assert ev["url"] == "http://192.168.1.1/path"
+    assert ev["origin"] == "https://10.0.0.5:8443"
+    assert ev["blocked_ip"] == "172.16.0.1"
+
+
+def test_mask_ipv4_preserves_email_masking() -> None:
+    """audit [H9]: email-маскинг продолжает работать вместе с IPv4."""
+    ev = mask_pii_processor(
+        None,  # type: ignore[arg-type]
+        "info",
+        {
+            "event": "login from 1.2.3.4 by user@company.local",
+            "user_email": "john@portal.local",
+        },
+    )
+    # IPv4 в event — маскирован, email — тоже (оба правила работают).
+    assert ev["event"] == "login from 1.2.3.x by u***@company.local"
+    assert ev["user_email"] == "j***@portal.local"
 
 
 # ---------------------------------------------------------------------------

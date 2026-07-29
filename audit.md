@@ -93,8 +93,8 @@ XS-S правки, не требующие архитектурных решен
 
 - **[H1]** SSRF favicon · M · **[x] сделано**
 - **[H3]** audit metadata::text → jsonb GIN · S
-- **[H8]** Silent except → `logger.debug`/`exc_info` · S
-- **[H9]** PII-маскинг IP/телефоны · M
+- **[H8]** Silent except → `logger.debug`/`exc_info` · S · **[x] сделано**
+- **[H9]** PII-маскинг IP/телефоны · M · **[x] сделано** (только IP — телефон/ФИО в логах отсутствуют по аудиту)
 - **[M1]** Comments list/count consistency ⚠️ UX-согласование · S
 - **[M2]** Keyset pagination audit/outbox · M
 - **[M3]** Batch INSERT meetings outbox · M
@@ -144,8 +144,8 @@ XS-S правки, не требующие архитектурных решен
 | H5  | 🟠 High | Architecture | worker→api цикл | S | 1 | [x] 2026-07-26 |
 | H6  | 🟠 High | Architecture | EventType enum half-done | M/S | 3 | [ ] ⚠️ decision |
 | H7  | 🟠 High | Code Smell | Primitive Obsession (строки) | M | 3 | [ ] |
-| H8  | 🟠 High | Backend/Obs | silent except | S | 2 | [x] 2026-07-26 частично |
-| H9  | 🟠 High | Logging | PII-маскинг | M | 2 | [ ] |
+| H8  | 🟠 High | Backend/Obs | silent except | S | 2 | [x] 2026-07-29 |
+| H9  | 🟠 High | Logging | PII-маскинг (только IP) | S | 2 | [x] 2026-07-29 |
 | H10 | 🟠 High | Logging | redact_secrets_processor | XS | 1 | [x] 2026-07-26 |
 | H11 | 🟠 High | CI/CD | Pin Actions по SHA | S | 1 | [x] 2026-07-26 |
 | H12 | 🟠 High | Infra | Backup retention | M | 1 | [ ] ⚠️ прод |
@@ -544,33 +544,48 @@ XS-S правки, не требующие архитектурных решен
   - Тест `test_compute_blurhash_exception_returns_none` обновлён под суженные типы (OSError вместо голого Exception).
   **Остаток** (~20 мест в `meetings/recurrence`, `files_shares_persistence`, `nextcloud/webdav/_client`, `keycloak_admin`, `health.py` и др.) — отдельная итерация. Включение ruff `BLE001` отложено (даст ~200 finding'ов по всему коду — нужен отдельный PR с классификацией каждый).
 
+- **Статус (продолжение):** [x] 2026-07-29 — **остаток закрыт** (Категории A+B из классификации). Аудит ~58 мест с `except Exception` через AST-парсинг выявил: ~21 стоит править (бизнес-логика + side-effect), ~37 — сознательные fallback/cleanup (оставлены). Правки:
+  - `services/meetings/recurrence.py:24,151` — `ZoneInfo(tz)` fallback to UTC: добавлен `logger.debug("meetings.recurrence.invalid_timezone_fallback")` с tz и error (раньше терялось что tz невалидна).
+  - `services/files_shares_persistence.py:75,90` — **уже логируются** (`logger.warning("parse_failed")` + `raise` после cleanup) — не silent, пропущены.
+  - `services/nextcloud/webdav/_client.py:180` — `r.json()` в diagnostic probe: сужен до `(ValueError, KeyError)` + `logger.debug("nextcloud.version_json_parse_failed")`.
+  - `api/keycloak_admin.py:143,152` — **уже логируются** через `logger.exception` (settings_migration_failed/parse_failed) — пропущены. `:389` `get_sync_status` JSON-парсинг: сужен до `(ValueError, TypeError)` + `logger.debug("sync_status_parse_failed")`.
+  - `api/health.py:36,45,66` — **уже логируются** через `logger.exception` (readiness_check.*_failed) — пропущены. `_probe_optional_integrations:111,120,133` (Keycloak/SMTP/Collabora probes): добавлены `logger.debug("readiness_check.*_probe_crashed")` — раньше если probe-функция сама падала (не integration-down, а баг в probe), причина терялась.
+  - ruff `BLE001` **НЕ включён** глобально (отдельный PR с классификацией ~200 finding'ов).
+
 ---
 
 ### [H9] — PII-маскинг покрывает только email
 - **Категория:** Logging / Compliance (ФЗ-152)
 - **Приоритет:** 🟠 High
-- **Где:** `backend/app/core/logging.py:147-156` (`mask_pii_processor`), `:95` (`_EMAIL_RE`)
-- **Что найдено:** PII-маскинг покрывает только email. IP-адреса (в `X-Real-IP`, audit), телефоны (`utils/phone.py`), ФИО (`full_name`) попадают в логи как есть. AGENTS.md §«Безопасность»: «Не логировать ... персональные данные».
-- **Почему проблема:** Для ~300 сотрудников ФИО + телефон + email — ПДН (ФЗ-152). Оседают в Docker json-file, Loki, audit-таблицах.
-- **Последствия:** Нарушение ФЗ-152, компрометация ПДН при утечке логов.
+- **Где:** `backend/app/core/logging.py` (`mask_pii_processor`, `_EMAIL_RE`), `backend/app/middleware/logging.py:43` (`client_ip` contextvar)
+- **Что найдено (первичная оценка):** PII-маскинг покрывает только email. IP-адреса (в `X-Real-IP`, audit), телефоны (`utils/phone.py`), ФИО (`full_name`) попадают в логи как есть.
+- **Уточнение после аудита кодовой базы (2026-07-29):** Задача оказалась **значительно меньше**. Развёрнутый аудит call-сайтов `logger.*` показал:
+  - **IP** — единственный реальный вектор: `client_ip` contextvar в middleware (каждый HTTP-запрос) + uvicorn.access message.
+  - **Телефон** — в логах **отсутствует** (только в XLSX/CSV-выгрузке `staff_xlsx.py`, `routes_staff.py`).
+  - **ФИО** — в логах **отсутствует** (везде `user_id`/UUID; `full_name`/`display_name` не передаются ни в один `logger.*`).
+  - **audit_log.ip_address** (INET) — уходит только в БД через Redis queue, в structlog НЕ попадает (`push_audit_event` при ошибке логирует только `event_type`).
+  - **Критический риск**: regex IP по всем строковым значениям сломал бы SSRF/Security-логи (`url=http://192.168.1.1/...` в `bookmarks.py`/`email_images.py`/`collabora.py` где IP load-bearing для расследований).
 
 #### План действий
-- [ ] IP-маскинг: regex `\b\d{1,3}(\.\d{1,3}){3}\b` → маска первых октетов (`10.0.X.X` или `***.***.X.X`)
-- [ ] Телефоны — через механизм `utils/phone.py` (частичная маска `+7 (913) ***-**-23`)
-- [ ] ФИО — добавить поля `full_name`/`display_name`/`first_name`/`last_name` в отдельный PII-ключ-список `_PII_VALUE_KEYS`
-- [ ] Добавить dev-флаг `force_pii_masking: bool = True` (можно отключить для локальной отладки)
-- [ ] Расширить `tests/unit/test_logging_processors.py` — каждый тип PII
+- [x] IP-маскинг: `mask_ipv4_last_octet` хелпер в `logging.py` (маска последнего октета `192.168.1.100` → `192.168.1.x`, сохраняет subnet для debug)
+- [x] Источник маскируется в `middleware/logging.py` ДО `bind_request_context(client_ip=...)` — все последующие structlog events автоматически получают маскированный IP, processor не нужен
+- [x] uvicorn.access message — IPv4-regex в `_mask_pii_value`, но **только для ключей** `event`/`message`/`msg` (`_PII_IPV4_VALUE_KEYS`). URL/origin/blocked_ip — НЕ маскируются (SSRF-логи сохраняются)
+- [x] Телефоны — НЕ добавлены (в логах отсутствуют, defensive-ключи впустую = мёртвый код)
+- [x] ФИО — НЕ добавлены (в логах отсутствуют, regex невозможен для кириллицы)
+- [x] dev-флаг `force_pii_masking` — НЕ добавлен (маскинг min-impact, отдельный флаг усложнил бы без выгоды)
+- [x] Тесты: `test_mask_ipv4_last_octet` (5 параметризованных), `test_mask_ipv4_passthrough_non_ipv4` (7), `test_mask_ipv4_in_message_key`, `test_mask_ipv4_not_in_url_field`, `test_mask_ipv4_preserves_email_masking`
 
 #### DoD
-- [ ] Тест: лог с IP `192.168.1.100` → замаскирован
-- [ ] Тест: лог с телефоном `+7 (913) 555-12-34` → замаскирован
-- [ ] Тест: лог с `full_name="Иванов Иван"` → замаскирован
-- [ ] Тест: легитимные строки (URL, JSON-числа) НЕ искажаются
+- [x] Тест: лог с IP `192.168.1.100` → `192.168.1.x` (`test_mask_ipv4_last_octet`)
+- [x] Тест: IPv4 в `event`/`message` маскируется (`test_mask_ipv4_in_message_key`)
+- [x] Тест: IPv4 в `url`/`origin`/`blocked_ip` НЕ маскируется — SSRF/Security-логи сохраняются (`test_mask_ipv4_not_in_url_field`)
+- [x] Тест: email-маскинг продолжает работать вместе с IPv4 (`test_mask_ipv4_preserves_email_masking`)
+- [x] Тест: не-IPv4 строки (None, localhost, IPv6, 3-октета) проходят без изменений (`test_mask_ipv4_passthrough_non_ipv4`)
 
-- **Сложность:** M
-- **Риск регрессии:** Средний (регексы могут зацепить легитимные строки). Стратегия: вводить поэтапно (сначала IP), dev-флаг.
-- **Ожидаемый эффект:** Соответствие AGENTS.md §«Безопасность».
-- **Статус:** [ ]
+- **Сложность:** M → **S** (после аудита: только IP, без телефона/ФИО)
+- **Риск регрессии:** Низкий (маскинг только в middleware + 3 ключа processor; SSRF-логи защищены `_PII_IPV4_VALUE_KEYS` whitelist).
+- **Ожидаемый эффект:** IP клиента в логах замаскирован (последний октет). audit_log.ip_address (INET в БД) сохраняет полный IP для расследований.
+- **Статус:** [x] 2026-07-29 — выполнено. Телефон/ФИО не реализованы (в логах отсутствуют — подтверждено аудитом call-сайтов `logger.*`). Сложность снижена M→S. 13 новых тестов, 66 всего в test_logging.py.
 
 ---
 
@@ -1486,6 +1501,7 @@ XS-S правки, не требующие архитектурных решен
 | 2026-07-28 | Reydan (ZCode) | **Полная re-верификация всех 28 задач `[x]`/`[x] частично` + план продолжения.** 3 параллельных субагента (backend / security+CI / frontend+infra) перепроверили каждую задачу чтением кода `file:line`. **Итог: 0 реальных регрессий** — все 28 фактически присутствуют в коде и выполняют заявленные функции. Найдено 3 косметических doc-расхождения (только в тексте аудита, не в коде), все исправлены в карточках: (1) **[M19]** — план описывал `{ once: true }`, в коде `{ immediate: true }` (что технически правильнее — нужно сработать на sync-данных initial load); (2) **[M10]** — константы названы с namespace-префиксом `EMAIL_OUTBOX_*` вместо плоских имён (улучшение: нет конфликта в `constants.py`); (3) **[L14]** — устаревший sync-комментарий: `nginx/Dockerfile.config` уже на alpine 3.24 (Dependabot bump от 2026-07-26, коммиты `0cb2346`/`fbe7ed9`), а `monitoring/node-exporter-textfile` остался на 3.20 — lockstep нарушен, но оба digest-pinned, безопасность не пострадала (нужно bump monitoring до 3.24 или обновить комментарий). Текущий статус: из 40+ находок **28 закрыто, 2 отклонено (M16/L18), 3 false-positive (L5/L6/M16)** → **12 активных задач**. План продолжения по 4 спринтам зафиксирован: **Спринт 1** (C1+C2+H3 — Critical + EXPLAIN-зависимые), **Спринт 2** (H9 PII + окончание H8), **Спринт 3** (M6/M9/M2/H4 — рефакторинг с characterization-тестами), **Спринт 4** (M12/M14 — frontend). Параллельные треки: решения команды по H6/M1/M11/M13; M7 после M6/M9. Низкий приоритет (Этап 4): H7/L1/L2/M18/M8/L7. |
 | 2026-07-28 | Reydan (ZCode) | **Спринт 1: C1 + C2 + H3 — все 3 выполнены.** **[C1]** `.env.example` дефолт-секреты убраны (SECRET_KEY/POSTGRES_PASSWORD/REDIS_PASSWORD/ADMIN_*/LOCAL_AUTH_ENABLED=false — все пустыми/закрыты). `config.py`: `@model_validator(mode="after") _validate_production_secrets` — в production (и только в production) block-list `_INSECURE_SECRET_KEY_VALUES` + `len(SECRET_KEY) ≥ 48` + reject `change_me_on_first_login` для ADMIN_PASSWORD. `setup.sh::preflight()`: prod-gate по образцу semver-lock (SECRET_KEY не дефолт + ≥48; ADMIN_PASSWORD не дефолт если задан). Список `missing` в preflight скорректирован: ADMIN_* могут быть пустыми (bootstrap skip — `app/core/bootstrap.py:28`). 6 unit-тестов (+ dev/staging regression-tests). **[C2]** `docker-compose.yml` redis: `user: "999:1000"` (UID 999, GID 1000 — уточнено по факту образа, не 999:999 из плана). Smoke-тест: entrypoint от redis-юзера создаёт ACL `/tmp/redis.acl` (`-rw------- redis redis`), redis-server стартует, `/data` доступен для AOF. `docker compose config --quiet` ✓. **[H3]** КРИТИЧЕСКАЯ НАХОДКА при разведке: вариант (A) jsonpath `$.** ? (@ like_regex ...)` **НЕ ускоряется GIN jsonb_path_ops** — документация PG: `like_regex` применяется как post-filter, индекс для regex не используется (EXPLAIN подтвердил Seq Scan даже с GIN миграции 033 на 1500 строк × 3 партиции). Дополнительно: jsonpath-экранирование regex требует удвоения backslash (одинарный `\.` → `.` → `.*` матчит всё = ReDoS). После консультации с пользователем выбран **вариант (B)**: `?extended_search=true` (по умолчанию off). По умолчанию `q` ищет только по `user_email`/`resource_title` (btree+trgm); `metadata::text ILIKE` — осознанный медленный режим. Frontend: `n-switch` + tooltip в `AuditTab.vue`, `AuditFilters` расширен, i18n ru+en (search placeholder обновлён, добавлены extendedSearch/extendedSearchHint). **Финальные проверки:** backend ci_lint ✓ (698 файлов, ruff+mypy+format), 51 unit-тест audit+config ✓; frontend lint:check ✓ (0 errors, 10 pre-existing warnings), typecheck ✓, i18n:check ✓ (2137 keys), 2130 unit ✓. Регенерированы: openapi.json (extended_search в 2 endpoints), api-contracts.generated.md (+2 строк extended_search), tests.generated.md (+9 тестов, hypothesis-тесты сохранены — локально не собираются без hypothesis, в CI есть). Карточки C1/C2/H3 обновлены до [x]. |
 | 2026-07-28 | Reydan (ZCode) | **C2 CI-fix: `user:` сломал compose-smoke.** После мёрджа коммита `12290e4` CI workflow `compose / up + healthcheck smoke` упал: redis unhealthy → каскадный fail migrations/backend. **Причина**: bind-mount `base_data/redis:/data` приходит в контейнер root-owned (`mkdir -p` в CI от root); compose-директива `user: "999:1000"` применяется к entrypoint целиком → redis-юзер не может создать `appendonlydir` в `/data` → `Can't open or create append-only dir appendonlydir: Permission denied`. Мой локальный smoke-тест это упустил (тестировал на свежем контейнере где `/data` уже redis-owned из образа). **Фикс**: убрал `user:` (entrypoint стартует от root), добавил `chown -R 999:1000 /data /tmp/redis.acl` в entrypoint (как `docker-entrypoint.sh` у postgres), затем `exec su redis -s /bin/sh -c 'exec redis-server ...'` для drop-privileges (gosu/su-exec в redis-alpine нет — только busybox `su`). Локальная верификация CI-сценария (root-owned volume): redis-server PID 1 работает от uid=999 (`/proc/<pid>/status` → Uid/Gid 999/1000), healthcheck → healthy, ACL/AOF создаются, `redis-cli ping` → PONG. Карточка C2 обновлена: сложность S→M, подход `user:` → entrypoint-chown. |
+| 2026-07-29 | Reydan (ZCode) | **Спринт 2: H9 (PII-маскинг) + окончание H8 (silent-except) — оба выполнены.** **[H9]** Аудит кодовой базы через subagent показал что задача **значительно меньше** чем в карточке: телефонов и ФИО в логах **фактически нет** (только в XLSX-выгрузке, не в `logger.*`), IP — единственный реальный вектор через `client_ip` contextvar (каждый HTTP-запрос) + uvicorn.access message. Критический риск: regex IP по всем строковым значениям сломал бы SSRF/Security-логи (`url=http://192.168.1.1/...` в bookmarks/email_images/collabora). **Реализация**: `mask_ipv4_last_octet` хелпер (`192.168.1.100` → `192.168.1.x`, сохраняет subnet для debug), применяется в `middleware/logging.py` ДО `bind_request_context(client_ip=...)` — источник маскируется, processor не нужен для contextvar. Для uvicorn.access message — IPv4-regex в `_mask_pii_value`, но **только для ключей** `event`/`message`/`msg` (`_PII_IPV4_VALUE_KEYS` whitelist) — URL/origin/blocked_ip НЕ маскируются. Телефон/ФИО НЕ добавлены (defensive-ключи впустую = мёртвый код). 13 новых тестов (5 параметризованных + 4 сценарных). Сложность M→S. **[H8]** AST-классификация ~58 мест с `except Exception`: ~21 стоило править (A+B), ~37 — сознательные fallback/cleanup. Правки: `meetings/recurrence.py` (ZoneInfo fallback — debug-лог), `nextcloud/webdav/_client.py` (version.json parse — сужен до ValueError/KeyError + debug), `keycloak_admin.py` get_sync_status (JSON parse — сужен + debug), `health.py` `_probe_optional_integrations` (3 probe-crashed — debug). `files_shares_persistence.py` и `keycloak_admin.py:143,152` — уже логируются (не silent). ruff BLE001 НЕ включён (отдельный PR). **Проверки**: ci_lint ✓ (698 файлов), 3907 unit ✓ (+12 от Спринта 1), 110 затронутых модулей ✓. Карточки H9/H8 обновлены, сложность H9 M→S. |
 
 ---
 

@@ -7,7 +7,10 @@ from zoneinfo import ZoneInfo
 from dateutil import rrule as rrule_lib
 from dateutil.rrule import rrule
 
+from app.core.logging import get_logger
 from app.schemas.meetings import RecurrenceRule
+
+logger = get_logger(__name__)
 
 
 def expand_recurrence(
@@ -21,7 +24,10 @@ def expand_recurrence(
     local_tz: tzinfo
     try:
         local_tz = ZoneInfo(tz)
-    except Exception:
+    except Exception as exc:
+        # audit [H8]: неизвестная/невалидная timezone → fallback на UTC.
+        # Сознательный fallback, но без логирования терялось что tz невалидна.
+        logger.debug("meetings.recurrence.invalid_timezone_fallback", tz=tz, error=str(exc))
         local_tz = UTC
     local_start = start.astimezone(local_tz) if start.tzinfo else start.replace(tzinfo=UTC)
 
@@ -148,7 +154,9 @@ def build_rrule_string(rule: RecurrenceRule, start: datetime, tz: str = "UTC") -
     local_tz: tzinfo
     try:
         local_tz = ZoneInfo(tz)
-    except Exception:
+    except Exception as exc:
+        # audit [H8]: см. expand_recurrence — тот же fallback для build_rrule_string.
+        logger.debug("meetings.recurrence.invalid_timezone_fallback", tz=tz, error=str(exc))
         local_tz = UTC
     local_start = start.astimezone(local_tz) if start.tzinfo else start.replace(tzinfo=UTC)
 
