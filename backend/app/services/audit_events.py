@@ -98,6 +98,7 @@ class EventType(StrEnum):
     HELPDESK_MAX_BOT_SETTINGS_CHANGED = "helpdesk.max_bot_settings_changed"
     HELPDESK_MESSAGE_ADDED = "helpdesk.message_added"
     HELPDESK_STATUS_CHANGED = "helpdesk.status_changed"
+    HELPDESK_TICKET_DELETED = "helpdesk.ticket_deleted"
 
     # --- kb -------------------------------------------------------------
     KB_ARTICLE_CREATED = "kb.article_created"
