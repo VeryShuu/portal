@@ -1,5 +1,5 @@
 <!-- AUTO-GENERATED — do not edit manually. Run: cd backend && python -m scripts.generate_db_schema_doc --output ../docs/db-schema.generated.md -->
-<!-- Generated: 2026-07-22 14:37 UTC -->
+<!-- Generated: 2026-07-30 18:44 UTC -->
 
 # Database Schema (auto-generated)
 
@@ -356,9 +356,9 @@ erDiagram
 
 | Name | Type | Definition |
 |------|------|------------|
+| `uq_file_folder_perm_folder_subject` | UNIQUE | `folder_id`, `subject_id` |
 | `ck_file_folder_perm_permission` | CHECK | `permission IN ('viewer', 'editor', 'manager')` |
 | `ck_file_folder_perm_subject_type` | CHECK | `subject_type IN ('user', 'group')` |
-| `uq_file_folder_perm_folder_subject` | UNIQUE | `folder_id`, `subject_id` |
 
 ### Indexes
 
@@ -471,8 +471,8 @@ Per-file share (ADR-032 / sharing.md).
 
 | Name | Type | Definition |
 |------|------|------------|
-| `ck_file_share_subject_type` | CHECK | `subject_type IN ('user', 'group')` |
 | `uq_file_share_folder_file_subject` | UNIQUE | `folder_id`, `filename`, `subject_id` |
+| `ck_file_share_subject_type` | CHECK | `subject_type IN ('user', 'group')` |
 | `ck_file_share_permission` | CHECK | `permission IN ('viewer', 'editor')` |
 
 ### Indexes
@@ -647,6 +647,12 @@ Singleton row (``id = 1``) holding the IMAP/SMTP configuration of the
     support mailbox. The IMAP password is stored encrypted at rest
     (``imap_password_enc``); the plaintext is never returned by the API.
 
+    SMTP-блок (``smtp_*``, миграция ``086``) — собственный исходящий контур
+    helpdesk: письма уходят с учётки support-ящика, а не с общего порталного
+    SMTP. Все колонки nullable — при пустом ``smtp_host`` воркер fallback'ит
+    на общий SMTP портала (``/data/branding/email-settings.json``). Пароль —
+    шифр Fernet (как ``imap_password_enc``).
+
 ### Columns
 
 | Column | Type | Nullable | PK | FK | Unique | Default | Comment |
@@ -662,6 +668,12 @@ Singleton row (``id = 1``) holding the IMAP/SMTP configuration of the
 | `delete_after_fetch` | `BOOLEAN` |  |  |  |  | `FALSE` |  |
 | `support_address` | `VARCHAR(320)` |  |  |  |  |  |  |
 | `support_reply_to` | `VARCHAR(320)` | ✓ |  |  |  |  |  |
+| `smtp_host` | `VARCHAR(255)` | ✓ |  |  |  |  |  |
+| `smtp_port` | `INTEGER` |  |  |  |  | `25` |  |
+| `smtp_username` | `VARCHAR(255)` | ✓ |  |  |  |  |  |
+| `smtp_password_enc` | `TEXT` | ✓ |  |  |  |  |  |
+| `smtp_use_tls` | `BOOLEAN` |  |  |  |  | `FALSE` |  |
+| `smtp_use_starttls` | `BOOLEAN` |  |  |  |  | `FALSE` |  |
 | `updated_by_user_id` | `UUID` | ✓ |  | `users.id` |  |  |  |
 | `created_at` | `TIMESTAMP WITH TIME ZONE` |  |  |  |  | `NOW()` |  |
 | `updated_at` | `TIMESTAMP WITH TIME ZONE` |  |  |  |  | `NOW()` |  |
@@ -726,7 +738,7 @@ A single message in a ticket thread — inbound (from the requester) or
 | `direction` | `VARCHAR(10)` |  |  |  |  |  |  |
 | `body_text` | `TEXT` |  |  |  |  |  |  |
 | `body_html` | `TEXT` | ✓ |  |  |  |  |  |
-| `body_tsvector` | `TSVECTOR` | ✓ |  |  |  | Computed(<sqlalchemy.sql.elements.TextClause object at 0x70ca80e12840>, persisted=True) |  |
+| `body_tsvector` | `TSVECTOR` | ✓ |  |  |  | Computed(<sqlalchemy.sql.elements.TextClause object at 0x77cee699be90>, persisted=True) |  |
 | `cc` | `JSONB` | ✓ |  |  |  |  |  |
 | `source` | `VARCHAR(20)` |  |  |  |  |  |  |
 | `email_message_id` | `VARCHAR(998)` | ✓ |  |  |  |  |  |
@@ -825,7 +837,7 @@ A support request: ``new → open → pending → closed``.
 | `references_archived_ticket_number` | `BIGINT` | ✓ |  |  |  |  |  |
 | `created_at` | `TIMESTAMP WITH TIME ZONE` |  |  |  |  | `NOW()` |  |
 | `updated_at` | `TIMESTAMP WITH TIME ZONE` |  |  |  |  | `NOW()` |  |
-| `search_tsvector` | `TSVECTOR` | ✓ |  |  |  | Computed(<sqlalchemy.sql.elements.TextClause object at 0x70ca80e10ad0>, persisted=True) |  |
+| `search_tsvector` | `TSVECTOR` | ✓ |  |  |  | Computed(<sqlalchemy.sql.elements.TextClause object at 0x77cee699a690>, persisted=True) |  |
 
 ### Constraints
 
@@ -980,9 +992,9 @@ Read-only archive of closed tickets (partitioned by ``closed_at``).
 
 | Name | Type | Definition |
 |------|------|------------|
+| `ck_kb_art_perm_subject_type` | CHECK | `subject_type IN ('user', 'group')` |
 | `uq_kb_art_perm_article_subject` | UNIQUE | `article_id`, `subject_id` |
 | `ck_kb_art_perm_permission` | CHECK | `permission IN ('viewer', 'editor', 'manager')` |
-| `ck_kb_art_perm_subject_type` | CHECK | `subject_type IN ('user', 'group')` |
 
 ### Indexes
 
@@ -1056,7 +1068,7 @@ Read-only archive of closed tickets (partitioned by ``closed_at``).
 | `title` | `VARCHAR(500)` |  |  |  |  |  |  |
 | `body` | `TEXT` |  |  |  |  | `` |  |
 | `inherit_permissions` | `BOOLEAN` |  |  |  |  | `True` |  |
-| `body_tsvector` | `TSVECTOR` | ✓ |  |  |  | Computed(<sqlalchemy.sql.elements.TextClause object at 0x70ca80c620c0>, persisted=True) |  |
+| `body_tsvector` | `TSVECTOR` | ✓ |  |  |  | Computed(<sqlalchemy.sql.elements.TextClause object at 0x77cee6857dd0>, persisted=True) |  |
 | `status` | `VARCHAR(20)` |  |  |  |  | `draft` |  |
 | `version` | `INTEGER` |  |  |  |  | `1` |  |
 | `view_count` | `INTEGER` |  |  |  |  | `0` |  |
@@ -1208,8 +1220,8 @@ Read-only archive of closed tickets (partitioned by ``closed_at``).
 
 | Name | Type | Definition |
 |------|------|------------|
-| `uq_kb_tags_slug` | UNIQUE | `slug` |
 | `uq_kb_tags_name` | UNIQUE | `name` |
+| `uq_kb_tags_slug` | UNIQUE | `slug` |
 
 ### Relationships
 
@@ -1406,7 +1418,7 @@ Transactional outbox for outbound messenger notifications (mirror of
 | `id` | `UUID` |  | ✓ |  |  | `gen_random_uuid()` |  |
 | `title` | `VARCHAR(500)` |  |  |  |  |  |  |
 | `body` | `TEXT` |  |  |  |  | `` |  |
-| `body_tsvector` | `TSVECTOR` | ✓ |  |  |  | Computed(<sqlalchemy.sql.elements.TextClause object at 0x70ca80b4cce0>, persisted=True) |  |
+| `body_tsvector` | `TSVECTOR` | ✓ |  |  |  | Computed(<sqlalchemy.sql.elements.TextClause object at 0x77cee674a930>, persisted=True) |  |
 | `status` | `VARCHAR(20)` |  |  |  |  | `draft` |  |
 | `is_pinned` | `BOOLEAN` |  |  |  |  | `False` |  |
 | `categories` | `VARCHAR(100)[]` |  |  |  |  | `{}` |  |
@@ -1435,10 +1447,10 @@ Transactional outbox for outbound messenger notifications (mirror of
 
 | Name | Type | Definition |
 |------|------|------------|
+| `ck_news_cover_focal_y_range` | CHECK | `cover_focal_y IS NULL OR (cover_focal_y BETWEEN 0 AND 100)` |
 | `ck_news_cover_focal_zoom_range` | CHECK | `cover_focal_zoom IS NULL OR (cover_focal_zoom BETWEEN 100 AND 300)` |
 | `ck_news_status` | CHECK | `status IN ('draft', 'published', 'archived')` |
 | `ck_news_cover_focal_x_range` | CHECK | `cover_focal_x IS NULL OR (cover_focal_x BETWEEN 0 AND 100)` |
-| `ck_news_cover_focal_y_range` | CHECK | `cover_focal_y IS NULL OR (cover_focal_y BETWEEN 0 AND 100)` |
 
 ### Indexes
 
@@ -1714,8 +1726,8 @@ Transactional outbox for outbound messenger notifications (mirror of
 
 | Name | Type | Definition |
 |------|------|------------|
-| `` | UNIQUE | `news_id` |
 | `ck_news_polls_results_visibility` | CHECK | `results_visibility IN ('always', 'after_vote', 'after_close', 'only_admin_editor')` |
+| `` | UNIQUE | `news_id` |
 
 ### Relationships
 
@@ -2214,11 +2226,11 @@ Transactional outbox for outbound messenger notifications (mirror of
 
 | Name | Type | Definition |
 |------|------|------------|
+| `ck_users_auth_source` | CHECK | `auth_source IN ('keycloak', 'local')` |
+| `uq_users_keycloak_id` | UNIQUE | `keycloak_id` |
 | `ck_users_role` | CHECK | `role IN ('reader', 'editor', 'admin')` |
 | `ck_users_presence_status` | CHECK | `presence_status IN ('office', 'remote', 'vacation')` |
 | `ck_users_lang` | CHECK | `lang IN ('ru', 'en')` |
-| `ck_users_auth_source` | CHECK | `auth_source IN ('keycloak', 'local')` |
-| `uq_users_keycloak_id` | UNIQUE | `keycloak_id` |
 
 ### Indexes
 

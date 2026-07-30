@@ -72,6 +72,20 @@ def _patch_session_local(monkeypatch, sess):
     monkeypatch.setattr(eo, "AsyncSessionLocal", lambda: sess)
 
 
+def _patch_helpdesk_smtp_disabled(monkeypatch, *, value=None):
+    """Мок ``load_helpdesk_smtp_config`` → ``value`` (по умолчанию ``None`` = fallback).
+
+    Старые тесты (до миграции 086) не задают собственный helpdesk-SMTP — по
+    умолчанию вся почта шла через общий порталный cfg. Мок возвращает ``None``
+    → ``_cfg_for_row`` fallback'ит на порталный cfg, и поведение остаётся
+    прежним. Тесты, проверяющие маршрутизацию на собственный SMTP, передают
+    ``value=<cfg dict>``.
+    """
+    from app.worker.tasks import email_outbox as eo
+
+    monkeypatch.setattr(eo, "load_helpdesk_smtp_config", AsyncMock(return_value=value))
+
+
 def _mk_row(
     *,
     kind="generic",
@@ -83,13 +97,16 @@ def _mk_row(
     to_email="to@x.com",
     subject="Subj",
     inline_images=None,
+    payload=None,
 ):
-    payload = {}
+    base_payload = {}
     if ical_b64 is not None:
-        payload["ical_b64"] = ical_b64
-        payload["method"] = "REQUEST"
+        base_payload["ical_b64"] = ical_b64
+        base_payload["method"] = "REQUEST"
     if inline_images is not None:
-        payload["inline_images"] = inline_images
+        base_payload["inline_images"] = inline_images
+    if payload is not None:
+        base_payload.update(payload)
     return {
         "id": uuid.uuid4(),
         "kind": kind,
@@ -97,7 +114,7 @@ def _mk_row(
         "subject": subject,
         "body_html": body_html,
         "body_text": body_text,
-        "payload": payload,
+        "payload": base_payload,
         "attempts": attempts,
         "max_attempts": max_attempts,
     }
@@ -151,6 +168,7 @@ class TestProcessEmailOutbox:
         rows = [_mk_row(), _mk_row()]
         monkeypatch.setattr(eo, "claim_pending", AsyncMock(return_value=rows))
         monkeypatch.setattr(eo, "load_smtp_config", lambda: {"host": ""})
+        _patch_helpdesk_smtp_disabled(monkeypatch)
         mark_failed_mock = AsyncMock()
         monkeypatch.setattr(eo, "mark_failed", mark_failed_mock)
         send_mock = AsyncMock()
@@ -179,6 +197,7 @@ class TestProcessEmailOutbox:
             "load_smtp_config",
             lambda: {"host": "smtp.example", "from_address": "noreply@x.com"},
         )
+        _patch_helpdesk_smtp_disabled(monkeypatch)
         monkeypatch.setattr(eo, "smtp_send", AsyncMock())
         mark_sent_mock = AsyncMock()
         monkeypatch.setattr(eo, "mark_sent", mark_sent_mock)
@@ -205,6 +224,7 @@ class TestProcessEmailOutbox:
             "load_smtp_config",
             lambda: {"host": "smtp.example", "from_address": ""},
         )
+        _patch_helpdesk_smtp_disabled(monkeypatch)
 
         exc = aiosmtplib.SMTPAuthenticationError(535, "bad creds")
         monkeypatch.setattr(eo, "smtp_send", AsyncMock(side_effect=exc))
@@ -234,6 +254,7 @@ class TestProcessEmailOutbox:
             "load_smtp_config",
             lambda: {"host": "smtp.example", "from_address": ""},
         )
+        _patch_helpdesk_smtp_disabled(monkeypatch)
         monkeypatch.setattr(eo, "smtp_send", AsyncMock(side_effect=TimeoutError("net")))
         mark_failed_mock = AsyncMock()
         monkeypatch.setattr(eo, "mark_failed", mark_failed_mock)
@@ -271,6 +292,152 @@ class TestProcessEmailOutbox:
         # Не должен пробросить — outer try/except.
         result = await eo.process_email_outbox({"redis": _FakeRedis()})
         assert result == 0
+
+
+@pytest.mark.asyncio
+class TestHelpdeskSmtpRouting:
+    """Маршрутизация на собственный helpdesk-SMTP (миграция 086).
+
+    ``_cfg_for_row`` выбирает cfg по двум признакам:
+    * ``kind=helpdesk`` → собственный SMTP (если настроен);
+    * ``kind=generic`` c ``payload.smtp_source == "helpdesk"`` → собственный SMTP
+      (письма агентам: digest + уведомление о новой заявке);
+    * иначе → общий порталный SMTP.
+
+    При отсутствии собственного helpdesk-SMTP (``helpdesk_cfg is None``) —
+    fallback на порталный cfg для всех строк.
+    """
+
+    async def test_helpdesk_kind_uses_helpdesk_cfg(self, monkeypatch):
+        """kind=helpdesk → smtp_send вызван с helpdesk-cfg (support@)."""
+        from app.worker.tasks import email_outbox as eo
+
+        sess = _FakeSession()
+        _patch_session_local(monkeypatch, sess)
+        rows = [_mk_row(kind="helpdesk")]
+        monkeypatch.setattr(eo, "claim_pending", AsyncMock(return_value=rows))
+        monkeypatch.setattr(
+            eo, "load_smtp_config", lambda: {"host": "portal-smtp", "from_address": "portal@x"}
+        )
+        helpdesk_cfg = {
+            "host": "helpdesk-smtp",
+            "port": 587,
+            "from_address": "support@company.local",
+            "username": "support",
+            "password": "pw",
+            "use_tls": False,
+            "use_starttls": True,
+        }
+        _patch_helpdesk_smtp_disabled(monkeypatch, value=helpdesk_cfg)
+        send_mock = AsyncMock()
+        monkeypatch.setattr(eo, "smtp_send", send_mock)
+        build_mock = AsyncMock(return_value=MagicMock())
+        monkeypatch.setattr(eo, "_build_helpdesk_mime", build_mock)
+        monkeypatch.setattr(eo, "mark_sent", AsyncMock())
+        monkeypatch.setattr(eo, "mark_failed", AsyncMock())
+
+        await eo.process_email_outbox({"redis": _FakeRedis()})
+
+        send_mock.assert_awaited_once()
+        # smtp_send(msg, row_cfg) — позиционный второй аргумент.
+        assert send_mock.call_args.args[1] is helpdesk_cfg
+        # _build_helpdesk_mime должен получить тот же cfg (From: = support@).
+        assert build_mock.call_args.args[1] is helpdesk_cfg
+
+    async def test_helpdesk_generic_with_marker_uses_helpdesk_cfg(self, monkeypatch):
+        """generic + payload.smtp_source=helpdesk → собственный SMTP (агентам)."""
+        from app.worker.tasks import email_outbox as eo
+
+        sess = _FakeSession()
+        _patch_session_local(monkeypatch, sess)
+        rows = [_mk_row(kind="generic", payload={"smtp_source": "helpdesk"})]
+        monkeypatch.setattr(eo, "claim_pending", AsyncMock(return_value=rows))
+        portal_cfg = {"host": "portal-smtp", "from_address": "portal@x"}
+        monkeypatch.setattr(eo, "load_smtp_config", lambda: portal_cfg)
+        helpdesk_cfg = {"host": "helpdesk-smtp", "from_address": "support@x"}
+        _patch_helpdesk_smtp_disabled(monkeypatch, value=helpdesk_cfg)
+        send_mock = AsyncMock()
+        monkeypatch.setattr(eo, "smtp_send", send_mock)
+        monkeypatch.setattr(eo, "_build_mime", MagicMock(return_value=MagicMock()))
+        monkeypatch.setattr(eo, "mark_sent", AsyncMock())
+        monkeypatch.setattr(eo, "mark_failed", AsyncMock())
+
+        await eo.process_email_outbox({"redis": _FakeRedis()})
+
+        assert send_mock.call_args.args[1] is helpdesk_cfg
+
+    async def test_non_helpdesk_generic_uses_portal_cfg(self, monkeypatch):
+        """generic БЕЗ маркера (news/meetings) → общий порталный SMTP."""
+        from app.worker.tasks import email_outbox as eo
+
+        sess = _FakeSession()
+        _patch_session_local(monkeypatch, sess)
+        rows = [_mk_row(kind="generic", payload={})]
+        monkeypatch.setattr(eo, "claim_pending", AsyncMock(return_value=rows))
+        portal_cfg = {"host": "portal-smtp", "from_address": "portal@x"}
+        monkeypatch.setattr(eo, "load_smtp_config", lambda: portal_cfg)
+        # helpdesk_cfg есть, но строка ему не принадлежит → игнорируется.
+        helpdesk_cfg = {"host": "helpdesk-smtp", "from_address": "support@x"}
+        _patch_helpdesk_smtp_disabled(monkeypatch, value=helpdesk_cfg)
+        send_mock = AsyncMock()
+        monkeypatch.setattr(eo, "smtp_send", send_mock)
+        monkeypatch.setattr(eo, "_build_mime", MagicMock(return_value=MagicMock()))
+        monkeypatch.setattr(eo, "mark_sent", AsyncMock())
+        monkeypatch.setattr(eo, "mark_failed", AsyncMock())
+
+        await eo.process_email_outbox({"redis": _FakeRedis()})
+
+        assert send_mock.call_args.args[1] is portal_cfg
+
+    async def test_helpdesk_falls_back_to_portal_cfg_when_not_configured(self, monkeypatch):
+        """helpdesk-строка, но helpdesk_cfg=None → fallback на порталный SMTP."""
+        from app.worker.tasks import email_outbox as eo
+
+        sess = _FakeSession()
+        _patch_session_local(monkeypatch, sess)
+        rows = [_mk_row(kind="helpdesk")]
+        monkeypatch.setattr(eo, "claim_pending", AsyncMock(return_value=rows))
+        portal_cfg = {"host": "portal-smtp", "from_address": "portal@x"}
+        monkeypatch.setattr(eo, "load_smtp_config", lambda: portal_cfg)
+        # helpdesk_cfg = None (админ не настроил SMTP-блок).
+        _patch_helpdesk_smtp_disabled(monkeypatch, value=None)
+        send_mock = AsyncMock()
+        monkeypatch.setattr(eo, "smtp_send", send_mock)
+        monkeypatch.setattr(eo, "_build_helpdesk_mime", AsyncMock(return_value=MagicMock()))
+        monkeypatch.setattr(eo, "mark_sent", AsyncMock())
+        monkeypatch.setattr(eo, "mark_failed", AsyncMock())
+
+        await eo.process_email_outbox({"redis": _FakeRedis()})
+
+        assert send_mock.call_args.args[1] is portal_cfg
+
+
+class TestCfgForRow:
+    """Прямые тесты хелпера ``_cfg_for_row`` (без поднятия воркера)."""
+
+    def test_is_helpdesk_outbound_recognizes_kind(self):
+        from app.worker.tasks import email_outbox as eo
+
+        assert eo._is_helpdesk_outbound({"kind": "helpdesk", "payload": {}}) is True
+
+    def test_is_helpdesk_outbound_recognizes_marker(self):
+        from app.worker.tasks import email_outbox as eo
+
+        assert (
+            eo._is_helpdesk_outbound({"kind": "generic", "payload": {"smtp_source": "helpdesk"}})
+            is True
+        )
+
+    def test_is_helpdesk_outbound_ignores_other_generic(self):
+        from app.worker.tasks import email_outbox as eo
+
+        assert eo._is_helpdesk_outbound({"kind": "generic", "payload": {}}) is False
+        assert eo._is_helpdesk_outbound({"kind": "news", "payload": {}}) is False
+
+    def test_is_helpdesk_outbound_handles_missing_payload(self):
+        from app.worker.tasks import email_outbox as eo
+
+        assert eo._is_helpdesk_outbound({"kind": "generic", "payload": None}) is False
 
 
 @pytest.mark.asyncio

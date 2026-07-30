@@ -76,6 +76,56 @@
         </n-checkbox>
       </div>
 
+      <div class="helpdesk-mailbox__section-title">
+        {{ t('admin.helpdesk.mailbox.smtpTitle') }}
+      </div>
+      <div class="helpdesk-mailbox__hint">
+        {{ t('admin.helpdesk.mailbox.smtpHint') }}
+      </div>
+      <div class="kb-grid">
+        <n-form-item :label="t('admin.helpdesk.mailbox.smtpHost')">
+          <n-input
+            v-model:value="form.smtp_host"
+            :placeholder="'smtp.company.local'"
+          />
+        </n-form-item>
+        <n-form-item :label="t('admin.helpdesk.mailbox.smtpPort')">
+          <n-input-number
+            v-model:value="form.smtp_port"
+            :min="1"
+            :max="65535"
+            style="width: 100%"
+          />
+        </n-form-item>
+        <n-form-item :label="t('admin.helpdesk.mailbox.smtpUsername')">
+          <n-input
+            v-model:value="form.smtp_username"
+            autocomplete="off"
+          />
+        </n-form-item>
+        <n-form-item :label="t('admin.helpdesk.mailbox.smtpPassword')">
+          <n-input
+            v-model:value="form.smtp_password"
+            type="password"
+            show-password-on="click"
+            :placeholder="
+              smtpPasswordSet
+                ? t('admin.helpdesk.mailbox.passwordKeep')
+                : t('admin.helpdesk.mailbox.passwordPlaceholder')
+            "
+            :input-props="{ autocomplete: 'new-password' }"
+          />
+        </n-form-item>
+      </div>
+      <div class="helpdesk-mailbox__toggles">
+        <n-checkbox v-model:checked="form.smtp_use_tls">
+          {{ t('admin.helpdesk.mailbox.useTls') }}
+        </n-checkbox>
+        <n-checkbox v-model:checked="form.smtp_use_starttls">
+          {{ t('admin.helpdesk.mailbox.useStarttls') }}
+        </n-checkbox>
+      </div>
+
       <div
         v-if="!configured"
         class="helpdesk-mailbox__notconfigured"
@@ -99,6 +149,13 @@
         >
           {{ t('admin.helpdesk.mailbox.test') }}
         </n-button>
+        <n-button
+          :loading="testingSmtp"
+          :disabled="!configured"
+          @click="onTestSmtp"
+        >
+          {{ t('admin.helpdesk.mailbox.testSmtp') }}
+        </n-button>
       </div>
 
       <div
@@ -120,6 +177,26 @@
           {{ testResult.detail || testResult.error }}
         </div>
       </div>
+
+      <div
+        v-if="smtpTestResult"
+        class="kc-test-result"
+        :class="smtpTestResult.ok ? 'kc-test-result--ok' : 'kc-test-result--fail'"
+      >
+        <div class="kc-test-result__title">
+          {{
+            smtpTestResult.ok
+              ? t('admin.helpdesk.mailbox.testSmtpOk')
+              : t('admin.helpdesk.mailbox.testSmtpFail')
+          }}
+        </div>
+        <div
+          v-if="smtpTestResult.detail || smtpTestResult.error"
+          class="kc-test-result__details"
+        >
+          {{ smtpTestResult.detail || smtpTestResult.error }}
+        </div>
+      </div>
     </n-form>
   </n-spin>
 </template>
@@ -129,7 +206,7 @@ import { ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useMessage, NSpin, NForm, NFormItem, NInput, NInputNumber, NCheckbox, NButton } from 'naive-ui'
 import type { HelpdeskMailboxSettingsIn, HelpdeskMailboxTestResult } from '../../api/helpdesk'
-import { testHelpdeskMailbox } from '../../api/helpdesk'
+import { testHelpdeskMailbox, testHelpdeskMailboxSmtp } from '../../api/helpdesk'
 import { useHelpdeskMailboxQuery, usePutHelpdeskMailboxMutation } from '../../queries/helpdesk'
 import { parseApiError } from '../../utils/parseApiError'
 
@@ -150,6 +227,12 @@ interface MailboxFormState {
   delete_after_fetch: boolean
   support_address: string
   support_reply_to: string | null
+  smtp_host: string | null
+  smtp_port: number
+  smtp_username: string | null
+  smtp_password: string | null
+  smtp_use_tls: boolean
+  smtp_use_starttls: boolean
 }
 
 const EMPTY: MailboxFormState = {
@@ -163,11 +246,18 @@ const EMPTY: MailboxFormState = {
   delete_after_fetch: false,
   support_address: '',
   support_reply_to: null,
+  smtp_host: null,
+  smtp_port: 25,
+  smtp_username: null,
+  smtp_password: null,
+  smtp_use_tls: false,
+  smtp_use_starttls: false,
 }
 
 const form = ref<MailboxFormState | null>(null)
 const configured = ref(false)
 const passwordSet = ref(false)
+const smtpPasswordSet = ref(false)
 const isDirty = ref(false)
 
 // Заполняем форму из ответа (один раз + следим за изменениями формы для dirty).
@@ -177,6 +267,7 @@ watch(
     if (!d) return
     configured.value = d.configured
     passwordSet.value = d.imap_password_set
+    smtpPasswordSet.value = d.smtp_password_set
     form.value = {
       imap_host: d.imap_host ?? '',
       imap_port: d.imap_port,
@@ -188,6 +279,12 @@ watch(
       delete_after_fetch: d.delete_after_fetch,
       support_address: d.support_address ?? '',
       support_reply_to: d.support_reply_to ?? null,
+      smtp_host: d.smtp_host,
+      smtp_port: d.smtp_port,
+      smtp_username: d.smtp_username,
+      smtp_password: null, // write-only: никогда не предзаполняем
+      smtp_use_tls: d.smtp_use_tls,
+      smtp_use_starttls: d.smtp_use_starttls,
     }
     isDirty.value = false
   },
@@ -217,11 +314,20 @@ function buildDto(): HelpdeskMailboxSettingsIn {
     delete_after_fetch: f.delete_after_fetch,
     support_address: f.support_address,
     support_reply_to: f.support_reply_to,
+    smtp_host: (f.smtp_host ?? '').trim() || null,
+    smtp_port: f.smtp_port ?? 25,
+    smtp_username: f.smtp_username || null,
+    smtp_use_tls: f.smtp_use_tls,
+    smtp_use_starttls: f.smtp_use_starttls,
   }
   // Пароль: передаём только если пользователь что-то ввёл. При создании
   // (configured=false) пароль обязателен на бэке.
   if (f.imap_password) {
     dto.imap_password = f.imap_password
+  }
+  // SMTP-пароль: write-only, опционален (SMTP-блок целиком опционален — fallback).
+  if (f.smtp_password) {
+    dto.smtp_password = f.smtp_password
   }
   return dto
 }
@@ -236,8 +342,9 @@ async function onSave() {
     await putMut.mutateAsync(buildDto())
     message.success(t('admin.modules.saved'))
     // После save бэкенд возвращает обновлённый out; query инвалидируется,
-    // watch(data) снова выставит imap_password=null.
+    // watch(data) снова выставит passwords=null.
     form.value.imap_password = null
+    form.value.smtp_password = null
     isDirty.value = false
   } catch (e) {
     message.error(parseApiError(e, t))
@@ -257,6 +364,20 @@ async function onTest() {
     testing.value = false
   }
 }
+
+const testingSmtp = ref(false)
+const smtpTestResult = ref<HelpdeskMailboxTestResult | null>(null)
+async function onTestSmtp() {
+  testingSmtp.value = true
+  smtpTestResult.value = null
+  try {
+    smtpTestResult.value = await testHelpdeskMailboxSmtp()
+  } catch (e) {
+    smtpTestResult.value = { ok: false, error: parseApiError(e, t) }
+  } finally {
+    testingSmtp.value = false
+  }
+}
 </script>
 
 <style scoped>
@@ -269,6 +390,16 @@ async function onTest() {
   display: flex;
   gap: 24px;
   margin: 16px 0;
+}
+.helpdesk-mailbox__section-title {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 24px 0 4px;
+}
+.helpdesk-mailbox__hint {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  margin-bottom: 12px;
 }
 .helpdesk-mailbox__notconfigured {
   font-size: 13px;

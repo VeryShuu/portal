@@ -94,6 +94,96 @@ class TestMailboxSingleton:
         assert decrypt_secret(row.imap_password_enc) == "plaintext-secret"
 
 
+class TestSmtpSettings:
+    """SMTP-блок mailbox-settings (миграция 086): собственный исходящий контур.
+
+    Зеркало IMAP-тестов: round-trip полей, write-only пароль, шифр в БД. Все
+    поля опциональны (fallback на общий SMTP портала при пустом ``smtp_host``),
+    поэтому тесты не требуют SMTP-настроек для прохождения — проверяют только
+    персистентность конфигурации.
+    """
+
+    async def test_smtp_fields_round_trip(self, real_db_session, real_admin):
+        """PUT с SMTP-блоком → GET возвращает те же значения, пароль write-only."""
+        out = await put_mailbox_settings(
+            _payload(
+                smtp_host="smtp.company.local",
+                smtp_port=587,
+                smtp_username="support",
+                smtp_password="smtp-secret",
+                smtp_use_tls=False,
+                smtp_use_starttls=True,
+            ),
+            real_admin,
+            real_db_session,
+            _redis(),
+        )
+        assert out.smtp_host == "smtp.company.local"
+        assert out.smtp_port == 587
+        assert out.smtp_username == "support"
+        assert out.smtp_use_tls is False
+        assert out.smtp_use_starttls is True
+        assert out.smtp_password_set is True
+        # Пароль не возвращается.
+        assert not hasattr(out, "smtp_password")
+
+    async def test_smtp_password_write_only_on_update(self, real_db_session, real_admin):
+        """PUT без smtp_password → прежний шифр сохраняется, флаг остаётся True."""
+        await put_mailbox_settings(
+            _payload(smtp_host="smtp.local", smtp_password="first-pw"),
+            real_admin,
+            real_db_session,
+            _redis(),
+        )
+        # Обновление IMAP-хоста без SMTP-пароля → SMTP-шифр сохранён.
+        out = await put_mailbox_settings(
+            _payload(smtp_host="smtp.local", smtp_password=None, imap_host="new.imap.local"),
+            real_admin,
+            real_db_session,
+            _redis(),
+        )
+        assert out.smtp_host == "smtp.local"
+        assert out.smtp_password_set is True
+
+    async def test_smtp_password_encrypted_at_rest(self, real_db_session, real_admin):
+        """В БД лежит шифр, не плейнтекст; расшифровка восстанавливает оригинал."""
+        from sqlalchemy import select
+
+        from app.models.helpdesk import HelpdeskMailboxSettings
+
+        await put_mailbox_settings(
+            _payload(smtp_host="smtp.local", smtp_password="smtp-plaintext"),
+            real_admin,
+            real_db_session,
+            _redis(),
+        )
+        res = await real_db_session.execute(
+            select(HelpdeskMailboxSettings).where(HelpdeskMailboxSettings.id == 1)
+        )
+        row = res.scalars().one()
+        assert "smtp-plaintext" not in (row.smtp_password_enc or "")
+        from app.core.secret_crypto import decrypt_secret
+
+        assert decrypt_secret(row.smtp_password_enc) == "smtp-plaintext"
+
+    async def test_smtp_optional_on_create(self, real_db_session, real_admin):
+        """SMTP-блок целиком опционален: PUT без smtp_* → поля None/defaults."""
+        out = await put_mailbox_settings(_payload(), real_admin, real_db_session, _redis())
+        assert out.smtp_host is None
+        assert out.smtp_password_set is False
+        assert out.smtp_port == 25  # дефолт схемы
+
+    async def test_smtp_host_stripped_and_nulled(self, real_db_session, real_admin):
+        """Пустой/пробельный smtp_host нормализуется к None (fallback-сигнал)."""
+        out = await put_mailbox_settings(
+            _payload(smtp_host="   "),
+            real_admin,
+            real_db_session,
+            _redis(),
+        )
+        assert out.smtp_host is None
+
+
 class TestModuleGate:
     async def test_gate_disabled_when_module_off(self, real_db_session):
         """``require_helpdesk_module`` читает modules.json; модуль выключен по

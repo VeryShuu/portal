@@ -146,6 +146,11 @@ tests/integration/test_helpdesk_settings.py::TestMailboxSingleton::test_password
 tests/integration/test_helpdesk_settings.py::TestMailboxSingleton::test_put_creates_with_password
 tests/integration/test_helpdesk_settings.py::TestMailboxSingleton::test_put_without_password_keeps_previous
 tests/integration/test_helpdesk_settings.py::TestModuleGate::test_gate_disabled_when_module_off
+tests/integration/test_helpdesk_settings.py::TestSmtpSettings::test_smtp_fields_round_trip
+tests/integration/test_helpdesk_settings.py::TestSmtpSettings::test_smtp_host_stripped_and_nulled
+tests/integration/test_helpdesk_settings.py::TestSmtpSettings::test_smtp_optional_on_create
+tests/integration/test_helpdesk_settings.py::TestSmtpSettings::test_smtp_password_encrypted_at_rest
+tests/integration/test_helpdesk_settings.py::TestSmtpSettings::test_smtp_password_write_only_on_update
 tests/integration/test_helpdesk_tickets.py::TestAddRequesterReply::test_reply_appended_as_inbound_public
 tests/integration/test_helpdesk_tickets.py::TestAddRequesterReply::test_reply_reopens_pending
 tests/integration/test_helpdesk_tickets.py::TestAddRequesterReply::test_reply_updates_last_activity
@@ -405,6 +410,7 @@ tests/integration/test_migrations.py::test_migration_revision_round_trip[082]
 tests/integration/test_migrations.py::test_migration_revision_round_trip[083]
 tests/integration/test_migrations.py::test_migration_revision_round_trip[084]
 tests/integration/test_migrations.py::test_migration_revision_round_trip[085]
+tests/integration/test_migrations.py::test_migration_revision_round_trip[086]
 tests/integration/test_migrations.py::test_migrations_full_lifecycle
 tests/integration/test_migrations.py::test_migrations_stepwise_down_up
 tests/integration/test_migrations_nightly.py::test_alembic_upgrade_head_on_clean_container
@@ -1973,6 +1979,15 @@ tests/unit/test_helpdesk_settings_max_bot.py::TestPutMaxBotSettings::test_write_
 tests/unit/test_helpdesk_settings_test_endpoint.py::TestMailboxTestEndpointMasksException::test_404_when_not_configured
 tests/unit/test_helpdesk_settings_test_endpoint.py::TestMailboxTestEndpointMasksException::test_exception_message_not_leaked
 tests/unit/test_helpdesk_settings_test_endpoint.py::TestMailboxTestEndpointMasksException::test_ok_response_preserved
+tests/unit/test_helpdesk_settings_test_endpoint.py::TestMailboxTestSmtpEndpoint::test_404_when_not_configured
+tests/unit/test_helpdesk_settings_test_endpoint.py::TestMailboxTestSmtpEndpoint::test_exception_message_not_leaked
+tests/unit/test_helpdesk_settings_test_endpoint.py::TestMailboxTestSmtpEndpoint::test_fallback_message_when_smtp_host_empty
+tests/unit/test_helpdesk_settings_test_endpoint.py::TestMailboxTestSmtpEndpoint::test_ok_response_preserved
+tests/unit/test_helpdesk_smtp_probe.py::TestProbeSmtpConnection::test_auth_failure_returns_false
+tests/unit/test_helpdesk_smtp_probe.py::TestProbeSmtpConnection::test_connect_timeout_returns_false
+tests/unit/test_helpdesk_smtp_probe.py::TestProbeSmtpConnection::test_quit_failure_does_not_mask_result
+tests/unit/test_helpdesk_smtp_probe.py::TestProbeSmtpConnection::test_success_starttls_no_auth
+tests/unit/test_helpdesk_smtp_probe.py::TestProbeSmtpConnection::test_success_with_auth
 tests/unit/test_helpdesk_threading.py::TestDecodeMimeHeader::test_empty_and_none
 tests/unit/test_helpdesk_threading.py::TestDecodeMimeHeader::test_koi8r_base64_subject
 tests/unit/test_helpdesk_threading.py::TestDecodeMimeHeader::test_mixed_encoded_and_plain
@@ -2795,17 +2810,6 @@ tests/unit/test_meetings_audit_unit.py::TestPushMeetingsAudit::test_db_failure_i
 tests/unit/test_meetings_audit_unit.py::TestPushMeetingsAudit::test_falls_back_to_client_host_when_no_forwarded_header
 tests/unit/test_meetings_audit_unit.py::TestPushMeetingsAudit::test_no_request_no_user
 tests/unit/test_meetings_audit_unit.py::TestPushMeetingsAudit::test_writes_row_with_forwarded_ip_and_user_metadata
-tests/unit/test_meetings_bookings_helpers.py::test_compute_diff_conservation_and_disjoint
-tests/unit/test_meetings_bookings_helpers.py::test_compute_diff_filters_all_malformed_entries
-tests/unit/test_meetings_bookings_helpers.py::test_compute_diff_non_participant_changed_passthrough
-tests/unit/test_meetings_bookings_helpers.py::test_compute_diff_reflexive_all_unchanged
-tests/unit/test_meetings_bookings_helpers.py::test_compute_diff_symmetric_direction_swap
-tests/unit/test_meetings_bookings_helpers.py::test_date_range_converts_non_utc_timezone_to_utc
-tests/unit/test_meetings_bookings_helpers.py::test_date_range_handles_dst_timezone
-tests/unit/test_meetings_bookings_helpers.py::test_date_range_returns_full_day_bounds_in_utc
-tests/unit/test_meetings_bookings_helpers.py::test_to_utc_assigns_utc_to_naive_datetime
-tests/unit/test_meetings_bookings_helpers.py::test_to_utc_converts_non_utc_aware_to_utc
-tests/unit/test_meetings_bookings_helpers.py::test_to_utc_keeps_aware_datetime_unchanged_in_utc
 tests/unit/test_meetings_bookings_limit.py::TestBookingsListLimitCap::test_default_and_bounds
 tests/unit/test_meetings_bookings_limit.py::TestBookingsListLimitCap::test_my_endpoint_cap_unchanged
 tests/unit/test_meetings_guard.py::TestMeetingsGuard::test_disabled_returns_404
@@ -4438,11 +4442,19 @@ tests/unit/test_worker_email_outbox.py::TestBuildMime::test_generic_without_inli
 tests/unit/test_worker_email_outbox.py::TestBuildMime::test_meeting_default_from_address
 tests/unit/test_worker_email_outbox.py::TestBuildMime::test_meeting_with_ical
 tests/unit/test_worker_email_outbox.py::TestBuildMime::test_meeting_without_ical
+tests/unit/test_worker_email_outbox.py::TestCfgForRow::test_is_helpdesk_outbound_handles_missing_payload
+tests/unit/test_worker_email_outbox.py::TestCfgForRow::test_is_helpdesk_outbound_ignores_other_generic
+tests/unit/test_worker_email_outbox.py::TestCfgForRow::test_is_helpdesk_outbound_recognizes_kind
+tests/unit/test_worker_email_outbox.py::TestCfgForRow::test_is_helpdesk_outbound_recognizes_marker
 tests/unit/test_worker_email_outbox.py::TestCleanupEmailOutbox::test_cleanup_returns_deleted_count
 tests/unit/test_worker_email_outbox.py::TestHeaderInjection::test_from_crlf_stripped
 tests/unit/test_worker_email_outbox.py::TestHeaderInjection::test_sanitize_header_helper
 tests/unit/test_worker_email_outbox.py::TestHeaderInjection::test_subject_crlf_stripped_meeting
 tests/unit/test_worker_email_outbox.py::TestHeaderInjection::test_to_crlf_stripped_generic
+tests/unit/test_worker_email_outbox.py::TestHelpdeskSmtpRouting::test_helpdesk_falls_back_to_portal_cfg_when_not_configured
+tests/unit/test_worker_email_outbox.py::TestHelpdeskSmtpRouting::test_helpdesk_generic_with_marker_uses_helpdesk_cfg
+tests/unit/test_worker_email_outbox.py::TestHelpdeskSmtpRouting::test_helpdesk_kind_uses_helpdesk_cfg
+tests/unit/test_worker_email_outbox.py::TestHelpdeskSmtpRouting::test_non_helpdesk_generic_uses_portal_cfg
 tests/unit/test_worker_email_outbox.py::TestProcessEmailOutbox::test_lock_already_acquired_returns_zero
 tests/unit/test_worker_email_outbox.py::TestProcessEmailOutbox::test_no_claimed_returns_zero
 tests/unit/test_worker_email_outbox.py::TestProcessEmailOutbox::test_no_redis_in_context_returns_zero
@@ -4581,6 +4593,7 @@ tests/unit/test_worker_tasks.py::TestRefreshCustomMetrics::test_no_pool_skips_db
 tests/unit/test_worker_tasks.py::TestRefreshCustomMetrics::test_photo_storage_calculated
 tests/unit/test_worker_tasks.py::TestRefreshCustomMetrics::test_returns_snapshot_dict
 tests/unit/test_worker_tasks.py::TestRefreshCustomMetrics::test_saves_snapshot_to_redis
+(pytest collection failed; check backend venv)
 ```
 
 ## Frontend Vitest (tests/unit/*.spec.ts)

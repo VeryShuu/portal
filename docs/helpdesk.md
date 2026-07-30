@@ -184,10 +184,15 @@
 | `delete_after_fetch` | `Boolean` default `FALSE` | |
 | `support_address` | `String(320)` NOT NULL | Источник `support_domain` для `Message-ID`/`Reply-To` |
 | `support_reply_to` | `String(320)` NULL | |
+| `smtp_host` | `String(255)` NULL | Собственный исходящий SMTP (миграция 086). Пустой → fallback на общий SMTP портала |
+| `smtp_port` | `Integer` NOT NULL default `25` | |
+| `smtp_username` | `String(255)` NULL | Логин для SMTP-авторизации (может отличаться от `support_address`) |
+| `smtp_password_enc` | `Text` NULL | Шифр Fernet (plaintext write-only, как `imap_password_enc`) |
+| `smtp_use_tls` / `smtp_use_starttls` | `Boolean` NOT NULL default `FALSE` | |
 | `updated_by_user_id` | UUID NULL → `users.id` `SET NULL` | |
-| `created_at` / `updated_at` | `TIMESTAMPTZ` | |
+| `created_at` / `updated_at` | `TIMESTAMPTZ` | Метки |
 
-Строка **не засевается** миграцией (`imap_password_enc NOT NULL`); создаётся первым `PUT /settings/mailbox` (с паролем). `GET` до `PUT` → `configured=false`.
+Строка **не засевается** миграцией (`imap_password_enc NOT NULL`); создаётся первым `PUT /settings/mailbox` (с паролем). `GET` до `PUT` → `configured=false`. SMTP-блок (миграция 086) целиком опционален — все колонки nullable, `smtp_host` пустой = fallback на общий SMTP портала.
 
 ### `helpdesk_digest_settings` — singleton (id=1)
 
@@ -445,6 +450,8 @@ Retry-классификация (отличается от email): 429/5xx/time
 - **Singleton** (`id=1`): миграция **не** засевает строку (`imap_password_enc NOT NULL`). Создаётся первым `PUT /settings/mailbox` с паролем; `GET` до `PUT` → `HelpdeskMailboxSettingsOut(configured=False)`.
 - **Пароль write-only**: в БД `imap_password_enc = encrypt_secret(password)` (Fernet, ключ детерминированно из `Settings.secret_key` через SHA-256 → urlsafe base64 — `./backend/app/core/secret_crypto.py`). В ответах только `imap_password_set: bool`, plaintext никогда не возвращается. При update пароль опционален (`None` = оставить прежний шифр); при create — обязателен (400 иначе).
 - **`POST /settings/mailbox/test`** — `probe_imap_connection` (login + `SELECT folder`) возвращает `{ok, detail}`. При исключении — `{ok: false, error: "IMAP connection failed (see server logs for details)"}`: голый `str(exc)` больше не отдаётся наружу (aioimaplib в traceback иногда включает команду с паролем). Полный traceback остаётся в server-log через `logger.exception`. Если singleton не настроен → 404.
+- **SMTP-блок (миграция 086)** — собственный исходящий контур helpdesk, зеркало IMAP-блока: `smtp_host`/`smtp_port`/`smtp_username`/`smtp_password_enc` (Fernet, как `imap_password_enc`)/`smtp_use_tls`/`smtp_use_starttls`. Все поля **nullable** — блок целиком опционален. При пустом `smtp_host` воркер fallback'ит helpdesk-почту на общий SMTP портала (`/data/branding/email-settings.json`, как до миграции 086). `smtp_password` — write-only (`smtp_password_set: bool` в ответе), при update `None` = оставить прежний шифр (как `imap_password`). SMTP-пароль не обязателен даже при create (блок опционален целиком).
+- **`POST /settings/mailbox/test-smtp`** — `probe_smtp_connection` (`./backend/app/services/helpdesk/smtp.py`): connect → (STARTTLS) → login (если есть креды) → `NOOP` → `quit`, возвращает `{ok, detail}`. Маскировка исключений — как у IMAP-test (defence-in-depth). Если `smtp_host` пуст → `{ok: false, error: "...falls back to the portal-wide SMTP server"}` (это валидное fallback-состояние, а не ошибка конфигурации). Если singleton не настроен → 404.
 - Детерминизм ключа важен: любой backend/worker с тем же `SECRET_KEY` расшифровывает секрет (распределённая отправка outbox несколькими воркерами).
 
 ---
@@ -467,6 +474,12 @@ Retry-классификация (отличается от email): 429/5xx/time
 ### Outbound: `kind=helpdesk` в outbox
 
 - Константа `KIND_HELPDESK = "helpdesk"` (`./backend/app/services/email_outbox.py`).
+- **Собственный SMTP-контур (миграция 086).** До миграции helpdesk принимал заявки с support-ящика (IMAP), но отправлял ответы через общий порталный SMTP (`From: portal@company.local`) — рассогласование адресов приёма и отправки. Теперь при настроенном `smtp_host` в `helpdesk_mailbox_settings` вся helpdesk-почта уходит через собственный SMTP под учёткой support-ящика: `From:`, envelope MAIL FROM (автоматически из `From:` через `aiosmtplib.extract_sender`) и SMTP-auth консистентны с адресом приёма. Маршрутизация — в воркере `process_email_outbox` (`./backend/app/worker/tasks/email_outbox.py`):
+  - `load_helpdesk_smtp_config()` (`./backend/app/worker/tasks/email_utils.py`) — async-загрузчик singleton-строки, читает `helpdesk_mailbox_settings`, расшифровывает `smtp_password_enc`, возвращает cfg-dict в формате `load_smtp_config`, но с `from_address = support_address`. Грузится **один раз за batch**. Возвращает `None` (→ fallback), если singleton не создан, `smtp_host` пуст или `smtp_password_enc` пуст.
+  - `_cfg_for_row(row, portal_cfg, helpdesk_cfg)` — выбирает cfg для строки. helpdesk-строка (`kind=helpdesk` ИЛИ `kind=generic` c `payload.smtp_source == "helpdesk"`) при наличии `helpdesk_cfg` → собственный SMTP; иначе → общий порталный cfg.
+  - Маркер `payload["smtp_source"] = "helpdesk"` ставят generic-продюсеры (`digest.py`, `notifications.py`) для писем агентам — чтобы отличить их от generic-писем news/meetings (`claim_pending` не возвращает `related_resource_type`, поэтому маркер в payload).
+  - **Fallback**: если helpdesk-строка попалась, а `helpdesk_cfg is None` — `_cfg_for_row` логирует warning (`email_outbox.helpdesk_smtp_fallback`) и возвращает порталный cfg. backward-compatible: helpdesk-почта продолжает уходить, как до миграции 086.
+  - Все поля SMTP-бока nullable → существующий singleton-рядок (без SMTP) работает без изменений. Включение — админ-UI: заполнить `smtp_*` в mailbox-настройках → «Сохранить» → «Проверить SMTP» (`POST /settings/mailbox/test-smtp`).
 - **Продюсеры** (`./backend/app/services/helpdesk/outbound.py`, все — без `db.commit`, по outbox-инварианту):
   - `enqueue_reply_outbound` — публичный ответ агента (вызов из `add_agent_message`, только при сконфигурированном mailbox + `support_domain`). `email_message_id` генерируется заранее (`_make_outbound_message_id`) и сохраняется в `helpdesk_messages.email_message_id` до enqueue (для threading).
   - `enqueue_assigned_email` — письмо о назначении (`assign`/`take`).

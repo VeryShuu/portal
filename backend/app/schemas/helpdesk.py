@@ -337,6 +337,12 @@ class HelpdeskMailboxSettingsIn(BaseModel):
 
     * при **создании** записи (первый ``PUT``) — обязателен;
     * при **обновлении** — опционален; ``None`` = «оставить прежний шифр».
+
+    SMTP-блок (миграция ``086``) целиком опционален: пустой ``smtp_host`` =
+    fallback на общий SMTP портала (``/data/branding/email-settings.json``).
+    ``smtp_password`` — write-only, как ``imap_password``, но не обязателен
+    даже при создании (SMTP может работать без auth во внутрикорпоративном
+    релейе; при пустом ``smtp_host`` игнорируется).
     """
 
     imap_host: str = Field(min_length=1, max_length=255)
@@ -349,6 +355,14 @@ class HelpdeskMailboxSettingsIn(BaseModel):
     delete_after_fetch: bool = False
     support_address: Email = Field(min_length=1, max_length=320)
     support_reply_to: Email | None = Field(default=None, max_length=320)
+    # SMTP (миграция 086): собственный исходящий контур. smtp_host None/пустой
+    # → воркер fallback'ит на общий SMTP портала.
+    smtp_host: str | None = Field(default=None, max_length=255)
+    smtp_port: int = Field(ge=1, le=65535, default=25)
+    smtp_username: str | None = Field(default=None, max_length=255)
+    smtp_password: str | None = Field(default=None, min_length=1, max_length=512)
+    smtp_use_tls: bool = False
+    smtp_use_starttls: bool = False
 
 
 class HelpdeskMailboxSettingsOut(BaseModel):
@@ -367,6 +381,12 @@ class HelpdeskMailboxSettingsOut(BaseModel):
     delete_after_fetch: bool = False
     support_address: str | None = None
     support_reply_to: str | None = None
+    smtp_host: str | None = None
+    smtp_port: int = 25
+    smtp_username: str | None = None
+    smtp_password_set: bool = False
+    smtp_use_tls: bool = False
+    smtp_use_starttls: bool = False
     updated_at: datetime | None = None
 
 

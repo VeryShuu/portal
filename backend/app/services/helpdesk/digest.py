@@ -363,6 +363,7 @@ async def send_digests(
             subject=build_digest_subject(),
             body_html=html_body,
             body_text=plain,
+            payload={"smtp_source": "helpdesk"},
             related_resource_type="helpdesk_digest",
             created_by_user_id=agent.id,
         )

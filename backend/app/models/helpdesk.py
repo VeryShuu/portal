@@ -373,7 +373,13 @@ class HelpdeskEmailLog(Base):
 class HelpdeskMailboxSettings(Base):
     """Singleton row (``id = 1``) holding the IMAP/SMTP configuration of the
     support mailbox. The IMAP password is stored encrypted at rest
-    (``imap_password_enc``); the plaintext is never returned by the API."""
+    (``imap_password_enc``); the plaintext is never returned by the API.
+
+    SMTP-блок (``smtp_*``, миграция ``086``) — собственный исходящий контур
+    helpdesk: письма уходят с учётки support-ящика, а не с общего порталного
+    SMTP. Все колонки nullable — при пустом ``smtp_host`` воркер fallback'ит
+    на общий SMTP портала (``/data/branding/email-settings.json``). Пароль —
+    шифр Fernet (как ``imap_password_enc``)."""
 
     __tablename__ = "helpdesk_mailbox_settings"
 
@@ -396,6 +402,18 @@ class HelpdeskMailboxSettings(Base):
     )
     support_address: Mapped[str] = mapped_column(String(320), nullable=False)
     support_reply_to: Mapped[str | None] = mapped_column(String(320), nullable=True)
+    # SMTP-блок (миграция 086): собственный исходящий контур helpdesk.
+    # smtp_host None/пустой → fallback на общий SMTP портала.
+    smtp_host: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    smtp_port: Mapped[int] = mapped_column(Integer, nullable=False, server_default=sql_text("25"))
+    smtp_username: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    smtp_password_enc: Mapped[str | None] = mapped_column(Text, nullable=True)
+    smtp_use_tls: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=sql_text("FALSE"), default=False
+    )
+    smtp_use_starttls: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=sql_text("FALSE"), default=False
+    )
     updated_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )

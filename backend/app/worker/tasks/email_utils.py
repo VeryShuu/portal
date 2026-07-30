@@ -67,6 +67,56 @@ def load_smtp_config() -> dict:
     }
 
 
+async def load_helpdesk_smtp_config() -> dict | None:
+    """SMTP-конфиг собственного исходящего контура helpdesk (миграция 086).
+
+    Читает singleton ``helpdesk_mailbox_settings`` (``id=1``), расшифровывает
+    ``smtp_password_enc`` и возвращает cfg-dict в том же формате, что
+    :func:`load_smtp_config`, но с ``from_address = support_address`` — чтобы
+    ``From:``, envelope MAIL FROM (автоматически из ``From:``) и SMTP-логин были
+    консистентны с адресом приёма заявок.
+
+    Возвращает ``None`` (→ fallback на общий порталный SMTP), если:
+
+    * singleton-строка ещё не создана (mailbox не настроен);
+    * ``smtp_host`` пуст/None (админ не заполнил SMTP-блок — осознанный fallback);
+    * ``smtp_password_enc`` пуст (без пароля login не состоится; для безauth-релея
+      админ заполняет host, а пароль оставляет пустым — этот кейс тут не покрыт
+      сознательно: helpdesk-исходящая почта важна, и мы требуем явные креды).
+
+    Воркер (``process_email_outbox``) вызывает это **один раз на batch** (рядом с
+    ``load_smtp_config``) и роутит helpdesk-строки на возвращённый cfg.
+    """
+    from sqlalchemy import select
+
+    from app.core.database import AsyncSessionLocal
+    from app.core.secret_crypto import decrypt_secret
+    from app.models.helpdesk import HelpdeskMailboxSettings
+
+    async with AsyncSessionLocal() as db:
+        res = await db.execute(
+            select(HelpdeskMailboxSettings).where(HelpdeskMailboxSettings.id == 1)
+        )
+        row = res.scalars().one_or_none()
+    if row is None:
+        return None
+    host = (row.smtp_host or "").strip()
+    if not host or not row.smtp_password_enc:
+        return None
+    return {
+        "host": host,
+        "port": row.smtp_port,
+        # from_address = support_address: From: и Reply-To: для всей helpdesk-почты
+        # совпадают с адресом приёма. _resolve_helpdesk_reply_to использует payload
+        # support_address, но cfg.from_address задаёт именно заголовок From:.
+        "from_address": row.support_address,
+        "username": row.smtp_username or "",
+        "password": decrypt_secret(row.smtp_password_enc),
+        "use_tls": row.smtp_use_tls,
+        "use_starttls": row.smtp_use_starttls,
+    }
+
+
 def build_smtp_kwargs(cfg: dict) -> dict:
     smtp_kwargs: dict = {
         "hostname": cfg["host"],
