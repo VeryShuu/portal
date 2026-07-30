@@ -9,7 +9,7 @@ from app.api.meetings import MeetingsGuard
 from app.api.users.users_repo import (
     find_active_by_emails,
     find_by_full_name_exact,
-    find_by_full_name_substring,
+    find_by_full_name_words,
 )
 from app.core.logging import get_logger
 from app.core.modules_config import load_modules
@@ -177,7 +177,9 @@ async def resolve_participants(
                 )
             )
 
-    # ФИО: точный матч → resolved; 0 → подстрочный (ambiguous при >1); иначе unresolved.
+    # ФИО: точный матч → resolved; иначе матчатинг по словам в любом порядке
+    # (учитывает разный порядок слов, отчества, падежи, раскладку и ё↔е):
+    # 1 кандидат → resolved, >1 → ambiguous, 0 → unresolved.
     for token in name_tokens:
         exact = await find_by_full_name_exact(db, token)
         if len(exact) == 1:
@@ -188,12 +190,14 @@ async def resolve_participants(
                 ResolveAmbiguousItem(query=token, candidates=[_to_candidate(u) for u in exact[:5]])
             )
             continue
-        subs = await find_by_full_name_substring(db, token)
-        if len(subs) == 1:
-            _take(_to_invited(subs[0]))
-        elif len(subs) > 1:
+        words_match = await find_by_full_name_words(db, token)
+        if len(words_match) == 1:
+            _take(_to_invited(words_match[0]))
+        elif len(words_match) > 1:
             ambiguous.append(
-                ResolveAmbiguousItem(query=token, candidates=[_to_candidate(u) for u in subs[:5]])
+                ResolveAmbiguousItem(
+                    query=token, candidates=[_to_candidate(u) for u in words_match[:5]]
+                )
             )
         else:
             unresolved.append(token)

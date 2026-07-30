@@ -138,6 +138,186 @@ async def test_resolve_by_full_name_exact(real_db_session, real_user):
     assert resp.resolved[0].email == u.email
 
 
+# ── матчатинг ФИО по словам (любой порядок, отчества, ё↔е, падежи) ────────────
+
+
+async def test_resolve_name_words_different_order(real_db_session, real_user):
+    """Порядок слов не важен: «Артем Богославский» находит «Богославский Артем»."""
+    marker = uuid.uuid4().hex[:6]
+    # В БД — фамилия вперёд; запрос — имя вперёд (как в письме со встречи).
+    surname = f"Богославский{marker}"
+    name = f"{surname} Артем Петрович"
+    u = await _create(real_db_session, full_name=name)
+    await real_db_session.flush()
+
+    resp = await resolve_participants(
+        data=ResolveParticipantsRequest(queries=[f"Артем {surname}"]),
+        db=real_db_session,
+        user=real_user,
+    )
+
+    assert resp.unresolved == []
+    assert len(resp.resolved) == 1
+    assert resp.resolved[0].email == u.email
+
+
+async def test_resolve_name_words_with_patronymic(real_db_session, real_user):
+    """Запрос без отчества находит ФИО с отчеством (слова-подмножество)."""
+    marker = uuid.uuid4().hex[:6]
+    surname = f"Ратникова{marker}"
+    u = await _create(real_db_session, full_name=f"{surname} Алла Ивановна")
+    await real_db_session.flush()
+
+    resp = await resolve_participants(
+        data=ResolveParticipantsRequest(queries=[f"Алла {surname}"]),
+        db=real_db_session,
+        user=real_user,
+    )
+
+    assert len(resp.resolved) == 1
+    assert resp.resolved[0].email == u.email
+
+
+async def test_resolve_name_words_surname_first_query(real_db_session, real_user):
+    """Обратный случай: запрос «Фамилия Имя» при ФИО «Имя Фамилия Отчество»."""
+    marker = uuid.uuid4().hex[:6]
+    surname = f"Жилин{marker}"
+    u = await _create(real_db_session, full_name=f"Федор {surname} Алексеевич")
+    await real_db_session.flush()
+
+    resp = await resolve_participants(
+        data=ResolveParticipantsRequest(queries=[f"{surname} Федор"]),
+        db=real_db_session,
+        user=real_user,
+    )
+
+    assert len(resp.resolved) == 1
+    assert resp.resolved[0].email == u.email
+
+
+async def test_resolve_name_words_yo_vs_ye(real_db_session, real_user):
+    """«Артём» (запрос с ё) находит «Артем» (в БД с е), и наоборот."""
+    marker = uuid.uuid4().hex[:6]
+    surname = f"Литвачук{marker}"
+    # В БД — «е», запрос — «ё».
+    u = await _create(real_db_session, full_name=f"Артем {surname}")
+    await real_db_session.flush()
+
+    resp = await resolve_participants(
+        data=ResolveParticipantsRequest(queries=[f"Артём {surname}"]),
+        db=real_db_session,
+        user=real_user,
+    )
+
+    assert len(resp.resolved) == 1
+    assert resp.resolved[0].email == u.email
+
+
+async def test_resolve_name_words_case_insensitive_and_case_endings(real_db_session, real_user):
+    """Регистр и падежные окончания не мешают: префиксный матч слов.
+
+    Запрос «виктория третьяков» находит «ВИКТОРИЯ Третьякова»: «третьяков» —
+    префикс слова «третьякова» (им. → род. падеж). Маркер — отдельным «отчеством»,
+    чтобы фамилия в запросе/БД была реальной (без склейки, ломающей префикс).
+    """
+    marker = uuid.uuid4().hex[:6]  # изоляция тест-данных через отдельное «отчество»
+    u = await _create(real_db_session, full_name=f"ВИКТОРИЯ Третьякова {marker}")
+    await real_db_session.flush()
+
+    resp = await resolve_participants(
+        data=ResolveParticipantsRequest(queries=[f"виктория третьяков {marker}"]),
+        db=real_db_session,
+        user=real_user,
+    )
+
+    assert len(resp.resolved) == 1
+    assert resp.resolved[0].email == u.email
+
+
+async def test_resolve_name_words_partial_word_not_matched(real_db_session, real_user):
+    """Короткое слово-фрагмент в середине чужого слова не матчится.
+
+    «артем» не должен цеплять «полиартем» (word-boundary-guard).
+    """
+    marker = uuid.uuid4().hex[:6]
+    # Имя-ловушка: содержит «артем» как подстроку, но не отдельным словом.
+    await _create(real_db_session, full_name=f"Полиартемов {marker}")
+    await real_db_session.flush()
+
+    resp = await resolve_participants(
+        data=ResolveParticipantsRequest(queries=[f"Артем {marker}"]),
+        db=real_db_session,
+        user=real_user,
+    )
+
+    # Нет сотрудника с отдельным словом «Артем» → unresolved.
+    assert resp.resolved == []
+    assert len(resp.unresolved) == 1
+
+
+async def test_resolve_name_words_two_candidates_ambiguous(real_db_session, real_user):
+    """Два сотрудника с совпадающими словами → ambiguous (выбор пользователем)."""
+    marker = uuid.uuid4().hex[:6]
+    surname = f"Андреев{marker}"
+    # Два Андрея Андреева (разные отчества).
+    await _create(
+        real_db_session,
+        full_name=f"Андрей {surname} Петрович",
+        email=f"a1-{marker}@example.com",
+    )
+    await _create(
+        real_db_session,
+        full_name=f"Андрей {surname} Семёнович",
+        email=f"a2-{marker}@example.com",
+    )
+    await real_db_session.flush()
+
+    resp = await resolve_participants(
+        data=ResolveParticipantsRequest(queries=[f"Андрей {surname}"]),
+        db=real_db_session,
+        user=real_user,
+    )
+
+    assert resp.resolved == []
+    assert len(resp.ambiguous) == 1
+    assert {c.email for c in resp.ambiguous[0].candidates} == {
+        f"a1-{marker}@example.com",
+        f"a2-{marker}@example.com",
+    }
+
+
+async def test_resolve_name_ranking_prefers_shortest(real_db_session, real_user):
+    """При >1 совпадении короткое ФИО (ближе к запросу) идёт первым кандидатом.
+
+    Два сотрудника с совпадающими словами, но разной длины (отчества разной
+    длины) → ambiguous; ни один не точный. Ранжирование по длине ставит
+    короткое ФИО первым кандидатом.
+    """
+    marker = uuid.uuid4().hex[:6]
+    surname = f"Базилев{marker}"
+    u_short = await _create(
+        real_db_session,
+        full_name=f"Сергей {surname} Петр",  # короче
+        email=f"short-{marker}@example.com",
+    )
+    await _create(
+        real_db_session,
+        full_name=f"Сергей {surname} Петрович Алексеевич",  # длиннее
+        email=f"long-{marker}@example.com",
+    )
+    await real_db_session.flush()
+
+    resp = await resolve_participants(
+        data=ResolveParticipantsRequest(queries=[f"Сергей {surname}"]),
+        db=real_db_session,
+        user=real_user,
+    )
+
+    assert len(resp.ambiguous) == 1
+    # Короткое ФИО (ближе к запросу по длине) — первый кандидат.
+    assert resp.ambiguous[0].candidates[0].email == u_short.email
+
+
 async def test_resolve_ambiguous_full_name(real_db_session, real_user):
     """Два одинаковых ФИО → ``ambiguous`` с двумя кандидатами."""
     marker = uuid.uuid4().hex[:6]

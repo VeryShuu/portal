@@ -7,7 +7,7 @@ from collections.abc import AsyncIterator, Sequence
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import Select, case, delete, func, or_, select, text, update
+from sqlalchemy import Select, and_, case, delete, func, or_, select, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -214,6 +214,75 @@ async def find_active_by_emails(db: AsyncSession, emails_lower: set[str]) -> dic
     return {u.email.lower(): u for u in res.scalars()}
 
 
+def _normalize_name_token(token: str) -> str:
+    """Нормализация слова ФИО для CI-матча: нижний регистр + ё→е.
+
+    «Артём» и «Артем» должны совпадать независимо от того, какая форма
+    использована в запросе и в БД.
+    """
+    return token.strip().lower().replace("ё", "е")
+
+
+def _name_column_normalized() -> Any:
+    """``full_name``, приведённый к нижнему регистру с заменой ё→е.
+
+    Применяется к обоим операндам сравнения, чтобы «Артем» (запрос) находил
+    «Артём» (в БД) и наоборот.
+    """
+    return func.replace(func.lower(User.full_name), "ё", "е")
+
+
+def _split_name_words(token: str) -> list[str]:
+    """Разбить ФИО на значимые слова (≥3 символов), отбросив короткие инициалы.
+
+    «Артем Богославский» → ['артем', 'богославский'].
+    «Б. П.» → [] (короткие не идут на строгий матч; используется fallback).
+    Порог ≥3 защищает от ложных совпадений при префиксном матче (дву-буквенное
+    «ан» не должно цеплять половину имён).
+    """
+    out: list[str] = []
+    for word in token.split():
+        norm = _normalize_name_token(word).strip(".-")
+        if len(norm) >= 3:
+            out.append(norm)
+    return out
+
+
+def _word_in_full_name_conditions(word: str) -> Any:
+    """Условие: ``word`` есть в ``full_name`` как ПРЕФИС слова (любой раскладки).
+
+    Префикс-внутри-слова: «третьяков» находит «третьякова» (падежное окончание),
+    «богославский» — «богославскому». Граница слова — начало строки или пробел,
+    поэтому «артем» НЕ цепляет «полиартемов» (нет пробела перед). Учитываются
+    варианты раскладки клавиатуры (ЙЦУКЕН↔QWERTY) и ё↔е на обоих операндах.
+    """
+    col = _name_column_normalized()
+    clauses = []
+    for variant in layout_variants(word):
+        norm = _normalize_name_token(variant)
+        # Первое слово начинается с norm ИЛИ слово после пробела начинается с norm.
+        # «%» в конце допускает продолжение (окончания), но граница слева — пробел/начало.
+        clauses.append(col.ilike(f"{norm}%"))
+        clauses.append(col.ilike(f"% {norm}%"))
+    return or_(*clauses)
+
+
+def _full_name_word_match_conditions(token: str) -> list[Any]:
+    """Условия матчатинга ФИО по словам в любом порядке.
+
+    Все значимые слова запроса должны присутствовать в ``full_name`` (как
+    префиксы слов). Порядок слов не важен: «Артем Богославский» найдёт
+    «Богославский Артем Петрович».
+    """
+    words = _split_name_words(token)
+    if not words:
+        # Запрос из одних инициалов/мусора — fallback на подстрочный матч
+        # всей строки, иначе ничего не найдём.
+        return _full_name_substring_conditions(token)
+    # Каждое слово — обязательно (AND).
+    return [and_(*[_word_in_full_name_conditions(w) for w in words])]
+
+
 def _full_name_exact_conditions(token: str) -> list[Any]:
     """CI точное совпадение ``full_name`` (с вариантами раскладки клавиатуры)."""
     clauses = [func.lower(User.full_name) == v.lower() for v in layout_variants(token)]
@@ -248,6 +317,23 @@ async def find_by_full_name_substring(
     res = await db.execute(
         select(User)
         .where(User.deleted_at.is_(None), *_full_name_substring_conditions(token))
+        .limit(limit)
+    )
+    return list(res.scalars().unique())
+
+
+async def find_by_full_name_words(db: AsyncSession, token: str, *, limit: int = 10) -> list[User]:
+    """Матчатинг ФИО по словам в любом порядке (с раскладкой и ё↔е).
+
+    Все значимые слова запроса должны быть префиксами слов в ``full_name``.
+    «Артем Богославский» найдёт «Богославский Артем Петрович» и
+    «Богославский Артем» (другой порядок, с отчеством/без). Ранжирование по
+    близости длины — короткие ФИО (ближе к запросу) идут раньше.
+    """
+    res = await db.execute(
+        select(User)
+        .where(User.deleted_at.is_(None), *_full_name_word_match_conditions(token))
+        .order_by(func.char_length(User.full_name).asc())
         .limit(limit)
     )
     return list(res.scalars().unique())
