@@ -259,6 +259,20 @@ tests/integration/test_meetings_bookings_extra.py::TestUpdateBookingDetachFromSe
 tests/integration/test_meetings_bookings_extra.py::TestUpdateBookingValidation::test_end_before_start_raises_422
 tests/integration/test_meetings_bookings_extra.py::TestUpdateBookingValidation::test_update_multi_room_rebuilds_rooms
 tests/integration/test_meetings_bookings_extra.py::TestUpdateBookingValidation::test_update_unknown_id_404
+tests/integration/test_meetings_participants.py::test_resolve_ambiguous_full_name
+tests/integration/test_meetings_participants.py::test_resolve_by_emails_exact
+tests/integration/test_meetings_participants.py::test_resolve_by_full_name_exact
+tests/integration/test_meetings_participants.py::test_resolve_dedup
+tests/integration/test_meetings_participants.py::test_resolve_email_case_insensitive
+tests/integration/test_meetings_participants.py::test_resolve_empty
+tests/integration/test_meetings_participants.py::test_resolve_layout_variants
+tests/integration/test_meetings_participants.py::test_resolve_mixed_email_and_name
+tests/integration/test_meetings_participants.py::test_resolve_split_separators
+tests/integration/test_meetings_participants.py::test_resolve_too_many_entries
+tests/integration/test_meetings_participants.py::test_resolve_unresolved_email_becomes_external
+tests/integration/test_meetings_participants.py::test_resolve_unresolved_name
+tests/integration/test_meetings_participants.py::test_resolve_user_id_uses_keycloak_id
+tests/integration/test_meetings_participants.py::test_resolve_user_without_keycloak_id_falls_back_to_db_id
 tests/integration/test_meetings_rooms.py::TestRoomsCRUD::test_create_and_get_room
 tests/integration/test_meetings_rooms.py::TestRoomsCRUD::test_create_room_persists_email
 tests/integration/test_meetings_rooms.py::TestRoomsCRUD::test_has_future_bookings_detects_active_booking
@@ -2764,17 +2778,6 @@ tests/unit/test_meetings_audit_unit.py::TestPushMeetingsAudit::test_db_failure_i
 tests/unit/test_meetings_audit_unit.py::TestPushMeetingsAudit::test_falls_back_to_client_host_when_no_forwarded_header
 tests/unit/test_meetings_audit_unit.py::TestPushMeetingsAudit::test_no_request_no_user
 tests/unit/test_meetings_audit_unit.py::TestPushMeetingsAudit::test_writes_row_with_forwarded_ip_and_user_metadata
-tests/unit/test_meetings_bookings_helpers.py::test_compute_diff_conservation_and_disjoint
-tests/unit/test_meetings_bookings_helpers.py::test_compute_diff_filters_all_malformed_entries
-tests/unit/test_meetings_bookings_helpers.py::test_compute_diff_non_participant_changed_passthrough
-tests/unit/test_meetings_bookings_helpers.py::test_compute_diff_reflexive_all_unchanged
-tests/unit/test_meetings_bookings_helpers.py::test_compute_diff_symmetric_direction_swap
-tests/unit/test_meetings_bookings_helpers.py::test_date_range_converts_non_utc_timezone_to_utc
-tests/unit/test_meetings_bookings_helpers.py::test_date_range_handles_dst_timezone
-tests/unit/test_meetings_bookings_helpers.py::test_date_range_returns_full_day_bounds_in_utc
-tests/unit/test_meetings_bookings_helpers.py::test_to_utc_assigns_utc_to_naive_datetime
-tests/unit/test_meetings_bookings_helpers.py::test_to_utc_converts_non_utc_aware_to_utc
-tests/unit/test_meetings_bookings_helpers.py::test_to_utc_keeps_aware_datetime_unchanged_in_utc
 tests/unit/test_meetings_bookings_limit.py::TestBookingsListLimitCap::test_default_and_bounds
 tests/unit/test_meetings_bookings_limit.py::TestBookingsListLimitCap::test_my_endpoint_cap_unchanged
 tests/unit/test_meetings_guard.py::TestMeetingsGuard::test_disabled_returns_404
@@ -4535,6 +4538,7 @@ tests/unit/test_worker_tasks.py::TestRefreshCustomMetrics::test_no_pool_skips_db
 tests/unit/test_worker_tasks.py::TestRefreshCustomMetrics::test_photo_storage_calculated
 tests/unit/test_worker_tasks.py::TestRefreshCustomMetrics::test_returns_snapshot_dict
 tests/unit/test_worker_tasks.py::TestRefreshCustomMetrics::test_saves_snapshot_to_redis
+(pytest collection failed; check backend venv)
 ```
 
 ## Frontend Vitest (tests/unit/*.spec.ts)
@@ -4697,6 +4701,7 @@ notifications-api.spec.ts
 notifications-store.spec.ts
 onboarding-module-settings.spec.ts
 participant-picker.spec.ts
+paste-participants-modal.spec.ts
 photo-decomposition.spec.ts
 photos-api.spec.ts
 photos-components-smoke.spec.ts

@@ -169,3 +169,39 @@ export async function deleteSeries(seriesId: string): Promise<void> {
 export async function searchParticipants(q: string): Promise<InvitedUser[]> {
   return api<InvitedUser[]>('/meetings/participants/search', { params: { q } })
 }
+
+export interface ResolveAmbiguousCandidate {
+  user_id: string
+  full_name: string
+  email: string
+  department?: string | null
+  position?: string | null
+}
+
+export interface ResolveAmbiguousItem {
+  query: string
+  candidates: ResolveAmbiguousCandidate[]
+}
+
+export interface ResolveParticipantsResponse {
+  resolved: InvitedUser[]
+  unresolved: string[]
+  ambiguous: ResolveAmbiguousItem[]
+}
+
+/**
+ * Массовый резолв списка ФИО/email в участников встречи.
+ *
+ * Элементы ``queries`` могут содержать несколько записей, разделённых
+ * запятыми/переносами/табами — токенизация на бэке. Возвращает найденных
+ * сотрудников + внешних участников (неразрешённые email), а также списки
+ * нераспознанных и неоднозначных ФИО (для ручного выбора).
+ */
+export async function resolveParticipants(
+  queries: string[],
+): Promise<ResolveParticipantsResponse> {
+  return api<ResolveParticipantsResponse>('/meetings/participants/resolve', {
+    method: 'POST',
+    body: { queries },
+  })
+}

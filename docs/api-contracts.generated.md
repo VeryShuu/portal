@@ -1,5 +1,5 @@
 <!-- AUTO-GENERATED — do not edit manually. Run: cd backend && python -m scripts.generate_api_contracts_doc --output ../docs/api-contracts.generated.md -->
-<!-- Generated: 2026-07-28 20:04 UTC -->
+<!-- Generated: 2026-07-30 08:26 UTC -->
 
 # API Contracts (auto-generated)
 
@@ -3561,6 +3561,39 @@ Content-Type: `multipart/form-data` — schema: `Body_upload_article_media_api_v
 | 201 | Successful Response | `MediaUploadResponse` |
 | 422 | Validation Error | `HTTPValidationError` |
 
+### `POST /api/v1/kb/articles/{article_id}/media/remote`
+
+**Upload Remote Media**
+
+Re-host externally hosted image into KB media (SSRF-guarded fetch).
+
+Используется редактором при paste/drop внешней картинки (``<img src>``,
+URI-list): сервер скачивает её и сохраняет локально, чтобы статья не
+зависела от стороннего URL (может протухнуть / быть недоступным из VPN /
+тянуть трекеры). Контракт ответа идентичен file-upload.
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `article_id` | path | `string` | ✓ |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Request Body**
+
+Content-Type: `application/json` — schema: `RemoteMediaRequest`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `url` | string | ✓ |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 201 | Successful Response | `MediaUploadResponse` |
+| 422 | Validation Error | `HTTPValidationError` |
+
 ### `GET /api/v1/kb/articles/{article_id}/permissions`
 
 **Get Article Permissions**
@@ -4699,6 +4732,39 @@ Schema: any
 | Status | Description | Schema |
 |--------|-------------|--------|
 | 204 | Successful Response |  |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `POST /api/v1/meetings/participants/resolve`
+
+**Resolve Participants**
+
+Разобрать список ФИО/email в участников встречи.
+
+- **email** — точный CI-lookup по ``users`` (индекс ``idx_users_email_ci_active``);
+  ненайденный email становится внешним участником (``source=external``), как в single-search.
+- **ФИО** — точное CI-совпадение (с вариантами раскладки клавиатуры) → resolved;
+  при 0 точных — подстрочный матч: 1 кандидат → resolved, >1 → ambiguous;
+  иначе → unresolved.
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `portal_session` | cookie | `any` |  |  |
+
+**Request Body**
+
+Content-Type: `application/json` — schema: `ResolveParticipantsRequest`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `queries` | array of string | ✓ |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | `ResolveParticipantsResponse` |
 | 422 | Validation Error | `HTTPValidationError` |
 
 ### `GET /api/v1/meetings/participants/search`

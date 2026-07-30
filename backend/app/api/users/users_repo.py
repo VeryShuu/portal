@@ -197,6 +197,62 @@ async def find_active_by_email(db: AsyncSession, email: str) -> User | None:
     return res.scalar_one_or_none()
 
 
+async def find_active_by_emails(db: AsyncSession, emails_lower: set[str]) -> dict[str, User]:
+    """Bulk email lookup → ``{lower(email): User}``.
+
+    Использует partial-unique индекс ``idx_users_email_ci_active``. Пустой вход
+    возвращает пустой словарь (не выполняет запрос).
+    """
+    if not emails_lower:
+        return {}
+    res = await db.execute(
+        select(User).where(
+            func.lower(User.email).in_(emails_lower),
+            User.deleted_at.is_(None),
+        )
+    )
+    return {u.email.lower(): u for u in res.scalars()}
+
+
+def _full_name_exact_conditions(token: str) -> list[Any]:
+    """CI точное совпадение ``full_name`` (с вариантами раскладки клавиатуры)."""
+    clauses = [func.lower(User.full_name) == v.lower() for v in layout_variants(token)]
+    return [or_(*clauses)]
+
+
+def _full_name_substring_conditions(token: str) -> list[Any]:
+    """CI подстрочный матч ``full_name`` (с вариантами раскладки клавиатуры)."""
+    clauses = [User.full_name.ilike(f"%{v}%") for v in layout_variants(token)]
+    return [or_(*clauses)]
+
+
+async def find_by_full_name_exact(db: AsyncSession, token: str) -> list[User]:
+    """Точные (CI, с раскладкой) совпадения по ``full_name`` среди активных."""
+    res = await db.execute(
+        select(User).where(
+            User.deleted_at.is_(None),
+            *_full_name_exact_conditions(token),
+        )
+    )
+    return list(res.scalars().unique())
+
+
+async def find_by_full_name_substring(
+    db: AsyncSession, token: str, *, limit: int = 5
+) -> list[User]:
+    """Подстрочные (CI, с раскладкой) совпадения по ``full_name`` среди активных.
+
+    Ограничен ``limit`` — используется для подбора кандидатов при отсутствии
+    точного совпадения.
+    """
+    res = await db.execute(
+        select(User)
+        .where(User.deleted_at.is_(None), *_full_name_substring_conditions(token))
+        .limit(limit)
+    )
+    return list(res.scalars().unique())
+
+
 async def update_user_fields(db: AsyncSession, user_id: uuid.UUID, values: dict) -> None:
     await db.execute(update(User).where(User.id == user_id).values(**values))
 

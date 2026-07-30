@@ -9356,6 +9356,127 @@
         "title": "RequesterProfileOut",
         "type": "object"
       },
+      "ResolveAmbiguousCandidate": {
+        "description": "Один кандидат для неоднозначного ФИО (пользователь выберет из списка).",
+        "properties": {
+          "department": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Department"
+          },
+          "email": {
+            "format": "email",
+            "title": "Email",
+            "type": "string"
+          },
+          "full_name": {
+            "title": "Full Name",
+            "type": "string"
+          },
+          "position": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Position"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "full_name",
+          "email"
+        ],
+        "title": "ResolveAmbiguousCandidate",
+        "type": "object"
+      },
+      "ResolveAmbiguousItem": {
+        "description": "Неоднозначное ФИО с несколькими кандидатами.",
+        "properties": {
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/ResolveAmbiguousCandidate"
+            },
+            "title": "Candidates",
+            "type": "array"
+          },
+          "query": {
+            "title": "Query",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query",
+          "candidates"
+        ],
+        "title": "ResolveAmbiguousItem",
+        "type": "object"
+      },
+      "ResolveParticipantsRequest": {
+        "description": "Запрос массового резолва списка ФИО/email в участников.",
+        "properties": {
+          "queries": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50,
+            "minItems": 1,
+            "title": "Queries",
+            "type": "array"
+          }
+        },
+        "required": [
+          "queries"
+        ],
+        "title": "ResolveParticipantsRequest",
+        "type": "object"
+      },
+      "ResolveParticipantsResponse": {
+        "description": "Результат bulk-resolve.\n\n- ``resolved``: найденные сотрудники + внешние участники (по неразрешённому email);\n- ``unresolved``: ФИО, по которым не нашли ни одного сотрудника;\n- ``ambiguous``: ФИО с несколькими кандидатами — пользователь выбирает вручную.",
+        "properties": {
+          "ambiguous": {
+            "items": {
+              "$ref": "#/components/schemas/ResolveAmbiguousItem"
+            },
+            "title": "Ambiguous",
+            "type": "array"
+          },
+          "resolved": {
+            "items": {
+              "$ref": "#/components/schemas/InvitedUser"
+            },
+            "title": "Resolved",
+            "type": "array"
+          },
+          "unresolved": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Unresolved",
+            "type": "array"
+          }
+        },
+        "required": [
+          "resolved",
+          "unresolved",
+          "ambiguous"
+        ],
+        "title": "ResolveParticipantsResponse",
+        "type": "object"
+      },
       "ReviewSuggestionRequest": {
         "properties": {
           "action": {
@@ -28690,6 +28811,66 @@
           }
         },
         "summary": "Update Booking Endpoint",
+        "tags": [
+          "meetings"
+        ]
+      }
+    },
+    "/api/v1/meetings/participants/resolve": {
+      "post": {
+        "description": "Разобрать список ФИО/email в участников встречи.\n\n- **email** — точный CI-lookup по ``users`` (индекс ``idx_users_email_ci_active``);\n  ненайденный email становится внешним участником (``source=external``), как в single-search.\n- **ФИО** — точное CI-совпадение (с вариантами раскладки клавиатуры) → resolved;\n  при 0 точных — подстрочный матч: 1 кандидат → resolved, >1 → ambiguous;\n  иначе → unresolved.",
+        "operationId": "resolve_participants_api_v1_meetings_participants_resolve_post",
+        "parameters": [
+          {
+            "in": "cookie",
+            "name": "portal_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Portal Session"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResolveParticipantsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResolveParticipantsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Resolve Participants",
         "tags": [
           "meetings"
         ]

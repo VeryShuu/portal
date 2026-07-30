@@ -22,6 +22,7 @@ import {
   updateSeries,
   deleteSeries,
   searchParticipants,
+  resolveParticipants,
 } from '../../src/api/meetings'
 
 describe('meetings API client', () => {
@@ -159,6 +160,28 @@ describe('meetings API client', () => {
       expect(apiMock).toHaveBeenCalledWith('/meetings/participants/search', {
         params: { q: 'ali' },
       })
+    })
+
+    it('resolveParticipants POSTs queries as body', async () => {
+      apiMock.mockResolvedValueOnce({ resolved: [], unresolved: [], ambiguous: [] })
+      await resolveParticipants(['Иванов', 'a@b.com'])
+      expect(apiMock).toHaveBeenCalledWith('/meetings/participants/resolve', {
+        method: 'POST',
+        body: { queries: ['Иванов', 'a@b.com'] },
+      })
+    })
+
+    it('resolveParticipants returns typed response', async () => {
+      const payload = {
+        resolved: [{ user_id: 'u1', full_name: 'Иван', email: 'i@b.com', source: 'keycloak' }],
+        unresolved: ['Незнакомец'],
+        ambiguous: [],
+      }
+      apiMock.mockResolvedValueOnce(payload)
+      const res = await resolveParticipants(['Иван'])
+      expect(res.resolved).toHaveLength(1)
+      expect(res.resolved[0].email).toBe('i@b.com')
+      expect(res.unresolved).toEqual(['Незнакомец'])
     })
   })
 

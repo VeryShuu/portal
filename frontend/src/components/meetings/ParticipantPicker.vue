@@ -60,17 +60,32 @@
       <div class="search-hint">
         {{ t('meetings.participants.searchHint') }}
       </div>
+      <n-button
+        class="paste-list-btn"
+        size="small"
+        tertiary
+        @click="pasteShow = true"
+      >
+        {{ t('meetings.participants.pasteList') }}
+      </n-button>
     </div>
+
+    <PasteParticipantsModal
+      v-model:show="pasteShow"
+      :existing-emails="existingEmails"
+      @add="onBulkAdd"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, h } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { NSelect, type SelectOption } from 'naive-ui'
+import { NButton, NSelect, type SelectOption } from 'naive-ui'
 import { searchParticipants, type InvitedUser } from '../../api/meetings'
 import { useDebounceFn } from '../../composables/useDebounceFn'
 import { parseApiError } from '../../utils/parseApiError'
+import PasteParticipantsModal from './PasteParticipantsModal.vue'
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const EXTERNAL_PREFIX = 'ext:'
@@ -91,6 +106,7 @@ const searchResults = ref<InvitedUser[]>([])
 const searching = ref(false)
 const errorText = ref<string | null>(null)
 const currentQuery = ref('')
+const pasteShow = ref(false)
 
 const existingEmails = computed(
   () => new Set(props.modelValue.map(m => m.email.toLowerCase())),
@@ -191,6 +207,21 @@ function onSelect(values: string[]) {
 function remove(userId: string) {
   emit('update:modelValue', props.modelValue.filter(u => u.user_id !== userId))
 }
+
+function onBulkAdd(added: InvitedUser[]): void {
+  // Дедуп по email (модал уже отфильтровал существующих, но подстрахуемся).
+  const taken = new Set(existingEmails.value)
+  const fresh = added.filter(u => {
+    const key = u.email.toLowerCase()
+    if (taken.has(key)) return false
+    taken.add(key)
+    return true
+  })
+  if (fresh.length) {
+    emit('update:modelValue', [...props.modelValue, ...fresh])
+  }
+  pasteShow.value = false
+}
 </script>
 
 <style scoped>
@@ -282,6 +313,11 @@ function remove(userId: string) {
   font-size: 11px;
   color: var(--color-text-muted);
   margin-top: 4px;
+}
+
+.paste-list-btn {
+  align-self: flex-start;
+  margin-top: 6px;
 }
 
 .search-error {
