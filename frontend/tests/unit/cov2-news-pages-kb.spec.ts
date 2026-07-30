@@ -58,6 +58,11 @@ vi.mock('naive-ui', () => ({
   NTabPane: { template: '<div class="n-tab-pane"><slot /></div>', props: ['name', 'tab'] },
   NSkeleton: { template: '<div class="n-skeleton" />', props: ['text', 'repeat'] },
   NIcon: { template: '<span class="n-icon"><slot /></span>' },
+  NModal: {
+    template: '<div v-if="show" class="n-modal"><slot /></div>',
+    props: { show: { type: Boolean, default: false }, autoFocus: { type: Boolean, default: false } },
+    emits: ['update:show'],
+  },
   useDialog: () => ({ warning: dialogWarning }),
   useMessage: () => ({ success: messageSuccess, error: messageError, warning: vi.fn(), info: vi.fn() }),
 }))

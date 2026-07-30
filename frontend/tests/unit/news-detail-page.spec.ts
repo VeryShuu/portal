@@ -15,6 +15,11 @@ vi.mock('naive-ui', () => ({
   NDropdown: { template: '<div class="n-dropdown"><slot /></div>', props: ['options', 'trigger'] },
   NResult: { template: '<div class="n-result"><slot name="footer" /></div>', props: ['status', 'title', 'description'] },
   NIcon: { template: '<span class="n-icon"><slot /></span>', props: ['size', 'color'] },
+  NModal: {
+    template: '<div v-if="show" class="n-modal"><slot /></div>',
+    props: { show: { type: Boolean, default: false }, autoFocus: { type: Boolean, default: false } },
+    emits: ['update:show'],
+  },
   useMessage: () => ({ success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn() }),
 }))
 

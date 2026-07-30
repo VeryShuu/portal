@@ -130,10 +130,12 @@
           </n-button>
         </div>
 
-        <div
-          class="news-body"
-          v-html="renderedBody"
-        />
+        <HtmlImageLightbox class="news-body-wrapper">
+          <div
+            class="news-body"
+            v-html="renderedBody"
+          />
+        </HtmlImageLightbox>
 
         <NewsPoll
           v-if="news.has_poll"
@@ -184,6 +186,7 @@ import { useBrandingStore } from '../stores/branding'
 import { useLayoutHeader } from '../composables/useLayoutHeader'
 import NewsGalleryViewer from '../components/news/NewsGalleryViewer.vue'
 import NewsAttachmentsViewer from '../components/news/NewsAttachmentsViewer.vue'
+import HtmlImageLightbox from '../components/HtmlImageLightbox.vue'
 import NewsPoll from '../components/news/poll/NewsPoll.vue'
 import NewsLikeButton from '../components/news/NewsLikeButton.vue'
 import NewsComments from '../components/news/NewsComments.vue'

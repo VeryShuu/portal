@@ -1,9 +1,5 @@
 <template>
-  <div
-    ref="chatRoot"
-    class="ticket-chat"
-    @click="onChatClick"
-  >
+  <HtmlImageLightbox class="ticket-chat">
     <div
       v-for="msg in messages"
       :key="msg.id"
@@ -80,32 +76,13 @@
         </div>
       </div>
     </div>
-    <!-- Lightbox: клик по картинке в теле сообщения → полноэкранный просмотр. -->
-    <n-modal
-      v-model:show="lightboxOpen"
-      :auto-focus="false"
-      style="background: transparent; box-shadow: none"
-    >
-      <div
-        class="lightbox"
-        @click="lightboxOpen = false"
-      >
-        <img
-          v-if="lightboxSrc"
-          :src="lightboxSrc"
-          :alt="lightboxAlt"
-          class="lightbox__img"
-        >
-        <span class="lightbox__close">{{ t('helpdesk.imageClose') }}</span>
-      </div>
-    </n-modal>
-  </div>
+  </HtmlImageLightbox>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { NTag, NIcon, NAvatar, NModal } from 'naive-ui'
+import { NTag, NIcon, NAvatar } from 'naive-ui'
+import HtmlImageLightbox from '../HtmlImageLightbox.vue'
 import { AttachOutline } from '@vicons/ionicons5'
 import type { HelpdeskMessage } from '../../api/helpdesk'
 import { helpdeskAttachmentUrl } from '../../api/helpdesk'
@@ -119,11 +96,6 @@ defineProps<{
 
 const { t, locale } = useI18n()
 
-const chatRoot = ref<HTMLElement | null>(null)
-const lightboxOpen = ref(false)
-const lightboxSrc = ref('')
-const lightboxAlt = ref('')
-
 function sanitized(html: string): string {
   // sanitizeHelpdeskHtml разрешает figure/figcaption (rich-редактор TipTap) +
   // img с относительными URL inline-картинок. Для plain/email-сообщений
@@ -131,22 +103,6 @@ function sanitized(html: string): string {
   return sanitizeHelpdeskHtml(html)
 }
 
-/**
- * Event-delegation: клик по любому <img> внутри тела сообщения открывает
- * полноэкранный просмотр. Тело рендерится через v-html (sanitized), поэтому
- * навесить @click на каждый <img> напрямую нельзя — делегируем на корень.
- */
-function onChatClick(e: MouseEvent) {
-  const target = e.target as HTMLElement
-  if (target.tagName !== 'IMG') return
-  const img = target as HTMLImageElement
-  const src = img.getAttribute('src') || img.currentSrc
-  if (!src) return
-  e.preventDefault()
-  lightboxSrc.value = src
-  lightboxAlt.value = img.getAttribute('alt') || ''
-  lightboxOpen.value = true
-}
 
 function attachmentUrl(id: string): string {
   return helpdeskAttachmentUrl(id)
@@ -346,37 +302,11 @@ function formatDate(iso: string): string {
   color: var(--color-text-secondary, rgba(0, 0, 0, 0.45));
   font-size: 12px;
 }
-/* Картинки в теле сообщения: кликабельны (zoom-in), ограничены шириной пузыря. */
+/* Картинки в теле сообщения: ограничены шириной пузыря. Cursor zoom-in и
+   полноэкранный lightbox — в общем HtmlImageLightbox. */
 .chat-bubble__body :deep(img) {
   max-width: 100%;
   height: auto;
-  cursor: zoom-in;
   border-radius: 6px;
-}
-/* Lightbox: полноэкранный просмотр картинки. */
-.lightbox {
-  position: fixed;
-  inset: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  background: rgba(0, 0, 0, 0.88);
-  z-index: 2000;
-  padding: 24px;
-}
-.lightbox__img {
-  max-width: 92vw;
-  max-height: 88vh;
-  object-fit: contain;
-  border-radius: 4px;
-  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.5);
-}
-.lightbox__close {
-  margin-top: 16px;
-  color: rgba(255, 255, 255, 0.7);
-  font-size: 13px;
-  font-family: sans-serif;
-  user-select: none;
 }
 </style>

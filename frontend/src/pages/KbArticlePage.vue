@@ -42,10 +42,12 @@
 
       <div class="article-page">
         <div class="article-main">
-          <div
-            class="article-body"
-            v-html="renderedBody"
-          />
+          <HtmlImageLightbox class="article-body-wrapper">
+            <div
+              class="article-body"
+              v-html="renderedBody"
+            />
+          </HtmlImageLightbox>
 
           <KbArticleFeedback
             :helpful-count="article.helpful_count"
@@ -148,6 +150,7 @@ import { sanitizeKbHtml } from '@/utils/sanitize'
 import { mdUnsafe as md } from '@/utils/markdown'
 import { useLayoutHeader } from '../composables/useLayoutHeader'
 import EmptyState from '../components/EmptyState.vue'
+import HtmlImageLightbox from '../components/HtmlImageLightbox.vue'
 import KbArticleHeader from '../components/KbArticleHeader.vue'
 import KbArticleFeedback from '../components/KbArticleFeedback.vue'
 import KbArticleCommentsTab from '../components/KbArticleCommentsTab.vue'

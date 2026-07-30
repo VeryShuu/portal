@@ -188,9 +188,40 @@ cd backend && ./scripts/ci_lint.sh
 > У агента **нет памяти между сессиями**. Единственный носитель состояния — файлы:
 > git-история, документация в `docs/` и план фичи. Всё, что не записано в файлы, теряется.
 
-### Коммиты — только пользователь
+### Коммиты — только через Pull Request (защита ветки `main`)
 
-- В конце задачи агент оставляет **чистое, проверенное состояние** (DoD пройден) и выдаёт пользователю **готовый текст коммит-сообщения**. Коммитит и пушит — только пользователь.
+> С 2026-07-29 ветка `main` защищена: **прямой `git push origin main` невозможен**
+> даже для admin (`enforce_admins: true`). Весь код идёт через PR + обязательные
+> status checks. Это формализовало принцип «коммитит и пушит — только пользователь»:
+> теперь git-сервер физически не даст агенту обойти ревью.
+
+- В конце задачи агент оставляет **чистое, проверенное состояние** (DoD пройден) и
+  подготавливает ветку + PR, но **НЕ нажимает Merge** — это решение пользователя.
+- **Процесс (агент):**
+  ```bash
+  git checkout main && git pull
+  git checkout -b <type>/<кратко-о-чём>     # НЕ работать в main
+  # ... правки, локальные тесты/lint ...
+  git add -A && git commit -m "<type>(<module>): <что сделано>"
+  git push -u origin <branch>
+  gh pr create --base main --title "..." --body "..."
+  gh pr checks --watch                       # дождаться 16 обязательных чеков
+  ```
+- **Процесс (пользователь):** видит в GitHub UI `🟢 All checks passed` → нажимает
+  **Merge**. Если `🔴 failed` — не мёрджит, агент чинит и пушит в **ту же ветку**
+  (`git push`, без нового PR — CI перезапускается автоматически).
+- **16 обязательных чеков** (без зелёного мёрдж заблокирован): `backend / ruff + mypy`,
+  `backend / pytest unit + security`, `backend / pytest integration`, `frontend / eslint + tsc + i18n + build`,
+  `frontend / vitest`, `frontend / playwright e2e`, `compose / up + healthcheck smoke`,
+  `openapi / drift check`, `frontend / types_gen drift check`, `docs / tests.generated.md drift check`,
+  `quality / complexity + duplication + dead-code`, `secrets / gitleaks`,
+  `screenshot-service / playwright base image sync`, `screenshot-service / pytest unit`,
+  `shellcheck / *.sh`, `bats / tests/setup`. Информационные (не блокируют): `deps / pip-audit + npm audit`,
+  `trivy / filesystem scan`, `backend / merged coverage`.
+- **Грабли (важно):** если меняешь состав тестов (add/remove) — перегенерируй
+  `docs/tests.generated.md` (`bash scripts/list_tests.sh`), иначе drift-check упадёт
+  и заблокирует мёрдж. То же для `openapi.json` (`python scripts/export_openapi.py`)
+  и `frontend/src/api/types.gen.d.ts` (`npm run gen:types`).
 - Рекомендуемый формат сообщения (не жёсткое правило, но сильно повышает ценность git как памяти):
   `<type>(<module>): <что сделано>`, где `type ∈ {feat, fix, refactor, docs, test, chore}`.
   Плохо: `fix`, `ашч`. Хорошо: `feat(meetings): добавить лимит max_invitees в валидацию`.
@@ -229,7 +260,7 @@ cd backend && ./scripts/ci_lint.sh
 В РАБОТЕ: <что начато, но не закончено — конкретный файл:строка>
 ДАЛЕЕ: <первый шаг следующей сессии>
 ОТКРЫТЫЕ ВОПРОСЫ: <что требует решения пользователя>
-КОММИТ: <готовый текст коммит-сообщения для пользователя>
+КОММИТ: <готовый workflow для пользователя: имя ветки + git add/commit/push + gh pr create + текст сообщения>
 ```
 
 ---

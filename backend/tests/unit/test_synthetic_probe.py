@@ -17,7 +17,7 @@ import pytest
 
 from app.worker.tasks import synthetic_probe as sp
 
-_PORTAL_BASE_URL = "https://portal-test.mage.ru"
+_PORTAL_BASE_URL = "https://portal-test.example.com"
 
 
 def _mock_client(resp_json: dict | None = None, *, exc: Exception | None = None) -> AsyncMock:
