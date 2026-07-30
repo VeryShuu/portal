@@ -255,6 +255,16 @@ export function reopenTicket(id: string): Promise<HelpdeskTicketDetail> {
 }
 
 /**
+ * Полностью удалить заявку (hard-delete: БД + файлы вложений/inline-картинок).
+ * Только администратор — бэкенд возвращает 403 для прочих ролей. Необратимая
+ * операция (спам-очистка / GDPR), в отличие от ``close``/``reopen``. Возвращает
+ * ``void`` (204 No Content); после вызова карточка тикета больше недоступна.
+ */
+export function deleteTicket(id: string): Promise<void> {
+  return api<void>(`/helpdesk/tickets/${id}`, { method: 'DELETE' })
+}
+
+/**
  * Отметить тикет прочитанным (снять подсветку в инбоксе агента).
  * Вызывается карточкой тикета при открытии — UPSERT ``last_seen_at = NOW()``
  * для пары ``(ticket, agent)``. Идемпотентно: повторное открытие = no-op.

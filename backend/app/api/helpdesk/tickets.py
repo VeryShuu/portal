@@ -20,7 +20,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Upload
 from fastapi.responses import StreamingResponse
 from fastapi_limiter.depends import RateLimiter
 
-from app.api.deps import CurrentUser, DbDep, HelpdeskAgentDep, RedisDep
+from app.api.deps import AdminDep, CurrentUser, DbDep, HelpdeskAgentDep, RedisDep
 from app.api.helpdesk._common import (
     build_requester_profile,
     message_to_out,
@@ -825,6 +825,57 @@ async def reopen_ticket(
     )
     profile = await _ticket_requester_profile(db, ticket=ticket)
     return ticket_to_agent_out(ticket, requester_profile=profile)
+
+
+@router.delete(
+    "/tickets/{ticket_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Полностью удалить заявку (только администратор)",
+)
+async def delete_ticket(
+    ticket_id: uuid.UUID,
+    admin: AdminDep,
+    db: DbDep,
+    redis: RedisDep,
+) -> None:
+    """Hard-delete тикета со всеми данными (БД + файлы диска).
+
+    **Только администратор** (``AdminDep`` — строго ``role == "admin"``, иначе
+    403). Не доступно агентам поддержки и заявителю — это необратимая операция
+    (спам-очистка / GDPR-удаление), в отличие от ``close``/``reopen`` которые
+    делает агент.
+
+    Удаляет (через ``services.helpdesk.tickets.delete_ticket`` + CASCADE в БД):
+    * строку ``helpdesk_tickets``;
+    * каскадно — сообщения, вложения (записи), marker-reads;
+    * файлы вложений и inline-картинок на диске (``delete_ticket_dir``,
+      best-effort).
+
+    Не трогает архив и не шлёт уведомлений — тихое удаление, фиксируется только
+    в журнале аудита как ``helpdesk.ticket_deleted``. Возвращает ``204`` без
+    тела. Несуществующий ``ticket_id`` → ``404`` (через ``_load_agent_ticket``,
+    единый loader с агентскими эндпоинтами — не раскрывает существование).
+    """
+    # Переиспользуем агентский loader (404 на отсутствие/нет доступа). loader
+    # требует HelpdeskAgentDep, но админ — суперсет агента (require_helpdesk_agent
+    # пропускает admin), а сам SELECT по id без ACL-фильтра — для admin'а это
+    # безопасно (он видит все тикеты). Не вызываем через зависимость, т.к.
+    # эндпоинт уже gated AdminDep сверху.
+    ticket = await _load_agent_ticket(db, ticket_id)
+    number = await tickets_service.delete_ticket(db, ticket=ticket)
+    await push_audit_event(
+        redis,
+        event_type="helpdesk.ticket_deleted",
+        user_id=str(admin.id),
+        user_email=admin.email,
+        resource_type="helpdesk_ticket",
+        resource_id=str(ticket.id),
+        metadata={
+            "number": number,
+            "subject": ticket.subject,
+            "previous_status": ticket.status,
+        },
+    )
 
 
 # ===========================================================================
