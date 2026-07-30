@@ -21,7 +21,7 @@ from __future__ import annotations
 import base64
 import uuid
 from contextlib import asynccontextmanager
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -596,3 +596,140 @@ class TestHeaderInjection:
         assert eo._sanitize_header("a\r\nb") == "a  b"
         assert eo._sanitize_header("") == ""
         assert eo._sanitize_header("plain") == "plain"
+
+
+# ── _embed_helpdesk_images_into_generic ──────────────────────────────────
+#
+# Префетч helpdesk-картинок для generic-писем (уведомление агентам о новой
+# заявке, ``notify_ticket_created_email``): без него почтовый клиент без
+# cookie получал 401 на ``/attachments/{id}``. Helper мутирует row in-place —
+# переписывает ``src`` на ``cid:`` и кладёт ``payload.inline_images`` (который
+# ``_build_mime`` оборачивает в ``multipart/related``). Сами embed-функции
+# покрыты в test_helpdesk_{inline,attachment}_images_email.py — здесь тестируем
+# мост (маркеры/мутация/early-exit), мокая их возвратом.
+
+
+def _mk_generic_row(*, payload, body_html="") -> dict:
+    """Row из ``claim_pending`` с ``kind=KIND_GENERIC`` (как у письма о новой
+    заявке агентам и сводки)."""
+    from app.services.email_outbox import KIND_GENERIC
+
+    return {
+        "id": uuid.uuid4(),
+        "kind": KIND_GENERIC,
+        "to_email": "agent@corp.local",
+        "subject": "#12 — Тема",
+        "body_html": body_html,
+        "body_text": "plain",
+        "payload": payload,
+        "attempts": 0,
+        "max_attempts": 6,
+    }
+
+
+class TestEmbedHelpdeskImagesIntoGeneric:
+    """Мост между generic-веткой и helpdesk-CID-встраиванием."""
+
+    @pytest.mark.asyncio
+    async def test_embeds_attachment_images_into_payload(self) -> None:
+        """Письмо о новой заявке (``smtp_source=helpdesk`` + ``ticket_number``)
+        с картинкой-attachment → src переписан на cid, payload.inline_images
+        заполнен. ``_build_mime`` затем соберёт multipart/related."""
+        from app.worker.tasks import email_outbox as eo
+
+        att_id = uuid.uuid4()
+        row = _mk_generic_row(
+            payload={"smtp_source": "helpdesk", "ticket_number": 12},
+            body_html=f'<img src="/api/v1/helpdesk/attachments/{att_id}"/>',
+        )
+
+        async def fake_inline(body_html, ticket_number):
+            return body_html, []  # rich-inline картинок нет
+
+        async def fake_attachment(body_html, ticket_number):
+            cid_html = '<img src="cid:img-aa"/>'
+            return cid_html, [{"cid": "img-aa", "b64": "ZmFrZQ==", "mime": "image/png"}]
+
+        with (
+            patch.object(eo, "_embed_helpdesk_inline_images", side_effect=fake_inline),
+            patch.object(eo, "_embed_helpdesk_attachment_images", side_effect=fake_attachment),
+        ):
+            await eo._embed_helpdesk_images_into_generic(row)
+
+        assert 'src="cid:' in row["body_html"]
+        assert row["payload"]["inline_images"] == [
+            {"cid": "img-aa", "b64": "ZmFrZQ==", "mime": "image/png"}
+        ]
+
+    @pytest.mark.asyncio
+    async def test_skips_digest_no_ticket_number(self) -> None:
+        """Сводка (digest) ставит ``smtp_source=helpdesk``, но НЕ ``ticket_number``
+        (письмо по многим тикетам, картинок не содержит) → пропускаем без вызова
+        embed-функций (не тратим DB/IO)."""
+        from app.worker.tasks import email_outbox as eo
+
+        original_html = "<p>Сводка</p>"
+        row = _mk_generic_row(
+            payload={"smtp_source": "helpdesk"},  # нет ticket_number
+            body_html=original_html,
+        )
+
+        inline_mock = AsyncMock(return_value=(original_html, []))
+        attachment_mock = AsyncMock(return_value=(original_html, []))
+        with (
+            patch.object(eo, "_embed_helpdesk_inline_images", inline_mock),
+            patch.object(eo, "_embed_helpdesk_attachment_images", attachment_mock),
+        ):
+            await eo._embed_helpdesk_images_into_generic(row)
+
+        inline_mock.assert_not_awaited()
+        attachment_mock.assert_not_awaited()
+        assert row["body_html"] == original_html
+        assert "inline_images" not in row["payload"]
+
+    @pytest.mark.asyncio
+    async def test_skips_non_helpdesk_generic(self) -> None:
+        """Generic-письмо без маркера helpdesk (новости/встречи) → не трогаем.
+        Регресс: чужой ``payload.inline_images`` (новости) не должен перетираться."""
+        from app.worker.tasks import email_outbox as eo
+
+        news_inline = [{"cid": "news-1", "b64": "bmV3cw==", "mime": "image/jpeg"}]
+        row = _mk_generic_row(
+            payload={"inline_images": news_inline},  # нет smtp_source=helpdesk
+            body_html='<img src="/cdn/news.jpg"/>',
+        )
+        original_html = row["body_html"]
+
+        inline_mock = AsyncMock()
+        with patch.object(eo, "_embed_helpdesk_inline_images", inline_mock):
+            await eo._embed_helpdesk_images_into_generic(row)
+
+        inline_mock.assert_not_awaited()
+        assert row["body_html"] == original_html
+        assert row["payload"]["inline_images"] == news_inline  # не тронут
+
+    @pytest.mark.asyncio
+    async def test_no_images_no_mutation(self) -> None:
+        """Письмо заявки без картинок (только текст) → embed-функции вернули []
+        → payload.inline_images НЕ пишется, body_html не меняется. ``_build_mime``
+        вернёт обычный ``alternative`` (0 regressions)."""
+        from app.worker.tasks import email_outbox as eo
+
+        original_html = "<p>Текст заявки без картинок</p>"
+        row = _mk_generic_row(
+            payload={"smtp_source": "helpdesk", "ticket_number": 3},
+            body_html=original_html,
+        )
+
+        with (
+            patch.object(
+                eo, "_embed_helpdesk_inline_images", AsyncMock(return_value=(original_html, []))
+            ),
+            patch.object(
+                eo, "_embed_helpdesk_attachment_images", AsyncMock(return_value=(original_html, []))
+            ),
+        ):
+            await eo._embed_helpdesk_images_into_generic(row)
+
+        assert row["body_html"] == original_html
+        assert "inline_images" not in row["payload"]

@@ -399,7 +399,14 @@ async def notify_ticket_created_email(
             subject=subject,
             body_html=html_body,
             body_text=plain_body,
-            payload={"smtp_source": "helpdesk"},
+            # ``ticket_number`` — маркер + путь к картинкам для воркера: в
+            # ``process_email_outbox`` generic helpdesk-уведомления проходят
+            # через ``_embed_helpdesk_images_into_generic``, который по этому
+            # номеру строит путь ``/data/helpdesk/TKT-{n}/...`` и встраивает
+            # картинки заявки как ``cid:`` (иначе почтовый клиент без cookie
+            # получал 401 на ``/attachments/{id}``). Сводка (digest) этот
+            # ключ не ставит → преобработка её пропускает.
+            payload={"smtp_source": "helpdesk", "ticket_number": ticket.number},
             related_resource_type="helpdesk_ticket",
             related_resource_id=ticket.id,
             created_by_user_id=agent.id,
