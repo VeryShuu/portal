@@ -59,6 +59,12 @@ def _to_out(row: HelpdeskMailboxSettings | None) -> HelpdeskMailboxSettingsOut:
         delete_after_fetch=row.delete_after_fetch,
         support_address=row.support_address,
         support_reply_to=row.support_reply_to,
+        smtp_host=row.smtp_host,
+        smtp_port=row.smtp_port,
+        smtp_username=row.smtp_username,
+        smtp_password_set=bool(row.smtp_password_enc),
+        smtp_use_tls=row.smtp_use_tls,
+        smtp_use_starttls=row.smtp_use_starttls,
         updated_at=row.updated_at,
     )
 
@@ -125,6 +131,17 @@ def _apply_fields(
     row.delete_after_fetch = p.delete_after_fetch
     row.support_address = p.support_address
     row.support_reply_to = p.support_reply_to
+    # SMTP-блок (миграция 086). smtp_password — write-only, как imap_password,
+    # но не обязателен даже при создании (SMTP может работать без auth, или при
+    # пустом smtp_host вообще fallback'ит на общий SMTP портала). None = оставить
+    # прежний шифр; при создании без пароля колонка остаётся NULL.
+    row.smtp_host = (p.smtp_host or "").strip() or None
+    row.smtp_port = p.smtp_port
+    row.smtp_username = p.smtp_username or None
+    if p.smtp_password:
+        row.smtp_password_enc = encrypt_secret(p.smtp_password)
+    row.smtp_use_tls = p.smtp_use_tls
+    row.smtp_use_starttls = p.smtp_use_starttls
 
 
 @router.post("/mailbox/test")
@@ -153,6 +170,48 @@ async def test_mailbox_connection(_admin: AdminDep, db: DbDep) -> dict:
         # Полный traceback остаётся в server-log через ``logger.exception``.
         logger.exception("helpdesk.mailbox.test_connection_failed")
         return {"ok": False, "error": "IMAP connection failed (see server logs for details)"}
+    return {"ok": ok, "detail": detail}
+
+
+@router.post("/mailbox/test-smtp")
+async def test_mailbox_smtp_connection(_admin: AdminDep, db: DbDep) -> dict:
+    """Проверка SMTP-соединения (собственный исходящий контур helpdesk, миграция 086).
+
+    Возвращает ``{ok, detail}`` — как ``POST /mailbox/test`` для IMAP. Если SMTP
+    не настроен (``smtp_host`` пуст), возвращает ``{ok: false, error: ...}`` с
+    пояснением «используется общий SMTP портала» — это валидное состояние
+    (fallback), а не ошибка конфигурации. Маскировка исключений — как у IMAP-test
+    (``str(exc)`` не возвращается, defence-in-depth против утечки кредов).
+    """
+    row = await _load_singleton(db)
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Mailbox not configured")
+    smtp_host = (row.smtp_host or "").strip()
+    if not smtp_host:
+        return {
+            "ok": False,
+            "error": (
+                "Helpdesk SMTP is not configured — outbound mail falls back to the "
+                "portal-wide SMTP server."
+            ),
+        }
+    password = decrypt_secret(row.smtp_password_enc) if row.smtp_password_enc else ""
+    try:
+        from app.services.helpdesk.smtp import probe_smtp_connection
+
+        ok, detail = await probe_smtp_connection(
+            host=smtp_host,
+            port=row.smtp_port,
+            username=row.smtp_username or "",
+            password=password,
+            use_tls=row.smtp_use_tls,
+            use_starttls=row.smtp_use_starttls,
+        )
+    except Exception:
+        # См. комментарий в ``test_mailbox_connection``: aiosmtplib/SOCKS-ошибки
+        # могут включать чувствительные детали (хост/учётку). Маскируем единообразно.
+        logger.exception("helpdesk.mailbox.test_smtp_connection_failed")
+        return {"ok": False, "error": "SMTP connection failed (see server logs for details)"}
     return {"ok": ok, "detail": detail}
 
 

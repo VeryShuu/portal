@@ -366,6 +366,12 @@ export interface HelpdeskMailboxSettingsOut {
   delete_after_fetch: boolean
   support_address: string | null
   support_reply_to: string | null
+  smtp_host: string | null
+  smtp_port: number
+  smtp_username: string | null
+  smtp_password_set: boolean
+  smtp_use_tls: boolean
+  smtp_use_starttls: boolean
   updated_at: string | null
 }
 
@@ -380,6 +386,12 @@ export interface HelpdeskMailboxSettingsIn {
   delete_after_fetch?: boolean
   support_address: string
   support_reply_to?: string | null
+  smtp_host?: string | null
+  smtp_port?: number
+  smtp_username?: string | null
+  smtp_password?: string | null
+  smtp_use_tls?: boolean
+  smtp_use_starttls?: boolean
 }
 
 export interface HelpdeskMailboxTestResult {
@@ -403,6 +415,12 @@ export function putHelpdeskMailbox(
 
 export function testHelpdeskMailbox(): Promise<HelpdeskMailboxTestResult> {
   return api<HelpdeskMailboxTestResult>('/helpdesk/settings/mailbox/test', {
+    method: 'POST',
+  })
+}
+
+export function testHelpdeskMailboxSmtp(): Promise<HelpdeskMailboxTestResult> {
+  return api<HelpdeskMailboxTestResult>('/helpdesk/settings/mailbox/test-smtp', {
     method: 'POST',
   })
 }

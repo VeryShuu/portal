@@ -1435,7 +1435,18 @@
         "notConfigured": "Mailbox is not configured yet. Fill in the fields and save.",
         "test": "Test connection",
         "testOk": "Connection OK",
-        "testFail": "Connection failed"
+        "testFail": "Connection failed",
+        "smtpTitle": "Outbound mail (SMTP)",
+        "smtpHint": "SMTP settings for sending replies to requesters and notifications to agents from the support address. If empty, the portal-wide SMTP is used.",
+        "smtpHost": "SMTP server",
+        "smtpPort": "SMTP port",
+        "smtpUsername": "SMTP username",
+        "smtpPassword": "SMTP password",
+        "useTls": "SSL/TLS",
+        "useStarttls": "STARTTLS",
+        "testSmtp": "Test SMTP",
+        "testSmtpOk": "SMTP connection OK",
+        "testSmtpFail": "SMTP connection failed"
       },
       "max": {
         "title": "MAX notifications",

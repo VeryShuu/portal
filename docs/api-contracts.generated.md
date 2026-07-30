@@ -1,5 +1,5 @@
 <!-- AUTO-GENERATED — do not edit manually. Run: cd backend && python -m scripts.generate_api_contracts_doc --output ../docs/api-contracts.generated.md -->
-<!-- Generated: 2026-07-30 13:26 UTC -->
+<!-- Generated: 2026-07-30 18:43 UTC -->
 
 # API Contracts (auto-generated)
 
@@ -2441,6 +2441,12 @@ Content-Type: `application/json` — schema: `HelpdeskMailboxSettingsIn`
 | `delete_after_fetch` | boolean |  |  |
 | `support_address` | `app__schemas__helpdesk__Email__1` | ✓ |  |
 | `support_reply_to` | any |  |  |
+| `smtp_host` | any |  |  |
+| `smtp_port` | integer |  |  |
+| `smtp_username` | any |  |  |
+| `smtp_password` | any |  |  |
+| `smtp_use_tls` | boolean |  |  |
+| `smtp_use_starttls` | boolean |  |  |
 
 **Responses**
 
@@ -2454,6 +2460,31 @@ Content-Type: `application/json` — schema: `HelpdeskMailboxSettingsIn`
 **Test Mailbox Connection**
 
 Проверка IMAP-соединения с текущими настройками. Возвращает OK/детали.
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | object |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `POST /api/v1/helpdesk/settings/mailbox/test-smtp`
+
+**Test Mailbox Smtp Connection**
+
+Проверка SMTP-соединения (собственный исходящий контур helpdesk, миграция 086).
+
+Возвращает ``{ok, detail}`` — как ``POST /mailbox/test`` для IMAP. Если SMTP
+не настроен (``smtp_host`` пуст), возвращает ``{ok: false, error: ...}`` с
+пояснением «используется общий SMTP портала» — это валидное состояние
+(fallback), а не ошибка конфигурации. Маскировка исключений — как у IMAP-test
+(``str(exc)`` не возвращается, defence-in-depth против утечки кредов).
 
 **Parameters**
 

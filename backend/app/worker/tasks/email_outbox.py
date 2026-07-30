@@ -45,6 +45,7 @@ from app.services.email_outbox import (
 )
 from app.worker.tasks.email_utils import (
     classify_smtp_error,
+    load_helpdesk_smtp_config,
     load_smtp_config,
     smtp_send,
 )
@@ -117,12 +118,20 @@ async def process_email_outbox(ctx: dict) -> int:
                 return 0
 
             cfg = load_smtp_config()
-            smtp_configured = bool(cfg.get("host"))
+            # Собственный SMTP-контур helpdesk (миграция 086): если настроен,
+            # helpdesk-почта уходит с support-ящика, а не с общего порталного SMTP.
+            # Грузим один раз за batch (read-only запрос к singleton-строке).
+            helpdesk_cfg = await load_helpdesk_smtp_config()
+            smtp_configured = bool(cfg.get("host")) or helpdesk_cfg is not None
             if not smtp_configured:
                 logger.warning("email_outbox.dispatch.smtp_not_configured", claimed=len(claimed))
 
             for row in claimed:
-                if not smtp_configured:
+                # Маршрутизация: helpdesk-строка (kind=helpdesk ИЛИ generic с
+                # маркером smtp_source=helpdesk — письма агентам) → собственный SMTP
+                # при наличии; иначе общий порталный SMTP (fallback).
+                row_cfg = _cfg_for_row(row, cfg, helpdesk_cfg)
+                if not row_cfg.get("host"):
                     async with session.begin():
                         await mark_failed(
                             session,
@@ -139,10 +148,10 @@ async def process_email_outbox(ctx: dict) -> int:
                     # helpdesk-ветка: async, т.к. вложения читаются с локального
                     # диска через aiofiles (существующий _build_mime синхронный).
                     if row["kind"] == KIND_HELPDESK:
-                        msg = await _build_helpdesk_mime(row, cfg)
+                        msg = await _build_helpdesk_mime(row, row_cfg)
                     else:
-                        msg = _build_mime(row, cfg)
-                    await smtp_send(msg, cfg)
+                        msg = _build_mime(row, row_cfg)
+                    await smtp_send(msg, row_cfg)
                 except Exception as exc:
                     error_class = classify_smtp_error(exc)
                     error_type = type(exc).__name__
@@ -190,6 +199,45 @@ async def cleanup_email_outbox(ctx: dict) -> int:
             deleted = await cleanup_old_sent(session, older_than_days=30)
         logger.info("email_outbox.cleanup", deleted=deleted)
         return deleted
+
+
+def _is_helpdesk_outbound(row: dict) -> bool:
+    """Принадлежит ли outbox-строка контуру helpdesk (собственный SMTP, 086).
+
+    Два пути распознавания:
+
+    * ``kind=helpdesk`` — ответы заявителю, уведомления о назначении/создании
+      (продюсеры в ``services/helpdesk/outbound.py``);
+    * ``kind=generic`` c ``payload.smtp_source == "helpdesk"`` — внутренние
+      письма агентам (digest-сводка и уведомление о новой заявке; продюсеры в
+      ``services/helpdesk/digest.py`` и ``notifications.py``). Маркер нужен,
+      потому что ``claim_pending`` не возвращает ``related_resource_type``, а
+      отличить generic-от-helpdesk от generic-от-news/meetings иначе нельзя.
+    """
+    if row["kind"] == KIND_HELPDESK:
+        return True
+    payload = row.get("payload") or {}
+    return payload.get("smtp_source") == "helpdesk"
+
+
+def _cfg_for_row(row: dict, portal_cfg: dict, helpdesk_cfg: dict | None) -> dict:
+    """Выбрать SMTP-cfg для строки: helpdesk → собственный, иначе порталный.
+
+    Если строка принадлежит контуру helpdesk, но собственный SMTP не настроен
+    (``helpdesk_cfg is None``) — fallback на общий порталный cfg (backward-
+    compatible: helpdesk-почта продолжает уходить, как до миграции 086). Логируем
+    warning для наблюдаемости — админ видит, что письма идут не с support-ящика.
+    """
+    if _is_helpdesk_outbound(row):
+        if helpdesk_cfg is not None:
+            return helpdesk_cfg
+        logger.warning(
+            "email_outbox.helpdesk_smtp_fallback",
+            outbox_id=str(row["id"]),
+            kind=row["kind"],
+            reason="helpdesk SMTP not configured, falling back to portal-wide SMTP",
+        )
+    return portal_cfg
 
 
 def _sanitize_header(value: str) -> str:

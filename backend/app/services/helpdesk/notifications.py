@@ -399,6 +399,7 @@ async def notify_ticket_created_email(
             subject=subject,
             body_html=html_body,
             body_text=plain_body,
+            payload={"smtp_source": "helpdesk"},
             related_resource_type="helpdesk_ticket",
             related_resource_id=ticket.id,
             created_by_user_id=agent.id,

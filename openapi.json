@@ -4898,7 +4898,7 @@
         "type": "string"
       },
       "HelpdeskMailboxSettingsIn": {
-        "description": "Конфиг support-mailbox. ``imap_password`` — write-only:\n\n* при **создании** записи (первый ``PUT``) — обязателен;\n* при **обновлении** — опционален; ``None`` = «оставить прежний шифр».",
+        "description": "Конфиг support-mailbox. ``imap_password`` — write-only:\n\n* при **создании** записи (первый ``PUT``) — обязателен;\n* при **обновлении** — опционален; ``None`` = «оставить прежний шифр».\n\nSMTP-блок (миграция ``086``) целиком опционален: пустой ``smtp_host`` =\nfallback на общий SMTP портала (``/data/branding/email-settings.json``).\n``smtp_password`` — write-only, как ``imap_password``, но не обязателен\nдаже при создании (SMTP может работать без auth во внутрикорпоративном\nрелейе; при пустом ``smtp_host`` игнорируется).",
         "properties": {
           "delete_after_fetch": {
             "default": false,
@@ -4955,6 +4955,60 @@
             "minimum": 30.0,
             "title": "Poll Interval Seconds",
             "type": "integer"
+          },
+          "smtp_host": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Smtp Host"
+          },
+          "smtp_password": {
+            "anyOf": [
+              {
+                "maxLength": 512,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Smtp Password"
+          },
+          "smtp_port": {
+            "default": 25,
+            "maximum": 65535.0,
+            "minimum": 1.0,
+            "title": "Smtp Port",
+            "type": "integer"
+          },
+          "smtp_use_starttls": {
+            "default": false,
+            "title": "Smtp Use Starttls",
+            "type": "boolean"
+          },
+          "smtp_use_tls": {
+            "default": false,
+            "title": "Smtp Use Tls",
+            "type": "boolean"
+          },
+          "smtp_username": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Smtp Username"
           },
           "support_address": {
             "$ref": "#/components/schemas/app__schemas__helpdesk__Email__1"
@@ -5037,6 +5091,48 @@
             "default": 60,
             "title": "Poll Interval Seconds",
             "type": "integer"
+          },
+          "smtp_host": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Smtp Host"
+          },
+          "smtp_password_set": {
+            "default": false,
+            "title": "Smtp Password Set",
+            "type": "boolean"
+          },
+          "smtp_port": {
+            "default": 25,
+            "title": "Smtp Port",
+            "type": "integer"
+          },
+          "smtp_use_starttls": {
+            "default": false,
+            "title": "Smtp Use Starttls",
+            "type": "boolean"
+          },
+          "smtp_use_tls": {
+            "default": false,
+            "title": "Smtp Use Tls",
+            "type": "boolean"
+          },
+          "smtp_username": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Smtp Username"
           },
           "support_address": {
             "anyOf": [
@@ -22697,6 +22793,58 @@
           }
         },
         "summary": "Test Mailbox Connection",
+        "tags": [
+          "helpdesk"
+        ]
+      }
+    },
+    "/api/v1/helpdesk/settings/mailbox/test-smtp": {
+      "post": {
+        "description": "Проверка SMTP-соединения (собственный исходящий контур helpdesk, миграция 086).\n\nВозвращает ``{ok, detail}`` — как ``POST /mailbox/test`` для IMAP. Если SMTP\nне настроен (``smtp_host`` пуст), возвращает ``{ok: false, error: ...}`` с\nпояснением «используется общий SMTP портала» — это валидное состояние\n(fallback), а не ошибка конфигурации. Маскировка исключений — как у IMAP-test\n(``str(exc)`` не возвращается, defence-in-depth против утечки кредов).",
+        "operationId": "test_mailbox_smtp_connection_api_v1_helpdesk_settings_mailbox_test_smtp_post",
+        "parameters": [
+          {
+            "in": "cookie",
+            "name": "portal_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Portal Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Test Mailbox Smtp Connection Api V1 Helpdesk Settings Mailbox Test Smtp Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Test Mailbox Smtp Connection",
         "tags": [
           "helpdesk"
         ]

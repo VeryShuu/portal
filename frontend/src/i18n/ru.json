@@ -1435,7 +1435,18 @@
         "notConfigured": "Ящик ещё не настроен. Заполните параметры и сохраните.",
         "test": "Проверить соединение",
         "testOk": "Соединение успешно",
-        "testFail": "Соединение не удалось"
+        "testFail": "Соединение не удалось",
+        "smtpTitle": "Отправка почты (SMTP)",
+        "smtpHint": "SMTP-настройки для отправки ответов заявителям и уведомлений агентам с адреса поддержки. Если не заполнено — используется общий SMTP портала.",
+        "smtpHost": "SMTP-сервер",
+        "smtpPort": "SMTP-порт",
+        "smtpUsername": "Имя пользователя SMTP",
+        "smtpPassword": "Пароль SMTP",
+        "useTls": "SSL/TLS",
+        "useStarttls": "STARTTLS",
+        "testSmtp": "Проверить SMTP",
+        "testSmtpOk": "SMTP-соединение успешно",
+        "testSmtpFail": "SMTP-соединение не удалось"
       },
       "max": {
         "title": "Уведомления в MAX",
