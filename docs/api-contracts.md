@@ -798,6 +798,21 @@ Soft delete комментария.
 → 422 { "detail": "Unsupported image type" }
 ```
 
+#### POST /api/v1/kb/articles/{id}/media/remote `[kb_editor | admin]`
+Re-host внешней картинки в локальное хранилище. Используется редактором при
+paste/drop картинки с внешнего URL (тег `<img src>` из буфера при «Копировать
+изображение» / Ctrl+C на картинке со страницы): сервер скачивает её
+(SSRF-guard: блок private/loopback/cloud-metadata IP, двойной DNS-резолв против
+DNS-rebinding, ручной обход редиректов с ре-валидацией каждого hop) и сохраняет
+локально, чтобы статья не зависела от стороннего URL. Контракт ответа идентичен
+file-upload.
+```json
+← { "url": "https://example.com/photo.png" }
+→ 201 { "url": "/kb/media/{article_id}/{uuid}.png", "filename": "..." }
+→ 413 { "detail": "Image too large" }
+→ 422 { "detail": "Could not fetch the image" }
+```
+
 #### GET /kb/media/{article_id}/{filename}
 Отдача медиа-файла через Nginx `X-Accel-Redirect`. Требует аутентификации и viewer-права на статью.
 ```

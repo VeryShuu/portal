@@ -9183,6 +9183,23 @@
         "title": "RecurrenceRule",
         "type": "object"
       },
+      "RemoteMediaRequest": {
+        "description": "Request to re-host an externally hosted image into KB media storage.\n\nThe server downloads the image (SSRF-guarded) and stores it locally, so the\narticle no longer depends on a third-party URL that may disappear, be\ninaccessible from VPN, or carry tracking params.",
+        "properties": {
+          "url": {
+            "maxLength": 2048,
+            "minLength": 8,
+            "pattern": "^https?://",
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "title": "RemoteMediaRequest",
+        "type": "object"
+      },
       "RenameIn": {
         "properties": {
           "name": {
@@ -25304,6 +25321,76 @@
           }
         },
         "summary": "Upload Article Media",
+        "tags": [
+          "knowledge-base"
+        ]
+      }
+    },
+    "/api/v1/kb/articles/{article_id}/media/remote": {
+      "post": {
+        "description": "Re-host externally hosted image into KB media (SSRF-guarded fetch).\n\nИспользуется редактором при paste/drop внешней картинки (``<img src>``,\nURI-list): сервер скачивает её и сохраняет локально, чтобы статья не\nзависела от стороннего URL (может протухнуть / быть недоступным из VPN /\nтянуть трекеры). Контракт ответа идентичен file-upload.",
+        "operationId": "upload_remote_media_api_v1_kb_articles__article_id__media_remote_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "article_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Article Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "portal_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Portal Session"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RemoteMediaRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaUploadResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Upload Remote Media",
         "tags": [
           "knowledge-base"
         ]

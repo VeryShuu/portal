@@ -23,6 +23,7 @@ __all__ = [
     "iter_upload_chunks",
     "magic",
     "safe_join_within",
+    "save_bytes_to_path",
     "stream_upload_to_path",
 ]
 
@@ -119,6 +120,76 @@ async def iter_upload_chunks(file: UploadFile) -> AsyncIterator[bytes]:
         if not chunk:
             break
         yield chunk
+
+
+async def save_bytes_to_path(
+    data: bytes,
+    base_dir: Path,
+    rel_segments: tuple[str, ...],
+    *,
+    max_size: int,
+    allowed_mimes: AbstractSet[str] | None = None,
+) -> tuple[int, str | None]:
+    """Write already-in-memory ``data`` to ``base_dir / *rel_segments`` with guards.
+
+    Mirrors the contract of :func:`stream_upload_to_path` but takes ``bytes``
+    (e.g. re-hosted remote image fetched server-side) instead of a streaming
+    ``UploadFile``. MIME detection uses libmagic on the head, identical to the
+    streaming variant, so rejected payloads never reach the filesystem.
+
+    The destination is built **inside** via :func:`safe_join_within` (the
+    project's recognized ``py/path-injection`` guard) from the trusted
+    ``base_dir`` and ``rel_segments``. Accepting relative segments rather than
+    a pre-built ``dest`` keeps user-derived components (article id, sanitized
+    filename) flowing through the recognized sanitizer, so no tainted path
+    reaches a FS sink — this is what closes the CodeQL alert.
+
+    Returns ``(bytes_written, detected_mime)``.
+    Raises ``413`` on overflow, ``422`` on disallowed real MIME, ``404`` on
+    path escape.
+    """
+    if len(data) > max_size:
+        logger.warning(
+            "upload.rejected.too_large",
+            base=str(base_dir),
+            segments=list(rel_segments),
+            written=len(data),
+            max_size=max_size,
+        )
+        raise HTTPException(
+            status_code=413,
+            detail=f"File too large (max {max_size} bytes)",
+        )
+
+    head = data[:2048]
+    detected: str | None = None
+    if magic is not None and head:
+        try:
+            detected = magic.from_buffer(head, mime=True)
+        except Exception:
+            detected = None
+
+    if allowed_mimes is not None and detected is not None and detected not in allowed_mimes:
+        logger.warning(
+            "upload.rejected.mime_not_allowed",
+            base=str(base_dir),
+            segments=list(rel_segments),
+            detected_mime=detected,
+        )
+        raise HTTPException(
+            status_code=422,
+            detail=f"Unsupported file type: {detected}",
+        )
+
+    # dest построен из доверенного base_dir + сегментов через признанный CodeQL
+    # py/path-injection guard — tainted-компоненты (article_id, sanitized name)
+    # проходят валидацию здесь, до FS-sinks ниже.
+    dest = safe_join_within(base_dir, *rel_segments)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    async with aiofiles.open(dest, "wb") as out:
+        await out.write(data)
+
+    return len(data), detected
 
 
 def safe_join_within(base: Path, *segments: str) -> Path:

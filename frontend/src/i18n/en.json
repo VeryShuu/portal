@@ -1564,6 +1564,7 @@
     },
     "imageTooLarge": "File is too large. Maximum size exceeded.",
     "imageUploadError": "Failed to upload image",
+    "imageFetchFailed": "Could not copy the image. Paste it as a file instead.",
     "bold": "Bold",
     "italic": "Italic",
     "strike": "Strikethrough",

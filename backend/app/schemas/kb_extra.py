@@ -62,6 +62,17 @@ class MediaUploadResponse(BaseModel):
     filename: str
 
 
+class RemoteMediaRequest(BaseModel):
+    """Request to re-host an externally hosted image into KB media storage.
+
+    The server downloads the image (SSRF-guarded) and stores it locally, so the
+    article no longer depends on a third-party URL that may disappear, be
+    inaccessible from VPN, or carry tracking params.
+    """
+
+    url: str = Field(..., pattern=r"^https?://", min_length=8, max_length=2048)
+
+
 class UserSearchResult(BaseModel):
     subject_type: str
     subject_id: str
