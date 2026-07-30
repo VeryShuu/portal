@@ -87,7 +87,9 @@ import { useDebounceFn } from '../../composables/useDebounceFn'
 import { parseApiError } from '../../utils/parseApiError'
 import PasteParticipantsModal from './PasteParticipantsModal.vue'
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+// Whitelist разрешённых символов (как в backend/app/schemas/user._EMAIL_RE) —
+// версия [^\s@]+ уязвима к ReDoS на специальном вводе.
+const EMAIL_RE = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,63}$/
 const EXTERNAL_PREFIX = 'ext:'
 
 const props = defineProps<{

@@ -31,8 +31,11 @@ logger = get_logger(__name__)
 
 # Разделители записей при bulk-resolve: запятая, точка с запятой, перенос, таб.
 _BULK_SPLIT_RE = re.compile(r"[,\n;\t]+")
-# Простейшая проверка email — бэкенд дособлюдает EmailStr в InvitedUser.
-_BULK_EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
+# Классификация токена как email. Используем whitelist разрешённых символов
+# (как в app.schemas.user._EMAIL_RE) вместо [^\s@]+ — последний уязвим к ReDoS
+# (CodeQL: polynomial regexp on uncontrolled data). Точную валидацию домена
+# всё равно выполняет EmailStr в InvitedUser.
+_BULK_EMAIL_RE = re.compile(r"^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,63}$")
 # Верхний порог записей для одной bulk-операции (поверх max_length=50 в схеме
 # защищает от раздувания одним элементом с десятками записей).
 _BULK_MAX_TOKENS = 50
