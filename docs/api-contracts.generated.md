@@ -1,5 +1,5 @@
 <!-- AUTO-GENERATED — do not edit manually. Run: cd backend && python -m scripts.generate_api_contracts_doc --output ../docs/api-contracts.generated.md -->
-<!-- Generated: 2026-07-28 20:04 UTC -->
+<!-- Generated: 2026-07-30 07:48 UTC -->
 
 # API Contracts (auto-generated)
 
@@ -2800,6 +2800,42 @@ ACL: только свои тикеты (``fetch_ticket_for_user`` → 404 дл�
 | 200 | Successful Response | `TicketAgentOut` |
 | 422 | Validation Error | `HTTPValidationError` |
 
+### `DELETE /api/v1/helpdesk/tickets/{ticket_id}`
+
+**Полностью удалить заявку (только администратор)**
+
+Hard-delete тикета со всеми данными (БД + файлы диска).
+
+**Только администратор** (``AdminDep`` — строго ``role == "admin"``, иначе
+403). Не доступно агентам поддержки и заявителю — это необратимая операция
+(спам-очистка / GDPR-удаление), в отличие от ``close``/``reopen`` которые
+делает агент.
+
+Удаляет (через ``services.helpdesk.tickets.delete_ticket`` + CASCADE в БД):
+* строку ``helpdesk_tickets``;
+* каскадно — сообщения, вложения (записи), marker-reads;
+* файлы вложений и inline-картинок на диске (``delete_ticket_dir``,
+  best-effort).
+
+Не трогает архив и не шлёт уведомлений — тихое удаление, фиксируется только
+в журнале аудита как ``helpdesk.ticket_deleted``. Возвращает ``204`` без
+тела. Несуществующий ``ticket_id`` → ``404`` (через ``_load_agent_ticket``,
+единый loader с агентскими эндпоинтами — не раскрывает существование).
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `ticket_id` | path | `string` | ✓ |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 204 | Successful Response |  |
+| 422 | Validation Error | `HTTPValidationError` |
+
 ### `POST /api/v1/helpdesk/tickets/{ticket_id}/assign`
 
 **Назначить ответственного**
@@ -3553,6 +3589,39 @@ Content-Type: `multipart/form-data` — schema: `Body_upload_article_media_api_v
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `file` | string | ✓ |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 201 | Successful Response | `MediaUploadResponse` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `POST /api/v1/kb/articles/{article_id}/media/remote`
+
+**Upload Remote Media**
+
+Re-host externally hosted image into KB media (SSRF-guarded fetch).
+
+Используется редактором при paste/drop внешней картинки (``<img src>``,
+URI-list): сервер скачивает её и сохраняет локально, чтобы статья не
+зависела от стороннего URL (может протухнуть / быть недоступным из VPN /
+тянуть трекеры). Контракт ответа идентичен file-upload.
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `article_id` | path | `string` | ✓ |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Request Body**
+
+Content-Type: `application/json` — schema: `RemoteMediaRequest`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `url` | string | ✓ |  |
 
 **Responses**
 

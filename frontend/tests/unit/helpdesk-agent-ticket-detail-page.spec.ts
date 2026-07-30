@@ -12,12 +12,16 @@ const ru = {
     statusChanged: 'Статус изменён',
     agentReply: 'Ответ агенту',
     replySent: 'Отправлено',
+    delete: 'Удалить заявку',
+    deleted: 'Заявка удалена',
+    deleteConfirm: 'Удалить заявку #TKT-{number}?',
     statuses: {
       open: 'В работе',
       pending: 'Ожидание',
       closed: 'Закрыто',
     },
   },
+  common: { cancel: 'Отмена' },
   errors: { generic: 'Ошибка' },
 }
 
@@ -44,6 +48,15 @@ vi.mock('../../src/router', () => ({
 
 vi.mock('@vicons/ionicons5', () => ({
   ArrowBackOutline: { template: '<span />' },
+  TrashOutline: { template: '<span class="trash-icon" />' },
+}))
+
+// Auth store mock: по умолчанию не-admin (кнопка удаления не рендерится —
+// существующие тесты не ломаются). Тесты admin-функционала переопределяют
+// isAdmin через authIsAdminMock.
+const authIsAdminMock = { value: false }
+vi.mock('../../src/stores/auth', () => ({
+  useAuthStore: () => ({ isAdmin: authIsAdminMock.value }),
 }))
 
 const messageError = vi.fn()
@@ -69,6 +82,22 @@ vi.mock('naive-ui', () => ({
     props: ['value', 'options', 'size', 'loading'],
     emits: ['update:value'],
   },
+  // NPopconfirm: рендерит trigger-слот и контент. Клик по trigger-кнопке
+  // эмитит positive-click наверх — имитация confirm в один клик (реальный
+  // компонент сначала показывает попап; для unit-теста важна логика хендлера
+  // onDelete, а не UI-флоу попапа).
+  NPopconfirm: {
+    template:
+      '<div class="n-popconfirm"><slot name="trigger" /><slot /></div>',
+    props: ['positiveText', 'negativeText'],
+    emits: ['positive-click'],
+    mounted() {
+      // Прокидываем клик по триггер-кнопке как positive-click родителю.
+      this.$el.querySelector('.n-button')?.addEventListener('click', () => {
+        this.$emit('positive-click')
+      })
+    },
+  },
   useMessage: () => ({ error: messageError, success: messageSuccess }),
 }))
 
@@ -76,13 +105,17 @@ const fetchAgentTicketMock = vi.fn()
 const takeTicketMock = vi.fn()
 const changeTicketStatusMock = vi.fn()
 const reopenTicketMock = vi.fn()
+const deleteTicketMock = vi.fn()
 const replyAgentTicketMock = vi.fn()
+const markTicketReadMock = vi.fn()
 vi.mock('../../src/api/helpdesk', () => ({
   fetchAgentTicket: (...args: unknown[]) => fetchAgentTicketMock(...args),
   takeTicket: (...args: unknown[]) => takeTicketMock(...args),
   changeTicketStatus: (...args: unknown[]) => changeTicketStatusMock(...args),
   reopenTicket: (...args: unknown[]) => reopenTicketMock(...args),
+  deleteTicket: (...args: unknown[]) => deleteTicketMock(...args),
   replyAgentTicket: (...args: unknown[]) => replyAgentTicketMock(...args),
+  markTicketRead: (...args: unknown[]) => markTicketReadMock(...args),
 }))
 
 import HelpdeskAgentTicketDetailPage from '../../src/pages/helpdesk/HelpdeskAgentTicketDetailPage.vue'
@@ -126,11 +159,18 @@ function mountPage() {
 describe('HelpdeskAgentTicketDetailPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    // По умолчанию — не-admin (кнопка удаления скрыта; существующие тесты
+    // проверяют take/reopen/status/reply без admin-функционала).
+    authIsAdminMock.value = false
     fetchAgentTicketMock.mockResolvedValue(makeTicket())
     takeTicketMock.mockResolvedValue(undefined)
     changeTicketStatusMock.mockResolvedValue(undefined)
     reopenTicketMock.mockResolvedValue(undefined)
+    deleteTicketMock.mockResolvedValue(undefined)
     replyAgentTicketMock.mockResolvedValue(undefined)
+    // markTicketRead вызывается в load() как best-effort (void ... .catch());
+    // мок возвращающий resolved promise — чтобы .catch не падал на undefined.
+    markTicketReadMock.mockResolvedValue(undefined)
   })
 
   it('загружает тикет по id из route.params', async () => {
@@ -245,5 +285,69 @@ describe('HelpdeskAgentTicketDetailPage', () => {
     mountPage()
     await flushPromises()
     expect(messageError).toHaveBeenCalled()
+  })
+
+  // ── Admin-only: полное удаление заявки ───────────────────────────────────
+
+  it('кнопка удаления скрыта для не-админа', async () => {
+    authIsAdminMock.value = false
+    const wrapper = mountPage()
+    await flushPromises()
+    // Кнопки с лейблом «Удалить заявку» нет — нет прав admin.
+    expect(
+      wrapper.findAll('.n-button').find((b) => b.text().includes('Удалить заявку')),
+    ).toBeUndefined()
+  })
+
+  it('кнопка удаления видна только для админа', async () => {
+    authIsAdminMock.value = true
+    const wrapper = mountPage()
+    await flushPromises()
+    const deleteBtn = wrapper
+      .findAll('.n-button')
+      .find((b) => b.text().includes('Удалить заявку'))
+    expect(deleteBtn).toBeDefined()
+    // Иконка-мусорка рендерится (type=error, ghost — деструктивная операция).
+    expect(wrapper.find('.trash-icon').exists()).toBe(true)
+  })
+
+  it('onDelete вызывает deleteTicket, success и переход в инбокс', async () => {
+    authIsAdminMock.value = true
+    const wrapper = mountPage()
+    await flushPromises()
+    deleteTicketMock.mockClear()
+    mockRouterPush.mockClear()
+
+    // Клик на кнопку удаления (trigger NPopconfirm) → мок popconfirm эмитит
+    // positive-click → вызывается onDelete (hard-delete админом).
+    const deleteBtn = wrapper
+      .findAll('.n-button')
+      .find((b) => b.text().includes('Удалить заявку'))!
+    await deleteBtn.trigger('click')
+    await flushPromises()
+
+    expect(deleteTicketMock).toHaveBeenCalledWith('ticket-99')
+    expect(messageSuccess).toHaveBeenCalled()
+    // После удаления — переход в инбокс (карточка больше недоступна, reload не
+    // вызывается — иначе 404 на исчезнувший тикет).
+    expect(mockRouterPush).toHaveBeenCalledWith('/helpdesk')
+  })
+
+  it('onDelete показывает ошибку при провале и остаётся на странице', async () => {
+    authIsAdminMock.value = true
+    deleteTicketMock.mockRejectedValue(new Error('forbidden'))
+    const wrapper = mountPage()
+    await flushPromises()
+    mockRouterPush.mockClear()
+
+    const deleteBtn = wrapper
+      .findAll('.n-button')
+      .find((b) => b.text().includes('Удалить заявку'))!
+    await deleteBtn.trigger('click')
+    await flushPromises()
+
+    expect(messageError).toHaveBeenCalled()
+    // При ошибке — перехода нет (пользователь видит ошибку, тикет на месте).
+    expect(mockRouterPush).not.toHaveBeenCalled()
   })
 })
