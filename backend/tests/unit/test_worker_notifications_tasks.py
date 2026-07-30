@@ -4,11 +4,13 @@
 - _get_smtp_config: файл отсутствует → дефолт; файл валидный → значения; файл невалидный → дефолт.
 - send_email_notification: успешный путь, конфигурация TLS/STARTTLS/auth, ошибка smtp → re-raise.
 - notify_news_published: делегирование in-app SSE; нет redis → 0; ошибки проглатываются.
+- cleanup_notifications: отключение при retention<=0, проброс retention в service, сумма счётчиков.
 """
 
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -186,3 +188,85 @@ class TestNotifyNewsPublished:
                 news_title="N",
             )
         assert sent == 0
+
+
+class TestCleanupNotifications:
+    """Retention-очистка: проброс настроек в service и отключение при 0.
+
+    Патчится по полным путям (``app.core.…``), т.к. ``cleanup_notifications``
+    импортирует зависимости ленивно — как ``notify_news_published`` выше.
+    """
+
+    def _cfg(self, *, read: int, unread: int) -> SimpleNamespace:
+        return SimpleNamespace(
+            notifications_read_retention_days=read,
+            notifications_unread_retention_days=unread,
+        )
+
+    def _session_cm(self) -> MagicMock:
+        db_mock = AsyncMock()
+        session_cm = MagicMock()
+        session_cm.__aenter__ = AsyncMock(return_value=db_mock)
+        session_cm.__aexit__ = AsyncMock(return_value=None)
+        begin_cm = MagicMock()
+        begin_cm.__aenter__ = AsyncMock(return_value=None)
+        begin_cm.__aexit__ = AsyncMock(return_value=None)
+        db_mock.begin = MagicMock(return_value=begin_cm)
+        return session_cm
+
+    @pytest.mark.asyncio
+    async def test_disabled_when_both_retentions_le_zero(self):
+        cleanup_mock = AsyncMock()
+        with (
+            patch(
+                "app.core.system_config.load_system_settings",
+                return_value=self._cfg(read=0, unread=0),
+            ),
+            patch("app.services.notifications.cleanup_old_notifications", cleanup_mock),
+            patch("app.core.database.AsyncSessionLocal") as session_factory,
+        ):
+            result = await nt.cleanup_notifications({})
+
+        assert result == 0
+        cleanup_mock.assert_not_awaited()
+        session_factory.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_disabled_when_read_zero_and_unread_zero_independent(self):
+        # read=0 но unread>0 → НЕ отключена, cleanup зовётся с read=0.
+        cleanup_mock = AsyncMock(return_value={"read_deleted": 0, "unread_deleted": 3})
+        with (
+            patch(
+                "app.core.system_config.load_system_settings",
+                return_value=self._cfg(read=0, unread=90),
+            ),
+            patch("app.services.notifications.cleanup_old_notifications", cleanup_mock),
+            patch("app.core.database.AsyncSessionLocal", return_value=self._session_cm()),
+        ):
+            result = await nt.cleanup_notifications({})
+
+        assert result == 3
+        cleanup_mock.assert_awaited_once()
+        kwargs = cleanup_mock.await_args.kwargs
+        assert kwargs["read_retention_days"] == 0
+        assert kwargs["unread_retention_days"] == 90
+
+    @pytest.mark.asyncio
+    async def test_sums_read_and_unread_deleted(self):
+        cleanup_mock = AsyncMock(return_value={"read_deleted": 12, "unread_deleted": 5})
+        with (
+            patch(
+                "app.core.system_config.load_system_settings",
+                return_value=self._cfg(read=30, unread=90),
+            ),
+            patch("app.services.notifications.cleanup_old_notifications", cleanup_mock),
+            patch("app.core.database.AsyncSessionLocal", return_value=self._session_cm()),
+        ):
+            result = await nt.cleanup_notifications({})
+
+        assert result == 17
+        cleanup_mock.assert_awaited_once_with(
+            cleanup_mock.await_args.args[0],
+            read_retention_days=30,
+            unread_retention_days=90,
+        )

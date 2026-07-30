@@ -382,6 +382,7 @@ tests/integration/test_migrations.py::test_migration_revision_round_trip[081]
 tests/integration/test_migrations.py::test_migration_revision_round_trip[082]
 tests/integration/test_migrations.py::test_migration_revision_round_trip[083]
 tests/integration/test_migrations.py::test_migration_revision_round_trip[084]
+tests/integration/test_migrations.py::test_migration_revision_round_trip[085]
 tests/integration/test_migrations.py::test_migrations_full_lifecycle
 tests/integration/test_migrations.py::test_migrations_stepwise_down_up
 tests/integration/test_migrations_nightly.py::test_alembic_upgrade_head_on_clean_container
@@ -2772,17 +2773,6 @@ tests/unit/test_meetings_audit_unit.py::TestPushMeetingsAudit::test_db_failure_i
 tests/unit/test_meetings_audit_unit.py::TestPushMeetingsAudit::test_falls_back_to_client_host_when_no_forwarded_header
 tests/unit/test_meetings_audit_unit.py::TestPushMeetingsAudit::test_no_request_no_user
 tests/unit/test_meetings_audit_unit.py::TestPushMeetingsAudit::test_writes_row_with_forwarded_ip_and_user_metadata
-tests/unit/test_meetings_bookings_helpers.py::test_compute_diff_conservation_and_disjoint
-tests/unit/test_meetings_bookings_helpers.py::test_compute_diff_filters_all_malformed_entries
-tests/unit/test_meetings_bookings_helpers.py::test_compute_diff_non_participant_changed_passthrough
-tests/unit/test_meetings_bookings_helpers.py::test_compute_diff_reflexive_all_unchanged
-tests/unit/test_meetings_bookings_helpers.py::test_compute_diff_symmetric_direction_swap
-tests/unit/test_meetings_bookings_helpers.py::test_date_range_converts_non_utc_timezone_to_utc
-tests/unit/test_meetings_bookings_helpers.py::test_date_range_handles_dst_timezone
-tests/unit/test_meetings_bookings_helpers.py::test_date_range_returns_full_day_bounds_in_utc
-tests/unit/test_meetings_bookings_helpers.py::test_to_utc_assigns_utc_to_naive_datetime
-tests/unit/test_meetings_bookings_helpers.py::test_to_utc_converts_non_utc_aware_to_utc
-tests/unit/test_meetings_bookings_helpers.py::test_to_utc_keeps_aware_datetime_unchanged_in_utc
 tests/unit/test_meetings_bookings_limit.py::TestBookingsListLimitCap::test_default_and_bounds
 tests/unit/test_meetings_bookings_limit.py::TestBookingsListLimitCap::test_my_endpoint_cap_unchanged
 tests/unit/test_meetings_guard.py::TestMeetingsGuard::test_disabled_returns_404
@@ -4250,6 +4240,18 @@ tests/unit/test_system_settings.py::TestSystemSettingsPatch::test_invalid_cidr_r
 tests/unit/test_system_settings.py::TestSystemSettingsPatch::test_invalid_timezone_raises
 tests/unit/test_system_settings.py::TestSystemSettingsPatch::test_none_cidr_passes
 tests/unit/test_system_settings.py::TestSystemSettingsPatch::test_none_timezone_passes
+tests/unit/test_system_settings.py::TestSystemSettingsPatch::test_notifications_read_retention_rejects_out_of_range[-1]
+tests/unit/test_system_settings.py::TestSystemSettingsPatch::test_notifications_read_retention_rejects_out_of_range[3651]
+tests/unit/test_system_settings.py::TestSystemSettingsPatch::test_notifications_read_retention_rejects_out_of_range[99999]
+tests/unit/test_system_settings.py::TestSystemSettingsPatch::test_notifications_retention_accepts_valid_bounds[0-0]
+tests/unit/test_system_settings.py::TestSystemSettingsPatch::test_notifications_retention_accepts_valid_bounds[0-90]
+tests/unit/test_system_settings.py::TestSystemSettingsPatch::test_notifications_retention_accepts_valid_bounds[30-0]
+tests/unit/test_system_settings.py::TestSystemSettingsPatch::test_notifications_retention_accepts_valid_bounds[30-90]
+tests/unit/test_system_settings.py::TestSystemSettingsPatch::test_notifications_retention_accepts_valid_bounds[3650-3650]
+tests/unit/test_system_settings.py::TestSystemSettingsPatch::test_notifications_retention_defaults_to_none
+tests/unit/test_system_settings.py::TestSystemSettingsPatch::test_notifications_unread_retention_rejects_out_of_range[-1]
+tests/unit/test_system_settings.py::TestSystemSettingsPatch::test_notifications_unread_retention_rejects_out_of_range[3651]
+tests/unit/test_system_settings.py::TestSystemSettingsPatch::test_notifications_unread_retention_rejects_out_of_range[99999]
 tests/unit/test_system_settings.py::TestSystemSettingsPatch::test_patch_merges_into_current
 tests/unit/test_system_settings.py::TestSystemSettingsPatch::test_patch_secret_mask_keeps_existing
 tests/unit/test_system_settings.py::TestSystemSettingsPatch::test_patch_secret_new_value_updates
@@ -4486,6 +4488,9 @@ tests/unit/test_worker_news_tasks.py::TestSyncUsersFromKeycloak::test_groups_bul
 tests/unit/test_worker_news_tasks.py::TestSyncUsersFromKeycloak::test_happy_path_one_page
 tests/unit/test_worker_news_tasks.py::TestSyncUsersFromKeycloak::test_missing_profile_claims_aggregated_not_per_user
 tests/unit/test_worker_news_tasks.py::TestSyncUsersFromKeycloak::test_records_error_status_in_redis_when_loop_fails
+tests/unit/test_worker_notifications_tasks.py::TestCleanupNotifications::test_disabled_when_both_retentions_le_zero
+tests/unit/test_worker_notifications_tasks.py::TestCleanupNotifications::test_disabled_when_read_zero_and_unread_zero_independent
+tests/unit/test_worker_notifications_tasks.py::TestCleanupNotifications::test_sums_read_and_unread_deleted
 tests/unit/test_worker_notifications_tasks.py::TestGetSmtpConfig::test_corrupt_file_falls_back_to_defaults
 tests/unit/test_worker_notifications_tasks.py::TestGetSmtpConfig::test_missing_file_returns_defaults
 tests/unit/test_worker_notifications_tasks.py::TestGetSmtpConfig::test_valid_file_returns_values
@@ -4543,6 +4548,7 @@ tests/unit/test_worker_tasks.py::TestRefreshCustomMetrics::test_no_pool_skips_db
 tests/unit/test_worker_tasks.py::TestRefreshCustomMetrics::test_photo_storage_calculated
 tests/unit/test_worker_tasks.py::TestRefreshCustomMetrics::test_returns_snapshot_dict
 tests/unit/test_worker_tasks.py::TestRefreshCustomMetrics::test_saves_snapshot_to_redis
+(pytest collection failed; check backend venv)
 ```
 
 ## Frontend Vitest (tests/unit/*.spec.ts)

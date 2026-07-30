@@ -478,6 +478,45 @@ class TestSystemSettingsPatch:
         p = SystemSettingsPatch(timezone=None)
         assert p.timezone is None
 
+    def test_notifications_retention_defaults_to_none(self):
+        from app.core.system_config import SystemSettingsPatch
+
+        p = SystemSettingsPatch()
+        assert p.notifications_read_retention_days is None
+        assert p.notifications_unread_retention_days is None
+
+    @pytest.mark.parametrize(
+        ("read", "unread"),
+        [(0, 0), (0, 90), (30, 0), (30, 90), (3650, 3650)],
+    )
+    def test_notifications_retention_accepts_valid_bounds(self, read, unread):
+        from app.core.system_config import SystemSettingsPatch
+
+        p = SystemSettingsPatch(
+            notifications_read_retention_days=read,
+            notifications_unread_retention_days=unread,
+        )
+        assert p.notifications_read_retention_days == read
+        assert p.notifications_unread_retention_days == unread
+
+    @pytest.mark.parametrize("bad", [-1, 3651, 99999])
+    def test_notifications_read_retention_rejects_out_of_range(self, bad):
+        from pydantic import ValidationError
+
+        from app.core.system_config import SystemSettingsPatch
+
+        with pytest.raises(ValidationError):
+            SystemSettingsPatch(notifications_read_retention_days=bad)
+
+    @pytest.mark.parametrize("bad", [-1, 3651, 99999])
+    def test_notifications_unread_retention_rejects_out_of_range(self, bad):
+        from pydantic import ValidationError
+
+        from app.core.system_config import SystemSettingsPatch
+
+        with pytest.raises(ValidationError):
+            SystemSettingsPatch(notifications_unread_retention_days=bad)
+
     def test_patch_merges_into_current(self, tmp_settings_dir):
         from app.core.system_config import (
             _SECRET_MASK,

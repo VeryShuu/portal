@@ -160,6 +160,39 @@
     </div>
 
     <div class="branding-section">
+      <div class="branding-section__title">
+        {{ t('admin.system.notifRetentionTitle') }}
+      </div>
+      <div class="branding-section__hint">
+        {{ t('admin.system.notifRetentionHint') }}
+      </div>
+      <div class="branding-fields">
+        <div class="email-row-2">
+          <n-form-item
+            :label="t('admin.system.notifReadRetentionLabel')"
+            style="margin-bottom:0;flex:1"
+          >
+            <n-input-number
+              v-model:value="sysForm.notifications_read_retention_days"
+              :min="0"
+              :max="3650"
+            />
+          </n-form-item>
+          <n-form-item
+            :label="t('admin.system.notifUnreadRetentionLabel')"
+            style="margin-bottom:0;flex:1"
+          >
+            <n-input-number
+              v-model:value="sysForm.notifications_unread_retention_days"
+              :min="0"
+              :max="3650"
+            />
+          </n-form-item>
+        </div>
+      </div>
+    </div>
+
+    <div class="branding-section">
       <div class="email-actions">
         <n-button
           type="primary"
@@ -302,6 +335,8 @@ const sysForm = ref({
   kb_media_max_size_mb: 20,
   kb_attachment_max_size_mb: 50,
   kb_import_max_size_mb: 50,
+  notifications_read_retention_days: 30,
+  notifications_unread_retention_days: 90,
   phone_extract_regex: '',
 })
 
@@ -349,6 +384,8 @@ watch(sysSettingsData, (data) => {
     sysForm.value.kb_media_max_size_mb = data.kb_media_max_size_mb
     sysForm.value.kb_attachment_max_size_mb = data.kb_attachment_max_size_mb
     sysForm.value.kb_import_max_size_mb = data.kb_import_max_size_mb
+    sysForm.value.notifications_read_retention_days = data.notifications_read_retention_days
+    sysForm.value.notifications_unread_retention_days = data.notifications_unread_retention_days
     sysForm.value.phone_extract_regex = data.phone_extract_regex ?? ''
     sysLoadError.value = false
   }
@@ -388,6 +425,8 @@ async function saveSystemSettings() {
       kb_media_max_size_mb: sysForm.value.kb_media_max_size_mb,
       kb_attachment_max_size_mb: sysForm.value.kb_attachment_max_size_mb,
       kb_import_max_size_mb: sysForm.value.kb_import_max_size_mb,
+      notifications_read_retention_days: sysForm.value.notifications_read_retention_days,
+      notifications_unread_retention_days: sysForm.value.notifications_unread_retention_days,
       phone_extract_regex: sysForm.value.phone_extract_regex,
     })
     message.success(t('admin.system.saved'))
