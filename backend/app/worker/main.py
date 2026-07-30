@@ -39,6 +39,7 @@ from app.worker.tasks.metrics import (
 )
 from app.worker.tasks.news import close_expired_polls, sync_users_from_keycloak
 from app.worker.tasks.notifications import (
+    cleanup_notifications,
     notify_news_published,
     send_email_notification,
 )
@@ -173,6 +174,7 @@ class WorkerSettings:
         track_arq_job(close_expired_polls),
         track_arq_job(send_email_notification),
         track_arq_job(notify_news_published),
+        track_arq_job(cleanup_notifications),
         func(track_arq_job(process_photo_upload), timeout=300, max_tries=5),  # type: ignore[arg-type]  # arq: track_arq_job возвращает Callable, func ждёт WorkerCoroutine
         func(track_arq_job(cleanup_deleted_photos), timeout=300, max_tries=2),  # type: ignore[arg-type]  # arq: track_arq_job возвращает Callable, func ждёт WorkerCoroutine
         func(track_arq_job(generate_folder_zip), timeout=600, max_tries=2),  # type: ignore[arg-type]  # arq: track_arq_job возвращает Callable, func ждёт WorkerCoroutine
@@ -310,6 +312,12 @@ class WorkerSettings:
             "app.worker.tasks.messenger_outbox.cleanup_messenger_outbox",
             hour=4,
             minute=20,
+            second=0,
+        ),
+        cron(
+            "app.worker.tasks.notifications.cleanup_notifications",
+            hour=4,
+            minute=25,
             second=0,
         ),
         cron(

@@ -1,5 +1,5 @@
 <!-- AUTO-GENERATED — do not edit manually. Run: cd backend && python -m scripts.generate_api_contracts_doc --output ../docs/api-contracts.generated.md -->
-<!-- Generated: 2026-07-30 07:48 UTC -->
+<!-- Generated: 2026-07-30 11:04 UTC -->
 
 # API Contracts (auto-generated)
 
@@ -7609,6 +7609,8 @@ Content-Type: `application/json` — schema: `SystemSettingsIn`
 | `kb_attachment_max_size_mb` | integer |  |  |
 | `kb_import_max_size_mb` | integer |  |  |
 | `kb_trash_retention_days` | integer |  |  |
+| `notifications_read_retention_days` | integer |  |  |
+| `notifications_unread_retention_days` | integer |  |  |
 | `log_level` | string |  |  |
 | `log_force_json` | any |  |  |
 | `log_slow_request_ms` | integer |  |  |
@@ -7665,6 +7667,8 @@ Content-Type: `application/json` — schema: `SystemSettingsPatch`
 | `kb_attachment_max_size_mb` | any |  |  |
 | `kb_import_max_size_mb` | any |  |  |
 | `kb_trash_retention_days` | any |  |  |
+| `notifications_read_retention_days` | any |  |  |
+| `notifications_unread_retention_days` | any |  |  |
 | `log_level` | any |  |  |
 | `log_force_json` | any |  |  |
 | `log_slow_request_ms` | any |  |  |

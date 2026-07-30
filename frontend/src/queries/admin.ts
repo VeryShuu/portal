@@ -59,6 +59,8 @@ export interface AdminSystemSettings {
   nc_files_root: string
   kb_import_max_size_mb: number
   kb_trash_retention_days: number
+  notifications_read_retention_days: number
+  notifications_unread_retention_days: number
   metrics_token_set: boolean
   phone_extract_regex: string
   onboarding_enabled: boolean
@@ -357,6 +359,8 @@ export interface SystemSettingsUpdateDto {
   kb_media_max_size_mb: number
   kb_attachment_max_size_mb: number
   kb_import_max_size_mb: number
+  notifications_read_retention_days: number
+  notifications_unread_retention_days: number
   phone_extract_regex: string | null
 }
 

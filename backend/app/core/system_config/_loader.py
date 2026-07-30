@@ -106,6 +106,8 @@ def _to_out(s: SystemSettings) -> SystemSettingsOut:
         nc_files_root=s.nc_files_root,
         kb_import_max_size_mb=s.kb_import_max_size_mb,
         kb_trash_retention_days=s.kb_trash_retention_days,
+        notifications_read_retention_days=s.notifications_read_retention_days,
+        notifications_unread_retention_days=s.notifications_unread_retention_days,
         metrics_token_set=bool(s.metrics_token),
         phone_extract_regex=s.phone_extract_regex,
         onboarding_enabled=s.onboarding_enabled,
