@@ -382,6 +382,7 @@ tests/integration/test_migrations.py::test_migration_revision_round_trip[081]
 tests/integration/test_migrations.py::test_migration_revision_round_trip[082]
 tests/integration/test_migrations.py::test_migration_revision_round_trip[083]
 tests/integration/test_migrations.py::test_migration_revision_round_trip[084]
+tests/integration/test_migrations.py::test_migration_revision_round_trip[085]
 tests/integration/test_migrations.py::test_migrations_full_lifecycle
 tests/integration/test_migrations.py::test_migrations_stepwise_down_up
 tests/integration/test_migrations_nightly.py::test_alembic_upgrade_head_on_clean_container
@@ -4250,6 +4251,18 @@ tests/unit/test_system_settings.py::TestSystemSettingsPatch::test_invalid_cidr_r
 tests/unit/test_system_settings.py::TestSystemSettingsPatch::test_invalid_timezone_raises
 tests/unit/test_system_settings.py::TestSystemSettingsPatch::test_none_cidr_passes
 tests/unit/test_system_settings.py::TestSystemSettingsPatch::test_none_timezone_passes
+tests/unit/test_system_settings.py::TestSystemSettingsPatch::test_notifications_read_retention_rejects_out_of_range[-1]
+tests/unit/test_system_settings.py::TestSystemSettingsPatch::test_notifications_read_retention_rejects_out_of_range[3651]
+tests/unit/test_system_settings.py::TestSystemSettingsPatch::test_notifications_read_retention_rejects_out_of_range[99999]
+tests/unit/test_system_settings.py::TestSystemSettingsPatch::test_notifications_retention_accepts_valid_bounds[0-0]
+tests/unit/test_system_settings.py::TestSystemSettingsPatch::test_notifications_retention_accepts_valid_bounds[0-90]
+tests/unit/test_system_settings.py::TestSystemSettingsPatch::test_notifications_retention_accepts_valid_bounds[30-0]
+tests/unit/test_system_settings.py::TestSystemSettingsPatch::test_notifications_retention_accepts_valid_bounds[30-90]
+tests/unit/test_system_settings.py::TestSystemSettingsPatch::test_notifications_retention_accepts_valid_bounds[3650-3650]
+tests/unit/test_system_settings.py::TestSystemSettingsPatch::test_notifications_retention_defaults_to_none
+tests/unit/test_system_settings.py::TestSystemSettingsPatch::test_notifications_unread_retention_rejects_out_of_range[-1]
+tests/unit/test_system_settings.py::TestSystemSettingsPatch::test_notifications_unread_retention_rejects_out_of_range[3651]
+tests/unit/test_system_settings.py::TestSystemSettingsPatch::test_notifications_unread_retention_rejects_out_of_range[99999]
 tests/unit/test_system_settings.py::TestSystemSettingsPatch::test_patch_merges_into_current
 tests/unit/test_system_settings.py::TestSystemSettingsPatch::test_patch_secret_mask_keeps_existing
 tests/unit/test_system_settings.py::TestSystemSettingsPatch::test_patch_secret_new_value_updates
@@ -4486,6 +4499,9 @@ tests/unit/test_worker_news_tasks.py::TestSyncUsersFromKeycloak::test_groups_bul
 tests/unit/test_worker_news_tasks.py::TestSyncUsersFromKeycloak::test_happy_path_one_page
 tests/unit/test_worker_news_tasks.py::TestSyncUsersFromKeycloak::test_missing_profile_claims_aggregated_not_per_user
 tests/unit/test_worker_news_tasks.py::TestSyncUsersFromKeycloak::test_records_error_status_in_redis_when_loop_fails
+tests/unit/test_worker_notifications_tasks.py::TestCleanupNotifications::test_disabled_when_both_retentions_le_zero
+tests/unit/test_worker_notifications_tasks.py::TestCleanupNotifications::test_disabled_when_read_zero_and_unread_zero_independent
+tests/unit/test_worker_notifications_tasks.py::TestCleanupNotifications::test_sums_read_and_unread_deleted
 tests/unit/test_worker_notifications_tasks.py::TestGetSmtpConfig::test_corrupt_file_falls_back_to_defaults
 tests/unit/test_worker_notifications_tasks.py::TestGetSmtpConfig::test_missing_file_returns_defaults
 tests/unit/test_worker_notifications_tasks.py::TestGetSmtpConfig::test_valid_file_returns_values

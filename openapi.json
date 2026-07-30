@@ -10939,6 +10939,20 @@
             "title": "Nextcloud Url",
             "type": "string"
           },
+          "notifications_read_retention_days": {
+            "default": 30,
+            "maximum": 3650.0,
+            "minimum": 0.0,
+            "title": "Notifications Read Retention Days",
+            "type": "integer"
+          },
+          "notifications_unread_retention_days": {
+            "default": 90,
+            "maximum": 3650.0,
+            "minimum": 0.0,
+            "title": "Notifications Unread Retention Days",
+            "type": "integer"
+          },
           "onboarding_enabled": {
             "default": true,
             "title": "Onboarding Enabled",
@@ -11098,6 +11112,14 @@
             "title": "Nextcloud Url",
             "type": "string"
           },
+          "notifications_read_retention_days": {
+            "title": "Notifications Read Retention Days",
+            "type": "integer"
+          },
+          "notifications_unread_retention_days": {
+            "title": "Notifications Unread Retention Days",
+            "type": "integer"
+          },
           "onboarding_enabled": {
             "title": "Onboarding Enabled",
             "type": "boolean"
@@ -11177,6 +11199,8 @@
           "nc_files_root",
           "kb_import_max_size_mb",
           "kb_trash_retention_days",
+          "notifications_read_retention_days",
+          "notifications_unread_retention_days",
           "metrics_token_set",
           "phone_extract_regex",
           "onboarding_enabled",
@@ -11391,6 +11415,32 @@
               }
             ],
             "title": "Nextcloud Url"
+          },
+          "notifications_read_retention_days": {
+            "anyOf": [
+              {
+                "maximum": 3650.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notifications Read Retention Days"
+          },
+          "notifications_unread_retention_days": {
+            "anyOf": [
+              {
+                "maximum": 3650.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notifications Unread Retention Days"
           },
           "onboarding_enabled": {
             "anyOf": [

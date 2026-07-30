@@ -38,6 +38,12 @@ class _SystemSettingsBase(BaseModel):
     kb_attachment_max_size_mb: int = Field(default=50, gt=0, le=1024)
     kb_import_max_size_mb: int = Field(default=50, gt=0, le=1024)
     kb_trash_retention_days: int = Field(default=30, ge=0, le=3650)
+    # Автоочистка уведомлений (cron notifications.cleanup_notifications, 04:25):
+    # прочитанные — старше read_retention_days, непрочитанные — старше
+    # unread_retention_days (правило 3×, как в почтовом клиенте). 0 = отключить
+    # соответствующую ветку независимо.
+    notifications_read_retention_days: int = Field(default=30, ge=0, le=3650)
+    notifications_unread_retention_days: int = Field(default=90, ge=0, le=3650)
     log_level: str = Field(default="INFO")
     log_force_json: bool | None = Field(default=None)
     log_slow_request_ms: int = Field(default=1000, ge=0)
@@ -137,6 +143,8 @@ class SystemSettingsPatch(BaseModel):
     kb_attachment_max_size_mb: int | None = Field(default=None, gt=0, le=1024)
     kb_import_max_size_mb: int | None = Field(default=None, gt=0, le=1024)
     kb_trash_retention_days: int | None = Field(default=None, ge=0, le=3650)
+    notifications_read_retention_days: int | None = Field(default=None, ge=0, le=3650)
+    notifications_unread_retention_days: int | None = Field(default=None, ge=0, le=3650)
     log_level: str | None = None
     log_force_json: bool | None = None
     log_slow_request_ms: int | None = Field(default=None, ge=0)
@@ -225,6 +233,8 @@ class SystemSettingsOut(BaseModel):
     nc_files_root: str
     kb_import_max_size_mb: int
     kb_trash_retention_days: int
+    notifications_read_retention_days: int
+    notifications_unread_retention_days: int
     metrics_token_set: bool
     phone_extract_regex: str
     onboarding_enabled: bool

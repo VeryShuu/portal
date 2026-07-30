@@ -106,3 +106,35 @@ async def notify_news_published(
 
     logger.info("notifications.news_inapp_sent", news_id=news_id, sent=sent)
     return sent
+
+
+async def cleanup_notifications(ctx: dict) -> int:
+    """Удаляет старые уведомления по retention-настройкам (политика C).
+
+    Читает ``notifications_read_retention_days`` / ``notifications_unread_retention_days``
+    из system_config при каждом запуске (свежие настройки без рестарта воркера).
+    Обе ветки ``<= 0`` → задача полностью отключена (early return 0). Транзакция
+    охватывает оба DELETE; ``AsyncSessionLocal`` и ``load_system_settings`` импортируются
+    лениво (разрыв import-cycle, как в ``notify_news_published``).
+    """
+    from app.core.database import AsyncSessionLocal
+    from app.core.system_config import load_system_settings
+    from app.services.notifications import cleanup_old_notifications
+
+    cfg = load_system_settings()
+    read_days = cfg.notifications_read_retention_days
+    unread_days = cfg.notifications_unread_retention_days
+
+    if read_days <= 0 and unread_days <= 0:
+        logger.info("notifications.cleanup.disabled", reason="retention_days_le_0")
+        return 0
+
+    async with AsyncSessionLocal() as db, db.begin():
+        stats = await cleanup_old_notifications(
+            db,
+            read_retention_days=read_days,
+            unread_retention_days=unread_days,
+        )
+
+    logger.info("notifications.cleanup.done", **stats)
+    return stats["read_deleted"] + stats["unread_deleted"]
