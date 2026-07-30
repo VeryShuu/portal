@@ -83,6 +83,44 @@ class InvitedUser(BaseModel):
     source: Literal["keycloak", "external"] = "keycloak"
 
 
+class ResolveParticipantsRequest(BaseModel):
+    """Запрос массового резолва списка ФИО/email в участников."""
+
+    queries: list[str] = Field(min_length=1, max_length=50)
+    """Каждый элемент может содержать несколько записей, разделённых
+    запятыми/точками с запятой/переносами/табами — токенизация на бэке."""
+
+
+class ResolveAmbiguousCandidate(BaseModel):
+    """Один кандидат для неоднозначного ФИО (пользователь выберет из списка)."""
+
+    user_id: str
+    full_name: str
+    email: EmailStr
+    department: str | None = None
+    position: str | None = None
+
+
+class ResolveAmbiguousItem(BaseModel):
+    """Неоднозначное ФИО с несколькими кандидатами."""
+
+    query: str
+    candidates: list[ResolveAmbiguousCandidate]
+
+
+class ResolveParticipantsResponse(BaseModel):
+    """Результат bulk-resolve.
+
+    - ``resolved``: найденные сотрудники + внешние участники (по неразрешённому email);
+    - ``unresolved``: ФИО, по которым не нашли ни одного сотрудника;
+    - ``ambiguous``: ФИО с несколькими кандидатами — пользователь выбирает вручную.
+    """
+
+    resolved: list[InvitedUser]
+    unresolved: list[str]
+    ambiguous: list[ResolveAmbiguousItem]
+
+
 class RecurrenceRule(BaseModel):
     freq: Literal["DAILY", "WEEKDAYS", "WEEKLY", "BIWEEKLY", "MONTHLY"]
     until_date: _Date

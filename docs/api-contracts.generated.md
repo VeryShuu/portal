@@ -1,5 +1,5 @@
 <!-- AUTO-GENERATED — do not edit manually. Run: cd backend && python -m scripts.generate_api_contracts_doc --output ../docs/api-contracts.generated.md -->
-<!-- Generated: 2026-07-30 11:04 UTC -->
+<!-- Generated: 2026-07-30 13:26 UTC -->
 
 # API Contracts (auto-generated)
 
@@ -4768,6 +4768,39 @@ Schema: any
 | Status | Description | Schema |
 |--------|-------------|--------|
 | 204 | Successful Response |  |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `POST /api/v1/meetings/participants/resolve`
+
+**Resolve Participants**
+
+Разобрать список ФИО/email в участников встречи.
+
+- **email** — точный CI-lookup по ``users`` (индекс ``idx_users_email_ci_active``);
+  ненайденный email становится внешним участником (``source=external``), как в single-search.
+- **ФИО** — точное CI-совпадение (с вариантами раскладки клавиатуры) → resolved;
+  при 0 точных — подстрочный матч: 1 кандидат → resolved, >1 → ambiguous;
+  иначе → unresolved.
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `portal_session` | cookie | `any` |  |  |
+
+**Request Body**
+
+Content-Type: `application/json` — schema: `ResolveParticipantsRequest`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `queries` | array of string | ✓ |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | `ResolveParticipantsResponse` |
 | 422 | Validation Error | `HTTPValidationError` |
 
 ### `GET /api/v1/meetings/participants/search`

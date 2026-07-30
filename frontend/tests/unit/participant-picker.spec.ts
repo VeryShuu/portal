@@ -24,11 +24,32 @@ vi.mock('naive-ui', () => ({
     props: ['value', 'options', 'loading', 'placeholder', 'multiple', 'filterable', 'remote', 'clearFilterAfterSelect', 'renderLabel'],
     emits: ['search', 'update:value'],
   },
+  NButton: {
+    name: 'NButton',
+    template: '<button class="n-button" @click="$emit(\'click\')"><slot /></button>',
+    props: ['size', 'tertiary', 'type', 'disabled', 'loading'],
+    emits: ['click'],
+  },
 }))
 
 const searchParticipants = vi.fn<(q: string) => Promise<InvitedUser[]>>()
 vi.mock('../../src/api/meetings', () => ({
   searchParticipants: (q: string) => searchParticipants(q),
+}))
+
+// Модал массового ввода тестируется собственной логикой; здесь проверяем только
+// интеграцию с пикером (кнопка → открытие → прокидывание add наверх).
+const pasteModalAdd = vi.fn()
+vi.mock('../../src/components/meetings/PasteParticipantsModal.vue', () => ({
+  default: {
+    name: 'PasteParticipantsModal',
+    template: '<div class="paste-modal-stub" />',
+    props: ['show', 'existingEmails'],
+    emits: ['update:show', 'add'],
+    mounted() {
+      pasteModalAdd.mockImplementation((items: InvitedUser[]) => this.$emit('add', items))
+    },
+  },
 }))
 
 import ParticipantPicker from '../../src/components/meetings/ParticipantPicker.vue'
@@ -95,5 +116,58 @@ describe('ParticipantPicker single-field external contacts', () => {
       { user_id: 'ext:x@partner.com', full_name: 'x@partner.com', email: 'x@partner.com', source: 'external' },
     ])
     expect(wrapper.find('.participant-tag__badge').exists()).toBe(true)
+  })
+})
+
+describe('ParticipantPicker bulk paste integration', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('opens the paste modal when the paste button is clicked', async () => {
+    const wrapper = mountPicker([])
+    const btn = wrapper.find('.paste-list-btn')
+    expect(btn.exists()).toBe(true)
+
+    await btn.trigger('click')
+    expect(wrapper.findComponent({ name: 'PasteParticipantsModal' }).props('show')).toBe(true)
+  })
+
+  it('emits update:modelValue with resolved participants on modal add', async () => {
+    const wrapper = mountPicker([])
+    const modal = wrapper.findComponent({ name: 'PasteParticipantsModal' })
+
+    const added: InvitedUser[] = [
+      { user_id: 'kc-1', full_name: 'Иван', email: 'ivan@company.com', source: 'keycloak' },
+      { user_id: 'ext:ext@partner.com', full_name: 'ext@partner.com', email: 'ext@partner.com', source: 'external' },
+    ]
+    await modal.vm.$emit('add', added)
+
+    const emitted = wrapper.emitted('update:modelValue')
+    expect(emitted).toBeTruthy()
+    expect(emitted![0][0] as InvitedUser[]).toEqual(added)
+  })
+
+  it('deduplicates bulk-added participants by email against existing', async () => {
+    const existing: InvitedUser = {
+      user_id: 'kc-1',
+      full_name: 'Иван',
+      email: 'ivan@company.com',
+      source: 'keycloak',
+    }
+    const wrapper = mountPicker([existing])
+    const modal = wrapper.findComponent({ name: 'PasteParticipantsModal' })
+
+    // Тот же email уже приглашён → должен отфильтроваться.
+    await modal.vm.$emit('add', [
+      existing,
+      { user_id: 'kc-2', full_name: 'Пётр', email: 'petr@company.com', source: 'keycloak' },
+    ])
+
+    const emitted = wrapper.emitted('update:modelValue')
+    expect(emitted).toBeTruthy()
+    const result = emitted![0][0] as InvitedUser[]
+    expect(result).toHaveLength(2)
+    expect(result.map(u => u.email)).toEqual(['ivan@company.com', 'petr@company.com'])
   })
 })
