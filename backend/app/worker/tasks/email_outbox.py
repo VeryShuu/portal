@@ -144,6 +144,15 @@ async def process_email_outbox(ctx: dict) -> int:
                         )
                     continue
 
+                # Generic helpdesk-уведомления (письмо о новой заявке агентам)
+                # идут через ``_build_mime``, который сам по себе helpdesk-картинки
+                # не встраивает — делаем это здесь, до сборки MIME. Помещает результат
+                # в ``payload.inline_images`` → ``_build_mime`` соберёт ``related``.
+                # ``kind=helpdesk``/``KIND_MEETING`` обрабатываются своими ветками и
+                # в этом преобработчике не нуждаются.
+                if row["kind"] not in (KIND_HELPDESK, KIND_MEETING):
+                    await _embed_helpdesk_images_into_generic(row)
+
                 try:
                     # helpdesk-ветка: async, т.к. вложения читаются с локального
                     # диска через aiofiles (существующий _build_mime синхронный).
@@ -305,6 +314,46 @@ def _build_mime(row: dict, cfg: dict) -> MIMEMultipart:
     alternative["From"] = from_address
     alternative["To"] = to_email
     return alternative
+
+
+async def _embed_helpdesk_images_into_generic(row: dict) -> None:
+    """Встроить helpdesk-картинки заявки в generic-письмо (in-place).
+
+    Применяется к уведомлению агентам о новой заявке (``notify_ticket_created_email``
+    ставит ``payload.smtp_source == "helpdesk"`` и ``payload.ticket_number``).
+    Это письмо идёт ``kind=KIND_GENERIC`` (не входит в email-тред тикета, не требует
+    настроенного ``helpdesk_mailbox_settings``) — поэтому не попадает в
+    ``_build_helpdesk_mime``, где CID-встраивание уже сделано. Без этой функции
+    картинки заявки остаются как ``<img src="/api/v1/helpdesk/attachments/{id}">``
+    — почтовый клиент не передаёт session-cookie → эндпоинт возвращает 401 →
+    картинка не грузится.
+
+    Переиспользует те же embed-функции, что и helpdesk-ветка:
+    ``_embed_helpdesk_inline_images`` (rich-редактор) и
+    ``_embed_helpdesk_attachment_images`` (локализованные email-attachments).
+    Результат складывается в ``payload["inline_images"]`` — существующая ветка
+    ``_build_mime`` (``multipart/related``, см. строки выше) собирает MIME.
+
+    Мутация ``row`` in-place безопасна: это локальная копия из ``claim_pending``,
+    БД не затрагивается. Best-effort: нет картинок → ``inline_images`` не пишется,
+    ``_build_mime`` вернёт обычный ``alternative`` (0 regressions).
+    """
+    payload = row.get("payload") or {}
+    # Маркер helpdesk: сводка (digest) тоже ставит ``smtp_source="helpdesk"``, но
+    # без ``ticket_number`` (письмо по многим тикетам сразу, картинок не содержит) —
+    # её пропускаем. Любой generic без этого маркера (новости/встречи) — тоже.
+    if payload.get("smtp_source") != "helpdesk":
+        return
+    ticket_number = payload.get("ticket_number")
+    if not ticket_number:
+        return
+    body_html = row.get("body_html") or ""
+    body_html, inline = await _embed_helpdesk_inline_images(body_html, ticket_number)
+    body_html, att_inline = await _embed_helpdesk_attachment_images(body_html, ticket_number)
+    inline.extend(att_inline)
+    if inline:
+        row["body_html"] = body_html
+        payload["inline_images"] = inline
 
 
 # Regex для поиска inline-картинок rich-редактора в body_html helpdesk-письма.

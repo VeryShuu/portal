@@ -411,6 +411,30 @@ class TestNotifyTicketCreatedEmail:
         assert enqueue.await_args.kwargs["kind"] == "generic"
 
     @pytest.mark.asyncio
+    async def test_payload_has_ticket_number_for_image_embedding(self):
+        """``payload.ticket_number`` — маркер + путь к картинкам для воркера.
+
+        Generic-уведомление (``kind=generic``) не проходит через
+        ``_build_helpdesk_mime``, где CID-встраивание уже сделано. Чтобы картинки
+        заявки всё же встраивались (а не отдавали 401 на ``/attachments/{id}``
+        в почтовом клиенте без cookie), ``process_email_outbox`` ищет связку
+        ``smtp_source=helpdesk`` + ``ticket_number`` и прогоняет body_html через
+        ``_embed_helpdesk_images_into_generic``. Сводка (digest) ``ticket_number``
+        не ставит → преобработка её пропускает.
+        """
+        db = _db_returning_agents([_agent_user()])
+        with (
+            _patch_resolve_requester(_requester_user()),
+            patch.object(notif, "enqueue_outbox_email", new=AsyncMock()) as enqueue,
+        ):
+            await notif.notify_ticket_created_email(
+                db, ticket=_ticket(number=42, subject="Тема"), first_message=_first_message()
+            )
+        payload = enqueue.await_args.kwargs["payload"]
+        assert payload["smtp_source"] == "helpdesk"
+        assert payload["ticket_number"] == 42
+
+    @pytest.mark.asyncio
     async def test_subject_has_ticket_token(self):
         db = _db_returning_agents([_agent_user()])
         with (
