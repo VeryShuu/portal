@@ -569,6 +569,47 @@ async def reopen_ticket(
     return ticket
 
 
+async def delete_ticket(db: AsyncSession, *, ticket: HelpdeskTicket) -> int:
+    """Полное (hard) удаление тикета админом со всеми данными.
+
+    Удаляет живую строку ``helpdesk_tickets`` — по ``ON DELETE CASCADE``
+    (см. ``models/helpdesk.py``) БД автоматически вычищает сообщения
+    (``helpdesk_messages``), вложения (``helpdesk_attachments``) и marker-reads
+    (``helpdesk_ticket_reads``). Файлы вложений и inline-картинок на диске
+    удаляет ``delete_ticket_dir`` (best-effort ``shutil.rmtree``).
+
+    Сознательное поведение (в отличие от общего правила «soft-delete везде»):
+    helpdesk не имеет ``deleted_at``, а архив уже реализован как hard-delete из
+    живой таблицы (``_archive_one`` → ``db.delete``). Полное удаление админом —
+    расширение того же паттерна для спам-очистки / GDPR-удаления.
+
+    ВАЖНО:
+    * Архив (``helpdesk_tickets_archive``) НЕ трогается — это отдельный
+      read-only контур; для живого тикета архивной копии обычно ещё нет.
+    * Никаких уведомлений (email/in-app) — тихое удаление; операция фиксируется
+      только в журнале аудита (роутер → ``helpdesk.ticket_deleted``).
+    * Pending-записи outbox (``email_outbox``/``messenger_outbox``) НЕ
+      удаляются — ``related_resource_id`` указывает на исчезнувший тикет, но
+      воркер при отправке падает мягко (письмо по несуществующему тикету не
+      критично), а cron-DLQ прибирает зависшие записи. Жёсткая связь outbox ↔
+      ticket отсутствует сознательно (outbox-инвариант: письма коммитятся в той
+      же транзакции, что и бизнес-операция, и не должны зависеть от жизни
+      тикета).
+
+    Возвращает ``ticket.number`` (человекочитаемый ``TKT-{number}``) для
+    audit/логирования. ФС-очистка делается ДО ``db.delete``: после удаления
+    ORM-объект всё ещё валиден, но так чище — ``delete_ticket_dir`` best-effort,
+    ошибки игнорируются внутри (``shutil.rmtree(ignore_errors=True)``).
+    """
+    from app.services.helpdesk.attachments import delete_ticket_dir
+
+    number = ticket.number
+    delete_ticket_dir(number)
+    await db.delete(ticket)
+    await db.commit()
+    return number
+
+
 # ---------------------------------------------------------------------------
 # Guest linking (Этап 5, ТЗ §4.5)
 # ---------------------------------------------------------------------------

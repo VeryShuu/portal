@@ -11060,6 +11060,20 @@
             "title": "Nextcloud Url",
             "type": "string"
           },
+          "notifications_read_retention_days": {
+            "default": 30,
+            "maximum": 3650.0,
+            "minimum": 0.0,
+            "title": "Notifications Read Retention Days",
+            "type": "integer"
+          },
+          "notifications_unread_retention_days": {
+            "default": 90,
+            "maximum": 3650.0,
+            "minimum": 0.0,
+            "title": "Notifications Unread Retention Days",
+            "type": "integer"
+          },
           "onboarding_enabled": {
             "default": true,
             "title": "Onboarding Enabled",
@@ -11219,6 +11233,14 @@
             "title": "Nextcloud Url",
             "type": "string"
           },
+          "notifications_read_retention_days": {
+            "title": "Notifications Read Retention Days",
+            "type": "integer"
+          },
+          "notifications_unread_retention_days": {
+            "title": "Notifications Unread Retention Days",
+            "type": "integer"
+          },
           "onboarding_enabled": {
             "title": "Onboarding Enabled",
             "type": "boolean"
@@ -11298,6 +11320,8 @@
           "nc_files_root",
           "kb_import_max_size_mb",
           "kb_trash_retention_days",
+          "notifications_read_retention_days",
+          "notifications_unread_retention_days",
           "metrics_token_set",
           "phone_extract_regex",
           "onboarding_enabled",
@@ -11512,6 +11536,32 @@
               }
             ],
             "title": "Nextcloud Url"
+          },
+          "notifications_read_retention_days": {
+            "anyOf": [
+              {
+                "maximum": 3650.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notifications Read Retention Days"
+          },
+          "notifications_unread_retention_days": {
+            "anyOf": [
+              {
+                "maximum": 3650.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notifications Unread Retention Days"
           },
           "onboarding_enabled": {
             "anyOf": [
@@ -23491,6 +23541,57 @@
       }
     },
     "/api/v1/helpdesk/tickets/{ticket_id}": {
+      "delete": {
+        "description": "Hard-delete тикета со всеми данными (БД + файлы диска).\n\n**Только администратор** (``AdminDep`` — строго ``role == \"admin\"``, иначе\n403). Не доступно агентам поддержки и заявителю — это необратимая операция\n(спам-очистка / GDPR-удаление), в отличие от ``close``/``reopen`` которые\nделает агент.\n\nУдаляет (через ``services.helpdesk.tickets.delete_ticket`` + CASCADE в БД):\n* строку ``helpdesk_tickets``;\n* каскадно — сообщения, вложения (записи), marker-reads;\n* файлы вложений и inline-картинок на диске (``delete_ticket_dir``,\n  best-effort).\n\nНе трогает архив и не шлёт уведомлений — тихое удаление, фиксируется только\nв журнале аудита как ``helpdesk.ticket_deleted``. Возвращает ``204`` без\nтела. Несуществующий ``ticket_id`` → ``404`` (через ``_load_agent_ticket``,\nединый loader с агентскими эндпоинтами — не раскрывает существование).",
+        "operationId": "delete_ticket_api_v1_helpdesk_tickets__ticket_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ticket_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Ticket Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "portal_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Portal Session"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Полностью удалить заявку (только администратор)",
+        "tags": [
+          "helpdesk"
+        ]
+      },
       "get": {
         "operationId": "get_ticket_api_v1_helpdesk_tickets__ticket_id__get",
         "parameters": [

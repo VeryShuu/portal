@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Callable, Coroutine
-from typing import Any
+from datetime import UTC, datetime, timedelta
+from typing import Any, cast
 
 from redis.asyncio import Redis
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import get_logger
@@ -321,3 +323,42 @@ async def notify_suggestion_reviewed(
     )
     await db.commit()
     await publish()
+
+
+async def cleanup_old_notifications(
+    db: AsyncSession,
+    *,
+    read_retention_days: int,
+    unread_retention_days: int,
+) -> dict[str, int]:
+    """Удаляет старые уведомления (cron ``notifications.cleanup_notifications``).
+
+    Политика C (как в почтовом клиенте): прочитанные удаляются раньше непрочитанных.
+    Каждая ветка отключается значением ``<= 0`` независимо. Два однопроходных
+    ``DELETE`` (один на ветку) с bind-параметрами; глобальный скан по
+    ``created_at`` использует индекс ``ix_notifications_created_at`` (миграция 085).
+
+    Объём на ~300 пользователей × 90 дней ≈ 270K строк — однопроходный DELETE
+    достаточен. При кратном росте таблицы стоит перейти на чанкование по образцу
+    ``kb_trash.purge_expired_articles`` (SELECT id LIMIT N → DELETE IN (...) → commit).
+    """
+    stats = {"read_deleted": 0, "unread_deleted": 0}
+    now = datetime.now(UTC)
+
+    if read_retention_days > 0:
+        cutoff = now - timedelta(days=read_retention_days)
+        res = await db.execute(
+            text("DELETE FROM notifications WHERE is_read AND created_at < :cutoff"),
+            {"cutoff": cutoff},
+        )
+        stats["read_deleted"] = int(cast(CursorResult, res).rowcount or 0)
+
+    if unread_retention_days > 0:
+        cutoff = now - timedelta(days=unread_retention_days)
+        res = await db.execute(
+            text("DELETE FROM notifications WHERE NOT is_read AND created_at < :cutoff"),
+            {"cutoff": cutoff},
+        )
+        stats["unread_deleted"] = int(cast(CursorResult, res).rowcount or 0)
+
+    return stats

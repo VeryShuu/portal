@@ -45,6 +45,32 @@
             >
               {{ t('helpdesk.reopen') }}
             </n-button>
+
+            <!-- Полное удаление заявки — только администратор. Необратимая
+                 операция (hard-delete: БД + файлы), поэтому под confirm-диалогом.
+                 Доступна из карточки живого тикета; после удаления — возврат в
+                 инбокс (карточка больше недоступна). -->
+            <n-popconfirm
+              v-if="auth.isAdmin"
+              :positive-text="t('helpdesk.delete')"
+              :negative-text="t('common.cancel')"
+              @positive-click="onDelete"
+            >
+              <template #trigger>
+                <n-button
+                  size="small"
+                  type="error"
+                  ghost
+                  :loading="acting"
+                >
+                  <template #icon>
+                    <n-icon><component :is="TrashOutline" /></n-icon>
+                  </template>
+                  {{ t('helpdesk.delete') }}
+                </n-button>
+              </template>
+              {{ t('helpdesk.deleteConfirm', { number: ticket.number }) }}
+            </n-popconfirm>
           </template>
         </TicketDetailHeader>
 
@@ -89,8 +115,8 @@
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
-import { NSpin, NCard, NButton, NIcon, NSelect, useMessage } from 'naive-ui'
-import { ArrowBackOutline } from '@vicons/ionicons5'
+import { NSpin, NCard, NButton, NIcon, NSelect, NPopconfirm, useMessage } from 'naive-ui'
+import { ArrowBackOutline, TrashOutline } from '@vicons/ionicons5'
 import TicketDetailHeader from '../../components/helpdesk/TicketDetailHeader.vue'
 import TicketInfoCard from '../../components/helpdesk/TicketInfoCard.vue'
 import TicketMessageList from '../../components/helpdesk/TicketMessageList.vue'
@@ -102,18 +128,21 @@ import {
   takeTicket,
   changeTicketStatus,
   reopenTicket,
+  deleteTicket,
   replyAgentTicket,
   markTicketRead,
   type HelpdeskTicketDetail,
   type HelpdeskStatus,
 } from '../../api/helpdesk'
 import { parseApiError } from '../../utils/parseApiError'
+import { useAuthStore } from '../../stores/auth'
 import { ROUTES } from '../../router'
 
 const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
 const message = useMessage()
+const auth = useAuthStore()
 
 const ticketId = String(route.params.id)
 const ticket = ref<HelpdeskTicketDetail | null>(null)
@@ -184,6 +213,22 @@ function onReopen() {
     await reopenTicket(ticketId)
     message.success(t('helpdesk.reopened'))
   })
+}
+
+async function onDelete() {
+  // Hard-delete админом — необратимо. После успешного удаления тикета нельзя
+  // вызывать load() (404 — строки больше нет), поэтому своя функция вместо
+  // withActing: acting-флаг на время запроса, затем toast + переход в инбокс.
+  acting.value = true
+  try {
+    await deleteTicket(ticketId)
+    message.success(t('helpdesk.deleted'))
+    router.push(ROUTES.HELPDESK_INBOX)
+  } catch (e) {
+    message.error(parseApiError(e, t))
+  } finally {
+    acting.value = false
+  }
 }
 
 async function onReply(payload: {
