@@ -9,46 +9,124 @@
       </h3>
     </div>
 
-    <div class="birthdays-row">
-      <article
-        v-for="(b, i) in birthdays"
-        :key="`${b.full_name}-${i}`"
-        class="birthday-card"
+    <div class="birthdays-stage">
+      <button
+        type="button"
+        class="nav-arrow"
+        :disabled="currentPage === 0"
+        :aria-label="t('common.previous')"
+        @click="prev"
       >
-        <n-avatar
-          round
-          :size="48"
-          :src="b.avatar_url ?? undefined"
-          class="birthday-card__avatar"
+        <n-icon :size="20">
+          <ChevronBackOutline />
+        </n-icon>
+      </button>
+
+      <div class="birthday-grid">
+        <button
+          v-for="b in currentSlide"
+          :key="b.id"
+          type="button"
+          class="birthday-card"
+          @click="openProfile(b.id)"
         >
-          {{ initials(b.full_name) }}
-        </n-avatar>
-        <div class="birthday-card__body">
-          <span class="birthday-card__name">{{ displayName(b.full_name) }}</span>
-          <span class="birthday-card__date">{{ formatDate(b.birth_date) }}</span>
-        </div>
-      </article>
+          <n-avatar
+            round
+            :size="48"
+            :src="b.avatar_url ?? undefined"
+            class="birthday-card__avatar"
+          >
+            {{ initials(b.full_name) }}
+          </n-avatar>
+          <div class="birthday-card__body">
+            <span class="birthday-card__name">{{ displayName(b.full_name) }}</span>
+            <span class="birthday-card__date">{{ formatDate(b.birth_date) }}</span>
+          </div>
+        </button>
+      </div>
+
+      <button
+        type="button"
+        class="nav-arrow"
+        :disabled="currentPage >= slides.length - 1"
+        :aria-label="t('common.next')"
+        @click="next"
+      >
+        <n-icon :size="20">
+          <ChevronForwardOutline />
+        </n-icon>
+      </button>
+    </div>
+
+    <!-- Точки-индикаторы страниц — только если страниц больше одной. -->
+    <div
+      v-if="slides.length > 1"
+      class="dots"
+    >
+      <button
+        v-for="(_, idx) in slides"
+        :key="`dot-${idx}`"
+        type="button"
+        class="dot"
+        :class="{ 'dot--active': idx === currentPage }"
+        :aria-label="`${idx + 1}`"
+        @click="currentPage = idx"
+      />
     </div>
   </section>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { NAvatar } from 'naive-ui'
+import { NAvatar, NIcon } from 'naive-ui'
+import { ChevronBackOutline, ChevronForwardOutline } from '@vicons/ionicons5'
+import { useRouter } from 'vue-router'
 import { useBirthdaysQuery } from '../../queries/users'
+import type { Birthday } from '../../api/users'
 
 const { t, locale } = useI18n()
+const router = useRouter()
 
 const { data } = useBirthdaysQuery()
 const birthdays = computed(() => data.value?.items ?? [])
 
+// Чанки по 6 (3 в ряд × 2 ряда) — каждый чанк = одна страница.
+const PER_SLIDE = 6
+const slides = computed<Birthday[][]>(() => {
+  const items = birthdays.value
+  const out: Birthday[][] = []
+  for (let i = 0; i < items.length; i += PER_SLIDE) {
+    out.push(items.slice(i, i + PER_SLIDE))
+  }
+  return out
+})
+
+const currentPage = ref(0)
+const currentSlide = computed(() => slides.value[currentPage.value] ?? [])
+
+// Сброс страницы, если данные обновились и текущая страница больше не валидна
+// (например, именинников стало меньше после refetch).
+watch(slides, (s) => {
+  if (currentPage.value > s.length - 1) currentPage.value = Math.max(0, s.length - 1)
+})
+
+function prev() {
+  if (currentPage.value > 0) currentPage.value -= 1
+}
+function next() {
+  if (currentPage.value < slides.value.length - 1) currentPage.value += 1
+}
+
 // «День + месяц» в текущей локали (ru: «5 марта», en: «March 5»).
-// Год берём из недели (текущий), чтобы дата в «день недели» попадала корректно —
-// но показываем только день и название месяца. 'T00:00:00' фиксит timezone-сдвиг.
 function formatDate(iso: string): string {
   const d = new Date(`${iso}T00:00:00`)
   return new Intl.DateTimeFormat(locale.value, { day: 'numeric', month: 'long' }).format(d)
+}
+
+// Фамилия + имя без отчества: первые 2 слова.
+function displayName(fullName: string): string {
+  return fullName.trim().split(/\s+/).slice(0, 2).join(' ')
 }
 
 // Фоллбэк аватара: инициалы из первых букв слов ФИО (до 2 символов).
@@ -61,10 +139,8 @@ function initials(fullName: string): string {
     .join('')
 }
 
-// Фамилия + имя без отчества: берём первые 2 слова (по ТЗ отчество не показываем).
-// Если слов ≤2 — возвращаем как есть.
-function displayName(fullName: string): string {
-  return fullName.trim().split(/\s+/).slice(0, 2).join(' ')
+function openProfile(id: string): void {
+  router.push(`/users/${id}`)
 }
 </script>
 
@@ -91,11 +167,45 @@ function displayName(fullName: string): string {
   color: var(--color-text-muted);
 }
 
-/* Горизонтальный ряд карточек; на узком экране переносятся. */
-.birthdays-row {
+/* Сцена: [стрелка] [сетка] [стрелка], выровнено по центру по вертикали. */
+.birthdays-stage {
   display: flex;
-  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Сетка 3 колонки × 2 ряда текущей страницы. */
+.birthday-grid {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
   gap: 12px;
+}
+
+/* Кнопки-стрелки по бокам — не перекрывают карточки. */
+.nav-arrow {
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--color-border);
+  border-radius: 50%;
+  background: var(--color-surface, #fff);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.nav-arrow:hover:not(:disabled) {
+  background: var(--color-bg-muted, #f5f5f5);
+  color: var(--color-text);
+  border-color: var(--color-text-muted);
+}
+.nav-arrow:disabled {
+  opacity: 0.35;
+  cursor: default;
 }
 
 .birthday-card {
@@ -106,17 +216,25 @@ function displayName(fullName: string): string {
   background: var(--color-bg, #fff);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
-  /* Одинаковая ширина всех карточек; переносятся на следующую строку. */
-  flex: 0 0 220px;
   min-width: 0;
-  box-sizing: border-box;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.birthday-card:hover {
+  border-color: var(--color-brand-sky, #38bdf8);
+  box-shadow: var(--shadow-sm);
 }
 
 .birthday-card__avatar {
   flex-shrink: 0;
   font-size: 15px;
-  font-weight: 600;
-  color: var(--color-text-muted);
+  font-weight: 700;
+  /* Белая заливка инициалов: цветной круг + белые буквы. */
+  background: var(--color-brand-navy, #1f3a5f);
+  color: #fff;
 }
 
 .birthday-card__body {
@@ -138,5 +256,33 @@ function displayName(fullName: string): string {
 .birthday-card__date {
   font-size: 12px;
   color: var(--color-text-secondary, #666);
+}
+
+/* Точки-индикаторы страниц. */
+.dots {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 12px;
+}
+.dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  border: none;
+  padding: 0;
+  background: var(--color-border, #ccc);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.dot--active {
+  background: var(--color-text-muted, #888);
+}
+
+@media (max-width: 720px) {
+  /* На узком экране — 2 колонки вместо 3. */
+  .birthday-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
 }
 </style>

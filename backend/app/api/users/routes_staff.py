@@ -102,6 +102,7 @@ async def list_birthdays_route(
     return BirthdayList(
         items=[
             BirthdayOut(
+                id=u.id,
                 full_name=u.full_name,
                 birth_date=u.birth_date,  # type: ignore[arg-type]
                 avatar_url=u.avatar_url,
