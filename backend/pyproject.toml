@@ -45,6 +45,10 @@ dependencies = [
     "markdownify>=0.13.0",
     "aiofiles>=23.2.0",
     "openpyxl>=3.1.0",
+    # ERP-sync: парсинг legacy .xls (OLE2, Excel 97-2003). Формат заморожен,
+    # ломаться нечему; версия 2.0.1 намеренно оставила только .xls (xlsx читает
+    # openpyxl выше). См. docs/wip/erp-sync.md.
+    "xlrd==2.0.1",
     "Pillow>=10.3.0",
     "pillow-heif>=0.16.0",
     "blurhash>=1.1.4",

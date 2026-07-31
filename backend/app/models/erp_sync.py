@@ -101,6 +101,21 @@ class ErpSyncSettings(Base):
     интервал между отчётами ERP (2×/неделю ≈ 4 дня); watchdog использует его
     для алерта «письма нет >N дней». ``notify_emails`` — override списка
     адресов для отчётов (NULL = все admin с ``notify_email=true``).
+
+    Двойной гейтинг поллинга (миграция 088):
+
+    * ``modules.erp_sync.enabled`` (в ``modules.json``) — мастер-переключатель
+      всей фичи (API + cron + UI).
+    * ``poll_enabled`` (здесь) — отдельный флаг **авто-поллинга по cron**.
+      Позволяет выключить авто-забор писем, оставив ручной upload (например,
+      при отладке FIO-матчинга). Cron проверяет оба флага.
+
+    Фильтрация почты (миграция 088) — для общего ящика, куда может сыпаться
+    разная почта: ``mail_subject_filter`` / ``mail_sender_filter`` /
+    ``mail_attachment_filter`` — опциональные CI-подстроки. Поллинг берёт
+    ``SEARCH UNSEEN`` и фильтрует post-fetch (IMAP ``SEARCH SUBJECT`` ненадёжен
+    с MIME/B-encoded кириллицей). Письма мимо фильтра **не** помечаются
+    ``\\Seen`` (не трогаем чужую почту на общем ящике).
     """
 
     __tablename__ = "erp_sync_settings"
@@ -133,6 +148,13 @@ class ErpSyncSettings(Base):
         Integer, nullable=False, server_default=text("4"), default=4
     )
     notify_emails: Mapped[list[str] | None] = mapped_column(ARRAY(Text), nullable=True)
+    # Миграция 088: двойной гейтинг поллинга + фильтрация писем на общем ящике.
+    poll_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("FALSE"), default=False
+    )
+    mail_subject_filter: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    mail_sender_filter: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    mail_attachment_filter: Mapped[str | None] = mapped_column(String(255), nullable=True)
     updated_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )

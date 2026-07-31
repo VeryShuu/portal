@@ -234,6 +234,19 @@ ALTER TABLE erp_sync_settings
 
 ## Грабли / контекст
 
+- **Раздел «Email» = только SMTP** (факт-чек 2026-07-31). Там нет IMAP. Входящая
+  почта (IMAP) — per-feature singleton (как `helpdesk_mailbox_settings`). Не
+  пытаться «переиспользовать IMAP из раздела Email» — его там нет. Настройки
+  приёма ERP живут в `erp_sync_settings`; отправка отчётов — через общий SMTP.
+- **Общий ящик = обязательная фильтрация.** Если на ящик сыплется разная почта,
+  без фильтра по теме/отправителю импорт сломается на чужом письме (или
+  пометит его `\Seen`, испортив чужой inbox). Поллинг обязан: (1) фильтровать
+  post-fetch (IMAP `SEARCH SUBJECT` ненадёжен с MIME/B-encoded кириллицей),
+  (2) письма мимо фильтра **НЕ** помечать `\Seen`. Три поля:
+  `mail_subject_filter`, `mail_sender_filter`, `mail_attachment_filter`.
+- **Двойной гейтинг поллинга**: `modules.erp_sync.enabled` (вся фича) AND
+  `erp_sync_settings.poll_enabled` (только авто-забор). Без второго нельзя
+  выключить поллинг, оставив ручной upload. Cron проверяет оба.
 - **`users.full_name` — одна свободная строка** (приходит из Keycloak, порядок слов
   не гарантируется: «Last First Patronymic» либо иначе). Не полагаться на
   парсинг по словам; использовать `find_by_full_name_words` (матчит в любом порядке).

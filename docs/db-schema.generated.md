@@ -1,5 +1,5 @@
 <!-- AUTO-GENERATED — do not edit manually. Run: cd backend && python -m scripts.generate_db_schema_doc --output ../docs/db-schema.generated.md -->
-<!-- Generated: 2026-07-31 08:32 UTC -->
+<!-- Generated: 2026-07-31 10:15 UTC -->
 
 # Database Schema (auto-generated)
 
@@ -310,6 +310,21 @@ Singleton row (``id = 1``) с IMAP-настройками ящика, на ко�
     для алерта «письма нет >N дней». ``notify_emails`` — override списка
     адресов для отчётов (NULL = все admin с ``notify_email=true``).
 
+    Двойной гейтинг поллинга (миграция 088):
+
+    * ``modules.erp_sync.enabled`` (в ``modules.json``) — мастер-переключатель
+      всей фичи (API + cron + UI).
+    * ``poll_enabled`` (здесь) — отдельный флаг **авто-поллинга по cron**.
+      Позволяет выключить авто-забор писем, оставив ручной upload (например,
+      при отладке FIO-матчинга). Cron проверяет оба флага.
+
+    Фильтрация почты (миграция 088) — для общего ящика, куда может сыпаться
+    разная почта: ``mail_subject_filter`` / ``mail_sender_filter`` /
+    ``mail_attachment_filter`` — опциональные CI-подстроки. Поллинг берёт
+    ``SEARCH UNSEEN`` и фильтрует post-fetch (IMAP ``SEARCH SUBJECT`` ненадёжен
+    с MIME/B-encoded кириллицей). Письма мимо фильтра **не** помечаются
+    ``\Seen`` (не трогаем чужую почту на общем ящике).
+
 ### Columns
 
 | Column | Type | Nullable | PK | FK | Unique | Default | Comment |
@@ -325,6 +340,10 @@ Singleton row (``id = 1``) с IMAP-настройками ящика, на ко�
 | `poll_interval_seconds` | `INTEGER` |  |  |  |  | `900` |  |
 | `expected_interval_days` | `INTEGER` |  |  |  |  | `4` |  |
 | `notify_emails` | `TEXT[]` | ✓ |  |  |  |  |  |
+| `poll_enabled` | `BOOLEAN` |  |  |  |  | `FALSE` |  |
+| `mail_subject_filter` | `VARCHAR(255)` | ✓ |  |  |  |  |  |
+| `mail_sender_filter` | `VARCHAR(255)` | ✓ |  |  |  |  |  |
+| `mail_attachment_filter` | `VARCHAR(255)` | ✓ |  |  |  |  |  |
 | `updated_by_user_id` | `UUID` | ✓ |  | `users.id` |  |  |  |
 | `created_at` | `TIMESTAMP WITH TIME ZONE` |  |  |  |  | `NOW()` |  |
 | `updated_at` | `TIMESTAMP WITH TIME ZONE` |  |  |  |  | `NOW()` |  |
@@ -333,8 +352,8 @@ Singleton row (``id = 1``) с IMAP-настройками ящика, на ко�
 
 | Name | Type | Definition |
 |------|------|------------|
-| `ck_erp_sync_settings_singleton` | CHECK | `id = 1` |
 | `ck_erp_sync_settings_poll_interval` | CHECK | `poll_interval_seconds BETWEEN 60 AND 3600` |
+| `ck_erp_sync_settings_singleton` | CHECK | `id = 1` |
 
 ### Relationships
 
@@ -457,9 +476,9 @@ Singleton row (``id = 1``) с IMAP-настройками ящика, на ко�
 
 | Name | Type | Definition |
 |------|------|------------|
-| `ck_file_folder_perm_permission` | CHECK | `permission IN ('viewer', 'editor', 'manager')` |
 | `uq_file_folder_perm_folder_subject` | UNIQUE | `folder_id`, `subject_id` |
 | `ck_file_folder_perm_subject_type` | CHECK | `subject_type IN ('user', 'group')` |
+| `ck_file_folder_perm_permission` | CHECK | `permission IN ('viewer', 'editor', 'manager')` |
 
 ### Indexes
 
@@ -839,7 +858,7 @@ A single message in a ticket thread — inbound (from the requester) or
 | `direction` | `VARCHAR(10)` |  |  |  |  |  |  |
 | `body_text` | `TEXT` |  |  |  |  |  |  |
 | `body_html` | `TEXT` | ✓ |  |  |  |  |  |
-| `body_tsvector` | `TSVECTOR` | ✓ |  |  |  | Computed(<sqlalchemy.sql.elements.TextClause object at 0x7744d1f1eff0>, persisted=True) |  |
+| `body_tsvector` | `TSVECTOR` | ✓ |  |  |  | Computed(<sqlalchemy.sql.elements.TextClause object at 0x7bb148327440>, persisted=True) |  |
 | `cc` | `JSONB` | ✓ |  |  |  |  |  |
 | `source` | `VARCHAR(20)` |  |  |  |  |  |  |
 | `email_message_id` | `VARCHAR(998)` | ✓ |  |  |  |  |  |
@@ -938,7 +957,7 @@ A support request: ``new → open → pending → closed``.
 | `references_archived_ticket_number` | `BIGINT` | ✓ |  |  |  |  |  |
 | `created_at` | `TIMESTAMP WITH TIME ZONE` |  |  |  |  | `NOW()` |  |
 | `updated_at` | `TIMESTAMP WITH TIME ZONE` |  |  |  |  | `NOW()` |  |
-| `search_tsvector` | `TSVECTOR` | ✓ |  |  |  | Computed(<sqlalchemy.sql.elements.TextClause object at 0x7744d1f1d910>, persisted=True) |  |
+| `search_tsvector` | `TSVECTOR` | ✓ |  |  |  | Computed(<sqlalchemy.sql.elements.TextClause object at 0x7bb148325cd0>, persisted=True) |  |
 
 ### Constraints
 
@@ -1169,7 +1188,7 @@ Read-only archive of closed tickets (partitioned by ``closed_at``).
 | `title` | `VARCHAR(500)` |  |  |  |  |  |  |
 | `body` | `TEXT` |  |  |  |  | `` |  |
 | `inherit_permissions` | `BOOLEAN` |  |  |  |  | `True` |  |
-| `body_tsvector` | `TSVECTOR` | ✓ |  |  |  | Computed(<sqlalchemy.sql.elements.TextClause object at 0x7744d1fdaf00>, persisted=True) |  |
+| `body_tsvector` | `TSVECTOR` | ✓ |  |  |  | Computed(<sqlalchemy.sql.elements.TextClause object at 0x7bb1483e7410>, persisted=True) |  |
 | `status` | `VARCHAR(20)` |  |  |  |  | `draft` |  |
 | `version` | `INTEGER` |  |  |  |  | `1` |  |
 | `view_count` | `INTEGER` |  |  |  |  | `0` |  |
@@ -1224,9 +1243,9 @@ Read-only archive of closed tickets (partitioned by ``closed_at``).
 
 | Name | Type | Definition |
 |------|------|------------|
-| `ck_kb_sec_perm_subject_type` | CHECK | `subject_type IN ('user', 'group')` |
 | `uq_kb_sec_perm_section_subject` | UNIQUE | `section_id`, `subject_id` |
 | `ck_kb_sec_perm_permission` | CHECK | `permission IN ('viewer', 'editor', 'manager')` |
+| `ck_kb_sec_perm_subject_type` | CHECK | `subject_type IN ('user', 'group')` |
 
 ### Indexes
 
@@ -1321,8 +1340,8 @@ Read-only archive of closed tickets (partitioned by ``closed_at``).
 
 | Name | Type | Definition |
 |------|------|------------|
-| `uq_kb_tags_slug` | UNIQUE | `slug` |
 | `uq_kb_tags_name` | UNIQUE | `name` |
+| `uq_kb_tags_slug` | UNIQUE | `slug` |
 
 ### Relationships
 
@@ -1519,7 +1538,7 @@ Transactional outbox for outbound messenger notifications (mirror of
 | `id` | `UUID` |  | ✓ |  |  | `gen_random_uuid()` |  |
 | `title` | `VARCHAR(500)` |  |  |  |  |  |  |
 | `body` | `TEXT` |  |  |  |  | `` |  |
-| `body_tsvector` | `TSVECTOR` | ✓ |  |  |  | Computed(<sqlalchemy.sql.elements.TextClause object at 0x7744d1ed1ac0>, persisted=True) |  |
+| `body_tsvector` | `TSVECTOR` | ✓ |  |  |  | Computed(<sqlalchemy.sql.elements.TextClause object at 0x7bb1482d6030>, persisted=True) |  |
 | `status` | `VARCHAR(20)` |  |  |  |  | `draft` |  |
 | `is_pinned` | `BOOLEAN` |  |  |  |  | `False` |  |
 | `categories` | `VARCHAR(100)[]` |  |  |  |  | `{}` |  |
@@ -1548,10 +1567,10 @@ Transactional outbox for outbound messenger notifications (mirror of
 
 | Name | Type | Definition |
 |------|------|------------|
-| `ck_news_cover_focal_zoom_range` | CHECK | `cover_focal_zoom IS NULL OR (cover_focal_zoom BETWEEN 100 AND 300)` |
 | `ck_news_status` | CHECK | `status IN ('draft', 'published', 'archived')` |
 | `ck_news_cover_focal_x_range` | CHECK | `cover_focal_x IS NULL OR (cover_focal_x BETWEEN 0 AND 100)` |
 | `ck_news_cover_focal_y_range` | CHECK | `cover_focal_y IS NULL OR (cover_focal_y BETWEEN 0 AND 100)` |
+| `ck_news_cover_focal_zoom_range` | CHECK | `cover_focal_zoom IS NULL OR (cover_focal_zoom BETWEEN 100 AND 300)` |
 
 ### Indexes
 
@@ -1827,8 +1846,8 @@ Transactional outbox for outbound messenger notifications (mirror of
 
 | Name | Type | Definition |
 |------|------|------------|
-| `` | UNIQUE | `news_id` |
 | `ck_news_polls_results_visibility` | CHECK | `results_visibility IN ('always', 'after_vote', 'after_close', 'only_admin_editor')` |
+| `` | UNIQUE | `news_id` |
 
 ### Relationships
 
@@ -2157,8 +2176,8 @@ Transactional outbox for outbound messenger notifications (mirror of
 
 | Name | Type | Definition |
 |------|------|------------|
-| `uq_photo_tags_name` | UNIQUE | `name` |
 | `uq_photo_tags_slug` | UNIQUE | `slug` |
+| `uq_photo_tags_name` | UNIQUE | `name` |
 
 ---
 
@@ -2329,12 +2348,12 @@ Transactional outbox for outbound messenger notifications (mirror of
 
 | Name | Type | Definition |
 |------|------|------------|
-| `ck_users_gender` | CHECK | `gender IS NULL OR gender IN ('male', 'female')` |
-| `ck_users_role` | CHECK | `role IN ('reader', 'editor', 'admin')` |
-| `ck_users_presence_status` | CHECK | `presence_status IN ('office', 'remote', 'vacation')` |
-| `uq_users_keycloak_id` | UNIQUE | `keycloak_id` |
 | `ck_users_lang` | CHECK | `lang IN ('ru', 'en')` |
 | `ck_users_auth_source` | CHECK | `auth_source IN ('keycloak', 'local')` |
+| `ck_users_gender` | CHECK | `gender IS NULL OR gender IN ('male', 'female')` |
+| `ck_users_presence_status` | CHECK | `presence_status IN ('office', 'remote', 'vacation')` |
+| `ck_users_role` | CHECK | `role IN ('reader', 'editor', 'admin')` |
+| `uq_users_keycloak_id` | UNIQUE | `keycloak_id` |
 
 ### Indexes
 

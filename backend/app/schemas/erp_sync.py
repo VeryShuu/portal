@@ -41,6 +41,11 @@ class ErpSyncSettingsIn(BaseModel):
     poll_interval_seconds: int = Field(ge=60, le=3600, default=900)
     expected_interval_days: int = Field(ge=1, le=30, default=4)
     notify_emails: list[str] | None = Field(default=None, max_length=100)
+    # Миграция 088: двойной гейтинг поллинга + фильтрация писём на общем ящике.
+    poll_enabled: bool = False
+    mail_subject_filter: str | None = Field(default=None, max_length=255)
+    mail_sender_filter: str | None = Field(default=None, max_length=255)
+    mail_attachment_filter: str | None = Field(default=None, max_length=255)
 
 
 class ErpSyncSettingsOut(BaseModel):
@@ -59,6 +64,10 @@ class ErpSyncSettingsOut(BaseModel):
     poll_interval_seconds: int = 900
     expected_interval_days: int = 4
     notify_emails: list[str] | None = None
+    poll_enabled: bool = False
+    mail_subject_filter: str | None = None
+    mail_sender_filter: str | None = None
+    mail_attachment_filter: str | None = None
     updated_at: datetime | None = None
 
     model_config = {"from_attributes": True}

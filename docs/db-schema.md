@@ -40,12 +40,14 @@
 
 > Корпоративный интранет-портал
 > PostgreSQL 16
-> Последнее обновление: июль 2026 (v1.15 — миграции 001..087: к v1.14 добавлены
-> **085** `notifications_cleanup_index` (индекс для очистки старых уведомлений),
+> Последнее обновление: июль 2026 (v1.16 — миграции 001..088: к v1.15 добавлена
+> **088** `erp_sync_mail_filter_and_poll` (`erp_sync_settings.poll_enabled` +
+> 3 поля фильтрации писем: subject/sender/attachment — для общего ящика).
+> Ранее — **085** `notifications_cleanup_index` (индекс для очистки старых уведомлений),
 > **086** `helpdesk_smtp_settings` (собственный SMTP-контур helpdesk),
 > **087** `users_birth_date_gender_erp_sync` (`users.birth_date`/`gender` + таблицы
 > `erp_sync_runs`/`erp_sync_settings` для импорта дней рождения и пола из ERP).
-> Ранее — **082** `helpdesk_draft_attachments` (вложения в черновиках ответа),
+> **082** `helpdesk_draft_attachments` (вложения в черновиках ответа),
 > **083** `helpdesk_messages.cc` (JSONB, копия Cc), **084** drop `helpdesk_messages.visibility`,
 > **helpdesk** (075–080: тикеты, сообщения, вложения, агенты, mailbox/digest-settings,
 > FTS tsvector+GIN, marker-таблица `helpdesk_ticket_reads`), **messenger_outbox +
@@ -54,7 +56,7 @@
 > news cover_focal_x/y/zoom (072/073). Helpdesk/MAX-таблицы детально описаны в
 > [`./helpdesk.md`](./helpdesk.md) §3 — здесь только краткая выжимка + перекрёстные
 > ссылки, чтобы не дублировать источник истины. ERP-sync-таблицы — см. конец файла.)
-> Соответствие миграциям: `001_initial_users` → `002_news` → `003_links_bookmarks` → `004_local_auth` → `005_news_cover_image` → `006_news_gallery_attachments` → `007_news_fts_consolidate` → `008_kb` → `009_kb_acl` → `010_kb_markdown` → `011_news_fts_hunspell` → `012_notifications` → `013_audit_log` → `014_photos` → `015_photo_share_tokens` → `016_photo_folders_fs_path` → `017_photo_zip_jobs` → `018_photo_tags` → `019_photo_folder_share_tokens` → `020_files` → `021_news_title_trgm` → `022_fk_indexes` → `023_keycloak_groups` → `024_trgm_indexes` → `025_user_attributes` → `026_user_attribute_mappings` → `027_news_cover_focal_point` → `028_users_soft_delete` → `029_news_categories_array` → `030_email_unique_lower` → `031_photo_folders_fk_restrict` → `032_fk_set_null_notifications_bookmarks` → `033_audit_log_metadata_gin_index` → `034_kb_articles_section_restrict` → `035_photo_folders_path_unique` → `036_kb_sections_soft_delete` → `037_users_email_partial_unique` → `038_file_items` → `039_news_cover_meta` → `040_add_feedback` → `041_add_feedback_attachments` → `042_file_folder_inherit_permissions` → `043_news_previous_status` → `044_staff_directory_order` → `045_soft_delete_partial_indexes` → `046_kb_users_partial_indexes` → `047_user_attribute_mapping_full_name_source` → `048_meetings` → `049_meeting_rooms_add_email` → `050_drop_meetings_audit_log` → `051_email_outbox` → `052_kb_section_inherit_permissions` → `053_add_news_polls` → `054_news_poll_multi_questions` → `055_meeting_rooms_add_kind` → `056_photo_folder_perm_unique_subject_type` → `057_photo_folder_storage_kind` → `058_kb_article_version_body_required` → `059_kb_sections_parent_slug_unique` → `060_photos_blurhash` → `061_kb_articles_list_index` → `062_backfill_users_directory_active_index` → `063_file_shares` → `064_object_directories` → `065_directory_entry_folder` → `066_file_items_unique_active_name` → `067_backfill_folder_creator_manager_perm` → `068_news_likes` → `069_news_comments` → `070_service_links_show_on_home` → `071_mailing_recipients` → `072_news_cover_focal_xy` → `073_news_cover_focal_zoom` → `074_add_kb_url_to_service_links` → `075_add_helpdesk` → `076_add_helpdesk_digest_settings` → `077_add_helpdesk_attachments_inline_columns` → `078_add_helpdesk_fts` → `079_drop_helpdesk_resolved` → `080_add_helpdesk_ticket_reads` → `081_add_messenger_outbox_and_max_bot_settings` → `082_add_helpdesk_draft_attachments` → `083_add_helpdesk_messages_cc` → `084_drop_helpdesk_message_visibility` → `085_notifications_cleanup_index` → `086_add_helpdesk_smtp_settings` → `087_add_users_birth_date_gender_erp_sync`
+> Соответствие миграциям: `001_initial_users` → `002_news` → `003_links_bookmarks` → `004_local_auth` → `005_news_cover_image` → `006_news_gallery_attachments` → `007_news_fts_consolidate` → `008_kb` → `009_kb_acl` → `010_kb_markdown` → `011_news_fts_hunspell` → `012_notifications` → `013_audit_log` → `014_photos` → `015_photo_share_tokens` → `016_photo_folders_fs_path` → `017_photo_zip_jobs` → `018_photo_tags` → `019_photo_folder_share_tokens` → `020_files` → `021_news_title_trgm` → `022_fk_indexes` → `023_keycloak_groups` → `024_trgm_indexes` → `025_user_attributes` → `026_user_attribute_mappings` → `027_news_cover_focal_point` → `028_users_soft_delete` → `029_news_categories_array` → `030_email_unique_lower` → `031_photo_folders_fk_restrict` → `032_fk_set_null_notifications_bookmarks` → `033_audit_log_metadata_gin_index` → `034_kb_articles_section_restrict` → `035_photo_folders_path_unique` → `036_kb_sections_soft_delete` → `037_users_email_partial_unique` → `038_file_items` → `039_news_cover_meta` → `040_add_feedback` → `041_add_feedback_attachments` → `042_file_folder_inherit_permissions` → `043_news_previous_status` → `044_staff_directory_order` → `045_soft_delete_partial_indexes` → `046_kb_users_partial_indexes` → `047_user_attribute_mapping_full_name_source` → `048_meetings` → `049_meeting_rooms_add_email` → `050_drop_meetings_audit_log` → `051_email_outbox` → `052_kb_section_inherit_permissions` → `053_add_news_polls` → `054_news_poll_multi_questions` → `055_meeting_rooms_add_kind` → `056_photo_folder_perm_unique_subject_type` → `057_photo_folder_storage_kind` → `058_kb_article_version_body_required` → `059_kb_sections_parent_slug_unique` → `060_photos_blurhash` → `061_kb_articles_list_index` → `062_backfill_users_directory_active_index` → `063_file_shares` → `064_object_directories` → `065_directory_entry_folder` → `066_file_items_unique_active_name` → `067_backfill_folder_creator_manager_perm` → `068_news_likes` → `069_news_comments` → `070_service_links_show_on_home` → `071_mailing_recipients` → `072_news_cover_focal_xy` → `073_news_cover_focal_zoom` → `074_add_kb_url_to_service_links` → `075_add_helpdesk` → `076_add_helpdesk_digest_settings` → `077_add_helpdesk_attachments_inline_columns` → `078_add_helpdesk_fts` → `079_drop_helpdesk_resolved` → `080_add_helpdesk_ticket_reads` → `081_add_messenger_outbox_and_max_bot_settings` → `082_add_helpdesk_draft_attachments` → `083_add_helpdesk_messages_cc` → `084_drop_helpdesk_message_visibility` → `085_notifications_cleanup_index` → `086_add_helpdesk_smtp_settings` → `087_add_users_birth_date_gender_erp_sync` → `088_add_erp_sync_mail_filter_and_poll`
 
 Все таблицы с полными определениями, индексами и комментариями.
 
@@ -1637,6 +1639,7 @@ CREATE UNIQUE INDEX idx_users_email_ci_active ON users (LOWER(email)) WHERE dele
 | 085 | `notifications_cleanup_index` | Индекс для очистки старых уведомлений | §«notifications» |
 | 086 | `add_helpdesk_smtp_settings` | SMTP-блок в `helpdesk_mailbox_settings` (собственный исходящий контур helpdesk) | `./helpdesk.md` §3 |
 | 087 | `add_users_birth_date_gender_erp_sync` | `users.birth_date`/`gender` + `erp_sync_runs` + `erp_sync_settings` (импорт дней рождения и пола из ERP) | [§«ERP-sync»](#erp-sync-миграция-087) |
+| 088 | `add_erp_sync_mail_filter_and_poll` | `erp_sync_settings`: `poll_enabled` (двойной гейтинг) + `mail_subject_filter`/`mail_sender_filter`/`mail_attachment_filter` (post-fetch фильтры для общего ящика) | [§«ERP-sync»](#erp-sync-миграция-087) |
 
 ---
 
@@ -1672,4 +1675,12 @@ plaintext write-only. `poll_interval_seconds` (CHECK 60–3600, default 900) —
 watchdog-алерта «письма нет >N дней»; `notify_emails` — override списка адресов
 для отчётов (NULL = все admin с `notify_email=true`). Гетируется модулем
 `erp_sync.enabled` в `modules.json`.
+
+**Миграция 088** (additive): `poll_enabled` (default false) — отдельный флаг
+авто-поллинга. Двойной гейтинг: `modules.erp_sync.enabled` (вся фича) AND
+`poll_enabled` (только авто-забор); позволяет выключить поллинг, оставив ручной
+upload. `mail_subject_filter` / `mail_sender_filter` / `mail_attachment_filter`
+(nullable) — CI-подстроки для post-fetch фильтрации писем на общем ящике (без
+фильтра импорт сломается на чужом письме; письма мимо фильтра **не**
+помечаются `\Seen`). Подробно — [`./erp-sync.md`](./erp-sync.md).
 

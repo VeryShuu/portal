@@ -624,6 +624,20 @@
         "title": "Body_import_article_md_api_v1_kb_articles_import_post",
         "type": "object"
       },
+      "Body_import_file_api_v1_erp_sync_import_file_post": {
+        "properties": {
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_import_file_api_v1_erp_sync_import_file_post",
+        "type": "object"
+      },
       "Body_import_vault_zip_api_v1_kb_import_vault_post": {
         "properties": {
           "file": {
@@ -3645,6 +3659,502 @@
           "enabled"
         ],
         "title": "ErpSyncModuleOut",
+        "type": "object"
+      },
+      "ErpSyncRunList": {
+        "description": "Пагинированный список импортов (``GET /erp-sync/runs``).",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ErpSyncRunOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total"
+        ],
+        "title": "ErpSyncRunList",
+        "type": "object"
+      },
+      "ErpSyncRunNowResponse": {
+        "description": "Ответ ``POST /erp-sync/run``: запущен ли импорт сразу синхронно или\nпоставлен в ARQ-очередь (``job_id``).",
+        "properties": {
+          "job_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Job Id"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "status": {
+            "description": "queued (поставлен в ARQ-очередь) | processed (выполнен синхронно)",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "ErpSyncRunNowResponse",
+        "type": "object"
+      },
+      "ErpSyncRunOut": {
+        "description": "Один проход импорта. ``report`` (JSONB) возвращается как есть — фронтенд\nрендерит разделы changed/unmatched/ambiguous/conflicts/errors.",
+        "properties": {
+          "attachment_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attachment Name"
+          },
+          "conflicts": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conflicts"
+          },
+          "errors": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Errors"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "message_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message Id"
+          },
+          "report": {
+            "additionalProperties": true,
+            "title": "Report",
+            "type": "object"
+          },
+          "rows_ambiguous": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rows Ambiguous"
+          },
+          "rows_matched": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rows Matched"
+          },
+          "rows_total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rows Total"
+          },
+          "rows_unmatched": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rows Unmatched"
+          },
+          "rows_updated": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rows Updated"
+          },
+          "started_at": {
+            "format": "date-time",
+            "title": "Started At",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "triggered_by": {
+            "title": "Triggered By",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "triggered_by",
+          "started_at",
+          "status"
+        ],
+        "title": "ErpSyncRunOut",
+        "type": "object"
+      },
+      "ErpSyncSettingsIn": {
+        "description": "Конфиг ящика, на который ERP шлёт отчёты. ``imap_password`` — write-only:\n\n* при **создании** (первый ``PUT`` с ``enabled=true``) — обязателен;\n* при **обновлении** — опционален; ``None`` = «оставить прежний шифр».\n\nВ отличие от helpdesk, IMAP-блок целиком nullable: модуль может быть\nвыключен (``enabled=false``) с пустым ящиком, и только при включении\nтребуется валидная конфигурация (проверяется в API-слое, не в схеме).",
+        "properties": {
+          "enabled": {
+            "default": false,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "expected_interval_days": {
+            "default": 4,
+            "maximum": 30.0,
+            "minimum": 1.0,
+            "title": "Expected Interval Days",
+            "type": "integer"
+          },
+          "imap_folder": {
+            "default": "INBOX",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Imap Folder",
+            "type": "string"
+          },
+          "imap_host": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Imap Host"
+          },
+          "imap_password": {
+            "anyOf": [
+              {
+                "maxLength": 512,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Imap Password"
+          },
+          "imap_port": {
+            "default": 993,
+            "maximum": 65535.0,
+            "minimum": 1.0,
+            "title": "Imap Port",
+            "type": "integer"
+          },
+          "imap_use_ssl": {
+            "default": true,
+            "title": "Imap Use Ssl",
+            "type": "boolean"
+          },
+          "imap_username": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Imap Username"
+          },
+          "mail_attachment_filter": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mail Attachment Filter"
+          },
+          "mail_sender_filter": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mail Sender Filter"
+          },
+          "mail_subject_filter": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mail Subject Filter"
+          },
+          "notify_emails": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 100,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notify Emails"
+          },
+          "poll_enabled": {
+            "default": false,
+            "title": "Poll Enabled",
+            "type": "boolean"
+          },
+          "poll_interval_seconds": {
+            "default": 900,
+            "maximum": 3600.0,
+            "minimum": 60.0,
+            "title": "Poll Interval Seconds",
+            "type": "integer"
+          }
+        },
+        "title": "ErpSyncSettingsIn",
+        "type": "object"
+      },
+      "ErpSyncSettingsOut": {
+        "description": "Текущие настройки. Пароль никогда не возвращается — только признак того,\nчто он задан. ``configured`` здесь всегда ``True`` (singleton-строка\nсоздаётся миграцией 087 с defaults), поле оставлено для консистентности с\n``HelpdeskMailboxSettingsOut``.",
+        "properties": {
+          "enabled": {
+            "default": false,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "expected_interval_days": {
+            "default": 4,
+            "title": "Expected Interval Days",
+            "type": "integer"
+          },
+          "imap_folder": {
+            "default": "INBOX",
+            "title": "Imap Folder",
+            "type": "string"
+          },
+          "imap_host": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Imap Host"
+          },
+          "imap_password_set": {
+            "default": false,
+            "title": "Imap Password Set",
+            "type": "boolean"
+          },
+          "imap_port": {
+            "default": 993,
+            "title": "Imap Port",
+            "type": "integer"
+          },
+          "imap_use_ssl": {
+            "default": true,
+            "title": "Imap Use Ssl",
+            "type": "boolean"
+          },
+          "imap_username": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Imap Username"
+          },
+          "mail_attachment_filter": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mail Attachment Filter"
+          },
+          "mail_sender_filter": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mail Sender Filter"
+          },
+          "mail_subject_filter": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mail Subject Filter"
+          },
+          "notify_emails": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notify Emails"
+          },
+          "poll_enabled": {
+            "default": false,
+            "title": "Poll Enabled",
+            "type": "boolean"
+          },
+          "poll_interval_seconds": {
+            "default": 900,
+            "title": "Poll Interval Seconds",
+            "type": "integer"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "title": "ErpSyncSettingsOut",
+        "type": "object"
+      },
+      "ErpSyncTestResult": {
+        "description": "Результат проверки подключения к ящику (``POST /erp-sync/test``).",
+        "properties": {
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ErpSyncTestResult",
         "type": "object"
       },
       "FeedbackAdminListOut": {
@@ -19907,6 +20417,403 @@
         "summary": "Экспорт объектов (csv | xlsx | pdf)",
         "tags": [
           "directories"
+        ]
+      }
+    },
+    "/api/v1/erp-sync/import-file": {
+      "post": {
+        "description": "Импортировать файл напрямую (multipart-upload), синхронно.\n\nОбщий ``run_import`` с mailbox — отличие только в источнике ``Attachment``.\n``message_id=None`` (нет письма; дедуп по hash не делаем — каждый upload\nновый, чтобы админ мог перезапустить импорт того же файла при отладке).",
+        "operationId": "import_file_api_v1_erp_sync_import_file_post",
+        "parameters": [
+          {
+            "in": "cookie",
+            "name": "portal_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Portal Session"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_import_file_api_v1_erp_sync_import_file_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpSyncRunNowResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Import File",
+        "tags": [
+          "erp-sync"
+        ]
+      }
+    },
+    "/api/v1/erp-sync/run": {
+      "post": {
+        "description": "Поставить mailbox-poll в ARQ-очередь (немедленно, не ждать cron).\n\nИмпорт выполнится в воркере с ``triggered_by='manual'``. ``poll_enabled``\nНЕ проверяется (админ явно хочет «забрать сейчас»), но IMAP должен быть\nнастроен — задача вернёт ``imap_not_configured``, если нет.",
+        "operationId": "run_now_api_v1_erp_sync_run_post",
+        "parameters": [
+          {
+            "in": "cookie",
+            "name": "portal_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Portal Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpSyncRunNowResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Run Now",
+        "tags": [
+          "erp-sync"
+        ]
+      }
+    },
+    "/api/v1/erp-sync/runs": {
+      "get": {
+        "description": "Пагинированный список последних импортов (новые первыми).\n\n``report`` (JSONB) возвращается как есть — фронтенд рендерит разделы\nchanged/unmatched/ambiguous/conflicts/errors.",
+        "operationId": "list_runs_api_v1_erp_sync_runs_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "portal_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Portal Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpSyncRunList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Runs",
+        "tags": [
+          "erp-sync"
+        ]
+      }
+    },
+    "/api/v1/erp-sync/runs/{run_id}": {
+      "get": {
+        "operationId": "get_run_api_v1_erp_sync_runs__run_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "portal_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Portal Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpSyncRunOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Run",
+        "tags": [
+          "erp-sync"
+        ]
+      }
+    },
+    "/api/v1/erp-sync/settings": {
+      "get": {
+        "operationId": "get_settings_api_v1_erp_sync_settings_get",
+        "parameters": [
+          {
+            "in": "cookie",
+            "name": "portal_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Portal Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpSyncSettingsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Settings",
+        "tags": [
+          "erp-sync"
+        ]
+      },
+      "put": {
+        "operationId": "put_settings_api_v1_erp_sync_settings_put",
+        "parameters": [
+          {
+            "in": "cookie",
+            "name": "portal_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Portal Session"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ErpSyncSettingsIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpSyncSettingsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Settings",
+        "tags": [
+          "erp-sync"
+        ]
+      }
+    },
+    "/api/v1/erp-sync/test": {
+      "post": {
+        "description": "Проверка IMAP-подключения (login + select folder).\n\nМаскируем исключения: aioimaplib в некоторых из них echo'ит LOGIN-команду\nс паролем (грабля H-9 из helpdesk).",
+        "operationId": "test_connection_api_v1_erp_sync_test_post",
+        "parameters": [
+          {
+            "in": "cookie",
+            "name": "portal_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Portal Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpSyncTestResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Test Connection",
+        "tags": [
+          "erp-sync"
         ]
       }
     },
