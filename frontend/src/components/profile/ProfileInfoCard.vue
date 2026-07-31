@@ -18,6 +18,20 @@
         <dt>{{ t('users.fields.position') }}</dt>
         <dd>{{ user.position ?? '—' }}</dd>
       </div>
+      <div
+        v-if="user.birth_date"
+        class="info-row"
+      >
+        <dt>{{ t('staff.fields.birthDate') }}</dt>
+        <dd>{{ birthDateLabel }}</dd>
+      </div>
+      <div
+        v-if="user.gender"
+        class="info-row"
+      >
+        <dt>{{ t('staff.fields.gender') }}</dt>
+        <dd>{{ genderLabel }}</dd>
+      </div>
       <template v-if="!isOwn">
         <div
           v-for="row in extraAttributes"
@@ -41,19 +55,32 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { UserPublic } from '../../api/users'
 import type { UserMe } from '../../api/auth'
+import { formatDate } from '../../utils/formatDate'
 
 type DisplayUser = UserMe | UserPublic
 
-defineProps<{
+const props = defineProps<{
   user: DisplayUser
   isOwn: boolean
   extraAttributes: Array<{ key: string; label: string; value: string }>
 }>()
 
 const { t } = useI18n()
+
+const birthDateLabel = computed(() =>
+  props.user.birth_date ? formatDate(props.user.birth_date, props.user.lang ?? 'ru') : '',
+)
+
+const genderLabel = computed(() => {
+  const g = props.user.gender
+  if (g === 'male') return t('staff.genderMale')
+  if (g === 'female') return t('staff.genderFemale')
+  return '';
+})
 </script>
 
 <style scoped>

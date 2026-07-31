@@ -18,6 +18,9 @@ export interface UserPublic {
   last_login_at: string | null
   staff_sort_order?: number | null
   staff_hidden?: boolean
+  // ERP-синхронизация (миграция 087): видны всем авторизованным в карточке.
+  birth_date: string | null
+  gender: 'male' | 'female' | null
 }
 
 export interface PatchProfileDto {

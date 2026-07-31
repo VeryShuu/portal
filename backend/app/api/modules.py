@@ -22,6 +22,7 @@ from app.core.modules_config import (
     _SETTINGS_DIR,
     AllModuleSettings,
     DirectoriesModuleSettings,
+    ErpSyncModuleSettings,
     HelpdeskModuleSettings,
     MeetingsModuleSettings,
     NextcloudModuleSettings,
@@ -45,6 +46,9 @@ __all__ = [
     "DirectoriesModuleIn",
     "DirectoriesModuleOut",
     "DirectoriesModuleSettings",
+    "ErpSyncModuleIn",
+    "ErpSyncModuleOut",
+    "ErpSyncModuleSettings",
     "HelpdeskModuleIn",
     "HelpdeskModuleOut",
     "HelpdeskModuleSettings",
@@ -113,6 +117,10 @@ class HelpdeskModuleOut(BaseModel):
     enabled: bool
 
 
+class ErpSyncModuleOut(BaseModel):
+    enabled: bool
+
+
 class AllModuleSettingsOut(BaseModel):
     nextcloud: NextcloudModuleOut
     photos: PhotosModuleOut
@@ -120,6 +128,7 @@ class AllModuleSettingsOut(BaseModel):
     directories: DirectoriesModuleOut
     signature: SignatureModuleOut
     helpdesk: HelpdeskModuleOut
+    erp_sync: ErpSyncModuleOut
 
 
 # ── IN models ─────────────────────────────────────────────────────────────────
@@ -155,6 +164,10 @@ class SignatureModuleIn(BaseModel):
 
 
 class HelpdeskModuleIn(BaseModel):
+    enabled: bool = False
+
+
+class ErpSyncModuleIn(BaseModel):
     enabled: bool = False
 
 
@@ -195,6 +208,7 @@ async def get_modules_for_ui(_: CurrentUser, redis: RedisDep) -> AllModuleSettin
         directories=DirectoriesModuleOut(enabled=m.directories.enabled),
         signature=SignatureModuleOut(enabled=m.signature.enabled),
         helpdesk=HelpdeskModuleOut(enabled=m.helpdesk.enabled),
+        erp_sync=ErpSyncModuleOut(enabled=m.erp_sync.enabled),
     )
 
 
@@ -208,6 +222,7 @@ async def get_module_settings(_: AdminDep, redis: RedisDep) -> AllModuleSettings
         directories=DirectoriesModuleOut(enabled=m.directories.enabled),
         signature=SignatureModuleOut(enabled=m.signature.enabled),
         helpdesk=HelpdeskModuleOut(enabled=m.helpdesk.enabled),
+        erp_sync=ErpSyncModuleOut(enabled=m.erp_sync.enabled),
     )
 
 
@@ -353,3 +368,24 @@ async def update_helpdesk_module(
     )
     logger.info("modules.helpdesk_updated", enabled=data.enabled)
     return HelpdeskModuleOut(enabled=data.enabled)
+
+
+@router.put("/admin/modules/erp_sync", response_model=ErpSyncModuleOut)
+async def update_erp_sync_module(
+    data: ErpSyncModuleIn,
+    admin: AdminDep,
+    redis: RedisDep,
+) -> ErpSyncModuleOut:
+    m = await load_modules_shared(redis)
+    m.erp_sync = ErpSyncModuleSettings(enabled=data.enabled)
+    _save_modules(m)
+    await bump_version(redis, _CACHE_VERSION_KEY)
+    await _emit_audit(
+        redis,
+        event_type="modules.toggled",
+        user_id=str(admin.id),
+        resource_id="erp_sync",
+        metadata={"module": "erp_sync", "enabled": data.enabled},
+    )
+    logger.info("modules.erp_sync_updated", enabled=data.enabled)
+    return ErpSyncModuleOut(enabled=data.enabled)

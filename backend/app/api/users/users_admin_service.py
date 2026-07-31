@@ -154,6 +154,10 @@ async def admin_patch_profile(
         updates["position"] = body.position
     if body.phone is not None:
         updates["phone"] = body.phone
+    if body.birth_date is not None:
+        updates["birth_date"] = body.birth_date
+    if body.gender is not None:
+        updates["gender"] = body.gender
 
     if not updates:
         return target

@@ -152,8 +152,12 @@
       "mobilePhone": "Мобильный",
       "email": "E-mail",
       "office": "Город",
-      "department": "Отдел"
+      "department": "Отдел",
+      "birthDate": "День рождения",
+      "gender": "Пол"
     },
+    "genderMale": "Мужской",
+    "genderFemale": "Женский",
     "edit": {
       "enter": "Редактировать порядок",
       "exit": "Выйти из режима редактирования",

@@ -53,6 +53,8 @@ def _make_db_user(
     u.created_at = "2024-01-01T00:00:00+00:00"
     u.updated_at = "2024-01-01T00:00:00+00:00"
     u.last_login_at = None
+    u.birth_date = None
+    u.gender = None
     return u
 
 

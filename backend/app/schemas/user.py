@@ -2,12 +2,16 @@ from __future__ import annotations
 
 import re
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
 _EMAIL_RE = re.compile(r"^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,63}$")
+
+# Пол сотрудника — источником является ERP-выгрузка (миграция 087), но админ
+# может отредактировать вручную. Значения фиксированы CHECK-ограничением БД.
+GENDER_VALUES = ("male", "female")
 
 
 class UserPublic(BaseModel):
@@ -27,6 +31,10 @@ class UserPublic(BaseModel):
     last_login_at: datetime | None = None
     staff_sort_order: int | None = None
     staff_hidden: bool = False
+    # ERP-синхронизация (миграция 087): видны всем авторизованным в карточке
+    # /staff (аналогично position/phone).
+    birth_date: date | None = None
+    gender: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -107,6 +115,18 @@ class AdminPatchProfileRequest(BaseModel):
     department: str | None = None
     position: str | None = None
     phone: str | None = None
+    # ERP-синхронизация (миграция 087): ручное редактирование админом. Источник
+    # истины — ERP, поэтому следующий импорт перетрёт эти значения, но до него
+    # админ может скорректировать ошибку локально.
+    birth_date: date | None = None
+    gender: str | None = None
+
+    @field_validator("gender")
+    @classmethod
+    def validate_gender(cls, v: str | None) -> str | None:
+        if v is not None and v not in GENDER_VALUES:
+            raise ValueError(f"gender must be one of {GENDER_VALUES}")
+        return v
 
 
 class DepartmentList(BaseModel):

@@ -374,13 +374,17 @@ Front-channel SLO endpoint, который Keycloak вызывает в скры
 ```
 
 ### PATCH /api/v1/users/admin/{user_id}/profile `[admin, only target.auth_source=local]`
-Редактирование профильных полей локального пользователя.
+Редактирование профильных полей локального пользователя. Все поля опциональны;
+`birth_date`/`gender` (миграция 087) также редактируются вручную, но следующий
+импорт ERP перетрёт их значения (источник истины — ERP).
 ```json
 ← {
   "full_name": "Иван Петров",
   "department": "IT",
   "position": "Backend Developer",
-  "phone": "+7 999 123-45-67"
+  "phone": "+7 999 123-45-67",
+  "birth_date": "1990-05-15",
+  "gender": "male"
 }
 → 200 { /* UserPublic */ }
 → 403 { "detail": "Profile editing is only available for local accounts" }
@@ -2747,6 +2751,27 @@ Thumbnail фото в публичной папке (без auth). `size` in `20
 ### PUT /admin/modules/directories `[admin]`
 
 Мастер-переключатель раздела «Справочники объектов» (вкладки в `/staff`). Когда `enabled=false` — весь раздел `/api/v1/directories/*` возвращает 404, объекты исключаются из глобального поиска, вкладки скрыты.
+
+```json
+{ "enabled": true }
+```
+
+```
+→ 200 { "enabled": true }
+→ 422 Validation error
+```
+
+После сохранения — атомарная запись `/data/settings/modules.json` + сброс TTL-кэша модулей.
+
+---
+
+### PUT /admin/modules/erp_sync `[admin]`
+
+Мастер-переключатель модуля ERP-синхронизации дней рождения и пола сотрудников
+(миграция 087). Когда `enabled=false` — весь контур `/api/v1/erp-sync/*` и
+cron-поллинг ящика отключены (404). Сам импорт (pipeline, mailbox-poll, отчёты)
+появится в PR2; в PR1 toggled-флаг + поля `users.birth_date`/`gender` уже
+доступны для ручного редактирования.
 
 ```json
 { "enabled": true }

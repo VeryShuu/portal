@@ -411,6 +411,7 @@ tests/integration/test_migrations.py::test_migration_revision_round_trip[083]
 tests/integration/test_migrations.py::test_migration_revision_round_trip[084]
 tests/integration/test_migrations.py::test_migration_revision_round_trip[085]
 tests/integration/test_migrations.py::test_migration_revision_round_trip[086]
+tests/integration/test_migrations.py::test_migration_revision_round_trip[087]
 tests/integration/test_migrations.py::test_migrations_full_lifecycle
 tests/integration/test_migrations.py::test_migrations_stepwise_down_up
 tests/integration/test_migrations_nightly.py::test_alembic_upgrade_head_on_clean_container
@@ -621,6 +622,8 @@ tests/security/test_xss_sanitization.py::test_text_align_style_preserved_as_cont
 tests/security/test_xss_sanitization.py::test_unknown_xss_tag_with_inline_handler_stripped
 tests/security/test_xss_sanitization.py::test_vbscript_protocol_rejected
 tests/unit/test_admin_users.py::TestAdminUserValidationLogic::test_admin_patch_profile_allows_none_fields
+tests/unit/test_admin_users.py::TestAdminUserValidationLogic::test_admin_patch_profile_birth_date_parsed
+tests/unit/test_admin_users.py::TestAdminUserValidationLogic::test_admin_patch_profile_gender_validation
 tests/unit/test_admin_users.py::TestAdminUserValidationLogic::test_admin_patch_profile_request_full_name_required_min_length
 tests/unit/test_admin_users.py::TestAdminUserValidationLogic::test_auth_source_check_for_profile_edit
 tests/unit/test_admin_users.py::TestAdminUserValidationLogic::test_local_user_create_request_valid
@@ -1091,6 +1094,21 @@ tests/unit/test_email_outbox_service.py::TestRequeueStaleSending::test_targets_s
 tests/unit/test_email_outbox_service.py::TestRescheduleForRetry::test_reset_attempts_param_passed
 tests/unit/test_email_outbox_service.py::TestRescheduleForRetry::test_returns_false_when_not_updated
 tests/unit/test_email_outbox_service.py::TestRescheduleForRetry::test_returns_true_when_updated
+tests/unit/test_erp_sync_schemas.py::TestErpSyncMiscSchemas::test_run_now_response
+tests/unit/test_erp_sync_schemas.py::TestErpSyncMiscSchemas::test_test_result
+tests/unit/test_erp_sync_schemas.py::TestErpSyncModuleGate::test_all_module_settings_drops_unknown_keys_silently
+tests/unit/test_erp_sync_schemas.py::TestErpSyncModuleGate::test_all_module_settings_includes_erp_sync
+tests/unit/test_erp_sync_schemas.py::TestErpSyncModuleGate::test_all_module_settings_parse_erp_sync_from_json
+tests/unit/test_erp_sync_schemas.py::TestErpSyncModuleGate::test_erp_sync_module_in_out_models
+tests/unit/test_erp_sync_schemas.py::TestErpSyncModuleGate::test_module_settings_default_disabled
+tests/unit/test_erp_sync_schemas.py::TestErpSyncRunSchemas::test_run_list_shape
+tests/unit/test_erp_sync_schemas.py::TestErpSyncRunSchemas::test_run_out_report_defaults_empty
+tests/unit/test_erp_sync_schemas.py::TestErpSyncRunSchemas::test_run_out_validates_status
+tests/unit/test_erp_sync_schemas.py::TestErpSyncRunSchemas::test_run_out_validates_triggered_by
+tests/unit/test_erp_sync_schemas.py::TestErpSyncSettingsSchemas::test_settings_in_defaults
+tests/unit/test_erp_sync_schemas.py::TestErpSyncSettingsSchemas::test_settings_in_poll_interval_bounds
+tests/unit/test_erp_sync_schemas.py::TestErpSyncSettingsSchemas::test_settings_out_defaults
+tests/unit/test_erp_sync_schemas.py::TestErpSyncSettingsSchemas::test_settings_out_no_plaintext_password_field
 tests/unit/test_feedback_schema.py::TestEnumValues::test_category_values
 tests/unit/test_feedback_schema.py::TestEnumValues::test_status_values
 tests/unit/test_feedback_schema.py::TestFeedbackInMessage::test_message_empty_default
@@ -2811,17 +2829,6 @@ tests/unit/test_meetings_audit_unit.py::TestPushMeetingsAudit::test_db_failure_i
 tests/unit/test_meetings_audit_unit.py::TestPushMeetingsAudit::test_falls_back_to_client_host_when_no_forwarded_header
 tests/unit/test_meetings_audit_unit.py::TestPushMeetingsAudit::test_no_request_no_user
 tests/unit/test_meetings_audit_unit.py::TestPushMeetingsAudit::test_writes_row_with_forwarded_ip_and_user_metadata
-tests/unit/test_meetings_bookings_helpers.py::test_compute_diff_conservation_and_disjoint
-tests/unit/test_meetings_bookings_helpers.py::test_compute_diff_filters_all_malformed_entries
-tests/unit/test_meetings_bookings_helpers.py::test_compute_diff_non_participant_changed_passthrough
-tests/unit/test_meetings_bookings_helpers.py::test_compute_diff_reflexive_all_unchanged
-tests/unit/test_meetings_bookings_helpers.py::test_compute_diff_symmetric_direction_swap
-tests/unit/test_meetings_bookings_helpers.py::test_date_range_converts_non_utc_timezone_to_utc
-tests/unit/test_meetings_bookings_helpers.py::test_date_range_handles_dst_timezone
-tests/unit/test_meetings_bookings_helpers.py::test_date_range_returns_full_day_bounds_in_utc
-tests/unit/test_meetings_bookings_helpers.py::test_to_utc_assigns_utc_to_naive_datetime
-tests/unit/test_meetings_bookings_helpers.py::test_to_utc_converts_non_utc_aware_to_utc
-tests/unit/test_meetings_bookings_helpers.py::test_to_utc_keeps_aware_datetime_unchanged_in_utc
 tests/unit/test_meetings_bookings_limit.py::TestBookingsListLimitCap::test_default_and_bounds
 tests/unit/test_meetings_bookings_limit.py::TestBookingsListLimitCap::test_my_endpoint_cap_unchanged
 tests/unit/test_meetings_guard.py::TestMeetingsGuard::test_disabled_returns_404
@@ -4609,6 +4616,7 @@ tests/unit/test_worker_tasks.py::TestRefreshCustomMetrics::test_no_pool_skips_db
 tests/unit/test_worker_tasks.py::TestRefreshCustomMetrics::test_photo_storage_calculated
 tests/unit/test_worker_tasks.py::TestRefreshCustomMetrics::test_returns_snapshot_dict
 tests/unit/test_worker_tasks.py::TestRefreshCustomMetrics::test_saves_snapshot_to_redis
+(pytest collection failed; check backend venv)
 ```
 
 ## Frontend Vitest (tests/unit/*.spec.ts)
