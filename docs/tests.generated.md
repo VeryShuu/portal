@@ -1142,6 +1142,7 @@ tests/unit/test_erp_sync_parser.py::TestParseAttachment::test_dedup_identical_ro
 tests/unit/test_erp_sync_parser.py::TestParseAttachment::test_empty_file
 tests/unit/test_erp_sync_parser.py::TestParseAttachment::test_errors_collected
 tests/unit/test_erp_sync_parser.py::TestParseAttachment::test_header_filtered
+tests/unit/test_erp_sync_parser.py::TestParseAttachment::test_header_not_in_errors
 tests/unit/test_erp_sync_parser.py::TestParseAttachment::test_parens_stripped_in_match
 tests/unit/test_erp_sync_parser.py::TestParseAttachment::test_semicolon_delimiter
 tests/unit/test_erp_sync_parser.py::TestParseAttachment::test_total_raw_counts_all
