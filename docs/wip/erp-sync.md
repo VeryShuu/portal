@@ -60,6 +60,27 @@ ERP (1С) шлёт письмо на служебный ящик 2 раза в �
     ошибку в раздел отчёта «Конфликты в файле» для ручного разбора админом.
   - Решение принято заказчиком; логика живёт в `parser` (дедуп) и
     `importer`/`report` (конфликты).
+- **2026-07-31 (PR2 scope)**: **форматы файлов — поддержать ВСЕ 5** из
+  приложенных заказчиком (`txt`/`csv`/`xlsx`/`xls` + авто-кодировка BOM→cp1251).
+  `.xls` (legacy OLE2) парсится через `xlrd==2.0.1` (лёгкий dep ~200 КБ,
+  формат заморожен; добавляется в `pyproject.toml`); `xlsx` — через `openpyxl`
+  (уже в deps); `txt`/`csv` — `csv`-модуль. Ранее рекомендовал отклонять `.xls`
+  — **решение пересмотрено**: `.xls` физически присутствовал в реальных
+  выгрузках, риск потери цикла при пересохранении оператором перевешивает цену dep.
+- **2026-07-31 (PR2 scope)**: **ручной запуск — две кнопки в admin UI**:
+  1. **«Запустить синхронизацию»** (основная) — mailbox-trigger: форсирует
+     немедленный IMAP-poll (`run_erp_sync` cron-pipeline с
+     `triggered_by=manual`). Покрывает 95% случаев («письмо пришло → нажал →
+     получил отчёт сейчас, не ждать 15 мин»).
+  2. **«Загрузить файл вручную»** (второстепенная, для диагностики/первичной
+     настройки/миграции) — multipart-upload через `POST /erp-sync/import-file`,
+     вызывает тот же `importer.run_import()` (источник файла — тело запроса, не
+     IMAP). Работает даже при ненастроенном/недоступном ящике; идеальна для
+     первичной верификации парсера на реальном файле и разбора проблемных
+     выгрузок. В UI можно спрятать за «Расширенные».
+  Общий `importer.run_import()` абстрагирован от источника (принимает
+  `Attachment`-объект `{name, bytes, hash}`); mailbox и upload различаются
+  только наполнением этого объекта.
 
 ## Архитектура (pipeline)
 
@@ -125,6 +146,18 @@ CREATE TABLE erp_sync_settings (
 INSERT INTO erp_sync_settings (id) VALUES (1);
 ```
 
+## Статус по PR
+
+- **PR1 (фундамент) — ГОТОВ, PR #50 открыт** (`feat/erp-sync-foundation`):
+  миграция 087, модели ErpSyncRun/Settings, birth_date/gender в схемах +
+  admin_patch + module-gate (7 точек), frontend (StaffCard/ProfileInfoCard +
+  i18n), unit-тесты, ci_lint чист. Ожидает мёрджа после 16 CI checks.
+- **PR2 (pipeline импорта) — следующий**. Scope зафиксирован выше (форматы:
+  все 5; ручной запуск: mailbox-trigger + multipart-upload). Отправная точка —
+  модели/схемы/module-gate из PR1 уже на месте; нужно реализовать
+  `services/erp_sync/*`, worker-tasks, `api/erp_sync/*`, тесты, модульный док.
+- **PR3 (frontend admin-вкладка) — после PR2**. Зависит от API PR2.
+
 ## Чеклист (DoD)
 
 ### Backend
@@ -134,12 +167,13 @@ INSERT INTO erp_sync_settings (id) VALUES (1);
 - [ ] `birth_date`/`gender` в `UserPublic` + `UserMe` (Pydantic `app/schemas/user.py`)
 - [ ] admin-edit `birth_date`/`gender` в `AdminPatchProfileRequest` + `users_admin_service`
 - [ ] `app/services/erp_sync/mailbox.py` — IMAP-poll (копия helpdesk-ingress, reuse `secret_crypto`)
-- [ ] `app/services/erp_sync/parser.py` — мульти-формат (txt/csv/xls/xlsx) + авто-кодировка + дедуп дублей + детект конфликтов
+- [ ] `app/services/erp_sync/parser.py` — мульти-формат (txt/csv/xlsx/**xls** через `xlrd==2.0.1`) + авто-кодировка (BOM→cp1251) + дедуп дублей + детект конфликтов
+- [ ] `xlrd==2.0.1` добавлен в `backend/pyproject.toml` (`[project.dependencies]`)
 - [ ] `app/services/erp_sync/matcher.py` — оркестрация `users_repo.find_by_full_name_*`, triage 1/0/>1
 - [ ] `app/services/erp_sync/importer.py` — основная транзакция: parse→match→update→diff→report
 - [ ] `app/services/erp_sync/report.py` — HTML-отчёт для email (разделы changed/unmatched/ambiguous/conflicts/errors)
 - [ ] `app/worker/tasks/erp_sync.py` (`erp_sync_import` cron) + `erp_sync_watchdog.py`
-- [ ] `app/api/erp_sync/` — CRUD настроек + `GET /runs` + `POST /run` (ручной) + `POST /test`
+- [ ] `app/api/erp_sync/` — CRUD настроек + `GET /runs` + `POST /run` (mailbox-trigger, manual) + `POST /import-file` (multipart-upload, общий `run_import`) + `POST /test`
 - [ ] module-gate `modules.json: erp_sync.enabled`; регистрация в `app/api/__init__.py` + `app/worker/main.py::cron_jobs`
 - [ ] health-probe в `integration_health` + Prometheus gauge (`erp_sync:last_success_at`)
 
@@ -150,7 +184,7 @@ INSERT INTO erp_sync_settings (id) VALUES (1);
 - [ ] i18n ключи в `ru.json` + `en.json` синхронно (`erp_sync.*`, `staff.birth_date`, `staff.gender`)
 
 ### Тесты
-- [ ] unit `parser` (4 формата × кодировки, дедуп дублей, конфликты, скобки `(...)` в ФИО, ё/е, невалидные даты/пол)
+- [ ] unit `parser` (5 форматов × кодировки, дедуп дублей, конфликты, скобки `(...)` в ФИО, ё/е, невалидные даты/пол)
 - [ ] unit `matcher` (exact/words/ambiguous/unmatched; edge-кейсы из `test_meetings_participants.py`)
 - [ ] unit `report` (diff, форматирование)
 - [ ] integration (DSN/testcontainers): полный цикл insert users → import → assert updates + diff; ручной запуск через API; watchdog stale → alert; дедуп по Message-ID
