@@ -63,13 +63,14 @@ class TestErpSyncSettingsSchemas:
 
         s = ErpSyncSettingsIn()
         assert s.enabled is False
-        assert s.imap_host is None
-        assert s.imap_port == 993
-        assert s.imap_use_ssl is True
-        assert s.imap_password is None  # write-only
         assert s.poll_interval_seconds == 900
         assert s.expected_interval_days == 4
         assert s.notify_emails is None
+        assert s.poll_enabled is False
+        # IMAP вынесен в общие настройки (ADR-048) — per-module остались фильтры.
+        assert s.mail_subject_filter is None
+        assert s.mail_sender_filter is None
+        assert s.mail_attachment_filter is None
 
     def test_settings_in_poll_interval_bounds(self):
         from pydantic import ValidationError
@@ -89,19 +90,28 @@ class TestErpSyncSettingsSchemas:
 
         s = ErpSyncSettingsOut()
         assert s.enabled is False
-        assert s.imap_password_set is False  # пароль не возвращается
-        assert s.imap_port == 993
         assert s.poll_interval_seconds == 900
-        assert "password" not in s.model_dump()  # plaintext никогда не возвращается
+        # IMAP-полей в Out больше нет (переехали во вкладку Email).
+        assert not hasattr(s, "imap_host")
+        assert not hasattr(s, "imap_password_set")
 
-    def test_settings_out_no_plaintext_password_field(self):
-        """Главное свойство write-only: в Out-схеме нет поля plaintext-пароля."""
+    def test_settings_out_no_imap_fields(self):
+        """ADR-048: IMAP вынесен в общие настройки — в ErpSyncSettingsOut
+        нет ни imap-полей, ни plaintext-пароля."""
         from app.schemas.erp_sync import ErpSyncSettingsOut
 
         fields = set(ErpSyncSettingsOut.model_fields.keys())
-        assert "imap_password" not in fields
-        assert "imap_password_enc" not in fields
-        assert "imap_password_set" in fields
+        for imap_field in (
+            "imap_host",
+            "imap_port",
+            "imap_username",
+            "imap_password",
+            "imap_password_enc",
+            "imap_password_set",
+            "imap_folder",
+            "imap_use_ssl",
+        ):
+            assert imap_field not in fields
 
 
 # ── Run schemas ──────────────────────────────────────────────────────────────
@@ -178,13 +188,3 @@ class TestErpSyncMiscSchemas:
         assert r.status == "queued"
         assert r.job_id == "abc"
         assert r.run_id is None
-
-    def test_test_result(self):
-        from app.schemas.erp_sync import ErpSyncTestResult
-
-        ok = ErpSyncTestResult(ok=True)
-        assert ok.ok is True
-        assert ok.error is None
-        fail = ErpSyncTestResult(ok=False, error="auth failed")
-        assert fail.ok is False
-        assert fail.error == "auth failed"

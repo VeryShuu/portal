@@ -40,6 +40,15 @@ class EmailSettings(BaseModel):
     password: str = Field(default="", description="Masked as '***' in GET response if set")
     use_tls: bool = Field(default=False)
     use_starttls: bool = Field(default=False)
+    # Общий приёмник почты портала (ADR-048): используется модулями (erp_sync),
+    # фильтры писём остаются per-module. Пароль хранится Fernet-шифром
+    # (imap_password_enc на диске), в отличие от SMTP-пароля (plaintext).
+    imap_host: str = Field(default="")
+    imap_port: int = Field(default=993, ge=1, le=65535)
+    imap_use_ssl: bool = Field(default=True)
+    imap_username: str = Field(default="")
+    imap_password: str = Field(default="", description="Fernet-encrypted on disk")
+    imap_folder: str = Field(default="INBOX", min_length=1, max_length=100)
 
 
 class EmailSettingsIn(BaseModel):
@@ -56,6 +65,14 @@ class EmailSettingsIn(BaseModel):
     )
     use_tls: bool = Field(default=False)
     use_starttls: bool = Field(default=False)
+    # IMAP-пароль — write-only с той же keep/clear/update семантикой, но хранится
+    # Fernet-шифром (см. EmailSettings.imap_password).
+    imap_host: str = Field(default="")
+    imap_port: int = Field(default=993, ge=1, le=65535)
+    imap_use_ssl: bool = Field(default=True)
+    imap_username: str = Field(default="")
+    imap_password: str | None = Field(default=None, min_length=1, max_length=512)
+    imap_folder: str = Field(default="INBOX", min_length=1, max_length=100)
 
 
 class EmailSettingsOut(BaseModel):
@@ -66,6 +83,12 @@ class EmailSettingsOut(BaseModel):
     password_set: bool
     use_tls: bool
     use_starttls: bool
+    imap_host: str
+    imap_port: int
+    imap_use_ssl: bool
+    imap_username: str
+    imap_password_set: bool
+    imap_folder: str
 
 
 class EmailTestRequest(BaseModel):

@@ -3436,6 +3436,48 @@
             "title": "Host",
             "type": "string"
           },
+          "imap_folder": {
+            "default": "INBOX",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Imap Folder",
+            "type": "string"
+          },
+          "imap_host": {
+            "default": "",
+            "title": "Imap Host",
+            "type": "string"
+          },
+          "imap_password": {
+            "anyOf": [
+              {
+                "maxLength": 512,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Imap Password"
+          },
+          "imap_port": {
+            "default": 993,
+            "maximum": 65535.0,
+            "minimum": 1.0,
+            "title": "Imap Port",
+            "type": "integer"
+          },
+          "imap_use_ssl": {
+            "default": true,
+            "title": "Imap Use Ssl",
+            "type": "boolean"
+          },
+          "imap_username": {
+            "default": "",
+            "title": "Imap Username",
+            "type": "string"
+          },
           "password": {
             "anyOf": [
               {
@@ -3484,6 +3526,30 @@
             "title": "Host",
             "type": "string"
           },
+          "imap_folder": {
+            "title": "Imap Folder",
+            "type": "string"
+          },
+          "imap_host": {
+            "title": "Imap Host",
+            "type": "string"
+          },
+          "imap_password_set": {
+            "title": "Imap Password Set",
+            "type": "boolean"
+          },
+          "imap_port": {
+            "title": "Imap Port",
+            "type": "integer"
+          },
+          "imap_use_ssl": {
+            "title": "Imap Use Ssl",
+            "type": "boolean"
+          },
+          "imap_username": {
+            "title": "Imap Username",
+            "type": "string"
+          },
           "password_set": {
             "title": "Password Set",
             "type": "boolean"
@@ -3512,7 +3578,13 @@
           "username",
           "password_set",
           "use_tls",
-          "use_starttls"
+          "use_starttls",
+          "imap_host",
+          "imap_port",
+          "imap_use_ssl",
+          "imap_username",
+          "imap_password_set",
+          "imap_folder"
         ],
         "title": "EmailSettingsOut",
         "type": "object"
@@ -3919,7 +3991,7 @@
         "type": "object"
       },
       "ErpSyncSettingsIn": {
-        "description": "Конфиг ящика, на который ERP шлёт отчёты. ``imap_password`` — write-only:\n\n* при **создании** (первый ``PUT`` с ``enabled=true``) — обязателен;\n* при **обновлении** — опционален; ``None`` = «оставить прежний шифр».\n\nВ отличие от helpdesk, IMAP-блок целиком nullable: модуль может быть\nвыключен (``enabled=false``) с пустым ящиком, и только при включении\nтребуется валидная конфигурация (проверяется в API-слое, не в схеме).",
+        "description": "Per-module настройки ERP-sync. IMAP-приёмка общая (ADR-048, вкладка Email);\n\nздесь только переключатели, расписание, уведомления и фильтры писём\n(``mail_*_filter``), по которым модуль отбирает «свои» письма из общего ящика.",
         "properties": {
           "enabled": {
             "default": false,
@@ -3932,62 +4004,6 @@
             "minimum": 1.0,
             "title": "Expected Interval Days",
             "type": "integer"
-          },
-          "imap_folder": {
-            "default": "INBOX",
-            "maxLength": 100,
-            "minLength": 1,
-            "title": "Imap Folder",
-            "type": "string"
-          },
-          "imap_host": {
-            "anyOf": [
-              {
-                "maxLength": 255,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Imap Host"
-          },
-          "imap_password": {
-            "anyOf": [
-              {
-                "maxLength": 512,
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Imap Password"
-          },
-          "imap_port": {
-            "default": 993,
-            "maximum": 65535.0,
-            "minimum": 1.0,
-            "title": "Imap Port",
-            "type": "integer"
-          },
-          "imap_use_ssl": {
-            "default": true,
-            "title": "Imap Use Ssl",
-            "type": "boolean"
-          },
-          "imap_username": {
-            "anyOf": [
-              {
-                "maxLength": 255,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Imap Username"
           },
           "mail_attachment_filter": {
             "anyOf": [
@@ -4057,7 +4073,7 @@
         "type": "object"
       },
       "ErpSyncSettingsOut": {
-        "description": "Текущие настройки. Пароль никогда не возвращается — только признак того,\nчто он задан. ``configured`` здесь всегда ``True`` (singleton-строка\nсоздаётся миграцией 087 с defaults), поле оставлено для консистентности с\n``HelpdeskMailboxSettingsOut``.",
+        "description": "Текущие per-module настройки ERP-sync. IMAP живёт во вкладке Email.",
         "properties": {
           "enabled": {
             "default": false,
@@ -4068,48 +4084,6 @@
             "default": 4,
             "title": "Expected Interval Days",
             "type": "integer"
-          },
-          "imap_folder": {
-            "default": "INBOX",
-            "title": "Imap Folder",
-            "type": "string"
-          },
-          "imap_host": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Imap Host"
-          },
-          "imap_password_set": {
-            "default": false,
-            "title": "Imap Password Set",
-            "type": "boolean"
-          },
-          "imap_port": {
-            "default": 993,
-            "title": "Imap Port",
-            "type": "integer"
-          },
-          "imap_use_ssl": {
-            "default": true,
-            "title": "Imap Use Ssl",
-            "type": "boolean"
-          },
-          "imap_username": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Imap Username"
           },
           "mail_attachment_filter": {
             "anyOf": [
@@ -4182,31 +4156,6 @@
           }
         },
         "title": "ErpSyncSettingsOut",
-        "type": "object"
-      },
-      "ErpSyncTestResult": {
-        "description": "Результат проверки подключения к ящику (``POST /erp-sync/test``).",
-        "properties": {
-          "error": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Error"
-          },
-          "ok": {
-            "title": "Ok",
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "ok"
-        ],
-        "title": "ErpSyncTestResult",
         "type": "object"
       },
       "FeedbackAdminListOut": {
@@ -16067,7 +16016,7 @@
     },
     "/api/v1/admin/email-settings": {
       "get": {
-        "description": "Возвращает текущие настройки SMTP. Пароль не возвращается, только флаг password_set.",
+        "description": "Возвращает текущие настройки SMTP + общего IMAP. Пароли не возвращаются,\nтолько флаги password_set / imap_password_set.",
         "operationId": "get_email_settings_api_v1_admin_email_settings_get",
         "parameters": [
           {
@@ -16115,7 +16064,7 @@
         ]
       },
       "put": {
-        "description": "Сохраняет настройки SMTP в /data/branding/email-settings.json.\nПереопределяет значения из .env — они больше не используются для отправки.\nЕсли password передан как null или '***' — существующий пароль не меняется.",
+        "description": "Сохраняет SMTP + общий IMAP в /data/branding/email-settings.json.\n\nПароли (SMTP, IMAP) — write-only с keep/clear/update семантикой:\n``null``/``'***'`` = оставить прежний, ``''`` = очистить, иное = обновить.\nIMAP-пароль хранится Fernet-шифром, SMTP — plaintext (ADR-048).",
         "operationId": "save_email_settings_api_v1_admin_email_settings_put",
         "parameters": [
           {
@@ -16168,6 +16117,58 @@
           }
         },
         "summary": "Сохранить настройки email",
+        "tags": [
+          "branding"
+        ]
+      }
+    },
+    "/api/v1/admin/email-settings/imap/test": {
+      "post": {
+        "description": "Проверяет подключение к общему IMAP-ящику (login + select folder).\n\nИспользует сохранённые настройки. Возвращает ``{\"ok\": bool, \"detail\": str}``.\n``detail`` маскируется (aioimaplib может echo'ить LOGIN с паролем — грабля H-9).",
+        "operationId": "test_imap_settings_api_v1_admin_email_settings_imap_test_post",
+        "parameters": [
+          {
+            "in": "cookie",
+            "name": "portal_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Portal Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Test Imap Settings Api V1 Admin Email Settings Imap Test Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Проверить подключение общего IMAP-ящика",
         "tags": [
           "branding"
         ]
@@ -20534,7 +20535,7 @@
     },
     "/api/v1/erp-sync/run": {
       "post": {
-        "description": "Поставить mailbox-poll в ARQ-очередь (немедленно, не ждать cron).\n\nИмпорт выполнится в воркере с ``triggered_by='manual'``. ``poll_enabled``\nНЕ проверяется (админ явно хочет «забрать сейчас»), но IMAP должен быть\nнастроен — задача вернёт ``imap_not_configured``, если нет.",
+        "description": "Поставить mailbox-poll в ARQ-очередь (немедленно, не ждать cron).\n\nИмпорт выполнится в воркере с ``triggered_by='manual'``. ``poll_enabled``\nНЕ проверяется (админ явно хочет «забрать сейчас»), но общий IMAP должен\nбыть настроен (ADR-048) — задача вернёт ``imap_not_configured``, если нет.",
         "operationId": "run_now_api_v1_erp_sync_run_post",
         "parameters": [
           {
@@ -20814,56 +20815,6 @@
           }
         },
         "summary": "Put Settings",
-        "tags": [
-          "erp-sync"
-        ]
-      }
-    },
-    "/api/v1/erp-sync/test": {
-      "post": {
-        "description": "Проверка IMAP-подключения (login + select folder).\n\nМаскируем исключения: aioimaplib в некоторых из них echo'ит LOGIN-команду\nс паролем (грабля H-9 из helpdesk).",
-        "operationId": "test_connection_api_v1_erp_sync_test_post",
-        "parameters": [
-          {
-            "in": "cookie",
-            "name": "portal_session",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Portal Session"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErpSyncTestResult"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Test Connection",
         "tags": [
           "erp-sync"
         ]

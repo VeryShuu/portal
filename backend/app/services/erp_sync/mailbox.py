@@ -30,11 +30,10 @@ from email.utils import getaddresses
 from typing import TYPE_CHECKING, Any
 
 from app.core.logging import get_logger
-from app.core.secret_crypto import decrypt_secret
 from app.services.erp_sync.parser import SUPPORTED_FORMATS, detect_format
 
 if TYPE_CHECKING:
-    from app.models.erp_sync import ErpSyncSettings
+    from app.schemas.branding import EmailSettings
 
 logger = get_logger(__name__)
 
@@ -61,6 +60,19 @@ class AttachmentCandidate:
     message_id: str | None
 
 
+@dataclass
+class MailFilters:
+    """Per-module фильтры писем (ADR-048): IMAP-ящик общий, фильтры — у модуля.
+
+    Пустое значение = ограничение не накладывается (любое значение проходит).
+    Все заданные фильтры должны совпасть (AND).
+    """
+
+    subject_filter: str | None = None
+    sender_filter: str | None = None
+    attachment_filter: str | None = None
+
+
 def _make_imap_client_raw(*, host: str, port: int, use_ssl: bool) -> Any:
     """Создать aioimaplib-клиент (без подключения)."""
     import aioimaplib
@@ -68,25 +80,6 @@ def _make_imap_client_raw(*, host: str, port: int, use_ssl: bool) -> Any:
     if use_ssl:
         return aioimaplib.IMAP4_SSL(host=host, port=port)
     return aioimaplib.IMAP4(host=host, port=port)
-
-
-def _make_imap_client(settings: ErpSyncSettings) -> Any:
-    return _make_imap_client_raw(
-        host=settings.imap_host or "",
-        port=settings.imap_port,
-        use_ssl=settings.imap_use_ssl,
-    )
-
-
-def _decrypt_password(settings: ErpSyncSettings) -> str | None:
-    enc = settings.imap_password_enc
-    if not enc:
-        return None
-    try:
-        return decrypt_secret(enc)
-    except Exception:
-        logger.exception("erp_sync.mailbox.password_decrypt_failed")
-        return None
 
 
 # ── Декодирование заголовков (переиспользуем helpdesk-threading) ────────────
@@ -221,9 +214,13 @@ async def _search_unseen(client: Any) -> list[str]:
 
 
 async def fetch_unread_attachments(
-    settings: ErpSyncSettings,
+    email_settings: EmailSettings,
+    filters: MailFilters,
 ) -> list[tuple[AttachmentCandidate, str]]:
-    """Опросить ящик, вернуть подходящие вложения.
+    """Опросить общий IMAP-ящик, вернуть вложения, подходящие под фильтры модуля.
+
+    IMAP-настройки (host/port/ssl/username/password/folder) — общие, из
+    ``EmailSettings`` (ADR-048). Фильтры писём — per-module (``filters``).
 
     Возвращает список ``(candidate, uid)``. Каждое подходящее письмо
     помечается ``\\Seen``; письма мимо фильтра **не** трогаются.
@@ -232,24 +229,28 @@ async def fetch_unread_attachments(
     только IMAP. Вызывающий код (worker) пробегает по результатам и вызывает
     :func:`run_import` для каждого.
     """
-    password = _decrypt_password(settings)
-    if password is None:
+    password = email_settings.imap_password
+    if not password:
         logger.warning("erp_sync.mailbox.no_password")
         return []
 
-    client = _make_imap_client(settings)
+    client = _make_imap_client_raw(
+        host=email_settings.imap_host,
+        port=email_settings.imap_port,
+        use_ssl=email_settings.imap_use_ssl,
+    )
     results: list[tuple[AttachmentCandidate, str]] = []
     try:
         await asyncio.wait_for(client.wait_hello_from_server(), timeout=_IMAP_STEP_TIMEOUT)
         await asyncio.wait_for(
-            client.login(settings.imap_username or "", password), timeout=_IMAP_STEP_TIMEOUT
+            client.login(email_settings.imap_username, password), timeout=_IMAP_STEP_TIMEOUT
         )
-        await client.select(settings.imap_folder)
+        await client.select(email_settings.imap_folder)
 
         uids = await _search_unseen(client)
         for uid in uids:
             try:
-                candidate = await _process_uid(client, uid, settings=settings)
+                candidate = await _process_uid(client, uid, filters=filters)
                 if candidate is not None:
                     results.append((candidate, uid))
             except Exception:
@@ -266,7 +267,7 @@ async def fetch_unread_attachments(
 
 
 async def _process_uid(
-    client: Any, uid: str, *, settings: ErpSyncSettings
+    client: Any, uid: str, *, filters: MailFilters
 ) -> AttachmentCandidate | None:
     """Обработать одно письмо: фетч → фильтр → вложение → ``\\Seen``."""
     typ, data = await client.fetch(uid, "(RFC822)")
@@ -281,14 +282,14 @@ async def _process_uid(
     # 1. Фильтрация. Письмо мимо фильтра → пропускаем, НЕ помечаем Seen.
     if not _matches_filters(
         msg,
-        subject_filter=settings.mail_subject_filter,
-        sender_filter=settings.mail_sender_filter,
+        subject_filter=filters.subject_filter,
+        sender_filter=filters.sender_filter,
     ):
         logger.debug("erp_sync.mailbox.filtered_out", uid=uid)
         return None
 
     # 2. Вложение.
-    picked = _pick_attachment(msg, attachment_filter=settings.mail_attachment_filter)
+    picked = _pick_attachment(msg, attachment_filter=filters.attachment_filter)
     if picked is None:
         logger.info("erp_sync.mailbox.no_suitable_attachment", uid=uid)
         # Подошло по фильтру, но нет вложения — помечаем Seen, чтобы не

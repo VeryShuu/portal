@@ -1,19 +1,25 @@
-"""Email (SMTP) settings storage + test-email sender.
+"""Email (SMTP + общий IMAP) settings storage + test helpers.
 
-Extracted from ``app.api.branding``. Persists SMTP config to
+Extracted from ``app.api.branding``. Persists config to
 ``/data/branding/email-settings.json`` in a format cross-read by
 ``app.worker.tasks.email_utils.load_smtp_config`` and the meetings notifier,
 so the on-disk schema must stay compatible.
+
+IMAP-блок (ADR-048) — общий приёмник почты портала. В отличие от SMTP-пароля
+(plaintext), IMAP-пароль хранится **Fernet-шифром** (поле ``imap_password_enc``
+на диске), в модели ``EmailSettings.imap_password`` — plaintext (для удобства
+использования модулями). Шифрование/дешифрование — только здесь, в этом модуле.
 """
 
 from __future__ import annotations
 
 import contextlib
+import json
 import os
 from pathlib import Path
-from typing import cast
 
 from app.core.logging import get_logger
+from app.core.secret_crypto import decrypt_secret, encrypt_secret
 from app.schemas.branding import EmailSettings, EmailSettingsOut
 
 logger = get_logger(__name__)
@@ -23,20 +29,52 @@ EMAIL_SETTINGS_FILE = BRANDING_DIR / "email-settings.json"
 EMAIL_PASSWORD_MASK = "***"
 
 
+def _settings_from_disk(data: dict) -> EmailSettings:
+    """Распарсить on-disk dict в ``EmailSettings``, расшифровав IMAP-пароль.
+
+    На диске IMAP-пароль лежит как ``imap_password_enc`` (Fernet-шифр) —
+    расшифровываем в ``imap_password`` (plaintext) для потребителей. Если шифра
+    нет — пусто. SMTP-пароль хранится plaintext и читается как есть.
+    """
+    enc = data.get("imap_password_enc")
+    imap_password = ""
+    if enc:
+        try:
+            imap_password = decrypt_secret(enc)
+        except Exception:
+            logger.exception("email_settings.imap_password_decrypt_failed")
+    # Убираем служебное on-disk поле, кладём plaintext в модельное поле.
+    payload = {k: v for k, v in data.items() if k != "imap_password_enc"}
+    payload["imap_password"] = imap_password
+    return EmailSettings.model_validate(payload)
+
+
+def _settings_to_disk(s: EmailSettings) -> dict:
+    """Сериализовать ``EmailSettings`` в on-disk dict, зашифровав IMAP-пароль.
+
+    IMAP-пароль → ``imap_password_enc`` (Fernet). ``imap_password`` (plaintext)
+    на диск НЕ пишем. SMTP-пароль остаётся plaintext (намеренно, ADR-048).
+    """
+    data: dict = json.loads(s.model_dump_json())
+    if data.get("imap_password"):
+        data["imap_password_enc"] = encrypt_secret(data.pop("imap_password"))
+    else:
+        data.pop("imap_password", None)
+    return data
+
+
 def read_email_settings() -> EmailSettings | None:
     """Единый загрузчик on-disk ``email-settings.json``.
 
     Единственное место, читающее и парсящее файл. Возвращает разобранные
     настройки либо ``None``, если файл отсутствует/не читается/не валиден.
-    Потребители (worker ``load_smtp_config``, meetings-нотификатор) делегируют
-    сюда, чтобы on-disk схема была определена в одном месте и не разъехалась.
+    Потребители (worker ``load_smtp_config``, meetings-нотификатор, erp_sync)
+    делегируют сюда, чтобы on-disk схема была определена в одном месте.
     """
     if EMAIL_SETTINGS_FILE.exists():
         try:
-            return cast(
-                EmailSettings,
-                EmailSettings.model_validate_json(EMAIL_SETTINGS_FILE.read_text("utf-8")),
-            )
+            data = json.loads(EMAIL_SETTINGS_FILE.read_text("utf-8"))
+            return _settings_from_disk(data)
         except Exception:
             logger.exception("email_settings.load_failed")
     return None
@@ -50,8 +88,10 @@ def save_email_settings(s: EmailSettings) -> None:
     from app.core.system_config import atomic_write
 
     BRANDING_DIR.mkdir(parents=True, exist_ok=True)
-    atomic_write(EMAIL_SETTINGS_FILE, s.model_dump_json(indent=2))
-    # email-settings.json содержит SMTP-пароль.
+    atomic_write(
+        EMAIL_SETTINGS_FILE, json.dumps(_settings_to_disk(s), indent=2, ensure_ascii=False)
+    )
+    # email-settings.json содержит SMTP-пароль (plaintext) и IMAP-шифр.
     with contextlib.suppress(OSError):
         os.chmod(EMAIL_SETTINGS_FILE, 0o600)
 
@@ -65,7 +105,18 @@ def email_settings_to_out(s: EmailSettings) -> EmailSettingsOut:
         password_set=bool(s.password),
         use_tls=s.use_tls,
         use_starttls=s.use_starttls,
+        imap_host=s.imap_host,
+        imap_port=s.imap_port,
+        imap_use_ssl=s.imap_use_ssl,
+        imap_username=s.imap_username,
+        imap_password_set=bool(s.imap_password),
+        imap_folder=s.imap_folder,
     )
+
+
+def imap_configured(s: EmailSettings) -> bool:
+    """Достаточно ли настроен общий IMAP для подключения (host + username + пароль)."""
+    return bool(s.imap_host and s.imap_username and s.imap_password)
 
 
 async def send_test_email(settings: EmailSettings, to: str, sender_name: str) -> None:
@@ -121,3 +172,25 @@ async def send_test_email(settings: EmailSettings, to: str, sender_name: str) ->
         logger.exception(
             "branding.test_email_failed", error=str(exc), error_type=type(exc).__name__, to=to
         )
+
+
+async def test_imap_connection(settings: EmailSettings) -> tuple[bool, str]:
+    """Проверка общего IMAP-ящика (login + select folder). Для ``POST imap/test``.
+
+    Переиспользует ``probe_imap_connection`` из erp_sync (тот же aioimaplib-зонд).
+    Локальный импорт — чтобы не тащить цикл ``email_settings ↔ erp_sync.mailbox``
+    на уровне модуля (mailbox сам читает настройки через этот модуль).
+    """
+    if not imap_configured(settings):
+        return False, "IMAP не настроен (host/username/password)"
+
+    from app.services.erp_sync.mailbox import probe_imap_connection
+
+    return await probe_imap_connection(
+        host=settings.imap_host,
+        port=settings.imap_port,
+        username=settings.imap_username,
+        password=settings.imap_password,
+        use_ssl=settings.imap_use_ssl,
+        folder=settings.imap_folder,
+    )

@@ -33,6 +33,13 @@ export interface AdminEmailSettings {
   password_set: boolean
   use_tls: boolean
   use_starttls: boolean
+  // Общий приёмник почты портала (ADR-048): используется модулями (erp_sync).
+  imap_host: string
+  imap_port: number
+  imap_use_ssl: boolean
+  imap_username: string
+  imap_password_set: boolean
+  imap_folder: string
 }
 
 export interface AdminSystemSettings {
