@@ -216,6 +216,7 @@ class TestParseAttachment:
         # Реальный заголовок 1С — отсеивается.
         assert _looks_like_header("Физическое лицо.Дата рождения", "Физическое лицо.Пол")
         assert _looks_like_header("Дата рождения", "Пол")
+        assert _looks_like_header("Дата", "Пол")  # краткий вариант
         # Битые данные — НЕ заголовок (не должны маскироваться).
         assert not _looks_like_header("не-дата", "Мужской")
         assert not _looks_like_header("01.01.1990", "Непонятно")
