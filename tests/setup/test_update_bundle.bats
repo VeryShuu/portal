@@ -361,3 +361,192 @@ EOF
     run port_owned_by_self 80
     [[ "$status" -eq 0 ]]
 }
+
+# ─── set_env_var ──────────────────────────────────────────────────────────────
+# Точечная перезапись одной строки в существующем .env (ADR-047 amendment).
+
+@test "set_env_var: заменяет значение существующей строки" {
+    load_setup
+    printf 'IMAGE_TAG=v1.0.0\nSECRET_KEY=abc\n' > .env
+    set_env_var IMAGE_TAG v1.2.3
+    # Строка обновлена...
+    [[ "$(load_env_var IMAGE_TAG)" == "v1.2.3" ]]
+    # ...остальные строки не тронуты.
+    [[ "$(load_env_var SECRET_KEY)" == "abc" ]]
+}
+
+@test "set_env_var: добавляет ключ, если его не было (append)" {
+    load_setup
+    printf 'SECRET_KEY=abc\n' > .env
+    set_env_var IMAGE_TAG v1.2.3
+    [[ "$(load_env_var IMAGE_TAG)" == "v1.2.3" ]]
+    [[ "$(load_env_var SECRET_KEY)" == "abc" ]]
+    # Новый ключ действительно в файле.
+    grep -q '^IMAGE_TAG=v1.2.3$' .env
+}
+
+@test "set_env_var: создаёт бэкап .env перед правкой" {
+    load_setup
+    printf 'IMAGE_TAG=v1.0.0\n' > .env
+    set_env_var IMAGE_TAG v1.2.3
+    # Хотя бы один бэкап появился.
+    ls .env.backup.* >/dev/null 2>&1
+    # В старейшем бэкапе — прежнее значение.
+    [[ "$(cat "$(ls .env.backup.* | head -1)")" == *'IMAGE_TAG=v1.0.0'* ]]
+}
+
+@test "set_env_var: падает, если .env отсутствует" {
+    load_setup
+    run set_env_var IMAGE_TAG v1.2.3
+    [[ "$status" -ne 0 ]]
+}
+
+# ─── fetch_latest_release_tag ─────────────────────────────────────────────────
+# Анонимный запрос к GitHub Releases API (репо публичный). curl мокается через stub.
+
+# Stub curl для GitHub API: отдаёт JSON с заданным tag_name.
+make_curl_stub_release() {
+    local tag="$1"
+    mkdir -p stubbin
+    cat > stubbin/curl <<EOF
+#!/usr/bin/env bash
+# Игнорируем аргументы, отдаём фиксированный JSON.
+cat <<JSON
+{
+  "tag_name": "${tag}",
+  "name": "Release ${tag}",
+  "html_url": "https://github.com/VeryShuu/portal/releases/tag/${tag}"
+}
+JSON
+exit 0
+EOF
+    chmod +x stubbin/curl
+    export PATH="$TEST_CWD/stubbin:$PATH"
+}
+
+@test "fetch_latest_release_tag: успех → печатает tag_name из JSON" {
+    load_setup
+    make_curl_stub_release "v1.2.3"
+    [[ "$(fetch_latest_release_tag)" == "v1.2.3" ]]
+}
+
+@test "fetch_latest_release_tag: сетевой сбой → пустой вывод + return 1" {
+    load_setup
+    make_curl_stub_fail
+    run fetch_latest_release_tag
+    [[ "$status" -ne 0 ]]
+    [[ -z "$output" ]]
+}
+
+@test "fetch_latest_release_tag: некорректный JSON (нет tag_name) → return 1" {
+    load_setup
+    mkdir -p stubbin
+    cat > stubbin/curl <<'EOF'
+#!/usr/bin/env bash
+printf '{"name":"no tag here"}\n'
+exit 0
+EOF
+    chmod +x stubbin/curl
+    export PATH="$TEST_CWD/stubbin:$PATH"
+    run fetch_latest_release_tag
+    [[ "$status" -ne 0 ]]
+}
+
+# ─── version_gt ───────────────────────────────────────────────────────────────
+# Сравнение semver через sort -V (корректно для 1.10 > 1.9).
+
+@test "version_gt: v1.2.3 строго новее v1.2.2" {
+    load_setup
+    run version_gt v1.2.3 v1.2.2
+    [[ "$status" -eq 0 ]]
+}
+
+@test "version_gt: v1.10.0 новее v1.9.0 (лексикографическая ловушка)" {
+    load_setup
+    run version_gt v1.10.0 v1.9.0
+    [[ "$status" -eq 0 ]]
+    # Обратное направление — false.
+    run version_gt v1.9.0 v1.10.0
+    [[ "$status" -ne 0 ]]
+}
+
+@test "version_gt: равные версии → false (строгое сравнение)" {
+    load_setup
+    run version_gt v1.2.3 v1.2.3
+    [[ "$status" -ne 0 ]]
+}
+
+@test "version_gt: работает без ведущего v (1.2.3 vs 1.2)" {
+    load_setup
+    run version_gt 1.2.3 1.2
+    [[ "$status" -eq 0 ]]
+}
+
+# ─── check_and_offer_tag_bump ─────────────────────────────────────────────────
+# Оркестратор: current_profile + IMAGE_TAG + latest release + read (y/N).
+# Мокаем current_profile (через переопределение функции) и read (через подкормку stdin).
+
+@test "check_and_offer_tag_bump: при согласии 'y' — IMAGE_TAG обновлён в .env" {
+    load_setup
+    printf 'IMAGE_TAG=v1.0.0\n' > .env
+    make_curl_stub_release "v1.2.3"
+    # prod-контур: переопределяем current_profile в текущем shell.
+    current_profile() { printf 'prod'; }
+    # Ответ 'y' на prompt. Прямой вызов в текущем shell (как в тесте отказа 'N'),
+    # чтобы set_env_var правил тот же .env, который проверим ниже.
+    printf 'y\n' | check_and_offer_tag_bump >/dev/null 2>&1 || true
+    [[ "$(load_env_var IMAGE_TAG)" == "v1.2.3" ]]
+}
+
+@test "check_and_offer_tag_bump: при отказе 'N' — IMAGE_TAG НЕ меняется" {
+    load_setup
+    printf 'IMAGE_TAG=v1.0.0\n' > .env
+    make_curl_stub_release "v1.2.3"
+    current_profile() { printf 'prod'; }
+    # Ответ 'N' (отказ).
+    printf 'N\n' | check_and_offer_tag_bump >/dev/null 2>&1 || true
+    [[ "$(load_env_var IMAGE_TAG)" == "v1.0.0" ]]
+}
+
+@test "check_and_offer_tag_bump: dev-контур — no-op (тег не проверяется)" {
+    load_setup
+    printf 'IMAGE_TAG=v1.0.0\n' > .env
+    make_curl_stub_release "v1.2.3"
+    # dev-контур — функция должна вернуть 0, не дёргая GitHub.
+    current_profile() { printf 'dev'; }
+    run check_and_offer_tag_bump
+    [[ "$status" -eq 0 ]]
+    [[ "$(load_env_var IMAGE_TAG)" == "v1.0.0" ]]
+}
+
+@test "check_and_offer_tag_bump: текущий тег = latest — пропущен" {
+    load_setup
+    printf 'IMAGE_TAG=latest\n' > .env
+    make_curl_stub_release "v1.2.3"
+    current_profile() { printf 'prod'; }
+    run check_and_offer_tag_bump
+    [[ "$status" -eq 0 ]]
+    # latest не должен был замениться.
+    [[ "$(load_env_var IMAGE_TAG)" == "latest" ]]
+}
+
+@test "check_and_offer_tag_bump: текущий новее release — не понижается" {
+    load_setup
+    printf 'IMAGE_TAG=v2.0.0\n' > .env
+    make_curl_stub_release "v1.2.3"
+    current_profile() { printf 'prod'; }
+    run check_and_offer_tag_bump
+    [[ "$status" -eq 0 ]]
+    [[ "$(load_env_var IMAGE_TAG)" == "v2.0.0" ]]
+}
+
+@test "check_and_offer_tag_bump: GitHub недоступен — тихий пропуск, тег не тронут" {
+    load_setup
+    printf 'IMAGE_TAG=v1.0.0\n' > .env
+    make_curl_stub_fail
+    current_profile() { printf 'prod'; }
+    run check_and_offer_tag_bump
+    [[ "$status" -eq 0 ]]
+    [[ "$(load_env_var IMAGE_TAG)" == "v1.0.0" ]]
+}
+

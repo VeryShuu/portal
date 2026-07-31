@@ -784,8 +784,6 @@ apply_sysctl() {
 }
 
 # ─── Docker Compose команды ────────────────────────────────────────────────────
-# run_compose <mode> [no-cache]
-#
 # Режим образов определяется IMAGE_PREFIX в .env (ADR-045):
 #   • IMAGE_PREFIX непустой  → pull готовых CI-образов из registry.
 #     На registry-проде ЛОКАЛЬНАЯ СБОРКА НЕ ВЫПОЛНЯЕТСЯ НИКОГДА — даже с
@@ -793,30 +791,58 @@ apply_sysctl() {
 #     принудительно (ignore-pull-failures нет), игнорируя локальный кэш docker.
 #   • IMAGE_PREFIX пуст       → локальная сборка из исходников (dev/staging).
 #     no-cache добавляет --no-cache к build.
-run_compose() {
-    local mode="$1" no_cache="${2:-}"
-    local -a files=(-f docker-compose.yml)
+#
+# Логика разнесена на 3 функции (раньше был один монолитный run_compose):
+#   • _resolve_compose_ctx <mode>  — общая часть: compose-флаги (-f ...) +
+#     prod-контур guard (ADR-046) + IMAGE_PREFIX/IMAGE_TAG из .env. Возвращает
+#     данные через nameref-переменные (files, image_prefix, image_tag).
+#   • prepare_images <mode> [no-cache] — готовит образы: manifest-inspect (ADR-047)
+#     + pull (registry) или build (local). БЕЗ `up -d`. Возвращает 0 при успехе.
+#   • start_stack <mode>           — только `docker compose ... up -d`.
+#   • run_compose <mode> [no-cache] — тонкая обёртка prepare_images + start_stack
+#     для обратной совместимости (пункты меню 1/2/3/4: там `down` либо не нужен,
+#     либо уже сделан в п.4). Семантически идентична прежнему run_compose.
+#
+# Ключевая польза разделения: update_production() зовёт prepare_images ДО
+# `docker compose down` — если pull падает по сети/registry, рабочий портал
+# продолжает работать на старом образе (остановка ещё не выполнялась).
 
+# _resolve_compose_ctx <mode> _files _prefix _tag — заполняет nameref-массив
+# _files (-f ...) и nameref-строки _prefix/_tag. Ничего не выводит в stdout.
+_resolve_compose_ctx() {
+    local mode="$1"
+    local -n _rf="$2" _rp="$3" _rt="$4"
+
+    _rf=(-f docker-compose.yml)
     case "$mode" in
-        dev)     files+=(-f docker-compose.dev.yml) ;;
-        staging) files+=(-f docker-compose.staging.yml) ;;
+        dev)     _rf+=(-f docker-compose.dev.yml) ;;
+        staging) _rf+=(-f docker-compose.staging.yml) ;;
         prod)    : ;;
-        *)       err "run_compose: неизвестный режим '$mode'" ;;
+        *)       err "_resolve_compose_ctx: неизвестный режим '$mode'" ;;
     esac
 
-    local image_prefix image_tag
-    image_prefix=$(load_env_var IMAGE_PREFIX)
-    image_tag=$(load_env_var IMAGE_TAG latest)
+    _rp=$(load_env_var IMAGE_PREFIX)
+    _rt=$(load_env_var IMAGE_TAG latest)
 
     # ── Контурный guard (ADR-046) ────────────────────────────────────────────
     # prod-контур (deploy-bundle, без дерева исходников) НЕ может собирать
     # образы локально — Dockerfile'ов на машине нет. Только pull из registry.
     # На случай, если оператор вручную обнулил IMAGE_PREFIX — блокируем рано,
     # с понятным сообщением, а не позволяем docker compose падать на COPY.
-    if [[ "$(current_profile)" == "prod" && -z "$image_prefix" ]]; then
+    if [[ "$(current_profile)" == "prod" && -z "$_rp" ]]; then
         err "prod-контур требует IMAGE_PREFIX (registry pull). Уберите пустое значение" \
             "в .env или пересоздайте .env через пункт «Настроить .env», выбрав профиль prod."
     fi
+}
+
+# prepare_images <mode> [no-cache] — готовит образы БЕЗ запуска стека.
+# В registry-режиме: manifest-inspect (ADR-047) + pull. В local-режиме: build
+# (--no-cache если передан). Возвращает 0 при успехе, err (exit) при провале.
+prepare_images() {
+    local mode="$1" no_cache="${2:-}"
+    local -a files=()
+    local image_prefix image_tag
+    _resolve_compose_ctx "$mode" files image_prefix image_tag
 
     if [[ -n "$image_prefix" ]]; then
         # ── Registry-режим: pull, не сборка (ADR-045). ────────────────────────
@@ -845,17 +871,32 @@ run_compose() {
         if ! docker compose "${files[@]}" pull 2>&1 | sed 's/^/  │ /'; then
             err "docker compose pull не удался. Проверьте IMAGE_PREFIX/IMAGE_TAG в .env и доступ к registry."
         fi
-        docker compose "${files[@]}" up -d
     elif [[ -n "$no_cache" ]]; then
         # ── Локальный режим + полная очистка. ─────────────────────────────────
-        # Достижимо только в dev-контуре (prod отсечён guard'ом выше).
+        # Достижимо только в dev-контуре (prod отсечён guard'ом в _resolve_compose_ctx).
         docker compose "${files[@]}" build --no-cache
-        docker compose "${files[@]}" up -d
     else
         # ── Локальный режим, инкремент. ───────────────────────────────────────
-        # Достижимо только в dev-контуре (prod отсечён guard'ом выше).
-        docker compose "${files[@]}" up -d --build
+        # Достижимо только в dev-контуре (prod отсечён guard'ом в _resolve_compose_ctx).
+        docker compose "${files[@]}" build
     fi
+}
+
+# start_stack <mode> — запускает стек (docker compose ... up -d). Образы должны
+# быть уже подготовлены (prepare_images), либо local-режим пересоберёт на лету.
+start_stack() {
+    local mode="$1"
+    local -a files=()
+    local image_prefix _image_tag
+    _resolve_compose_ctx "$mode" files image_prefix _image_tag
+    docker compose "${files[@]}" up -d
+}
+
+# run_compose <mode> [no-cache] — тонкая обёртка: подготовить образы + запустить.
+# Сохранена для обратной совместимости с пунктами меню 1/2/3/4. Семантически
+# идентична прежнему монолиту (prepare → up подряд).
+run_compose() {
+    prepare_images "$1" "${2:-}" && start_stack "$1"
 }
 
 # ─── Проверка работоспособности после запуска ──────────────────────────────────
@@ -1107,6 +1148,96 @@ load_env_var() {
     # Убираем одинарные кавычки, которыми setup_env оборачивает секреты
     val="${val#\'}"; val="${val%\'}"
     printf '%s' "${val:-$default}"
+}
+
+# ─── Точечная перезапись одной переменной в существующем .env ─────────────────
+# set_env_var <key> <value>
+#
+# В отличие от setup_env (которая полностью перегенерирует .env через heredoc),
+# эта функция правит ровно одну строку `KEY=` — не трогая секреты и остальные
+# настройки. Перед правкой делает бэкап (как setup_env, строка 236).
+#
+# Разделитель `|` в sed безопасен для значений, с которыми работаем (semver-теги
+# вида v1.2.3, registry-префиксы ghcr.io/...). Для значений с `|` или `&`
+# функция неприменима — но такие в .env-ключах, которые мы правим, не встречаются.
+set_env_var() {
+    local key="$1" value="$2"
+    [[ -f .env ]] || err "set_env_var: .env не найден"
+    cp .env ".env.backup.$(date +%Y%m%d_%H%M%S)"
+    if grep -qE "^${key}=" .env; then
+        sed -i "s|^${key}=.*|${key}=${value}|" .env
+    else
+        printf '%s=%s\n' "$key" "$value" >> .env
+    fi
+}
+
+# ─── Запрос последнего релизного тега из GitHub Releases (ADR-047) ────────────
+# fetch_latest_release_tag — печатает tag_name (напр. "v1.2.3") latest-релиза в
+# stdout. Анонимный запрос к api.github.com (репо публичный, как и download_bundle).
+# Без jq — парсинг через grep+sed (jq на проде не гарантирован). При сетевом сбое
+# / некорректном ответе — пустой stdout + return 1 (не фатально: update продолжится
+# с текущим тегом). Не делает pipelined output — единственный echo, безопасно.
+fetch_latest_release_tag() {
+    local api_url="https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases/latest"
+    local resp
+    # -f: ошибка на HTTP≥400; -sS: тихо+сообщения; -L: редиректы; --retry 3.
+    resp=$(curl -fsSL --retry 3 "$api_url" 2>/dev/null) || return 1
+    # JSON содержит строку  "tag_name": "v1.2.3"  — вытаскиваем её значение.
+    local tag
+    tag=$(printf '%s\n' "$resp" | grep -E '"tag_name"[[:space:]]*:' \
+          | head -1 | sed -E 's/.*"tag_name"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/')
+    [[ -n "$tag" ]] || return 1
+    printf '%s' "$tag"
+}
+
+# ─── Сравнение semver-тегов ───────────────────────────────────────────────────
+# version_gt <a> <b> — возвращает 0 (true), если тег `a` СТРОГО новее `b`.
+# Работает с ведущим `v` или без (срезаем), через `sort -V` (version sort) — что
+# корректно сравнивает `v1.10.0` > `v1.9.0` (лексикографическая ловушка: "10" < "9").
+# Пререлизы (rc/beta/alpha) sort -V сортирует младше stable того же номера — ОК.
+version_gt() {
+    local a="${1#v}" b="${2#v}"
+    [[ "$a" == "$b" ]] && return 1
+    [[ "$a" == "$(printf '%s\n%s\n' "$a" "$b" | sort -V | tail -1)" ]]
+}
+
+# ─── Подтверждаемый bump IMAGE_TAG до последнего релиза (ADR-047 amendment) ────
+# check_and_offer_tag_bump — в prod-контуре проверяет, есть ли релиз новее
+# текущего IMAGE_TAG в .env; если да — предлагает обновить (y/N). При согласии
+# переписывает строку через set_env_var. Semver-lock сохранён: без явного 'y'
+# оператора тег НЕ меняется (ADR-047: «только когда оператор сознательно меняет
+# тег»). Не понижает тег (если текущий — rc/новее stable, не трогает).
+# В dev/staging не вызывается (там :latest / локальная сборка, релизные теги
+# бессмысленны). Сетевой сбой к GitHub — не фатален: тихо пропускаем.
+check_and_offer_tag_bump() {
+    [[ "$(current_profile)" == "prod" ]] || return 0
+
+    local current_tag latest_tag
+    current_tag=$(load_env_var IMAGE_TAG latest)
+    # latest на проде отвергается preflight (ADR-047); если somehow стоит —
+    # bump к релизному тегу осмыслен, но это отдельный кейс — оставляем preflight.
+    [[ "$current_tag" == "latest" ]] && return 0
+
+    latest_tag=$(fetch_latest_release_tag) || {
+        warn "Не удалось получить последний релиз из GitHub — продолжаю с текущим тегом ${current_tag}."
+        return 0
+    }
+    [[ -n "$latest_tag" ]] || return 0
+
+    # Текущий новее или равен последнему release — обновлять нечего.
+    if ! version_gt "$latest_tag" "$current_tag"; then
+        echo -e "  ${DIM}Текущий тег ${current_tag} актуален (последний релиз: ${latest_tag}).${RESET}"
+        return 0
+    fi
+
+    echo -e "  Текущий ${BOLD}${current_tag}${RESET}, найден новый релиз ${BOLD}${latest_tag}${RESET}."
+    read -r -p "  Обновить IMAGE_TAG в .env и продолжить? (y/N): " answer
+    if [[ "${answer,,}" == "y" ]]; then
+        set_env_var IMAGE_TAG "$latest_tag"
+        ok "IMAGE_TAG обновлён: ${current_tag} → ${latest_tag}"
+    else
+        echo -e "  ${DIM}Тег не меняю, продолжаю с ${current_tag}.${RESET}"
+    fi
 }
 
 # port_owned_by_self <port> — true(0), если <port> публикуется контейнером
@@ -1528,22 +1659,29 @@ update_production() {
     _ip=$(load_env_var IMAGE_PREFIX)
     if [[ -n "$_ip" ]]; then
         echo -e "  ${DIM}Режим образов: pull из registry (${_ip}…, тег=$(load_env_var IMAGE_TAG latest)).${RESET}"
-        echo -e "  ${DIM}Процедура: обновление конфигурации → pg_dump (опц.) → compose pull → up -d.${RESET}"
+        echo -e "  ${DIM}Процедура: проверка тега → конфиг → pg_dump (опц.) → pull → down → up -d.${RESET}"
     else
         echo -e "  ${DIM}Режим образов: локальная сборка из исходников (IMAGE_PREFIX пуст).${RESET}"
-        echo -e "  ${DIM}Процедура: git pull → pg_dump (опц.) → compose build → up -d.${RESET}"
+        echo -e "  ${DIM}Процедура: git pull → pg_dump (опц.) → build → down → up -d.${RESET}"
     fi
     echo -e "  ${DIM}Миграции применятся автоматически при старте backend (scripts/migrate.sh).${RESET}"
+    echo -e "  ${DIM}Pull/build выполняются ДО остановки стека — портал не ложится, если образ не скачался.${RESET}"
     echo
 
-    # ── 1.Preflight ───────────────────────────────────────────────────────────
+    # ── 1/5. Preflight ────────────────────────────────────────────────────────
     preflight prod || {
         warn "Preflight выявил проблемы. Продолжить принудительно? (y/N): "
         read -r -p "  " answer
         [[ "${answer,,}" == "y" ]] || exit 1
     }
 
-    # ── 2. Обновление конфигурации ───────────────────────────────────────────
+    # ── 1/5 (продолжение). Подтверждаемый bump IMAGE_TAG до последнего релиза ──
+    # ДО обновления конфигурации: bundle/git-pull должны работать с финальным
+    # тегом. check_and_offer_tag_bump спрашивает y/N — semver-lock сохранён
+    # (ADR-047): без явного согласия тег не меняется. В dev/staging — no-op.
+    check_and_offer_tag_bump
+
+    # ── 2/5. Обновление конфигурации ──────────────────────────────────────────
     # В dev-контуре (полный клон репо) — это git pull. В prod-контуре
     # (deploy-bundle без клона) конфигурацию обновляем авто-скачиванием свежего
     # bundle из Release тега IMAGE_TAG (ADR-046). Подробности: apply_bundle().
@@ -1551,10 +1689,10 @@ update_production() {
     _profile=$(current_profile)
     _tag=$(load_env_var IMAGE_TAG latest)
     if [[ "$_profile" == "prod" && ! -d .git ]]; then
-        echo -e "  ${BOLD}1/4. Обновление конфигурации (deploy-bundle ${_tag}) ...${RESET}"
+        echo -e "  ${BOLD}2/5. Обновление конфигурации (deploy-bundle ${_tag}) ...${RESET}"
         update_bundle_self "$_tag"
     else
-        echo -e "  ${BOLD}1/4. Git pull ...${RESET}"
+        echo -e "  ${BOLD}2/5. Git pull ...${RESET}"
         if git rev-parse --is-inside-work-tree &>/dev/null; then
             local branch
             branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "main")
@@ -1570,27 +1708,35 @@ update_production() {
         fi
     fi
 
-    # ── 3. Backup ─────────────────────────────────────────────────────────────
+    # ── 3/5. Backup ───────────────────────────────────────────────────────────
     offer_backup "обновлением prod"
 
-    # ── 4. down + apply (pull|build) + up ─────────────────────────────────────
-    # run_compose сам определяет pull vs build по IMAGE_PREFIX в .env (см. ADR-045).
+    # ── 4/5. Подготовка образов (pull/build) ДО остановки стека ───────────────
+    # Ключевое отличие от прежнего порядка: сначала готовим образы, потом
+    # останавливаем. Если prepare_images падает (сеть / registry / build) —
+    # рабочий портал НЕ тронут, продолжает крутиться на старом образе.
     echo
-    echo -e "  ${BOLD}2/4. Остановка старого стека ...${RESET}"
-    docker compose down --remove-orphans 2>&1 | sed 's/^/  │ /' || true
-    echo
-    echo -e "  ${BOLD}3/4. Apply образов (pull из registry или build) + up -d ...${RESET}"
-    run_compose prod
-    echo "prod" > "$MODE_FILE"
+    echo -e "  ${BOLD}3/5. Подготовка образов (pull из registry или build) ...${RESET}"
+    prepare_images prod
 
-    # ── 5. Контроль миграций + check_services ─────────────────────────────────
+    # ── 4/5 (продолжение). Остановка старого стека — только теперь ────────────
+    # Образы уже на машине → downtime минимальный (down → up). Останавливаем,
+    # даже если стек не запущен (down на пустом проекте — no-op, безопасно).
     echo
-    echo -e "  ${BOLD}4/4. Ожидаю применения миграций ...${RESET}"
+    echo -e "  ${BOLD}4/5. Остановка старого стека ...${RESET}"
+    docker compose down --remove-orphans 2>&1 | sed 's/^/  │ /' || true
+
+    # ── 5/5. Запуск нового стека + контроль миграций ──────────────────────────
+    echo
+    echo -e "  ${BOLD}5/5. Запуск стека (up -d) + ожидание миграций ...${RESET}"
+    start_stack prod
+    echo "prod" > "$MODE_FILE"
     # Миграции отрабатывают в одноразовом контейнере migrations.
     # check_services дождётся его завершения и проверит /ready.
     check_services prod
     show_done prod
 }
+
 
 # ─── Служебные операции: restart / stop / status ───────────────────────────────
 ops_restart() {

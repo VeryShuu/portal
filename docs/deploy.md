@@ -238,9 +238,11 @@ docker compose exec -T postgres \
 
 > **Рекомендованный путь:** `bash setup.sh` → пункт «6. Обновить Production».
 > Скрипт сам определяет режим (registry pull или локальная сборка) по `IMAGE_PREFIX`
-> в `.env`, делает обновление конфигурации (git pull если есть клон, либо ничего в
-> prod-контуре с deploy-bundle), опциональный `pg_dump`, и `compose up -d` с проверкой
-> миграций. Ниже — ручные процедуры для понимания и нестандартных случаев.
+> в `.env`, проверяет наличие нового релиза и предлагает обновить `IMAGE_TAG` (y/N),
+> делает обновление конфигурации (git pull если есть клон, либо deploy-bundle в
+> prod-контуре), опциональный `pg_dump`, **тянет/собирает образы ДО остановки стека**
+> и запускает `up -d` с проверкой миграций. Ниже — ручные процедуры для понимания
+> и нестандартных случаев.
 
 ### 10.1 Обновление (registry pull — прод)
 
@@ -250,7 +252,9 @@ docker compose exec -T postgres \
 deploy-bundle (ADR-046).
 
 > ⚠️ **Prod пинится к релизному тегу `v*`, не к `:latest`** (ADR-047, semver-lock).
-> Продакшен обновляется **только** при явной смене `IMAGE_TAG=v1.x.x` в `.env`.
+> Продакшен обновляется **только при явной смене `IMAGE_TAG=v1.x.x`** — либо вручную
+> в `.env`, либо через подтверждаемый bump (y/N) в `setup.sh` п.6. Тихой авто-замены
+> тега нет — это по-прежнему сознательное действие оператора (ADR-047 amendment).
 > `IMAGE_TAG=latest` в prod-контуре отвергается `setup.sh` (защита от implicit-deploy).
 > Релизный процесс для создателя: `./scripts/release.sh <ver>` (из клона репо).
 
@@ -258,21 +262,26 @@ deploy-bundle (ADR-046).
 
 Начиная с июля 2026 (amendment к ADR-046) `setup.sh` п.6 сам скачивает и применяет
 deploy-bundle из GitHub Release тега `IMAGE_TAG` — ручные `gh release download` /
-`tar xzf` больше не нужны. Достаточно сменить тег в `.env` и запустить п.6.
+`tar xzf` больше не нужны. Тег можно сменить в `.env` вручную **либо** позволить
+скрипту предложить последний релиз (y/N).
 
 ```bash
 cd /opt/portal
-# 1. ВЫСТАВИТЬ релизный тег в .env (обязательно для prod-контура, ADR-047):
-#    IMAGE_TAG=v1.2.3
-#    (доступные теги: gh release list --repo VeryShuu/portal)
+# 1. (необязательно) Выставить релизный тег в .env вручную, либо позволить setup.sh
+#    предложить последний релиз (ADR-047). По умолчанию в .env хранится тег
+#    предыдущей выкатки; setup.sh сравнит его с latest-релизом и спросит (y/N).
 
 # 2. setup.sh п.6 сделает всё сам одной командой:
-#    preflight → скачать portal-deploy-bundle-v1.2.3.tar.gz (curl, без токена)
+#    preflight → проверка/предложение нового тега (y/N)
+#      → скачать portal-deploy-bundle-<tag>.tar.gz (curl, без токена)
 #      → распаковать поверх (docker-compose.yml/setup.sh/monitoring/, .env НЕ трогается)
-#      → pg_dump (опц.) → docker compose pull → up -d → check_services.
+#      → pg_dump (опц.) → docker compose pull (ДО down) → down → up -d → check_services.
+#    Порядок pull-ДО-down намеренный: если pull падает по сети — рабочий портал
+#    не останавливается, продолжая работать на старом образе.
 ./setup.sh                       # → пункт 6 «Обновить Production»
 docker compose logs -f migrations   # миграции — one-shot сервис, отработают сами
 ```
+
 
 Изменённые конфиг-файлы бэкапятся в `.<name>.bak-pre-v1.2.3` на случай ручного отката.
 `.env`, `system_data/`, `base_data/`, `.portal-*` в bundle не входят и не перетираются.
