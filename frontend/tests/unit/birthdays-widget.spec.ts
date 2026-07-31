@@ -39,7 +39,7 @@ describe('BirthdaysWidget', () => {
     mockData = ref(undefined)
   })
 
-  it('рендерит ФИО и день месяца при наличии именинников', async () => {
+  it('рендерит ФИО и дату (день + месяц) при наличии именинников', async () => {
     mockData = ref({
       items: [
         { full_name: 'Иванов Иван', birth_date: '1990-03-12', avatar_url: null },
@@ -52,12 +52,12 @@ describe('BirthdaysWidget', () => {
     const wrapper = mount(BirthdaysWidget, { global: { plugins: [i18n] } })
     await flushPromises()
 
-    const names = wrapper.findAll('.birthday-row__name').map((el) => el.text())
-    const days = wrapper.findAll('.birthday-row__day').map((el) => el.text())
+    const names = wrapper.findAll('.birthday-card__name').map((el) => el.text())
+    const dates = wrapper.findAll('.birthday-card__date').map((el) => el.text())
 
     expect(names).toEqual(['Иванов Иван', 'Петрова Анна'])
-    // 1990-03-12 → 12, 1985-03-15 → 15 (только день, без месяца/года)
-    expect(days).toEqual(['12', '15'])
+    // ru-локаль: «день + месяц» (1990-03-12 → «12 марта», 1985-03-15 → «15 марта»)
+    expect(dates).toEqual(['12 марта', '15 марта'])
   })
 
   it('скрыт (нет .widget), когда список именинников пуст', async () => {

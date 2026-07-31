@@ -9,24 +9,26 @@
       </h3>
     </div>
 
-    <ul class="birthdays-list">
-      <li
+    <div class="birthdays-row">
+      <article
         v-for="(b, i) in birthdays"
         :key="`${b.full_name}-${i}`"
-        class="birthday-row"
+        class="birthday-card"
       >
         <n-avatar
           round
-          :size="36"
+          :size="48"
           :src="b.avatar_url ?? undefined"
-          class="birthday-row__avatar"
+          class="birthday-card__avatar"
         >
           {{ initials(b.full_name) }}
         </n-avatar>
-        <span class="birthday-row__name">{{ b.full_name }}</span>
-        <span class="birthday-row__day">{{ dayOfMonth(b.birth_date) }}</span>
-      </li>
-    </ul>
+        <div class="birthday-card__body">
+          <span class="birthday-card__name">{{ b.full_name }}</span>
+          <span class="birthday-card__date">{{ formatDate(b.birth_date) }}</span>
+        </div>
+      </article>
+    </div>
   </section>
 </template>
 
@@ -36,15 +38,17 @@ import { useI18n } from 'vue-i18n'
 import { NAvatar } from 'naive-ui'
 import { useBirthdaysQuery } from '../../queries/users'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 
 const { data } = useBirthdaysQuery()
 const birthdays = computed(() => data.value?.items ?? [])
 
-// День месяца из ISO-даты рождения (год/месяц не показываем по ТЗ).
-// 'T00:00:00' — фиксит timezone-сдвиг (иначе в UTC− может стать предыдущим днём).
-function dayOfMonth(iso: string): number {
-  return new Date(`${iso}T00:00:00`).getDate()
+// «День + месяц» в текущей локали (ru: «5 марта», en: «March 5»).
+// Год берём из недели (текущий), чтобы дата в «день недели» попадала корректно —
+// но показываем только день и название месяца. 'T00:00:00' фиксит timezone-сдвиг.
+function formatDate(iso: string): string {
+  const d = new Date(`${iso}T00:00:00`)
+  return new Intl.DateTimeFormat(locale.value, { day: 'numeric', month: 'long' }).format(d)
 }
 
 // Фоллбэк аватара: инициалы из первых букв слов ФИО (до 2 символов).
@@ -81,50 +85,49 @@ function initials(fullName: string): string {
   color: var(--color-text-muted);
 }
 
-.birthdays-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
+/* Горизонтальный ряд карточек; на узком экране переносятся. */
+.birthdays-row {
   display: flex;
-  flex-direction: column;
+  flex-wrap: wrap;
+  gap: 12px;
 }
 
-.birthday-row {
+.birthday-card {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 8px 0;
-  border-bottom: 1px solid var(--color-border);
-}
-.birthday-row:last-child {
-  border-bottom: none;
+  padding: 10px 14px;
+  background: var(--color-bg, #fff);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  min-width: 0;
 }
 
-.birthday-row__avatar {
+.birthday-card__avatar {
   flex-shrink: 0;
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 600;
   color: var(--color-text-muted);
 }
 
-.birthday-row__name {
-  flex: 1 1 auto;
+.birthday-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
   min-width: 0;
+}
+
+.birthday-card__name {
   font-size: 14px;
+  font-weight: 600;
   color: var(--color-text);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.birthday-row__day {
-  flex-shrink: 0;
-  margin-left: auto;
-  font-size: 15px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  color: var(--color-brand-red, #d92e2e);
-  min-width: 28px;
-  text-align: right;
+.birthday-card__date {
+  font-size: 12px;
+  color: var(--color-text-secondary, #666);
 }
 </style>
