@@ -71,6 +71,7 @@ export const queryKeys = {
     detail: (id: string) => ['users', 'detail', id] as const,
     attributeSchema: () => ['users', 'attribute-schema'] as const,
     keycloakGroups: (id: string) => ['users', 'keycloak-groups', id] as const,
+    birthdays: () => ['users', 'birthdays'] as const,
   },
   links: {
     all: ['links'] as const,

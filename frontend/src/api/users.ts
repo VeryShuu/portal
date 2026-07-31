@@ -157,3 +157,19 @@ export async function fetchStaffOrder(): Promise<StaffOrderState> {
 export async function saveStaffOrder(body: StaffOrderUpdate): Promise<StaffOrderState> {
   return api<StaffOrderState>('/users/admin/staff-order', { method: 'PUT', body })
 }
+
+// Виджет «Дни рождения на неделе» на главной. GET /users/birthdays.
+export interface Birthday {
+  full_name: string
+  birth_date: string // ISO date — день месяца берётся локально (new Date(iso).getDate())
+  avatar_url: string | null
+}
+
+export interface BirthdayListResponse {
+  items: Birthday[]
+  total: number
+}
+
+export async function fetchBirthdays(): Promise<BirthdayListResponse> {
+  return api<BirthdayListResponse>('/users/birthdays')
+}

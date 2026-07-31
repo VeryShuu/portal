@@ -51,6 +51,23 @@ class UserList(BaseModel):
     total: int
 
 
+class BirthdayOut(BaseModel):
+    """Именинник текущей недели для виджета на главной.
+
+    Компактная схема (не весь ``UserPublic``): виджету нужны только ФИО, день
+    рождения (для извлечения числа месяца) и аватар. ``birth_date`` — дата
+    целиком (год не показываем, но он нужен для корректного 29 февраля)."""
+
+    full_name: str
+    birth_date: date
+    avatar_url: str | None = None
+
+
+class BirthdayList(BaseModel):
+    items: list[BirthdayOut]
+    total: int
+
+
 class PatchProfileRequest(BaseModel):
     presence_status: str | None = None
     lang: str | None = None

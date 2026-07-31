@@ -40,6 +40,12 @@ tests/integration/test_api_smoke.py::test_news_list_with_filters
 tests/integration/test_audit_partitions_real.py::test_audit_insert_routes_to_current_partition
 tests/integration/test_audit_partitions_real.py::test_audit_log_table_is_partitioned
 tests/integration/test_audit_partitions_real.py::test_initial_partitions_created
+tests/integration/test_birthdays_db.py::test_empty_week_returns_empty
+tests/integration/test_birthdays_db.py::test_excludes_deleted_and_hidden
+tests/integration/test_birthdays_db.py::test_excludes_users_without_birth_date
+tests/integration/test_birthdays_db.py::test_new_year_boundary_week
+tests/integration/test_birthdays_db.py::test_returns_only_birthday_people_in_range
+tests/integration/test_birthdays_db.py::test_sorting_chronological_by_month_day
 tests/integration/test_bookmarks_race.py::test_concurrent_bookmark_creation_respects_limit
 tests/integration/test_directories_db.py::TestDirectoryTypes::test_create_and_list
 tests/integration/test_directories_db.py::TestDirectoryTypes::test_create_emits_audit
@@ -4710,6 +4716,7 @@ auth-store-extra.spec.ts
 auth-store-sso.spec.ts
 auth-store-visibility.spec.ts
 auth.spec.ts
+birthdays-widget.spec.ts
 bookmarks-tab.spec.ts
 branding-store.spec.ts
 cc-recipient-picker.spec.ts
