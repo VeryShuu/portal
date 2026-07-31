@@ -24,7 +24,7 @@
           {{ initials(b.full_name) }}
         </n-avatar>
         <div class="birthday-card__body">
-          <span class="birthday-card__name">{{ b.full_name }}</span>
+          <span class="birthday-card__name">{{ displayName(b.full_name) }}</span>
           <span class="birthday-card__date">{{ formatDate(b.birth_date) }}</span>
         </div>
       </article>
@@ -59,6 +59,12 @@ function initials(fullName: string): string {
     .slice(0, 2)
     .map((w) => w.charAt(0).toUpperCase())
     .join('')
+}
+
+// Фамилия + имя без отчества: берём первые 2 слова (по ТЗ отчество не показываем).
+// Если слов ≤2 — возвращаем как есть.
+function displayName(fullName: string): string {
+  return fullName.trim().split(/\s+/).slice(0, 2).join(' ')
 }
 </script>
 
@@ -100,7 +106,10 @@ function initials(fullName: string): string {
   background: var(--color-bg, #fff);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
+  /* Одинаковая ширина всех карточек; переносятся на следующую строку. */
+  flex: 0 0 220px;
   min-width: 0;
+  box-sizing: border-box;
 }
 
 .birthday-card__avatar {

@@ -39,11 +39,11 @@ describe('BirthdaysWidget', () => {
     mockData = ref(undefined)
   })
 
-  it('рендерит ФИО и дату (день + месяц) при наличии именинников', async () => {
+  it('рендерит фамилию+имя (без отчества) и дату (день + месяц)', async () => {
     mockData = ref({
       items: [
-        { full_name: 'Иванов Иван', birth_date: '1990-03-12', avatar_url: null },
-        { full_name: 'Петрова Анна', birth_date: '1985-03-15', avatar_url: 'http://x/a.png' },
+        { full_name: 'Иванов Иван Петрович', birth_date: '1990-03-12', avatar_url: null },
+        { full_name: 'Петрова Анна Сергеевна', birth_date: '1985-03-15', avatar_url: 'http://x/a.png' },
       ],
       total: 2,
     })
@@ -55,6 +55,7 @@ describe('BirthdaysWidget', () => {
     const names = wrapper.findAll('.birthday-card__name').map((el) => el.text())
     const dates = wrapper.findAll('.birthday-card__date').map((el) => el.text())
 
+    // Отчество отсекается — только фамилия + имя
     expect(names).toEqual(['Иванов Иван', 'Петрова Анна'])
     // ru-локаль: «день + месяц» (1990-03-12 → «12 марта», 1985-03-15 → «15 марта»)
     expect(dates).toEqual(['12 марта', '15 марта'])
