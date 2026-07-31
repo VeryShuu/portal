@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import select
@@ -217,10 +217,17 @@ async def _update_user(
 
     Источник истины — ERP: перетираем всегда. Diff пустой, если значения не
     изменились (в отчёт «Обновлено» попадают только реальные изменения).
+
+    Значения в diff сериализованы в JSON-совместимый вид (date → ISO-строка):
+    ``report`` пишется в JSONB, а ``json.dumps`` (через SQLAlchemy) не умеет
+    сериализовать ``date`` напрямую — был бы ``TypeError``.
     """
     diff: dict[str, dict[str, Any]] = {}
     if user.birth_date != row.birth_date:
-        diff["birth_date"] = {"old": user.birth_date, "new": row.birth_date}
+        diff["birth_date"] = {
+            "old": _json_value(user.birth_date),
+            "new": _json_value(row.birth_date),
+        }
     if user.gender != row.gender:
         diff["gender"] = {"old": user.gender, "new": row.gender}
     if not diff:
@@ -229,6 +236,17 @@ async def _update_user(
 
     await update_user_fields(db, user.id, {"birth_date": row.birth_date, "gender": row.gender})
     return diff
+
+
+def _json_value(value: Any) -> Any:
+    """Привести значение к JSON-совместимому виду для записи в JSONB ``report``.
+
+    ``date`` → ISO-строка (``json.dumps`` не умеет ``date`` напрямую).
+    ``None``/``str`` проходят как есть.
+    """
+    if isinstance(value, date):
+        return value.isoformat()
+    return value
 
 
 # Колбэки SSE-publish, аккумулированные до commit (атрибут на run — временный).

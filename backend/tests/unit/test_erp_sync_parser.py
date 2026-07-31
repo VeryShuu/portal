@@ -204,6 +204,31 @@ class TestParseAttachment:
         # не должен попасть в errors (нет валидной даты) и не в rows.
         assert all("Физическое лицо" not in r.fio for r in result.rows)
 
+    def test_header_not_in_errors(self):
+        """Строка-заголовок колонок НЕ попадает в errors (регрессия).
+
+        Раньше заголовок «Сотрудник | Дата рождения | Пол» давал 1 лишнюю
+        «ошибку» (дата/пол не парсятся) на каждый импорт. Заголовок должен
+        отсеиваться молча через _looks_like_header.
+        """
+        from app.services.erp_sync.parser import _looks_like_header
+
+        # Реальный заголовок 1С — отсеивается.
+        assert _looks_like_header("Физическое лицо.Дата рождения", "Физическое лицо.Пол")
+        assert _looks_like_header("Дата рождения", "Пол")
+        # Битые данные — НЕ заголовок (не должны маскироваться).
+        assert not _looks_like_header("не-дата", "Мужской")
+        assert not _looks_like_header("01.01.1990", "Непонятно")
+
+        # Полный файл с заголовком: заголовок не в errors.
+        data = (
+            "Сотрудник\tФизическое лицо.Дата рождения\tФизическое лицо.Пол\n"
+            "Иванов Иван\t01.01.1990\tМужской\n"
+        ).encode()
+        result = parse_attachment(filename="r.tsv", data=data)
+        assert result.errors == []
+        assert len(result.rows) == 1
+
     def test_total_raw_counts_all(self):
         result = parse_attachment(filename="r.tsv", data=_SAMPLE_TSV)
         # rows + conflicts + errors
