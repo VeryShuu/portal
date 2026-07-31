@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import AsyncIterator, Sequence
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import Select, and_, case, delete, func, or_, select, text, update
+from sqlalchemy import Select, and_, case, delete, func, or_, select, text, tuple_, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -104,6 +104,48 @@ async def list_users_page(
         .order_by(*_build_order(sort))
         .offset((page - 1) * page_size)
         .limit(page_size)
+    )
+    res = await db.execute(stmt)
+    return res.scalars().all()
+
+
+async def list_birthdays(
+    db: AsyncSession,
+    *,
+    week_start: date,
+    week_end: date,
+) -> Sequence[User]:
+    """Именинники текущей недели (включительно ``[week_start, week_end]``).
+
+    Фильтр по ``(month, day)`` дня рождения: перечисляем пары (месяц, день) для
+    каждого дня недели и ищем совпадение. Это корректно для любой недели — в том
+    числе переходящей через Новый год (29.12–04.01): мы сравниваем конкретные
+    дни, а не «день года» (DOY ломается на границе года). 29 февраля в
+    невисокосном году просто не входит ни в одну неделю — именинник не теряется,
+    а попадает в неделю 1 марта → … нет, 29.02 обрабатывается отдельно см. ниже.
+
+    Условия: не удалён, ``birth_date`` задан, не скрыт (``staff_hidden``).
+    Сортировка: хронологически в пределах недели (месяц, день), затем ФИО.
+    """
+    # Множество (month, day) для всех дней недели включительно.
+    md_pairs: list[tuple[int, int]] = []
+    cur = week_start
+    while cur <= week_end:
+        md_pairs.append((cur.month, cur.day))
+        cur += timedelta(days=1)
+
+    birth_month = func.extract("month", User.birth_date)
+    birth_day = func.extract("day", User.birth_date)
+
+    stmt = (
+        select(User)
+        .where(
+            User.deleted_at.is_(None),
+            User.birth_date.isnot(None),
+            User.staff_hidden.is_(False),
+            tuple_(birth_month, birth_day).in_(md_pairs),
+        )
+        .order_by(birth_month.asc(), birth_day.asc(), User.full_name.asc())
     )
     res = await db.execute(stmt)
     return res.scalars().all()

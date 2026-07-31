@@ -121,6 +121,11 @@ const PhotosWidgetStub = defineComponent({
   template: '<div class="photos-widget-stub" />',
 })
 
+const BirthdaysWidgetStub = defineComponent({
+  name: 'BirthdaysWidget',
+  template: '<div class="birthdays-widget-stub" />',
+})
+
 const globalOptions = {
   plugins: [i18n],
   stubs: {
@@ -131,6 +136,7 @@ const globalOptions = {
     WorldClockWidget: WorldClockWidgetStub,
     MeetingsWidget: MeetingsWidgetStub,
     PhotosWidget: PhotosWidgetStub,
+    BirthdaysWidget: BirthdaysWidgetStub,
   },
 }
 

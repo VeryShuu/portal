@@ -6,7 +6,7 @@ import csv
 import io
 import uuid
 from collections.abc import AsyncGenerator
-from datetime import date
+from datetime import date, timedelta
 from typing import cast
 
 from fastapi import HTTPException, Query, status
@@ -15,6 +15,8 @@ from fastapi.responses import Response, StreamingResponse
 from app.api.deps import AdminDep, CurrentUser, DbDep, RedisDep
 from app.core.system_config import load_system_settings_shared
 from app.schemas.user import (
+    BirthdayList,
+    BirthdayOut,
     DepartmentList,
     OfficeList,
     StaffOrderState,
@@ -77,6 +79,34 @@ async def list_users(
     return UserList(
         items=[UserPublic.model_validate(u) for u in items],
         total=total,
+    )
+
+
+@router.get("/birthdays", response_model=BirthdayList, summary="Именинники текущей недели")
+async def list_birthdays_route(
+    db: DbDep,
+    _: CurrentUser,
+) -> BirthdayList:
+    """Дни рождения сотрудников, попадающие в текущую ISO-неделю (Пн–Вс).
+
+    Виджет на главной. Виден всем авторизованным (``birth_date`` — публичное поле
+    пользователя, как в справочнике ``/staff``). Без пагинации: именинников одной
+    недели физически мало. Сортировка — по дате рождения в пределах недели.
+    """
+    today = date.today()
+    week_start = today - timedelta(days=today.weekday())  # понедельник (ISO: пн=0)
+    week_end = week_start + timedelta(days=6)  # воскресенье
+    items = await users_repo.list_birthdays(db, week_start=week_start, week_end=week_end)
+    return BirthdayList(
+        items=[
+            BirthdayOut(
+                full_name=u.full_name,
+                birth_date=u.birth_date,  # type: ignore[arg-type]
+                avatar_url=u.avatar_url,
+            )
+            for u in items
+        ],
+        total=len(items),
     )
 
 

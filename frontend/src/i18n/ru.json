@@ -33,7 +33,10 @@
       "worldClock": "Время в городах"
     },
     "viewAll": "Смотреть все",
-    "createFirstBookmark": "Добавить первую закладку"
+    "createFirstBookmark": "Добавить первую закладку",
+    "birthdays": {
+      "title": "Дни рождения на неделе"
+    }
   },
   "auth": {
     "login": "Войти",

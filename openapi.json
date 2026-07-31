@@ -501,6 +501,58 @@
         "title": "AttachmentPublic",
         "type": "object"
       },
+      "BirthdayList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/BirthdayOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total"
+        ],
+        "title": "BirthdayList",
+        "type": "object"
+      },
+      "BirthdayOut": {
+        "description": "Именинник текущей недели для виджета на главной.\n\nКомпактная схема (не весь ``UserPublic``): виджету нужны только ФИО, день\nрождения (для извлечения числа месяца) и аватар. ``birth_date`` — дата\nцеликом (год не показываем, но он нужен для корректного 29 февраля).",
+        "properties": {
+          "avatar_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avatar Url"
+          },
+          "birth_date": {
+            "format": "date",
+            "title": "Birth Date",
+            "type": "string"
+          },
+          "full_name": {
+            "title": "Full Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "full_name",
+          "birth_date"
+        ],
+        "title": "BirthdayOut",
+        "type": "object"
+      },
       "Body_add_agent_message_api_v1_helpdesk_tickets__ticket_id__messages_post": {
         "properties": {
           "body_html": {
@@ -38771,6 +38823,56 @@
           }
         },
         "summary": "Сменить роль пользователя",
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/api/v1/users/birthdays": {
+      "get": {
+        "description": "Дни рождения сотрудников, попадающие в текущую ISO-неделю (Пн–Вс).\n\nВиджет на главной. Виден всем авторизованным (``birth_date`` — публичное поле\nпользователя, как в справочнике ``/staff``). Без пагинации: именинников одной\nнедели физически мало. Сортировка — по дате рождения в пределах недели.",
+        "operationId": "list_birthdays_route_api_v1_users_birthdays_get",
+        "parameters": [
+          {
+            "in": "cookie",
+            "name": "portal_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Portal Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BirthdayList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Именинники текущей недели",
         "tags": [
           "users"
         ]

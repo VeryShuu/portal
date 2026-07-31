@@ -1,6 +1,7 @@
 import { computed, toValue, type MaybeRefOrGetter } from 'vue'
 import { keepPreviousData, useQuery } from '@tanstack/vue-query'
 import {
+  fetchBirthdays,
   fetchUserById,
   fetchUsers,
   fetchUserDepartments,
@@ -85,6 +86,16 @@ export function useStaffSettingsQuery() {
     queryKey: queryKeys.portal.staffSettings(),
     queryFn: () => api<StaffSettings>('/portal/staff-settings'),
     staleTime: 300_000,
+  })
+}
+
+// Виджет «Дни рождения на неделе» на главной. Текущая неделя считается на бэке,
+// поэтому ключ без параметров; refetch on mount обновляет при смене дня.
+export function useBirthdaysQuery() {
+  return useQuery({
+    queryKey: queryKeys.users.birthdays(),
+    queryFn: fetchBirthdays,
+    staleTime: 60_000,
   })
 }
 

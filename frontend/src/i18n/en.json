@@ -33,7 +33,10 @@
       "worldClock": "World clock"
     },
     "viewAll": "View all",
-    "createFirstBookmark": "Add your first bookmark"
+    "createFirstBookmark": "Add your first bookmark",
+    "birthdays": {
+      "title": "Birthdays this week"
+    }
   },
   "auth": {
     "login": "Sign In",

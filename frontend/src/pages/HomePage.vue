@@ -48,6 +48,8 @@
           :categories-map="categoriesMap"
           @news-click="goToNews"
         />
+
+        <BirthdaysWidget />
       </div>
 
       <!-- Side column -->
@@ -70,6 +72,7 @@ import { useI18n } from 'vue-i18n'
 import { NButton, NIcon } from 'naive-ui'
 import { ChevronForwardOutline } from '@vicons/ionicons5'
 import HeroBlock from '../components/HeroBlock.vue'
+import BirthdaysWidget from '../components/widgets/BirthdaysWidget.vue'
 import PhotosWidget from '../components/widgets/PhotosWidget.vue'
 import WorldClockWidget from '../components/widgets/WorldClockWidget.vue'
 import MeetingsWidget from '../components/widgets/MeetingsWidget.vue'
@@ -95,6 +98,7 @@ const { loadingNews, pinned, regular, categoriesMap, goToNews } = useHomeNews()
   align-items: flex-start;
 }
 .home__main { min-width: 0; }
+.home__main > * + * { margin-top: 20px; }
 .home__side {
   display: flex;
   flex-direction: column;
