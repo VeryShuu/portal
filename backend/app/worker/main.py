@@ -15,6 +15,7 @@ from app.core.logging import (
 )
 from app.worker.tasks.audit import cleanup_idempotency_keys
 from app.worker.tasks.email_outbox import cleanup_email_outbox, process_email_outbox
+from app.worker.tasks.erp_sync import erp_sync_watchdog, run_erp_sync
 from app.worker.tasks.files import startup_sync_nc_folders
 from app.worker.tasks.helpdesk import (
     archive_closed_tickets_task,
@@ -199,6 +200,8 @@ class WorkerSettings:
         track_arq_job(cleanup_helpdesk_attachments_task),
         track_arq_job(cleanup_expired_drafts_task),
         track_arq_job(send_helpdesk_digest),
+        track_arq_job(run_erp_sync),
+        track_arq_job(erp_sync_watchdog),
         track_arq_job(process_messenger_outbox),
         track_arq_job(cleanup_messenger_outbox),
     ]
@@ -373,6 +376,24 @@ class WorkerSettings:
         # helpdesk_digest_settings (interval guard внутри).
         cron(
             "app.worker.tasks.helpdesk.send_helpdesk_digest",
+            minute=0,
+            second=0,
+        ),
+        # ── ERP sync ───────────────────────────────────────────────────────
+        # IMAP-poll каждые 15 мин; реальный интервал — из
+        # erp_sync_settings.poll_interval_seconds (interval guard внутри).
+        # Module-gate (modules.erp_sync.enabled) AND poll_enabled проверяются
+        # в самой задаче.
+        cron(
+            "app.worker.tasks.erp_sync.run_erp_sync",
+            minute={0, 15, 30, 45},
+            second=0,
+        ),
+        # Watchdog: раз в день проверить, что ERP-отчёты приходят регулярно.
+        # 09:00 — к началу рабочего дня админ увидит алерт, если что-то не так.
+        cron(
+            "app.worker.tasks.erp_sync.erp_sync_watchdog",
+            hour=9,
             minute=0,
             second=0,
         ),

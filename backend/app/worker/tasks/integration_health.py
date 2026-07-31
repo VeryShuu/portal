@@ -129,6 +129,18 @@ async def _probe_collabora() -> bool | None:
         return False
 
 
+async def _probe_erp_sync() -> bool | None:
+    """Свежесть ERP-синхронизации.
+
+    Делегирует в :func:`erp_sync.probe_erp_sync` (читает ``erp_sync_runs`` для
+    последнего успешного импорта). ``None`` — модуль/poll выключены;
+    ``True`` — свежий импорт; ``False`` — протух/ошибок/не было.
+    """
+    from app.worker.tasks.erp_sync import probe_erp_sync
+
+    return await probe_erp_sync()
+
+
 async def probe_integrations(ctx: dict) -> dict[str, int]:
     """Run all integration probes and persist results to Redis.
 
@@ -143,6 +155,7 @@ async def probe_integrations(ctx: dict) -> dict[str, int]:
         "nextcloud": _probe_nextcloud,
         "smtp": _probe_smtp,
         "collabora": _probe_collabora,
+        "erp_sync": _probe_erp_sync,
     }
 
     results: dict[str, int] = {}

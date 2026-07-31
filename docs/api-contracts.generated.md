@@ -1,5 +1,5 @@
 <!-- AUTO-GENERATED — do not edit manually. Run: cd backend && python -m scripts.generate_api_contracts_doc --output ../docs/api-contracts.generated.md -->
-<!-- Generated: 2026-07-31 08:31 UTC -->
+<!-- Generated: 2026-07-31 10:15 UTC -->
 
 # API Contracts (auto-generated)
 
@@ -20,6 +20,7 @@
 - [branding](#branding)
 - [directories](#directories)
 - [email-outbox](#email-outbox)
+- [erp-sync](#erp-sync)
 - [feedback](#feedback)
 - [files](#files)
 - [health](#health)
@@ -1350,6 +1351,183 @@ Content-Type: `application/json` — schema: `UpdateEntryRequest`
 | Status | Description | Schema |
 |--------|-------------|--------|
 | 200 | Successful Response | object |
+| 422 | Validation Error | `HTTPValidationError` |
+
+---
+
+## erp-sync
+
+### `POST /api/v1/erp-sync/import-file`
+
+**Import File**
+
+Импортировать файл напрямую (multipart-upload), синхронно.
+
+Общий ``run_import`` с mailbox — отличие только в источнике ``Attachment``.
+``message_id=None`` (нет письма; дедуп по hash не делаем — каждый upload
+новый, чтобы админ мог перезапустить импорт того же файла при отладке).
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `portal_session` | cookie | `any` |  |  |
+
+**Request Body**
+
+Content-Type: `multipart/form-data` — schema: `Body_import_file_api_v1_erp_sync_import_file_post`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `file` | string | ✓ |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | `ErpSyncRunNowResponse` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `POST /api/v1/erp-sync/run`
+
+**Run Now**
+
+Поставить mailbox-poll в ARQ-очередь (немедленно, не ждать cron).
+
+Импорт выполнится в воркере с ``triggered_by='manual'``. ``poll_enabled``
+НЕ проверяется (админ явно хочет «забрать сейчас»), но IMAP должен быть
+настроен — задача вернёт ``imap_not_configured``, если нет.
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | `ErpSyncRunNowResponse` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `GET /api/v1/erp-sync/runs`
+
+**List Runs**
+
+Пагинированный список последних импортов (новые первыми).
+
+``report`` (JSONB) возвращается как есть — фронтенд рендерит разделы
+changed/unmatched/ambiguous/conflicts/errors.
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `limit` | query | `integer` |  |  |
+| `offset` | query | `integer` |  |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | `ErpSyncRunList` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `GET /api/v1/erp-sync/runs/{run_id}`
+
+**Get Run**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `run_id` | path | `integer` | ✓ |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | `ErpSyncRunOut` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `GET /api/v1/erp-sync/settings`
+
+**Get Settings**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | `ErpSyncSettingsOut` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `PUT /api/v1/erp-sync/settings`
+
+**Put Settings**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `portal_session` | cookie | `any` |  |  |
+
+**Request Body**
+
+Content-Type: `application/json` — schema: `ErpSyncSettingsIn`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `enabled` | boolean |  |  |
+| `imap_host` | any |  |  |
+| `imap_port` | integer |  |  |
+| `imap_use_ssl` | boolean |  |  |
+| `imap_username` | any |  |  |
+| `imap_password` | any |  |  |
+| `imap_folder` | string |  |  |
+| `poll_interval_seconds` | integer |  |  |
+| `expected_interval_days` | integer |  |  |
+| `notify_emails` | any |  |  |
+| `poll_enabled` | boolean |  |  |
+| `mail_subject_filter` | any |  |  |
+| `mail_sender_filter` | any |  |  |
+| `mail_attachment_filter` | any |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | `ErpSyncSettingsOut` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `POST /api/v1/erp-sync/test`
+
+**Test Connection**
+
+Проверка IMAP-подключения (login + select folder).
+
+Маскируем исключения: aioimaplib в некоторых из них echo'ит LOGIN-команду
+с паролем (грабля H-9 из helpdesk).
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | `ErpSyncTestResult` |
 | 422 | Validation Error | `HTTPValidationError` |
 
 ---

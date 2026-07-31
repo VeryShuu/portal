@@ -32,6 +32,7 @@
 | Генератор email-подписей | `signature.md` |
 | Обратная связь | `feedback.md` |
 | Модуль техподдержки (Helpdesk / заявки, IMAP, тикеты) | `helpdesk.md` |
+| ERP-синхронизация (дни рождения/пол, импорт из 1С, mailbox, отчёты) | `erp-sync.md` |
 | Экскурс по порталу | `onboarding.md` |
 | Отправка email | `email.md` |
 | Аутентификация (Keycloak/SSO) | `adr.md` (017/035/036) + `integration-keycloak-nextcloud.md` |
@@ -84,6 +85,10 @@
 - [`helpdesk.md`](./helpdesk.md) — модуль техподдержки (замена OTRS): тикеты,
   переписка, IMAP-ingress, статус-машина, локальные вложения, архив, mailbox-settings,
   оповещения о новых заявках в MAX-messenger (`messenger_outbox`, миграция 081)
+- [`erp-sync.md`](./erp-sync.md) — модуль ERP-синхронизации (дни рождения и пол):
+  импорт из 1С-выгрузки (mailbox-poll + ручной upload), FIO-матчинг,
+  multi-channel отчёты админу (email + in-app + Grafana), watchdog «письма не
+  приходят», миграции 087–088
 - [`integration-keycloak-nextcloud.md`](./integration-keycloak-nextcloud.md) —
   настройка Keycloak realm и Nextcloud service account
 - [`email.md`](./email.md) — общая для портала email-инфраструктура

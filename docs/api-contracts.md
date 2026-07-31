@@ -2786,6 +2786,83 @@ cron-поллинг ящика отключены (404). Сам импорт (pi
 
 ---
 
+## §3.5b ERP-синхронизация (дни рождения и пол)
+
+> Импорт `birth_date`/`gender` из ERP-выгрузки (1С). Полностью — в
+> [`./erp-sync.md`](./erp-sync.md). Все endpoints гейтируются модулем
+> `erp_sync.enabled` + `AdminDep`.
+
+### GET /api/v1/erp-sync/settings `[admin]`
+Текущие настройки ящика (singleton). Пароль write-only (`imap_password_set`).
+```json
+→ 200 {
+  "enabled": true,
+  "imap_host": "mail.company.local", "imap_port": 993, "imap_use_ssl": true,
+  "imap_username": "erp@company.local", "imap_password_set": true,
+  "imap_folder": "INBOX",
+  "poll_interval_seconds": 900, "expected_interval_days": 4,
+  "notify_emails": null,
+  "poll_enabled": true,
+  "mail_subject_filter": "Сотрудники",
+  "mail_sender_filter": "erp@company.local",
+  "mail_attachment_filter": null
+}
+```
+
+### PUT /api/v1/erp-sync/settings `[admin]`
+Обновление настроек. `imap_password` — write-only (пусто = оставить прежний
+шифр). `poll_enabled` — отдельный флаг авто-поллинга (двойной гейтинг с
+`modules.erp_sync.enabled`). Фильтры — CI-подстроки для общего ящика.
+```json
+← { /* ErpSyncSettingsIn */ }
+→ 200 { /* ErpSyncSettingsOut */ }
+```
+
+### POST /api/v1/erp-sync/test `[admin]`
+Проверка IMAP-подключения (login + select folder). Маскирует исключения
+(aioimaplib echo'ит пароль в некоторых).
+```json
+→ 200 { "ok": true }
+→ 200 { "ok": false, "error": "IMAP не настроен (host/username/password)." }
+```
+
+### POST /api/v1/erp-sync/run `[admin]`
+Mailbox-trigger: ставит ARQ-задачу `run_erp_sync(triggered_by=manual)`.
+Импорт выполнится в воркере немедленно (не ждать cron). Требует настроенный IMAP.
+```json
+→ 200 { "status": "queued", "job_id": "erp_sync:run:<admin_id>" }
+→ 400 { "detail": "IMAP mailbox is not configured" }
+→ 503 { "detail": "Task queue unavailable" }
+```
+
+### POST /api/v1/erp-sync/import-file `[admin]`
+Multipart-upload файла → синхронный импорт через общий `run_import`. Не требует
+mailbox — для первичной настройки/диагностики. `message_id=null` (каждый upload
+новый). Лимит 50 MiB.
+```json
+← multipart: file=<report.xlsx>
+→ 200 { "status": "processed", "run_id": 42 }
+→ 400 { "detail": "Неподдерживаемый формат..." }
+→ 413 { "detail": "Файл слишком большой..." }
+```
+
+### GET /api/v1/erp-sync/runs `[admin]`
+Пагинированный список последних импортов (новые первыми). `report` (JSONB)
+возвращается как есть — разделы changed/unmatched/ambiguous/conflicts/errors.
+```
+?limit=20&offset=0
+→ 200 { "items": [ ErpSyncRunOut ], "total": 42 }
+```
+
+### GET /api/v1/erp-sync/runs/{run_id} `[admin]`
+Один run с полным отчётом.
+```
+→ 200 { /* ErpSyncRunOut */ }
+→ 404 { "detail": "Run not found" }
+```
+
+---
+
 ## §3.6 Файлы (Phase 5 — Nextcloud service account, ADR-032)
 
 > Все операции через service account `portal-svc` (Basic Auth). Права — только в БД портала.
