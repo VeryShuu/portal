@@ -628,7 +628,8 @@
       "monitoring": "Monitoring",
       "emailOutbox": "Outbox queue",
       "fileIcons": "File icons",
-      "helpdesk": "Helpdesk"
+      "helpdesk": "Helpdesk",
+      "erpSync": "ERP sync"
     },
     "fileIcons": {
       "hint": "Upload SVG icons and bind them to a file extension. The Files page will show these icons instead of emojis.",
@@ -1399,6 +1400,78 @@
       "helpdesk": {
         "title": "Helpdesk",
         "hint": "Support tickets (OTRS replacement): intake from email or web form, agent correspondence, statuses, archive."
+      },
+      "erpSync": {
+        "settings": {
+          "title": "ERP mailbox settings",
+          "hint": "IMAP settings for the mailbox where ERP (1C) sends birthday/gender reports. Password is write-only: the value is never returned, only whether it's set.",
+          "enabled": "Module enabled",
+          "pollEnabled": "Auto-polling (cron)",
+          "pollEnabledHint": "Poll the mailbox on a schedule. Can be turned off while keeping manual trigger.",
+          "imapHost": "IMAP server",
+          "imapPort": "IMAP port",
+          "imapUsername": "Username (email)",
+          "imapFolder": "Folder",
+          "imapPassword": "Password",
+          "imapUseSsl": "Use SSL",
+          "passwordPlaceholder": "Enter password",
+          "passwordKeep": "Keep unchanged",
+          "pollInterval": "Poll interval, sec",
+          "expectedInterval": "Expected interval, days",
+          "filtersTitle": "Mail filters (for shared mailbox)",
+          "filtersHint": "If the mailbox is shared and receives other mail, set filters. Empty field = no restriction. Case-insensitive.",
+          "subjectFilter": "Subject filter",
+          "subjectFilterPlaceholder": "Employees",
+          "senderFilter": "Sender filter",
+          "attachmentFilter": "Attachment name filter",
+          "notifyEmails": "Report recipients (emails, comma-separated)",
+          "notifyEmailsPlaceholder": "Empty = all admins",
+          "test": "Test connection",
+          "testOk": "Connection successful",
+          "testFail": "Connection failed"
+        },
+        "actions": {
+          "title": "Run import",
+          "hint": "\"Run\" polls the mailbox immediately (don't wait for cron). \"Upload file\" imports an attachment manually, without a mailbox (for initial setup and diagnostics).",
+          "runNow": "Run sync now",
+          "uploadFile": "Upload file manually",
+          "runQueued": "Import queued",
+          "runQueuedHint": "Import will complete within a minute. History will update automatically.",
+          "uploadDone": "Import done (run #{id})"
+        },
+        "runs": {
+          "title": "Import history",
+          "refresh": "Refresh",
+          "startedAt": "Date",
+          "status": {
+            "label": "Status",
+            "success": "Success",
+            "partial": "With warnings",
+            "failed": "Failed",
+            "skipped": "Skipped"
+          },
+          "trigger": {
+            "cron": "auto",
+            "manual": "manual"
+          },
+          "updated": "Updated",
+          "problems": "Issues",
+          "attachment": "File"
+        },
+        "report": {
+          "changed": "Updated ({count})",
+          "unmatched": "Unmatched ({count})",
+          "ambiguous": "Ambiguous ({count})",
+          "conflicts": "File conflicts ({count})",
+          "errors": "Parse errors ({count})",
+          "empty": "No detailed report (all data is correct).",
+          "male": "Male",
+          "female": "Female",
+          "fields": {
+            "birth_date": "Birth date",
+            "gender": "Gender"
+          }
+        }
       }
     },
     "kb": {

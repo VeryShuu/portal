@@ -59,6 +59,7 @@ const KeycloakTab = defineAsyncComponent(() => import('./admin/tabs/KeycloakTab.
 const UserAttributesTab = defineAsyncComponent(() => import('./admin/tabs/UserAttributesTab.vue'))
 const ModulesTab = defineAsyncComponent(() => import('./admin/tabs/ModulesTab.vue'))
 const HelpdeskTab = defineAsyncComponent(() => import('./admin/tabs/HelpdeskTab.vue'))
+const ErpSyncTab = defineAsyncComponent(() => import('./admin/tabs/ErpSyncTab.vue'))
 const BrandingTab = defineAsyncComponent(() => import('./admin/tabs/BrandingTab.vue'))
 const AnalyticsTab = defineAsyncComponent(() => import('./admin/tabs/AnalyticsTab.vue'))
 const AuditTab = defineAsyncComponent(() => import('./admin/tabs/AuditTab.vue'))
@@ -91,6 +92,7 @@ const GROUPS: GroupDef[] = [
       { name: 'branding', label: 'admin.tabs.branding', component: BrandingTab },
       { name: 'modules', label: 'admin.tabs.modules', component: ModulesTab },
       { name: 'helpdesk', label: 'admin.tabs.helpdesk', component: HelpdeskTab },
+      { name: 'erp_sync', label: 'admin.tabs.erpSync', component: ErpSyncTab },
       { name: 'monitoring', label: 'admin.tabs.monitoring', component: MonitoringTab },
     ],
   },

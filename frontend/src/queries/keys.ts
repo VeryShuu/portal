@@ -141,4 +141,9 @@ export const queryKeys = {
     agentTicketCounts: () => ['helpdesk', 'agent-ticket-counts'] as const,
     maxBot: () => ['helpdesk', 'max-bot'] as const,
   },
+  erpSync: {
+    all: ['erp-sync'] as const,
+    settings: () => ['erp-sync', 'settings'] as const,
+    runs: (params?: Record<string, unknown>) => ['erp-sync', 'runs', params ?? {}] as const,
+  },
 } as const
