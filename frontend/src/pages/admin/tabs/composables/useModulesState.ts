@@ -34,6 +34,7 @@ export function useModulesState() {
     directories: { enabled: false },
     signature: { enabled: false },
     helpdesk: { enabled: false },
+    erp_sync: { enabled: false },
   })
 
   const ncForm = ref({
@@ -53,6 +54,7 @@ export function useModulesState() {
   const directoriesToggling = ref(false)
   const signatureToggling = ref(false)
   const helpdeskToggling = ref(false)
+  const erpSyncToggling = ref(false)
   const ncTesting = ref(false)
   const ncTestResult = ref<{ ok: boolean; details?: string } | null>(null)
   const modulesLoadError = ref(false)
@@ -71,6 +73,7 @@ export function useModulesState() {
       if (data.directories) modulesForm.value.directories.enabled = data.directories.enabled
       if (data.signature) modulesForm.value.signature.enabled = data.signature.enabled
       if (data.helpdesk) modulesForm.value.helpdesk.enabled = data.helpdesk.enabled
+      if (data.erp_sync) modulesForm.value.erp_sync.enabled = data.erp_sync.enabled
       modulesLoadError.value = false
     }
   }, { immediate: true })
@@ -267,6 +270,27 @@ export function useModulesState() {
     router.push({ path: ROUTES.ADMIN, query: { tab: 'helpdesk' } })
   }
 
+  async function onToggleErpSync(value: boolean) {
+    erpSyncToggling.value = true
+    try {
+      await api('/admin/modules/erp_sync', {
+        method: 'PUT',
+        body: { enabled: value },
+      })
+      modulesForm.value.erp_sync.enabled = value
+      qc.invalidateQueries({ queryKey: queryKeys.admin.modules() })
+      message.success(t('admin.modules.saved'))
+    } catch (e) {
+      message.error(parseApiError(e, t))
+    } finally {
+      erpSyncToggling.value = false
+    }
+  }
+
+  function goToErpSync() {
+    router.push({ path: ROUTES.ADMIN, query: { tab: 'erp_sync' } })
+  }
+
   async function saveNcAll() {
     if (modulesLoadError.value) { message.error(t('admin.modules.loadFailedGuard')); return }
     await api('/admin/modules/nextcloud', {
@@ -351,6 +375,7 @@ export function useModulesState() {
     directoriesToggling,
     signatureToggling,
     helpdeskToggling,
+    erpSyncToggling,
     ncTesting,
     ncTestResult,
     ncDirty,
@@ -365,6 +390,7 @@ export function useModulesState() {
     onToggleDirectories,
     onToggleSignature,
     onToggleHelpdesk,
+    onToggleErpSync,
     onToggleOnboarding,
     openOnboardingDrawer,
     goToPhotos,
@@ -372,5 +398,6 @@ export function useModulesState() {
     goToDirectories,
     goToSignature,
     goToHelpdesk,
+    goToErpSync,
   }
 }

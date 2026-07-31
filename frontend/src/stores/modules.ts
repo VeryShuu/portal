@@ -18,6 +18,7 @@ export interface ModuleSettingsResponse {
   directories: { enabled: boolean }
   signature: { enabled: boolean }
   helpdesk: { enabled: boolean }
+  erp_sync: { enabled: boolean }
 }
 
 export type { GalleryLinks }
@@ -62,7 +63,8 @@ export const useModulesStore = defineStore('modules', () => {
       | 'meetings'
       | 'directories'
       | 'signature'
-      | 'helpdesk',
+      | 'helpdesk'
+      | 'erp_sync',
   ): boolean {
     if (!data.value) return false
     return !!data.value[moduleName]?.enabled

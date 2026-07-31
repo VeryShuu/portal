@@ -4778,6 +4778,8 @@ empty-state.spec.ts
 entry-card.spec.ts
 entry-contact-list.spec.ts
 entry-edit-drawer.spec.ts
+erp-sync-i18n.spec.ts
+erp-sync-tab-gating.spec.ts
 extract-dropped-files.spec.ts
 feedback-api.spec.ts
 feedback-attachment-list.spec.ts

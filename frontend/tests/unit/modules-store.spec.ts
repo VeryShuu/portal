@@ -87,6 +87,20 @@ describe('useModulesStore', () => {
       expect(store.isEnabled('photos')).toBe(true)
       expect(store.isEnabled('meetings')).toBe(true)
     })
+
+    it('erp_sync: returns false when null/absent, true when enabled', async () => {
+      const { useModulesStore } = await import('../../src/stores/modules')
+      const store = useModulesStore()
+      // нет данных → false (вкладка ERP скрыта до загрузки modules)
+      expect(store.isEnabled('erp_sync')).toBe(false)
+      // данные без erp_sync → false (толерантно к старым ответам)
+      mockApi.mockResolvedValueOnce(fullResponse())
+      await store.load()
+      expect(store.isEnabled('erp_sync')).toBe(false)
+      // модуль включён → true (вкладка показывается)
+      store.setData(fullResponse({ erp_sync: { enabled: true } }))
+      expect(store.isEnabled('erp_sync')).toBe(true)
+    })
   })
 
   describe('meetingsSettings computed', () => {

@@ -115,6 +115,7 @@ export interface AdminModulesOut {
   directories: { enabled: boolean }
   signature: { enabled: boolean }
   helpdesk: { enabled: boolean }
+  erp_sync: { enabled: boolean }
 }
 
 export function useAdminUsersQuery(params: MaybeRefOrGetter<{
