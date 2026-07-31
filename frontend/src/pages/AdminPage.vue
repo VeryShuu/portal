@@ -46,10 +46,12 @@ import { ref, computed, defineAsyncComponent, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { NTabs, NTabPane } from 'naive-ui'
 import { useRoute, useRouter } from 'vue-router'
+import { useModulesStore } from '../stores/modules'
 
 const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
+const modulesStore = useModulesStore()
 
 const UsersTab = defineAsyncComponent(() => import('./admin/tabs/UsersTab.vue'))
 const EmailTab = defineAsyncComponent(() => import('./admin/tabs/EmailTab.vue'))
@@ -122,7 +124,21 @@ function readTabFromQuery(): string {
 const activeTab = ref(readTabFromQuery())
 const activeGroup = ref(TAB_TO_GROUP[activeTab.value] ?? 'access')
 
-const currentTabs = computed(() => GROUPS.find((g) => g.key === activeGroup.value)?.tabs ?? [])
+// Гейтинг видимости вкладок по модулю: вкладка показывается, только когда
+// соответствующий модуль включён (modules.json). Настройки включения — во вкладке
+// «Модули», которая не гейтится, поэтому замкнутого круга нет.
+type ModuleName = Parameters<typeof modulesStore.isEnabled>[0]
+const TAB_MODULE_GATE: Partial<Record<string, ModuleName>> = {
+  erp_sync: 'erp_sync',
+}
+
+const currentTabs = computed(() => {
+  const tabs = GROUPS.find((g) => g.key === activeGroup.value)?.tabs ?? []
+  return tabs.filter((tab) => {
+    const moduleName = TAB_MODULE_GATE[tab.name]
+    return !moduleName || modulesStore.isEnabled(moduleName)
+  })
+})
 
 watch(activeGroup, (g) => {
   const tabs = GROUPS.find((x) => x.key === g)?.tabs ?? []
@@ -130,6 +146,14 @@ watch(activeGroup, (g) => {
     if (tabs[0]) activeTab.value = tabs[0].name
   }
 })
+
+// Если активная вкладка отфильтрована (модуль выключили) — уходим на первую
+// доступную вкладку группы, чтобы таб не «завис» в невидимом состоянии.
+watch(currentTabs, (tabs) => {
+  if (tabs.length && !tabs.some((tab) => tab.name === activeTab.value)) {
+    activeTab.value = tabs[0].name
+  }
+}, { flush: 'sync' })
 
 watch(activeTab, (val) => {
   const group = TAB_TO_GROUP[val]

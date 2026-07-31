@@ -145,4 +145,11 @@ async function pollRuns(deadlineMs: number, intervalMs: number) {
 
 <style scoped>
 @import '../admin-tabs.css';
+
+/* ERP-вкладка: контент шире, чем форма-вкладки (branding-wrap 640px), — здесь
+   таблица истории импортов и двухколоночная форма настроек. Расширяем до полной
+   доступной ширины контента, не ломая остальные админ-вкладки. */
+.erp-sync-tab {
+  max-width: none;
+}
 </style>

@@ -66,6 +66,18 @@
 
     <ModuleCard style="margin-top:16px">
       <ModuleToggle
+        :title="t('admin.modules.erpSync.title')"
+        :hint="t('admin.modules.erpSync.hint')"
+        :enabled="modulesForm.erp_sync.enabled"
+        :loading="erpSyncToggling"
+        :settings-label="t('admin.modules.openSettings')"
+        @open-settings="goToErpSync"
+        @update:enabled="onToggleErpSync"
+      />
+    </ModuleCard>
+
+    <ModuleCard style="margin-top:16px">
+      <ModuleToggle
         :title="t('admin.modules.nextcloud.title')"
         :hint="t('admin.modules.nextcloud.hint')"
         :enabled="modulesForm.nextcloud.enabled"
@@ -174,6 +186,7 @@ const {
   directoriesToggling,
   signatureToggling,
   helpdeskToggling,
+  erpSyncToggling,
   ncTesting,
   ncTestResult,
   ncDirty,
@@ -188,6 +201,7 @@ const {
   onToggleDirectories,
   onToggleSignature,
   onToggleHelpdesk,
+  onToggleErpSync,
   onToggleOnboarding,
   openOnboardingDrawer,
   goToPhotos,
@@ -195,6 +209,7 @@ const {
   goToDirectories,
   goToSignature,
   goToHelpdesk,
+  goToErpSync,
 } = useModulesState()
 </script>
 
