@@ -17,14 +17,15 @@ from app.api.deps import CurrentUser, DbDep, RedisDep
 from app.api.modules import (
     AllModuleSettingsOut,
     DirectoriesModuleOut,
+    ErpSyncModuleOut,
     HelpdeskModuleOut,
     MeetingsModuleSettings,
     NextcloudModuleOut,
     PhotosModuleSettings,
     SignatureModuleOut,
     _meetings_out,
+    _photos_out,
     load_modules_shared,
-    photos_module_out,
 )
 from app.core.database import AsyncSessionLocal
 from app.core.logging import get_logger
@@ -49,11 +50,12 @@ _DEFAULT_GALLERY = GalleryLinksOut(
 )
 _DEFAULT_MODULES = AllModuleSettingsOut(
     nextcloud=NextcloudModuleOut(enabled=False),
-    photos=photos_module_out(PhotosModuleSettings()),
+    photos=_photos_out(PhotosModuleSettings()),
     meetings=_meetings_out(MeetingsModuleSettings()),
     directories=DirectoriesModuleOut(enabled=False),
     signature=SignatureModuleOut(enabled=False),
     helpdesk=HelpdeskModuleOut(enabled=False),
+    erp_sync=ErpSyncModuleOut(enabled=False),
 )
 
 
@@ -128,11 +130,12 @@ async def bootstrap(
         m = await load_modules_shared(redis)
         return AllModuleSettingsOut(
             nextcloud=NextcloudModuleOut(enabled=m.nextcloud.enabled),
-            photos=photos_module_out(m.photos),
+            photos=_photos_out(m.photos),
             meetings=_meetings_out(m.meetings),
             directories=DirectoriesModuleOut(enabled=m.directories.enabled),
             signature=SignatureModuleOut(enabled=m.signature.enabled),
             helpdesk=HelpdeskModuleOut(enabled=m.helpdesk.enabled),
+            erp_sync=ErpSyncModuleOut(enabled=m.erp_sync.enabled),
         )
 
     async def _get_gallery_links() -> GalleryLinksOut:

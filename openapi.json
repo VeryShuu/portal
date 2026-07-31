@@ -151,6 +151,18 @@
       },
       "AdminPatchProfileRequest": {
         "properties": {
+          "birth_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Birth Date"
+          },
           "department": {
             "anyOf": [
               {
@@ -174,6 +186,17 @@
               }
             ],
             "title": "Full Name"
+          },
+          "gender": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gender"
           },
           "phone": {
             "anyOf": [
@@ -346,6 +369,9 @@
           "directories": {
             "$ref": "#/components/schemas/DirectoriesModuleOut"
           },
+          "erp_sync": {
+            "$ref": "#/components/schemas/ErpSyncModuleOut"
+          },
           "helpdesk": {
             "$ref": "#/components/schemas/HelpdeskModuleOut"
           },
@@ -368,7 +394,8 @@
           "meetings",
           "directories",
           "signature",
-          "helpdesk"
+          "helpdesk",
+          "erp_sync"
         ],
         "title": "AllModuleSettingsOut",
         "type": "object"
@@ -3594,6 +3621,30 @@
           "sort_order"
         ],
         "title": "EntryReorderItem",
+        "type": "object"
+      },
+      "ErpSyncModuleIn": {
+        "properties": {
+          "enabled": {
+            "default": false,
+            "title": "Enabled",
+            "type": "boolean"
+          }
+        },
+        "title": "ErpSyncModuleIn",
+        "type": "object"
+      },
+      "ErpSyncModuleOut": {
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "title": "ErpSyncModuleOut",
         "type": "object"
       },
       "FeedbackAdminListOut": {
@@ -13726,6 +13777,18 @@
             ],
             "title": "Avatar Url"
           },
+          "birth_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Birth Date"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -13749,6 +13812,17 @@
           "full_name": {
             "title": "Full Name",
             "type": "string"
+          },
+          "gender": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gender"
           },
           "id": {
             "format": "uuid",
@@ -13874,6 +13948,18 @@
             ],
             "title": "Avatar Url"
           },
+          "birth_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Birth Date"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -13897,6 +13983,17 @@
           "full_name": {
             "title": "Full Name",
             "type": "string"
+          },
+          "gender": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gender"
           },
           "id": {
             "format": "uuid",
@@ -16094,6 +16191,65 @@
           }
         },
         "summary": "Update Directories Module",
+        "tags": [
+          "modules"
+        ]
+      }
+    },
+    "/api/v1/admin/modules/erp_sync": {
+      "put": {
+        "operationId": "update_erp_sync_module_api_v1_admin_modules_erp_sync_put",
+        "parameters": [
+          {
+            "in": "cookie",
+            "name": "portal_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Portal Session"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ErpSyncModuleIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpSyncModuleOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Erp Sync Module",
         "tags": [
           "modules"
         ]

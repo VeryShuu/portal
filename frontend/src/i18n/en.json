@@ -152,8 +152,12 @@
       "mobilePhone": "Mobile",
       "email": "Email",
       "office": "City",
-      "department": "Department"
+      "department": "Department",
+      "birthDate": "Birthday",
+      "gender": "Gender"
     },
+    "genderMale": "Male",
+    "genderFemale": "Female",
     "edit": {
       "enter": "Edit order",
       "exit": "Exit edit mode",

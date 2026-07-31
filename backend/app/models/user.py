@@ -1,10 +1,11 @@
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 
 from sqlalchemy import (
     ARRAY,
     Boolean,
     CheckConstraint,
+    Date,
     DateTime,
     Index,
     Integer,
@@ -32,6 +33,8 @@ class User(Base):
             "auth_source IN ('keycloak', 'local')",
             name="ck_users_auth_source",
         ),
+        # ERP-синхронизация (миграция 087): пол сотрудника из ERP-выгрузки.
+        CheckConstraint("gender IS NULL OR gender IN ('male', 'female')", name="ck_users_gender"),
         UniqueConstraint("keycloak_id", name="uq_users_keycloak_id"),
         # Уникальность email на уровне БД — case-insensitive и только для
         # активных (не soft-deleted) пользователей (миграции 030/037).
@@ -88,3 +91,8 @@ class User(Base):
     staff_hidden: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default=text("false"), default=False
     )
+    # ERP-синхронизация (миграция 087): дата рождения и пол из ERP-выгрузки.
+    # Nullable — у существующих пользователей этих данных изначально нет.
+    # Видны всем авторизованным в карточке /staff (аналогично position/phone).
+    birth_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    gender: Mapped[str | None] = mapped_column(String(10), nullable=True)

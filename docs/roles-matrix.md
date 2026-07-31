@@ -81,7 +81,7 @@ def require_role(*roles: str):
 | `POST /users/admin/sync` | ❌ | ❌ | ✅ | Ручная синхронизация из Keycloak (P2-41) |
 | `PATCH /users/admin/{id}/role` | ❌ | ❌ | ✅ | Изменение роли пользователя (P2-41) |
 | `DELETE /users/admin/{user_id}` | ❌ | ❌ | ✅ | Soft-delete пользователя |
-| `PATCH /users/admin/{user_id}/profile` | ❌ | ❌ | ✅ | Редактирование профиля (только `auth_source=local`) |
+| `PATCH /users/admin/{user_id}/profile` | ❌ | ❌ | ✅ | Редактирование профиля: `full_name`/`department`/`position`/`phone` + `birth_date`/`gender` (миграция 087, только `auth_source=local`) |
 | `GET /users/admin/{user_id}/groups` | ❌ | ❌ | ✅ | Список Keycloak-групп пользователя |
 | `GET /users/admin/staff-order` | ❌ | ❌ | ✅ | Текущий порядок отделов и скрытые пользователи |
 | `PUT /users/admin/staff-order` | ❌ | ❌ | ✅ | Сохранить порядок отделов и список скрытых |

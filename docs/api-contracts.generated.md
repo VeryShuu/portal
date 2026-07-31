@@ -1,5 +1,5 @@
 <!-- AUTO-GENERATED — do not edit manually. Run: cd backend && python -m scripts.generate_api_contracts_doc --output ../docs/api-contracts.generated.md -->
-<!-- Generated: 2026-07-30 18:43 UTC -->
+<!-- Generated: 2026-07-31 08:31 UTC -->
 
 # API Contracts (auto-generated)
 
@@ -5082,6 +5082,31 @@ Content-Type: `application/json` — schema: `DirectoriesModuleIn`
 | 200 | Successful Response | `DirectoriesModuleOut` |
 | 422 | Validation Error | `HTTPValidationError` |
 
+### `PUT /api/v1/admin/modules/erp_sync`
+
+**Update Erp Sync Module**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `portal_session` | cookie | `any` |  |  |
+
+**Request Body**
+
+Content-Type: `application/json` — schema: `ErpSyncModuleIn`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `enabled` | boolean |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | `ErpSyncModuleOut` |
+| 422 | Validation Error | `HTTPValidationError` |
+
 ### `PUT /api/v1/admin/modules/helpdesk`
 
 **Update Helpdesk Module**
@@ -8265,6 +8290,8 @@ Content-Type: `application/json` — schema: `AdminPatchProfileRequest`
 | `department` | any |  |  |
 | `position` | any |  |  |
 | `phone` | any |  |  |
+| `birth_date` | any |  |  |
+| `gender` | any |  |  |
 
 **Responses**
 

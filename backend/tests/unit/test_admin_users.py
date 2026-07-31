@@ -50,6 +50,8 @@ def _make_db_user(
     u.created_at = "2024-01-01T00:00:00+00:00"
     u.updated_at = "2024-01-01T00:00:00+00:00"
     u.last_login_at = None
+    u.birth_date = None
+    u.gender = None
     return u
 
 
@@ -294,6 +296,30 @@ class TestAdminUserValidationLogic:
         assert req.department is None
         assert req.position is None
         assert req.phone is None
+        assert req.birth_date is None
+        assert req.gender is None
+
+    def test_admin_patch_profile_gender_validation(self):
+        """AdminPatchProfileRequest: gender принимает только male/female."""
+        from pydantic import ValidationError
+
+        from app.schemas.user import AdminPatchProfileRequest
+
+        # Допустимые значения
+        assert AdminPatchProfileRequest(gender="male").gender == "male"
+        assert AdminPatchProfileRequest(gender="female").gender == "female"
+        # Недопустимое
+        with pytest.raises(ValidationError):
+            AdminPatchProfileRequest(gender="other")
+
+    def test_admin_patch_profile_birth_date_parsed(self):
+        """AdminPatchProfileRequest: birth_date парсится в date."""
+        from datetime import date
+
+        from app.schemas.user import AdminPatchProfileRequest
+
+        req = AdminPatchProfileRequest(birth_date="1990-05-15")
+        assert req.birth_date == date(1990, 5, 15)
 
     def test_local_user_create_request_validates_email(self):
         """LocalUserCreateRequest: email должен быть валидным."""

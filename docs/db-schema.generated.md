@@ -1,5 +1,5 @@
 <!-- AUTO-GENERATED — do not edit manually. Run: cd backend && python -m scripts.generate_db_schema_doc --output ../docs/db-schema.generated.md -->
-<!-- Generated: 2026-07-30 18:44 UTC -->
+<!-- Generated: 2026-07-31 08:32 UTC -->
 
 # Database Schema (auto-generated)
 
@@ -12,6 +12,8 @@
 
 - [`bookmarks`](#bookmarks)
 - [`email_outbox`](#email-outbox)
+- [`erp_sync_runs`](#erp-sync-runs)
+- [`erp_sync_settings`](#erp-sync-settings)
 - [`feedback`](#feedback)
 - [`feedback_attachments`](#feedback-attachments)
 - [`feedback_replies`](#feedback-replies)
@@ -81,6 +83,7 @@
 ```mermaid
 erDiagram
     bookmarks ||--o{ users : "FK user_id"
+    erp_sync_settings ||--o{ users : "FK updated_by_user_id"
     feedback ||--o{ users : "FK user_id"
     feedback_attachments ||--o{ feedback : "FK feedback_id"
     feedback_attachments ||--o{ users : "FK uploaded_by"
@@ -243,6 +246,104 @@ erDiagram
 
 ---
 
+## `erp_sync_runs`
+
+Один проход импорта ERP-выгрузки (автоматический по cron или ручной).
+
+    ``message_id`` — для дедупа писем (UNIQUE): повторная обработка того же
+    письма пропускается. ``NULL`` для ручного запуска (когда импорт
+    инициирован админом без привязки к письму).
+
+    ``report`` — JSONB со структурированным результатом для email-отчёта:
+    ``changed`` (ФИО + поле old→new), ``unmatched`` (ФИО, нет в БД),
+    ``ambiguous`` (ФИО → несколько кандидатов), ``conflicts`` (одно ФИО с
+    разными датами/полом в файле), ``errors`` (невалидные строки).
+
+### Columns
+
+| Column | Type | Nullable | PK | FK | Unique | Default | Comment |
+|--------|------|----------|----|----|--------|---------|---------|
+| `id` | `BIGINT` |  | ✓ |  |  |  |  |
+| `message_id` | `TEXT` | ✓ |  |  | ✓ |  |  |
+| `attachment_hash` | `TEXT` | ✓ |  |  |  |  |  |
+| `attachment_name` | `TEXT` | ✓ |  |  |  |  |  |
+| `triggered_by` | `VARCHAR(20)` |  |  |  |  |  |  |
+| `started_at` | `TIMESTAMP WITH TIME ZONE` |  |  |  |  | `NOW()` |  |
+| `finished_at` | `TIMESTAMP WITH TIME ZONE` | ✓ |  |  |  |  |  |
+| `status` | `VARCHAR(20)` |  |  |  |  |  |  |
+| `rows_total` | `INTEGER` | ✓ |  |  |  |  |  |
+| `rows_matched` | `INTEGER` | ✓ |  |  |  |  |  |
+| `rows_updated` | `INTEGER` | ✓ |  |  |  |  |  |
+| `rows_unmatched` | `INTEGER` | ✓ |  |  |  |  |  |
+| `rows_ambiguous` | `INTEGER` | ✓ |  |  |  |  |  |
+| `conflicts` | `INTEGER` | ✓ |  |  |  |  |  |
+| `errors` | `INTEGER` | ✓ |  |  |  |  |  |
+| `report` | `JSONB` |  |  |  |  | `'{}'::jsonb` |  |
+
+### Constraints
+
+| Name | Type | Definition |
+|------|------|------------|
+| `ck_erp_sync_runs_triggered_by` | CHECK | `triggered_by IN ('cron', 'manual')` |
+| `` | UNIQUE | `message_id` |
+| `ck_erp_sync_runs_status` | CHECK | `status IN ('success', 'partial', 'failed', 'skipped')` |
+
+### Indexes
+
+| Name | Columns | Unique |
+|------|---------|--------|
+| `ix_erp_sync_runs_started_at` | `None` |  |
+
+---
+
+## `erp_sync_settings`
+
+Singleton row (``id = 1``) с IMAP-настройками ящика, на который ERP шлёт
+    отчёты. Клон паттерна ``helpdesk_mailbox_settings``.
+
+    Пароль — шифр Fernet (``imap_password_enc``), plaintext write-only:
+    API возвращает только ``imap_password_set: bool``.
+
+    ``poll_interval_seconds`` (CHECK 60–3600) — как часто cron опрашивает ящик
+    (по умолчанию 900 c = 15 мин). ``expected_interval_days`` — ожидаемый
+    интервал между отчётами ERP (2×/неделю ≈ 4 дня); watchdog использует его
+    для алерта «письма нет >N дней». ``notify_emails`` — override списка
+    адресов для отчётов (NULL = все admin с ``notify_email=true``).
+
+### Columns
+
+| Column | Type | Nullable | PK | FK | Unique | Default | Comment |
+|--------|------|----------|----|----|--------|---------|---------|
+| `id` | `SMALLINT` |  | ✓ |  |  | `1` |  |
+| `enabled` | `BOOLEAN` |  |  |  |  | `FALSE` |  |
+| `imap_host` | `VARCHAR(255)` | ✓ |  |  |  |  |  |
+| `imap_port` | `INTEGER` |  |  |  |  | `993` |  |
+| `imap_use_ssl` | `BOOLEAN` |  |  |  |  | `TRUE` |  |
+| `imap_username` | `VARCHAR(255)` | ✓ |  |  |  |  |  |
+| `imap_password_enc` | `TEXT` | ✓ |  |  |  |  |  |
+| `imap_folder` | `VARCHAR(100)` |  |  |  |  | `'INBOX'` |  |
+| `poll_interval_seconds` | `INTEGER` |  |  |  |  | `900` |  |
+| `expected_interval_days` | `INTEGER` |  |  |  |  | `4` |  |
+| `notify_emails` | `TEXT[]` | ✓ |  |  |  |  |  |
+| `updated_by_user_id` | `UUID` | ✓ |  | `users.id` |  |  |  |
+| `created_at` | `TIMESTAMP WITH TIME ZONE` |  |  |  |  | `NOW()` |  |
+| `updated_at` | `TIMESTAMP WITH TIME ZONE` |  |  |  |  | `NOW()` |  |
+
+### Constraints
+
+| Name | Type | Definition |
+|------|------|------------|
+| `ck_erp_sync_settings_singleton` | CHECK | `id = 1` |
+| `ck_erp_sync_settings_poll_interval` | CHECK | `poll_interval_seconds BETWEEN 60 AND 3600` |
+
+### Relationships
+
+| Attribute | Target | Type | Back-populates |
+|-----------|--------|------|----------------|
+| `updated_by` | `User` | many-to-one | `` |
+
+---
+
 ## `feedback`
 
 ### Columns
@@ -356,8 +457,8 @@ erDiagram
 
 | Name | Type | Definition |
 |------|------|------------|
-| `uq_file_folder_perm_folder_subject` | UNIQUE | `folder_id`, `subject_id` |
 | `ck_file_folder_perm_permission` | CHECK | `permission IN ('viewer', 'editor', 'manager')` |
+| `uq_file_folder_perm_folder_subject` | UNIQUE | `folder_id`, `subject_id` |
 | `ck_file_folder_perm_subject_type` | CHECK | `subject_type IN ('user', 'group')` |
 
 ### Indexes
@@ -471,8 +572,8 @@ Per-file share (ADR-032 / sharing.md).
 
 | Name | Type | Definition |
 |------|------|------------|
-| `uq_file_share_folder_file_subject` | UNIQUE | `folder_id`, `filename`, `subject_id` |
 | `ck_file_share_subject_type` | CHECK | `subject_type IN ('user', 'group')` |
+| `uq_file_share_folder_file_subject` | UNIQUE | `folder_id`, `filename`, `subject_id` |
 | `ck_file_share_permission` | CHECK | `permission IN ('viewer', 'editor')` |
 
 ### Indexes
@@ -738,7 +839,7 @@ A single message in a ticket thread — inbound (from the requester) or
 | `direction` | `VARCHAR(10)` |  |  |  |  |  |  |
 | `body_text` | `TEXT` |  |  |  |  |  |  |
 | `body_html` | `TEXT` | ✓ |  |  |  |  |  |
-| `body_tsvector` | `TSVECTOR` | ✓ |  |  |  | Computed(<sqlalchemy.sql.elements.TextClause object at 0x77cee699be90>, persisted=True) |  |
+| `body_tsvector` | `TSVECTOR` | ✓ |  |  |  | Computed(<sqlalchemy.sql.elements.TextClause object at 0x7744d1f1eff0>, persisted=True) |  |
 | `cc` | `JSONB` | ✓ |  |  |  |  |  |
 | `source` | `VARCHAR(20)` |  |  |  |  |  |  |
 | `email_message_id` | `VARCHAR(998)` | ✓ |  |  |  |  |  |
@@ -837,7 +938,7 @@ A support request: ``new → open → pending → closed``.
 | `references_archived_ticket_number` | `BIGINT` | ✓ |  |  |  |  |  |
 | `created_at` | `TIMESTAMP WITH TIME ZONE` |  |  |  |  | `NOW()` |  |
 | `updated_at` | `TIMESTAMP WITH TIME ZONE` |  |  |  |  | `NOW()` |  |
-| `search_tsvector` | `TSVECTOR` | ✓ |  |  |  | Computed(<sqlalchemy.sql.elements.TextClause object at 0x77cee699a690>, persisted=True) |  |
+| `search_tsvector` | `TSVECTOR` | ✓ |  |  |  | Computed(<sqlalchemy.sql.elements.TextClause object at 0x7744d1f1d910>, persisted=True) |  |
 
 ### Constraints
 
@@ -992,9 +1093,9 @@ Read-only archive of closed tickets (partitioned by ``closed_at``).
 
 | Name | Type | Definition |
 |------|------|------------|
+| `ck_kb_art_perm_permission` | CHECK | `permission IN ('viewer', 'editor', 'manager')` |
 | `ck_kb_art_perm_subject_type` | CHECK | `subject_type IN ('user', 'group')` |
 | `uq_kb_art_perm_article_subject` | UNIQUE | `article_id`, `subject_id` |
-| `ck_kb_art_perm_permission` | CHECK | `permission IN ('viewer', 'editor', 'manager')` |
 
 ### Indexes
 
@@ -1068,7 +1169,7 @@ Read-only archive of closed tickets (partitioned by ``closed_at``).
 | `title` | `VARCHAR(500)` |  |  |  |  |  |  |
 | `body` | `TEXT` |  |  |  |  | `` |  |
 | `inherit_permissions` | `BOOLEAN` |  |  |  |  | `True` |  |
-| `body_tsvector` | `TSVECTOR` | ✓ |  |  |  | Computed(<sqlalchemy.sql.elements.TextClause object at 0x77cee6857dd0>, persisted=True) |  |
+| `body_tsvector` | `TSVECTOR` | ✓ |  |  |  | Computed(<sqlalchemy.sql.elements.TextClause object at 0x7744d1fdaf00>, persisted=True) |  |
 | `status` | `VARCHAR(20)` |  |  |  |  | `draft` |  |
 | `version` | `INTEGER` |  |  |  |  | `1` |  |
 | `view_count` | `INTEGER` |  |  |  |  | `0` |  |
@@ -1220,8 +1321,8 @@ Read-only archive of closed tickets (partitioned by ``closed_at``).
 
 | Name | Type | Definition |
 |------|------|------------|
-| `uq_kb_tags_name` | UNIQUE | `name` |
 | `uq_kb_tags_slug` | UNIQUE | `slug` |
+| `uq_kb_tags_name` | UNIQUE | `name` |
 
 ### Relationships
 
@@ -1418,7 +1519,7 @@ Transactional outbox for outbound messenger notifications (mirror of
 | `id` | `UUID` |  | ✓ |  |  | `gen_random_uuid()` |  |
 | `title` | `VARCHAR(500)` |  |  |  |  |  |  |
 | `body` | `TEXT` |  |  |  |  | `` |  |
-| `body_tsvector` | `TSVECTOR` | ✓ |  |  |  | Computed(<sqlalchemy.sql.elements.TextClause object at 0x77cee674a930>, persisted=True) |  |
+| `body_tsvector` | `TSVECTOR` | ✓ |  |  |  | Computed(<sqlalchemy.sql.elements.TextClause object at 0x7744d1ed1ac0>, persisted=True) |  |
 | `status` | `VARCHAR(20)` |  |  |  |  | `draft` |  |
 | `is_pinned` | `BOOLEAN` |  |  |  |  | `False` |  |
 | `categories` | `VARCHAR(100)[]` |  |  |  |  | `{}` |  |
@@ -1447,10 +1548,10 @@ Transactional outbox for outbound messenger notifications (mirror of
 
 | Name | Type | Definition |
 |------|------|------------|
-| `ck_news_cover_focal_y_range` | CHECK | `cover_focal_y IS NULL OR (cover_focal_y BETWEEN 0 AND 100)` |
 | `ck_news_cover_focal_zoom_range` | CHECK | `cover_focal_zoom IS NULL OR (cover_focal_zoom BETWEEN 100 AND 300)` |
 | `ck_news_status` | CHECK | `status IN ('draft', 'published', 'archived')` |
 | `ck_news_cover_focal_x_range` | CHECK | `cover_focal_x IS NULL OR (cover_focal_x BETWEEN 0 AND 100)` |
+| `ck_news_cover_focal_y_range` | CHECK | `cover_focal_y IS NULL OR (cover_focal_y BETWEEN 0 AND 100)` |
 
 ### Indexes
 
@@ -1726,8 +1827,8 @@ Transactional outbox for outbound messenger notifications (mirror of
 
 | Name | Type | Definition |
 |------|------|------------|
-| `ck_news_polls_results_visibility` | CHECK | `results_visibility IN ('always', 'after_vote', 'after_close', 'only_admin_editor')` |
 | `` | UNIQUE | `news_id` |
+| `ck_news_polls_results_visibility` | CHECK | `results_visibility IN ('always', 'after_vote', 'after_close', 'only_admin_editor')` |
 
 ### Relationships
 
@@ -2221,16 +2322,19 @@ Transactional outbox for outbound messenger notifications (mirror of
 | `deleted_at` | `TIMESTAMP WITH TIME ZONE` | ✓ |  |  |  |  |  |
 | `staff_sort_order` | `INTEGER` | ✓ |  |  |  |  |  |
 | `staff_hidden` | `BOOLEAN` |  |  |  |  | `false` |  |
+| `birth_date` | `DATE` | ✓ |  |  |  |  |  |
+| `gender` | `VARCHAR(10)` | ✓ |  |  |  |  |  |
 
 ### Constraints
 
 | Name | Type | Definition |
 |------|------|------------|
-| `ck_users_auth_source` | CHECK | `auth_source IN ('keycloak', 'local')` |
-| `uq_users_keycloak_id` | UNIQUE | `keycloak_id` |
+| `ck_users_gender` | CHECK | `gender IS NULL OR gender IN ('male', 'female')` |
 | `ck_users_role` | CHECK | `role IN ('reader', 'editor', 'admin')` |
 | `ck_users_presence_status` | CHECK | `presence_status IN ('office', 'remote', 'vacation')` |
+| `uq_users_keycloak_id` | UNIQUE | `keycloak_id` |
 | `ck_users_lang` | CHECK | `lang IN ('ru', 'en')` |
+| `ck_users_auth_source` | CHECK | `auth_source IN ('keycloak', 'local')` |
 
 ### Indexes
 

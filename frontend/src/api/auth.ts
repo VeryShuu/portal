@@ -16,6 +16,9 @@ export interface UserMe {
   preferences: Record<string, unknown>
   auth_source: 'keycloak' | 'local'
   last_login_at: string | null
+  // ERP-синхронизация (миграция 087)
+  birth_date: string | null
+  gender: 'male' | 'female' | null
 }
 
 export async function fetchMe(): Promise<UserMe> {

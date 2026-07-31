@@ -276,3 +276,17 @@ async def require_helpdesk_module(redis: RedisDep) -> None:
 
 
 HelpdeskModuleEnabled = Annotated[None, Depends(require_helpdesk_module)]
+
+
+async def require_erp_sync_module(redis: RedisDep) -> None:
+    """Module gate: 404 the whole ERP-sync feature when the master
+    ``erp_sync.enabled`` flag is off. Read from ``modules.json`` via the shared
+    cache (как helpdesk/directories)."""
+    from app.core.modules_config import load_modules_shared
+
+    modules = await load_modules_shared(redis)
+    if not modules.erp_sync.enabled:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="ERP sync disabled")
+
+
+ErpSyncModuleEnabled = Annotated[None, Depends(require_erp_sync_module)]

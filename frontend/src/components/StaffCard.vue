@@ -117,6 +117,24 @@
         </n-icon>
         <span>{{ office }}</span>
       </li>
+      <li v-if="birthDateLabel">
+        <n-icon
+          :size="14"
+          class="ic"
+        >
+          <CalendarOutline />
+        </n-icon>
+        <span>{{ birthDateLabel }}</span>
+      </li>
+      <li v-if="genderLabel">
+        <n-icon
+          :size="14"
+          class="ic"
+        >
+          <PersonOutline />
+        </n-icon>
+        <span>{{ genderLabel }}</span>
+      </li>
     </ul>
 
     <ul
@@ -140,17 +158,20 @@ import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { NAvatar, NIcon, NTag, useMessage } from 'naive-ui'
 import {
+  CalendarOutline,
   CallOutline,
   CopyOutline,
   LocationOutline,
   MailOutline,
+  PersonOutline,
   PhonePortraitOutline,
 } from '@vicons/ionicons5'
 import type { UserPublic } from '../api/users'
 import type { UserAttributeMappingSchema } from '../api/userAttributeMappings'
 import { usePhoneFormat } from '../composables/usePhoneFormat'
+import { formatDate } from '../utils/formatDate'
 
-const RESERVED_ATTRS = new Set(['internal_phone', 'city', 'mobile'])
+const RESERVED_ATTRS = new Set(['internal_phone', 'city', 'mobile', 'birth_date', 'gender'])
 
 const props = defineProps<{
   user: UserPublic
@@ -181,6 +202,19 @@ const mobilePhone = computed(() => {
 const office = computed(() => {
   const v = props.user.attributes?.city
   return typeof v === 'string' ? v : ''
+})
+
+const birthDateLabel = computed(() => {
+  const v = props.user.birth_date
+  if (!v) return ''
+  return formatDate(v, props.lang ?? 'ru')
+})
+
+const genderLabel = computed(() => {
+  const g = props.user.gender
+  if (g === 'male') return t('staff.genderMale')
+  if (g === 'female') return t('staff.genderFemale')
+  return ''
 })
 
 const extraAttributes = computed(() => {

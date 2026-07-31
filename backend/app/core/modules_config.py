@@ -80,6 +80,10 @@ class HelpdeskModuleSettings(BaseModel):
     enabled: bool = False
 
 
+class ErpSyncModuleSettings(BaseModel):
+    enabled: bool = False
+
+
 class AllModuleSettings(BaseModel):
     nextcloud: NextcloudModuleSettings = Field(default_factory=NextcloudModuleSettings)
     photos: PhotosModuleSettings = Field(default_factory=PhotosModuleSettings)
@@ -87,6 +91,7 @@ class AllModuleSettings(BaseModel):
     directories: DirectoriesModuleSettings = Field(default_factory=DirectoriesModuleSettings)
     signature: SignatureModuleSettings = Field(default_factory=SignatureModuleSettings)
     helpdesk: HelpdeskModuleSettings = Field(default_factory=HelpdeskModuleSettings)
+    erp_sync: ErpSyncModuleSettings = Field(default_factory=ErpSyncModuleSettings)
 
 
 # ── Storage ───────────────────────────────────────────────────────────────────
