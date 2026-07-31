@@ -88,6 +88,9 @@ class EventType(StrEnum):
     FILES_SYNC_FROM_NC = "files.sync_from_nc"
     FILES_UPLOAD_DB_COMMIT_DRIFT = "files.upload_db_commit_drift"
 
+    # --- erp_sync -------------------------------------------------------
+    ERP_SYNC_SETTINGS_UPDATED = "erp_sync.settings_updated"
+
     # --- helpdesk -------------------------------------------------------
     HELPDESK_AGENT_ADDED = "helpdesk.agent_added"
     HELPDESK_AGENT_REMOVED = "helpdesk.agent_removed"
