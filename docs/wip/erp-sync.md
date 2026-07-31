@@ -81,13 +81,41 @@ ERP (1С) шлёт письмо на служебный ящик 2 раза в �
   Общий `importer.run_import()` абстрагирован от источника (принимает
   `Attachment`-объект `{name, bytes, hash}`); mailbox и upload различаются
   только наполнением этого объекта.
+- **2026-07-31 (PR2 scope)**: **почтовый контур** — раздел «Email» портала это
+  **только исходящий SMTP** (нет там IMAP, факт-чек подтверждает helpdesk-паттерн:
+  каждый inbound-модуль держит свой ящик). Поэтому:
+  - **Приём (IMAP)** — настройки живут в `erp_sync_settings` (своя singleton,
+    уже в PR1): `imap_*` + пароль Fernet. Дополнительно поля фильтрации (см. ниже).
+  - **Отправка отчётов** — через общий SMTP-контур портала (`email-settings.json`),
+    переиспользуем `enqueue_outbox_email(KIND_GENERIC)`.
+- **2026-07-31 (PR2 scope)**: **ящик общий** (вариант B — обоснование: требование
+  «почта та, что в разделе Email» указывает на общий контур, а не выделенный
+  ящик). Значит фильтрация писем **обязательна**, иначе импорт сломается на
+  чужом письме. Поллинг берёт `SEARCH UNSEEN`, фильтрует post-fetch на стороне
+  портала (IMAP `SEARCH SUBJECT` ненадёжен с MIME/B-encoded), письма мимо
+  фильтра **НЕ** помечаются `\Seen` (не трогаем чужую почту на общем ящике).
+- **2026-07-31 (PR2 scope)**: **три поля фильтрации** (все опциональны, но
+  рекомендуется заполнить Subject + From):
+  - `mail_subject_filter: str | None` — подстрока в теме (напр. «Сотрудники»)
+  - `mail_sender_filter: str | None` — email отправителя ERP-системы
+  - `mail_attachment_filter: str | None` — имя/расширение вложения (напр. «.xlsx»
+    или «Сотрудники») — защита от письма без отчёта; берётся первое вложение,
+    подходящее под фильтр
+- **2026-07-31 (PR2 scope)**: **двойной гейтинг поллинга**:
+  - `modules.erp_sync.enabled` — мастер-переключатель модуля (уже в PR1)
+  - `erp_sync_settings.poll_enabled: bool` (default false, миграция 088) —
+    отдельный флаг авто-поллинга по cron. Позволяет выключить авто-забор, оставив
+    ручной upload. Cron проверяет оба флага.
 
 ## Архитектура (pipeline)
 
 ```
-ERP (2×/нед email) → mailbox → [ARQ-cron erp_sync_import / ручной запуск]
-   → aioimaplib SEARCH UNSEEN → attachment → /data/erp_sync/<run_id>/<name>
-   → parser (txt/csv/xls/xlsx, auto-encoding) → rows[FIO, date, gender]
+ERP (2×/нед email) → общий ящик → [ARQ-cron erp_sync_import / ручной запуск]
+   → aioimaplib SEARCH UNSEEN → post-fetch фильтр (subject+sender+attachment)
+       ├─ подходит   → обработать, mark \Seen
+       └─ мимо фильтра → пропустить, НЕ mark \Seen
+   → attachment → /data/erp_sync/<run_id>/<name>
+   → parser (txt/csv/xlsx/xls via xlrd, auto-encoding BOM→cp1251) → rows[FIO, date, gender]
    → dedup по нормализованному ФИО:
        ├─ одинаковые во всех полях  → 1 запись (норма)
        └─ разные дата/пол при том же ФИО → конфликт[] (НЕ пишем)
@@ -132,19 +160,18 @@ CREATE TABLE erp_sync_runs (
                                                 --  errors:[{raw,reason}]}
 );
 
--- 088: настройки ящика (singleton, клон HelpdeskMailboxSettings)
-CREATE TABLE erp_sync_settings (
-  id INT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
-  enabled BOOL NOT NULL DEFAULT false,
-  imap_host VARCHAR(255), imap_port INT DEFAULT 993, imap_use_ssl BOOL DEFAULT true,
-  imap_username VARCHAR(255), imap_password_enc TEXT,         -- Fernet, write-only
-  imap_folder VARCHAR(100) DEFAULT 'INBOX',
-  poll_interval_seconds INT NOT NULL DEFAULT 900 CHECK (poll_interval_seconds BETWEEN 60 AND 3600),
-  expected_interval_days INT NOT NULL DEFAULT 4,
-  notify_emails TEXT[]                                          -- NULL = всем admin с notify_email=true
-);
-INSERT INTO erp_sync_settings (id) VALUES (1);
+-- 088: дополнения к erp_sync_settings (additive ALTER TABLE, zero-downtime).
+-- Таблица создана миграцией 087 — здесь только добавляем недостающие поля.
+ALTER TABLE erp_sync_settings
+  ADD COLUMN poll_enabled         BOOL     NOT NULL DEFAULT FALSE,
+  ADD COLUMN mail_subject_filter  VARCHAR(255),   -- подстрока темы письма (CI)
+  ADD COLUMN mail_sender_filter   VARCHAR(255),   -- email/подстрока From
+  ADD COLUMN mail_attachment_filter VARCHAR(255); -- имя/расширение вложения
 ```
+
+> Поля `enabled` / `imap_*` / `poll_interval_seconds` / `expected_interval_days`
+> / `notify_emails` уже созданы миграцией 087. Миграция 088 только добавляет
+> `poll_enabled` (двойной гейтинг) и три поля фильтрации почты.
 
 ## Статус по PR
 
@@ -160,39 +187,49 @@ INSERT INTO erp_sync_settings (id) VALUES (1);
 
 ## Чеклист (DoD)
 
-### Backend
-- [ ] миграция 087 (`birth_date`, `gender` на `users`; таблица `erp_sync_runs`)
-- [ ] миграция 088 (singleton `erp_sync_settings`)
-- [ ] модели `app/models/erp_sync.py` (`ErpSyncRun`, `ErpSyncSettings`)
-- [ ] `birth_date`/`gender` в `UserPublic` + `UserMe` (Pydantic `app/schemas/user.py`)
-- [ ] admin-edit `birth_date`/`gender` в `AdminPatchProfileRequest` + `users_admin_service`
-- [ ] `app/services/erp_sync/mailbox.py` — IMAP-poll (копия helpdesk-ingress, reuse `secret_crypto`)
-- [ ] `app/services/erp_sync/parser.py` — мульти-формат (txt/csv/xlsx/**xls** через `xlrd==2.0.1`) + авто-кодировка (BOM→cp1251) + дедуп дублей + детект конфликтов
-- [ ] `xlrd==2.0.1` добавлен в `backend/pyproject.toml` (`[project.dependencies]`)
+### ✅ PR1 (фундамент) — ГОТОВ, в PR #50
+- [x] миграция 087 (`users.birth_date`/`gender`, `erp_sync_runs`, `erp_sync_settings` без фильтров)
+- [x] модели `ErpSyncRun`, `ErpSyncSettings`; регистрация в `models/__init__`
+- [x] `birth_date`/`gender` в `UserPublic`/`UserMe`/`AdminPatchProfileRequest` + `users_admin_service`
+- [x] module-gate wiring (7 точек): `modules_config`, `deps`, `modules.py`, `bootstrap`, `PUT /admin/modules/erp_sync`
+- [x] `schemas/erp_sync.py` (settings/run/test)
+- [x] frontend `StaffCard.vue` + `ProfileInfoCard.vue` + `UserPublic`/`UserMe` TS + i18n ru/en
+- [x] unit-тесты (schemas, modules, fixtures); ci_lint чист; реген артефактов; доки
+
+### PR2 (pipeline импорта + cron + admin API + уведомления)
+- [ ] **миграция 088** (additive `ALTER TABLE erp_sync_settings`): `poll_enabled`, `mail_subject_filter`, `mail_sender_filter`, `mail_attachment_filter`
+- [ ] модели: добавить поля в `ErpSyncSettings` (миграция 088)
+- [ ] **`xlrd==2.0.1`** в `backend/pyproject.toml` `[project.dependencies]`
+- [ ] `app/services/erp_sync/mailbox.py` — IMAP-poll (`aioimaplib`, reuse `secret_crypto`): `SEARCH UNSEEN`, **post-fetch фильтр** (subject+sender+attachment, CI-подстрока), письма мимо фильтра → пропуск **БЕЗ** `\Seen`
+- [ ] `app/services/erp_sync/parser.py` — мульти-формат (txt/csv/xlsx/xls via `xlrd`) + авто-кодировка (BOM→cp1251) + дедуп дублей + детект конфликтов
 - [ ] `app/services/erp_sync/matcher.py` — оркестрация `users_repo.find_by_full_name_*`, triage 1/0/>1
-- [ ] `app/services/erp_sync/importer.py` — основная транзакция: parse→match→update→diff→report
+- [ ] `app/services/erp_sync/importer.py` — основная транзакция: parse→match→update→diff→report; общий `run_import(Attachment)` для mailbox и upload
 - [ ] `app/services/erp_sync/report.py` — HTML-отчёт для email (разделы changed/unmatched/ambiguous/conflicts/errors)
-- [ ] `app/worker/tasks/erp_sync.py` (`erp_sync_import` cron) + `erp_sync_watchdog.py`
-- [ ] `app/api/erp_sync/` — CRUD настроек + `GET /runs` + `POST /run` (mailbox-trigger, manual) + `POST /import-file` (multipart-upload, общий `run_import`) + `POST /test`
-- [ ] module-gate `modules.json: erp_sync.enabled`; регистрация в `app/api/__init__.py` + `app/worker/main.py::cron_jobs`
-- [ ] health-probe в `integration_health` + Prometheus gauge (`erp_sync:last_success_at`)
+- [ ] `app/worker/tasks/erp_sync.py` (`run_erp_sync` cron, проверка `poll_enabled` + `module.enabled` + distributed-lock + interval-guard) + `erp_sync_watchdog.py` (раз в день)
+- [ ] `app/worker/tasks/integration_health.py`: probe `erp_sync` (reuse `portal_integration_up{integration="erp_sync"}`)
+- [ ] `app/worker/main.py`: cron-регистрация (`run_erp_sync` каждые 15 мин, `erp_sync_watchdog` раз в день)
+- [ ] `app/api/erp_sync/settings.py` — `GET/PUT /erp-sync/settings` (write-only password, поля фильтров) + `POST /erp-sync/test` (IMAP-логин + фильтр)
+- [ ] `app/api/erp_sync/runs.py` — `GET /erp-sync/runs` (пагинация + report), `GET /erp-sync/runs/{id}`
+- [ ] `app/api/erp_sync/run.py` — `POST /erp-sync/run` (mailbox-trigger, `triggered_by=manual`) + **`POST /erp-sync/import-file`** (multipart-upload → общий `run_import`)
+- [ ] регистрация роутеров в `app/api/__init__.py` + `ErpSyncModuleEnabled` gate
+- [ ] `schemas/erp_sync.py`: поля фильтров в `ErpSyncSettingsIn`/`Out`
+- [ ] unit `parser` (5 форматов × кодировки, дедуп, конфликты, скобки, ё/е, невалид)
+- [ ] unit `matcher` (exact/words/ambiguous/unmatched)
+- [ ] unit `report` (diff, XSS-escape)
+- [ ] unit `mailbox`-фильтр (subject/sender/attachment, MIME-encoding edge cases)
+- [ ] integration (DSN/testcontainers): полный цикл (insert users → import → assert updates + diff); upload endpoint; mailbox-trigger; watchdog stale → alert; дедуп по Message-ID; письмо мимо фильтра не обрабатывается
 
-### Frontend
-- [ ] `StaffCard.vue`: явные слоты для `birth_date` (formatDate) и `gender` (текст/иконка) — НЕ через attribute-schema
-- [ ] TS-тип `UserPublic` в `api/users.ts` + реген `types.gen.d.ts`
-- [ ] Admin: вкладка/секция «ERP-синхронизация» (настройки ящика + список runs с отчётами + **кнопка «Запустить синхронизацию»** + «Проверить подключение»)
-- [ ] i18n ключи в `ru.json` + `en.json` синхронно (`erp_sync.*`, `staff.birth_date`, `staff.gender`)
+### PR3 (frontend admin-вкладка)
+- [ ] `api/erp-sync.ts` + `queries/erp-sync.ts` + `queries/keys.ts`
+- [ ] `pages/admin/tabs/ErpSyncTab.vue` (форма настроек: IMAP + poll_enabled + poll_interval + expected_interval + notify_emails + **3 поля фильтров** + кнопки «Запустить»/«Загрузить файл»/«Проверить подключение»)
+- [ ] история runs (таблица + expandable report)
+- [ ] регистрация вкладки в `AdminPage.vue` (группа `system`)
+- [ ] i18n `admin.erpSync.*` ru/en
 
-### Тесты
-- [ ] unit `parser` (5 форматов × кодировки, дедуп дублей, конфликты, скобки `(...)` в ФИО, ё/е, невалидные даты/пол)
-- [ ] unit `matcher` (exact/words/ambiguous/unmatched; edge-кейсы из `test_meetings_participants.py`)
-- [ ] unit `report` (diff, форматирование)
-- [ ] integration (DSN/testcontainers): полный цикл insert users → import → assert updates + diff; ручной запуск через API; watchdog stale → alert; дедуп по Message-ID
-
-### Финал
-- [ ] ci_lint (ruff+mypy в CI-окружении) + pytest unit
+### Финал (по PR2/PR3)
+- [ ] ci_lint (ruff+mypy) + pytest unit
 - [ ] реген `openapi.json` / `types_gen` / `tests.generated.md`
-- [ ] docs `docs/erp-sync.md` (модульный док по шаблону) + правка `docs/README.md` + `docs/db-schema.md` + `docs/api-contracts.md` + `docs/roles-matrix.md`
+- [ ] docs `docs/erp-sync.md` (модульный док) + `docs/README.md` + `docs/db-schema.md` (миграция 088) + `docs/api-contracts.md` + `docs/monitoring.md`
 - [ ] PR → 16 checks green → merge
 
 ## Грабли / контекст
