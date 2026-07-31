@@ -424,6 +424,7 @@ tests/integration/test_migrations.py::test_migration_revision_round_trip[085]
 tests/integration/test_migrations.py::test_migration_revision_round_trip[086]
 tests/integration/test_migrations.py::test_migration_revision_round_trip[087]
 tests/integration/test_migrations.py::test_migration_revision_round_trip[088]
+tests/integration/test_migrations.py::test_migration_revision_round_trip[089]
 tests/integration/test_migrations.py::test_migrations_full_lifecycle
 tests/integration/test_migrations.py::test_migrations_stepwise_down_up
 tests/integration/test_migrations_nightly.py::test_alembic_upgrade_head_on_clean_container
