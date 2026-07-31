@@ -266,7 +266,7 @@ async function onTest() {
 </script>
 
 <style scoped>
-@import '../admin-tabs.css';
+@import '../../pages/admin/admin-tabs.css';
 
 .erp-sync__subtitle {
   margin: 20px 0 4px;

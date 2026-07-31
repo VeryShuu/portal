@@ -258,7 +258,7 @@ async function refresh() {
 </script>
 
 <style scoped>
-@import '../admin-tabs.css';
+@import '../../pages/admin/admin-tabs.css';
 
 .erp-sync__runs-header {
   display: flex;
