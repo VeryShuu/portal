@@ -218,3 +218,86 @@ class TestExtractBodiesSignatureStripping:
         assert "Вячеслав Борзихин" not in html
         assert "Mage_Ru.png" not in html
         assert "borzihin.vs@mage.ru" not in plain
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# keep_forward — для НОВЫХ заявок forward-блок не отрезается (суть обращения).
+# Регрессия: bounce об ошибке доставки от Pantina (01.08.2026) — forward-блок
+# ``-----Original Message-----`` отрезался ``strip_quoted_reply``, и суть
+# заявки (message size exceeds limit) терялась.
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+def _plain_msg(body: str) -> MIMEText:
+    """``text/plain`` письмо (как письмо от Pantina — koi8-r/plain only)."""
+    return MIMEText(body, "plain", "utf-8")
+
+
+class TestExtractBodiesKeepForward:
+    """``keep_forward=True`` для новой заявки: forward сохраняется, для ответа —
+    отрезается. ``REPLY_MARKER_TOKEN`` режется всегда."""
+
+    # Реальное письмо от Pantina (01.08.2026): текст + подпись + forward bounce.
+    # Body — plain-only (koi8-r), без HTML-части. Подпись в plain не отрезается
+    # (``strip_email_signature`` работает по HTML-маркерам), но forward-блок
+    # ранее отрезался ``strip_quoted_reply`` → суть заявки терялась.
+    _PANTINA_BODY = (
+        "Добрый день, проблема с отправкой письма, ошибка в пересланном письме\n"
+        "\n"
+        "С уважением,\n"
+        "Елизавета Пантина\n"
+        "pantina.ea@mage.ru\n"
+        "\n"
+        "-----Original Message-----\n"
+        "From: Mail Delivery System <MAILER-DAEMON@gazprom-shelfproject.ru>\n"
+        "Sent: Friday, July 31, 2026 2:54 PM\n"
+        "To: pantina.ea@mage.ru\n"
+        "Subject: Undelivered Mail Returned to Sender\n"
+        "\n"
+        "<kabak.av@gazprom-shelfproject.ru>: message size 51111451 exceeds size "
+        "limit 41943040 of server\n"
+    )
+
+    def test_new_ticket_keeps_forward_bounce(self) -> None:
+        """Новая заявка (keep_forward=True): forward-блок bounce сохраняется
+        целиком — это суть обращения (message size exceeds limit)."""
+        msg = _plain_msg(self._PANTINA_BODY)
+        plain, html = _extract_bodies(msg, keep_forward=True)
+        # Текст заявки на месте.
+        assert "проблема с отправкой письма" in plain
+        # Forward-блок сохранён (регрессия: раньше отрезался).
+        assert "-----Original Message-----" in plain
+        assert "message size 51111451 exceeds" in plain
+        assert "MAILER-DAEMON" in plain
+        assert html is None  # plain-only письмо → html нет
+
+    def test_reply_strips_forward_bounce(self) -> None:
+        """Ответ на существующий тикет (keep_forward=False, дефолт): forward
+        режется как цитата — чтобы не дублировать прошлое письмо в ленте."""
+        msg = _plain_msg(self._PANTINA_BODY)
+        plain, _ = _extract_bodies(msg)  # keep_forward=False (дефолт)
+        assert "проблема с отправкой письма" in plain
+        # Forward отрезан (как и до фикса — для ответов поведение не изменилось).
+        assert "-----Original Message-----" not in plain
+        assert "message size" not in plain
+
+    def test_keep_forward_default_is_false(self) -> None:
+        """Без явного keep_forward поведение = старое (forward режется). Защита
+        от регрессии: все существующие вызовы ``_extract_bodies`` без флага."""
+        msg = _plain_msg(self._PANTINA_BODY)
+        plain_default, _ = _extract_bodies(msg)
+        plain_false, _ = _extract_bodies(msg, keep_forward=False)
+        assert plain_default == plain_false
+        assert "-----Original Message-----" not in plain_default
+
+    def test_keep_forward_still_cuts_own_reply_marker(self) -> None:
+        """Даже при keep_forward маркер ``REPLY_MARKER_TOKEN`` режется: он
+        проставляется только исходящими письмами портала → заявитель отвечает
+        на наш тикет (не новая заявка), цитату убрать."""
+        from app.services.helpdesk.email_quote import build_reply_marker_plain
+
+        body = "Мой ответ.\n\n" + build_reply_marker_plain(7) + "\nЦитата предыдущего письма\n"
+        msg = _plain_msg(body)
+        plain, _ = _extract_bodies(msg, keep_forward=True)
+        assert "Мой ответ." in plain
+        assert "Цитата предыдущего письма" not in plain

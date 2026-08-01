@@ -314,3 +314,115 @@ class TestOutlookHtmlRegressions:
         assert "ага да очень труньк" not in out
         assert "История заявки" not in out
         assert REPLY_MARKER_TOKEN not in out
+
+
+# ── keep_forward=True (новые заявки) ─────────────────────────────────────────
+
+
+class TestStripQuotedKeepForward:
+    """``keep_forward=True``: forward-блок не отрезается (новая заявка).
+
+    Для новой заявки forward — часто суть обращения (bounce об ошибке доставки,
+    пересланный контекст проблемы), а не цитата. Маркер ``REPLY_MARKER_TOKEN``
+    режется всегда — он проставляется только исходящими письмами портала.
+    """
+
+    # ── plain ──────────────────────────────────────────────────────────────────
+
+    def test_plain_keeps_original_message_block(self) -> None:
+        """``-----Original Message-----`` (forward) сохраняется при keep_forward."""
+        body = (
+            "Добрый день, не отправляется письмо.\n\n"
+            "-----Original Message-----\n"
+            "From: Mailer-Daemon\n"
+            "message size exceeds limit\n"
+        )
+        out = strip_quoted_reply(body, keep_forward=True)
+        assert "Добрый день" in out
+        # Forward-блок сохранён целиком.
+        assert "-----Original Message-----" in out
+        assert "message size exceeds limit" in out
+
+    def test_plain_keeps_outlook_from_sent_block(self) -> None:
+        """Outlook ``From:``/``Sent:`` (forward) сохраняется при keep_forward."""
+        body = (
+            "Добрый день.\n\n"
+            "From: Pantina <pantina.ea@mage.ru>\n"
+            "Sent: Friday\n"
+            "To: support\n"
+            "Subject: Test\n\n"
+            "Пересланное сообщение\n"
+        )
+        out = strip_quoted_reply(body, keep_forward=True)
+        assert "Добрый день." in out
+        assert "Пересланное сообщение" in out
+        assert "From: Pantina" in out
+
+    def test_plain_keeps_gmail_wrote_block(self) -> None:
+        """Gmail ``On … wrote:`` (forward) сохраняется при keep_forward."""
+        body = "Смотрите вложение.\n\nOn Fri, Jul 31 2026, Ivan wrote:\n> предыдущее сообщение\n"
+        out = strip_quoted_reply(body, keep_forward=True)
+        assert "Смотрите вложение." in out
+        assert "предыдущее сообщение" in out
+
+    def test_plain_still_cuts_own_marker_even_with_keep_forward(self) -> None:
+        """Маркер ``REPLY_MARKER_TOKEN`` режется даже при keep_forward: он
+        проставляется только исходящими письмами портала → заявитель отвечает
+        на наш тикет, цитату убрать. ``keep_forward`` не должен маскировать
+        пропуск forward-блока под видом новой заявки при наличии маркера."""
+        body = "Спасибо!\n\n" + build_reply_marker_plain(42) + "\nЦитата предыдущего письма\n"
+        out = strip_quoted_reply(body, keep_forward=True)
+        assert "Спасибо!" in out
+        assert "Цитата предыдущего письма" not in out
+        assert REPLY_MARKER_TOKEN not in out
+
+    def test_plain_default_strips_forward(self) -> None:
+        """Без keep_forward (ответ на тикет) forward режется как цитата."""
+        body = "Спасибо.\n\n-----Original Message-----\nFrom: a@b\nпредыдущее\n"
+        out = strip_quoted_reply(body)  # keep_forward=False (дефолт)
+        assert "Спасибо." in out
+        assert "предыдущее" not in out
+
+    # ── html ───────────────────────────────────────────────────────────────────
+
+    def test_html_keeps_outlook_from_header(self) -> None:
+        """Outlook ``<b>From:</b>`` header сохраняется при keep_forward."""
+        html = (
+            "<p>Добрый день.</p>"
+            "<div><p><b><span>From:</span></b><span> Mailer-Daemon</span></p></div>"
+            "<p>message size exceeds limit</p>"
+        )
+        out = strip_quoted_html(html, keep_forward=True)
+        assert "Добрый день." in out
+        assert "message size exceeds limit" in out
+        assert "From:" in out
+
+    def test_html_keeps_gmail_quote_container(self) -> None:
+        """``gmail_quote``-контейнер сохраняется при keep_forward."""
+        html = '<p>Смотрите ниже.</p><div class="gmail_quote"><p>Пересланное сообщение</p></div>'
+        out = strip_quoted_html(html, keep_forward=True)
+        assert "Смотрите ниже." in out
+        assert "Пересланное сообщение" in out
+
+    def test_html_still_cuts_own_marker_even_with_keep_forward(self) -> None:
+        """Маркер режется даже при keep_forward (см. plain-аналог)."""
+        html = (
+            "<p>Ответ</p>"
+            f'<div><p class="MsoNormal">{REPLY_MARKER_TOKEN}</p></div>'
+            "<div>История</div>"
+        )
+        out = strip_quoted_html(html, keep_forward=True)
+        assert "Ответ" in out
+        assert "История" not in out
+        assert REPLY_MARKER_TOKEN not in out
+
+    def test_html_default_strips_forward(self) -> None:
+        """Без keep_forward Outlook header режется (ответ на тикет)."""
+        html = (
+            "<p>Ответ.</p>"
+            "<div><p><b><span>From:</span></b><span> portal@x</span></p></div>"
+            "<p>Процитированный ответ</p>"
+        )
+        out = strip_quoted_html(html)  # keep_forward=False (дефолт)
+        assert "Ответ." in out
+        assert "Процитированный ответ" not in out
