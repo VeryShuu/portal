@@ -115,19 +115,22 @@ async def list_birthdays(
     week_start: date,
     week_end: date,
 ) -> Sequence[User]:
-    """Именинники текущей недели (включительно ``[week_start, week_end]``).
+    """Именинники в диапазоне ``[week_start, week_end]`` включительно.
 
     Фильтр по ``(month, day)`` дня рождения: перечисляем пары (месяц, день) для
-    каждого дня недели и ищем совпадение. Это корректно для любой недели — в том
-    числе переходящей через Новый год (29.12–04.01): мы сравниваем конкретные
-    дни, а не «день года» (DOY ломается на границе года). 29 февраля в
-    невисокосном году просто не входит ни в одну неделю — именинник не теряется,
-    а попадает в неделю 1 марта → … нет, 29.02 обрабатывается отдельно см. ниже.
+    каждого дня диапазона и ищем совпадение. Это корректно для любого диапазона
+    — в том числе переходящего через Новый год (29.12–04.01) и для диапазона в
+    несколько недель (текущая + следующая).
+
+    Сортировка — по абсолютной дате дня рождения в год ``week_start`` (с поправкой
+    года для переходящих диапазонов), затем ФИО. Считается в Python, т.к. чистый
+    SQL-сортировка по ``(month, day)`` ломается на границе месяца/года (например,
+    30 января «раньше» 1 февраля, хотя в диапазоне 30.01–05.02 1 февраля идёт
+    после 30 января). Абсолютная дата даёт точный хронологический порядок.
 
     Условия: не удалён, ``birth_date`` задан, не скрыт (``staff_hidden``).
-    Сортировка: хронологически в пределах недели (месяц, день), затем ФИО.
     """
-    # Множество (month, day) для всех дней недели включительно.
+    # Множество (month, day) для всех дней диапазона включительно.
     md_pairs: list[tuple[int, int]] = []
     cur = week_start
     while cur <= week_end:
@@ -137,18 +140,31 @@ async def list_birthdays(
     birth_month = func.extract("month", User.birth_date)
     birth_day = func.extract("day", User.birth_date)
 
-    stmt = (
-        select(User)
-        .where(
-            User.deleted_at.is_(None),
-            User.birth_date.isnot(None),
-            User.staff_hidden.is_(False),
-            tuple_(birth_month, birth_day).in_(md_pairs),
-        )
-        .order_by(birth_month.asc(), birth_day.asc(), User.full_name.asc())
+    stmt = select(User).where(
+        User.deleted_at.is_(None),
+        User.birth_date.isnot(None),
+        User.staff_hidden.is_(False),
+        tuple_(birth_month, birth_day).in_(md_pairs),
     )
     res = await db.execute(stmt)
-    return res.scalars().all()
+    users = res.scalars().all()
+
+    # Абсолютная дата ДР в год week_start для хронологической сортировки.
+    # Если день рождения (в год week_start) оказался раньше week_start — значит
+    # диапазон переходящий (через НГ), и этот ДР относится к году week_start+1.
+    def sort_key(u: User) -> tuple[date, str]:
+        assert u.birth_date is not None
+        try:
+            candidate = date(week_start.year, u.birth_date.month, u.birth_date.day)
+        except ValueError:
+            # 29 февраля в невисокосном week_start.year — берём 1 марта того же
+            # года (ближайшая валидная дата, не теряем именинника).
+            candidate = date(week_start.year, 3, 1)
+        if candidate < week_start:
+            candidate = candidate.replace(year=week_start.year + 1)
+        return (candidate, u.full_name)
+
+    return sorted(users, key=sort_key)
 
 
 async def list_departments(db: AsyncSession, *, ordered: bool = False) -> list[str]:

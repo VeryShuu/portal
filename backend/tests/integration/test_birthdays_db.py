@@ -86,7 +86,7 @@ async def test_returns_only_birthday_people_in_range(real_db_session):
 
 
 async def test_sorting_chronological_by_month_day(real_db_session):
-    """Сортировка: по (month, day, full_name) — хронологически в пределах недели."""
+    """Сортировка: хронологически по абсолютной дате, затем ФИО."""
     marker = uuid.uuid4().hex[:6]
     week_start = date(2026, 3, 9)
     week_end = date(2026, 3, 15)
@@ -102,6 +102,26 @@ async def test_sorting_chronological_by_month_day(real_db_session):
     related = [u.full_name for u in result if marker in u.full_name]
     # 12-е раньше 15-х, а среди 15-х — по алфавиту ФИО
     assert related == [f"Mid {marker}", f"Alpha {marker}", f"Zeta {marker}"]
+
+
+async def test_sorting_across_month_boundary(real_db_session):
+    """Диапазон через границу месяца (конец янв + начало фев): хронологический
+    порядок по абсолютной дате, а не по (month, day). 30 янв идёт раньше 1 фев."""
+    marker = uuid.uuid4().hex[:6]
+    week_start = date(2026, 1, 26)  # понедельник
+    week_end = date(2026, 2, 8)  # воскресенье (2 недели)
+
+    await _create(real_db_session, full_name=f"Feb1 {marker}", birth_date=date(1990, 2, 1))
+    await _create(real_db_session, full_name=f"Jan30 {marker}", birth_date=date(1990, 1, 30))
+    await _create(real_db_session, full_name=f"Feb5 {marker}", birth_date=date(1990, 2, 5))
+    await real_db_session.flush()
+
+    result = await users_repo.list_birthdays(
+        real_db_session, week_start=week_start, week_end=week_end
+    )
+    related = [u.full_name for u in result if marker in u.full_name]
+    # Абсолютный порядок: 30.01 → 01.02 → 05.02
+    assert related == [f"Jan30 {marker}", f"Feb1 {marker}", f"Feb5 {marker}"]
 
 
 # ── edge-cases ──────────────────────────────────────────────────────────────
