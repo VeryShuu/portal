@@ -82,24 +82,27 @@ async def list_users(
     )
 
 
-@router.get("/birthdays", response_model=BirthdayList, summary="Именинники текущей недели")
+@router.get(
+    "/birthdays", response_model=BirthdayList, summary="Именинники текущей и следующей недели"
+)
 async def list_birthdays_route(
     db: DbDep,
     _: CurrentUser,
 ) -> BirthdayList:
-    """Дни рождения сотрудников, попадающие в текущую ISO-неделю (Пн–Вс).
+    """Дни рождения сотрудников на текущей и следующей неделе (Пн–Вс × 2).
 
     Виджет на главной. Виден всем авторизованным (``birth_date`` — публичное поле
-    пользователя, как в справочнике ``/staff``). Без пагинации: именинников одной
-    недели физически мало. Сортировка — по дате рождения в пределах недели.
+    пользователя, как в справочнике ``/staff``). Без пагинации: именинников двух
+    недель физически мало. Сортировка — хронологически по дате рождения.
     """
     today = date.today()
-    week_start = today - timedelta(days=today.weekday())  # понедельник (ISO: пн=0)
-    week_end = week_start + timedelta(days=6)  # воскресенье
+    week_start = today - timedelta(days=today.weekday())  # понедельник текущей (ISO: пн=0)
+    week_end = week_start + timedelta(days=13)  # воскресенье следующей недели
     items = await users_repo.list_birthdays(db, week_start=week_start, week_end=week_end)
     return BirthdayList(
         items=[
             BirthdayOut(
+                id=u.id,
                 full_name=u.full_name,
                 birth_date=u.birth_date,  # type: ignore[arg-type]
                 avatar_url=u.avatar_url,

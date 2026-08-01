@@ -45,6 +45,7 @@ tests/integration/test_birthdays_db.py::test_excludes_deleted_and_hidden
 tests/integration/test_birthdays_db.py::test_excludes_users_without_birth_date
 tests/integration/test_birthdays_db.py::test_new_year_boundary_week
 tests/integration/test_birthdays_db.py::test_returns_only_birthday_people_in_range
+tests/integration/test_birthdays_db.py::test_sorting_across_month_boundary
 tests/integration/test_birthdays_db.py::test_sorting_chronological_by_month_day
 tests/integration/test_bookmarks_race.py::test_concurrent_bookmark_creation_respects_limit
 tests/integration/test_directories_db.py::TestDirectoryTypes::test_create_and_list

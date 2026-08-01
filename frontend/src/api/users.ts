@@ -160,6 +160,7 @@ export async function saveStaffOrder(body: StaffOrderUpdate): Promise<StaffOrder
 
 // Виджет «Дни рождения на неделе» на главной. GET /users/birthdays.
 export interface Birthday {
+  id: string
   full_name: string
   birth_date: string // ISO date — день месяца берётся локально (new Date(iso).getDate())
   avatar_url: string | null
