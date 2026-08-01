@@ -33,6 +33,7 @@ from app.services.erp_sync.mailbox import (
     POLL_LOCK_KEY,
     POLL_LOCK_TTL,
     MailFilters,
+    delete_messages,
     fetch_unread_attachments,
 )
 
@@ -129,7 +130,7 @@ async def run_erp_sync(ctx: dict, *, triggered_by: str = "cron") -> dict:
         return {"skipped": "lock_held"}
 
     await redis.set(LAST_POLL_KEY, datetime.now(UTC).isoformat())
-    summary = {"processed": 0, "errors": 0}
+    summary = {"processed": 0, "errors": 0, "deleted": 0}
     try:
         # Фильтры писём — per-module (остались в erp_sync_settings), IMAP — общий.
         filters = MailFilters(
@@ -138,7 +139,11 @@ async def run_erp_sync(ctx: dict, *, triggered_by: str = "cron") -> dict:
             attachment_filter=settings_row.mail_attachment_filter,
         )
         candidates = await fetch_unread_attachments(email_settings, filters)
-        for candidate, _uid in candidates:
+        # UID'ы писем, импортированных без ошибки — кандидаты на удаление, если
+        # включён delete_after_fetch. Удаляем только успешно отработавшие (при
+        # ошибке импорта письмо оставляем для повтора/разбора).
+        processed_uids: list[str] = []
+        for candidate, uid in candidates:
             try:
                 async with AsyncSessionLocal() as db:
                     await run_import(
@@ -153,12 +158,21 @@ async def run_erp_sync(ctx: dict, *, triggered_by: str = "cron") -> dict:
                         triggered_by=triggered_by,
                     )
                 summary["processed"] += 1
+                processed_uids.append(uid)
                 await redis.set(LAST_SUCCESS_KEY, datetime.now(UTC).isoformat())
             except Exception:
                 summary["errors"] += 1
                 logger.exception("erp_sync.run.import_failed", message_id=candidate.message_id)
         if not candidates:
             logger.debug("erp_sync.run.no_new_mail")
+        # Удаление писем после успешного импорта (опционально, default off).
+        # Дедуп по message_id (UNIQUE) защищает от повторной обработки и без
+        # удаления; здесь лишь чистка ящика от отработанных ERP-отчётов.
+        if settings_row.delete_after_fetch and processed_uids:
+            try:
+                summary["deleted"] = await delete_messages(email_settings, processed_uids)
+            except Exception:
+                logger.exception("erp_sync.run.delete_failed", uids=processed_uids)
     finally:
         await _release_lock(redis, POLL_LOCK_KEY, lock_token)
 

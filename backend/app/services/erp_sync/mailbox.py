@@ -5,19 +5,26 @@
 портала), а не через IMAP ``SEARCH SUBJECT``: последний ненадёжен с MIME/
 B-encoded кириллицей (``=?UTF-8?B?...?=``).
 
-Контракт: поллинг берёт ``SEARCH UNSEEN``, для каждого письма:
+Контракт (ADR-048, фикс 2026-08-01): поллинг берёт **``SEARCH ALL``**, для
+каждого письма:
 
 1. Декодирует Subject/From (через ``decode_mime_header`` из helpdesk-threading).
 2. Применяет фильтры (``mail_subject_filter`` / ``mail_sender_filter``):
    CI-подстрока. Пустой фильтр = не применяется.
-3. Если письмо **мимо фильтра** → пропускаем, **НЕ** помечаем ``\\Seen``
+3. Если письмо **мимо фильтра** → пропускаем, ничего не меняя в ящике
    (не трогаем чужую почту на общем ящике).
 4. Если подходит → извлекаем первое поддерживаемое вложение (по
    ``mail_attachment_filter`` или просто первое с известным расширением),
-   помечаем ``\\Seen``, возвращаем :class:`AttachmentCandidate`.
+   возвращаем :class:`AttachmentCandidate`. **Флаг ``\\Seen`` порталом НЕ
+   ставится**.
 
-Idempotency: дедуп по ``Message-ID`` происходит в :mod:`importer` (через
-``erp_sync_runs.message_id`` UNIQUE), а не здесь — mailbox только фетчит.
+Почему ``SEARCH ALL``, а не ``UNSEEN``: ящик общий, его читают люди, и
+любое прочитанное письмо получает ``\\Seen``. Опираться на ``UNSEEN`` как
+на «ещё не обработано» — значит терять письма, как только кто-то открыл
+ящик (реальный баг на проде: все письма ящика были ``\\Seen`` → поллинг
+молча ничего не забирал). Маркер «обработано» — **дедуп по ``Message-ID``
+в БД** (``erp_sync_runs.message_id`` UNIQUE, см. :mod:`importer`), а не
+почтовый флаг. Это надёжнее и не ломает чужой inbox на общем ящике.
 """
 
 from __future__ import annotations
@@ -194,23 +201,78 @@ def _extract_message_id(msg: Any) -> str | None:
     return token or None
 
 
-async def _safe_seen(client: Any, uid: str) -> None:
-    """Пометить письмо ``\\Seen`` (best-effort)."""
-    try:
-        await client.store(uid, "+FLAGS", "\\Seen")
-    except Exception:
-        logger.warning("erp_sync.mailbox.mark_seen_failed", uid=uid, exc_info=True)
+async def _search_all(client: Any) -> list[str]:
+    """Список UID всех писем в выбранной папке (``SEARCH ALL``).
 
-
-async def _search_unseen(client: Any) -> list[str]:
-    """Поиск непрочитанных писем (``SEARCH UNSEEN``)."""
-    typ, data = await client.search("UNSEEN")
+    ``ALL``, а не ``UNSEEN``: ящик общий, письма читают люди → любое
+    прочитанное письмо получает ``\\Seen`` и терялось бы при ``UNSEEN``
+    (см. докстринг модуля). Маркер «обработано» — дедуп по ``Message-ID``
+    в БД, не почтовый флаг.
+    """
+    typ, data = await client.search("ALL")
     if typ != "OK" or not data or not data[0]:
         return []
     raw = data[0]
     if isinstance(raw, bytes):
         raw = raw.decode("ascii", errors="ignore")
     return [u for u in raw.split() if u]
+
+
+async def delete_messages(email_settings: EmailSettings, uids: list[str]) -> int:
+    """Удалить письма из общего ящика (``delete_after_fetch``).
+
+    Открывает **новое** IMAP-подключение (fetch-сессия к этому моменту уже
+    закрыта), помечает переданные UID'ы ``STORE +FLAGS \\Deleted`` и физически
+    удаляет их ``EXPUNGE``. Клон паттерна ``helpdesk_mailbox_settings``.
+
+    Best-effort: при ошибке удаления отдельного UID — warning-лог и дальше
+    (письмо останется в ящике; дедуп по ``message_id`` удержит повторную
+    обработку при следующем poll'е, так что это безопасно). Возвращает
+    количество UID'ов, успешно помеченных ``\\Deleted`` перед EXPUNGE.
+
+    ``aioimaplib.IMAP4.delete`` — это IMAP ``DELETE`` (удаляет **папку**, не
+    письмо); для писем именно ``STORE \\Deleted`` + ``EXPUNGE``.
+    """
+    if not uids:
+        return 0
+    password = email_settings.imap_password
+    if not password:
+        logger.warning("erp_sync.mailbox.delete_no_password")
+        return 0
+
+    deleted = 0
+    client = _make_imap_client_raw(
+        host=email_settings.imap_host,
+        port=email_settings.imap_port,
+        use_ssl=email_settings.imap_use_ssl,
+    )
+    try:
+        await asyncio.wait_for(client.wait_hello_from_server(), timeout=_IMAP_STEP_TIMEOUT)
+        await asyncio.wait_for(
+            client.login(email_settings.imap_username, password), timeout=_IMAP_STEP_TIMEOUT
+        )
+        await client.select(email_settings.imap_folder)
+        for uid in uids:
+            try:
+                await client.store(uid, "+FLAGS", "\\Deleted")
+                deleted += 1
+            except Exception:
+                logger.warning("erp_sync.mailbox.mark_deleted_failed", uid=uid, exc_info=True)
+        # Физическое удаление помеченных \Deleted писем. Без EXPUNGE STORE лишь
+        # вешает флаг — письмо остаётся в папке. Best-effort: при падении письма
+        # останутся с флагом (оператор дочистит), debug-лог для диагностики.
+        try:
+            await client.expunge()
+        except Exception:
+            logger.debug("erp_sync.mailbox.expunge_failed", exc_info=True)
+    finally:
+        try:
+            await client.logout()
+        except Exception:
+            logger.warning("erp_sync.mailbox.delete_logout_failed", exc_info=True)
+
+    logger.info("erp_sync.mailbox.deleted", requested=len(uids), marked=deleted)
+    return deleted
 
 
 async def fetch_unread_attachments(
@@ -222,12 +284,16 @@ async def fetch_unread_attachments(
     IMAP-настройки (host/port/ssl/username/password/folder) — общие, из
     ``EmailSettings`` (ADR-048). Фильтры писём — per-module (``filters``).
 
-    Возвращает список ``(candidate, uid)``. Каждое подходящее письмо
-    помечается ``\\Seen``; письма мимо фильтра **не** трогаются.
+    Возвращает список ``(candidate, uid)``. Берутся **все** письма
+    (``SEARCH ALL``); подходящие под фильтр → вложение извлекается, письма
+    мимо фильтра не трогаются. Флаг ``\\Seen`` порталом **не** ставится:
+    ящик общий (его читают люди), а маркер «обработано» — дедуп по
+    ``Message-ID`` в БД (см. :mod:`importer`).
 
-    Не делает дедуп по Message-ID (это забота importer) и не пишет в БД —
+    Не делает сам дедуп (это забота importer) и не пишет в БД —
     только IMAP. Вызывающий код (worker) пробегает по результатам и вызывает
-    :func:`run_import` для каждого.
+    :func:`run_import` для каждого; повторная обработка блокируется
+    UNIQUE-констрейнтом ``erp_sync_runs.message_id``.
     """
     password = email_settings.imap_password
     if not password:
@@ -247,7 +313,7 @@ async def fetch_unread_attachments(
         )
         await client.select(email_settings.imap_folder)
 
-        uids = await _search_unseen(client)
+        uids = await _search_all(client)
         for uid in uids:
             try:
                 candidate = await _process_uid(client, uid, filters=filters)
@@ -269,7 +335,12 @@ async def fetch_unread_attachments(
 async def _process_uid(
     client: Any, uid: str, *, filters: MailFilters
 ) -> AttachmentCandidate | None:
-    """Обработать одно письмо: фетч → фильтр → вложение → ``\\Seen``."""
+    """Обработать одно письмо: фетч → фильтр → вложение.
+
+    Не меняет флаги письма в ящике (``\\Seen`` не ставится): маркер
+    «обработано» — дедуп по ``Message-ID`` в БД, а не почтовый флаг.
+    См. докстринг модуля.
+    """
     typ, data = await client.fetch(uid, "(RFC822)")
     if typ != "OK":
         return None
@@ -279,7 +350,7 @@ async def _process_uid(
         return None
     msg = message_from_bytes(raw)
 
-    # 1. Фильтрация. Письмо мимо фильтра → пропускаем, НЕ помечаем Seen.
+    # 1. Фильтрация. Письмо мимо фильтра → пропускаем, ничего не меняем.
     if not _matches_filters(
         msg,
         subject_filter=filters.subject_filter,
@@ -292,15 +363,12 @@ async def _process_uid(
     picked = _pick_attachment(msg, attachment_filter=filters.attachment_filter)
     if picked is None:
         logger.info("erp_sync.mailbox.no_suitable_attachment", uid=uid)
-        # Подошло по фильтру, но нет вложения — помечаем Seen, чтобы не
-        # крутить одно и то же письмо бесконечно (это всё-таки «наше» письмо).
-        await _safe_seen(client, uid)
+        # Подошло по фильтру, но нет вложения — пропускаем. Повторной
+        # обработки не будет: либо письмо без отчёта (куратор разберётся),
+        # либо importer запишет run, и дедуп по message_id удержит повтор.
         return None
 
     filename, filedata = picked
-    # 3. Пометить Seen только для действительно обработанного письма.
-    await _safe_seen(client, uid)
-
     return AttachmentCandidate(
         filename=filename,
         data=filedata,

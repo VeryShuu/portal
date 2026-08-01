@@ -24,9 +24,9 @@ diff попадает в email-отчёт админу, чтобы перети�
 
 ```
 ERP (2×/нед email) → общий ящик → [ARQ-cron run_erp_sync / ручной запуск]
-   → aioimaplib SEARCH UNSEEN → post-fetch фильтр (subject+sender+attachment)
-       ├─ подходит   → обработать, mark \Seen
-       └─ мимо фильтра → пропустить, НЕ mark \Seen
+   → aioimaplib SEARCH ALL → post-fetch фильтр (subject+sender+attachment)
+       ├─ подходит   → обработать (дедуп по message_id в БД защищает от повтора)
+       └─ мимо фильтра → пропустить
    → attachment → parser (txt/csv/xlsx/xls via xlrd, auto-encoding BOM→cp1251)
    → rows[FIO, date, gender]
    → dedup по нормализованному ФИО:
@@ -38,6 +38,7 @@ ERP (2×/нед email) → общий ящик → [ARQ-cron run_erp_sync / ру
        └─ >1 match → ambiguous[] (НЕ пишем)
    → commit (в той же транзакции: erp_sync_runs + email_outbox + notification)
    → post-commit: SSE-publish in-app уведомлений
+   → при delete_after_fetch: STORE \Deleted + EXPUNGE успешно импортированных писем
    → health-probe: integration:health['erp_sync'], erp_sync:last_success_at
 [watchdog cron /day]: if now - last_success > expected_interval × 1.5 → alert
 ```
@@ -69,6 +70,14 @@ data, hash}`) наполняется mailbox-циклом или multipart-uploa
   авто-забор). Позволяет выключить поллинг, оставив ручной upload.
 - `mail_subject_filter` / `mail_sender_filter` / `mail_attachment_filter`
   (VARCHAR, nullable) — CI-подстроки для post-fetch фильтрации на общем ящике.
+
+**Миграция 090** (additive `ALTER TABLE erp_sync_settings`):
+
+- `delete_after_fetch BOOL` (default false) — удалять письма из общего ящика
+  после успешного импорта (`STORE +FLAGS \Deleted` + `EXPUNGE`, клон
+  `helpdesk_mailbox_settings.delete_after_fetch`). Default off: удаление на
+  общем ящике необратимо, админ включает осознанно. Дедуп по `message_id`
+  (UNIQUE) защищает от повторной обработки и без удаления.
 
 ## Парсер (`services/erp_sync/parser.py`)
 
@@ -118,9 +127,20 @@ conflicts/errors) / `failed` (файл целиком не распарсилс�
 ## Mailbox (`services/erp_sync/mailbox.py`)
 
 Клон паттерна `helpdesk/ingress.py` + post-fetch фильтрация (IMAP `SEARCH
-SUBJECT` ненадёжен с MIME/B-encoded кириллицей). `SEARCH UNSEEN`, фильтрация
-post-fetch, письма мимо фильтра **НЕ** помечаются `\Seen` (не трогаем чужую
-почту на общем ящике). `probe_imap_connection` — для `POST /erp-sync/test`.
+SUBJECT` ненадёжен с MIME/B-encoded кириллицей). Берёт **`SEARCH ALL`**, а не
+`UNSEEN`: ящик общий, его читают люди, и любое прочитанное письмо получает
+`\Seen` — опираться на `UNSEEN` значило бы терять письма после первого
+открытия ящика (реальный баг на проде, фикс 2026-08-01). Маркер «обработано» —
+дедуп по `Message-ID` в `erp_sync_runs` (UNIQUE), не почтовый флаг. Портал
+**не** ставит `\Seen` и не трогает письма мимо фильтра — не портит чужой
+inbox на общем ящике. `probe_imap_connection` — для `POST /erp-sync/test`.
+
+`delete_messages(email_settings, uids)` — опциональное удаление отработанных
+писем (`delete_after_fetch`, миграция 090): `STORE +FLAGS \Deleted` per-UID +
+`EXPUNGE`, новое подключение после fetch-сессии. Удаляются только успешно
+импортированные письма (при ошибке письмо остаётся для повтора/разбора);
+дедуп по `message_id` удержит повтор и без удаления. Клон паттерна
+`helpdesk_mailbox_settings.delete_after_fetch`.
 
 ## Worker (`worker/tasks/erp_sync.py`)
 
@@ -161,9 +181,12 @@ Cron-регистрация: `run_erp_sync` каждые 15 мин (`minute={0,1
    `notify_email=true`).
 3. Задать фильтры (для общего ящика): `mail_subject_filter` (напр. «Сотрудники»),
    `mail_sender_filter` (email ERP), `mail_attachment_filter` (имя/расширение).
-4. Проверить: `POST /erp-sync/test`.
-5. Включить поллинг: `poll_enabled: true`.
-6. При желании — загрузить файл вручную: `POST /erp-sync/import-file`
+4. (Опц.) Включить `delete_after_fetch` — удалять отработанные ERP-отчёты из
+   общего ящика. По умолчанию off: письма остаются (дедуп по `message_id`
+   защищает от повторной обработки и без удаления).
+5. Проверить: `POST /erp-sync/test`.
+6. Включить поллинг: `poll_enabled: true`.
+7. При желании — загрузить файл вручную: `POST /erp-sync/import-file`
    (для первичной верификации парсера, без mailbox).
 
 ## Уведомления админу
@@ -183,7 +206,10 @@ Cron-регистрация: `run_erp_sync` каждые 15 мин (`minute={0,1
   singleton (как `helpdesk_mailbox_settings`). Настройки приёма ERP живут в
   `erp_sync_settings`; отправка отчётов — через общий SMTP.
 - **Общий ящик = обязательная фильтрация.** Без фильтра импорт сломается на
-  чужом письме. Письма мимо фильтра **НЕ** помечать `\Seen`.
+  чужом письме. Портал не ставит `\Seen` и не трогает письма мимо фильтра —
+  маркер «обработано» это дедуп по `Message-ID` в БД, а не почтовый флаг
+  (фикс 2026-08-01: `SEARCH UNSEEN` молча терял письма, как только ящик
+  открывали и все письма становились `\Seen`).
 - **`users.full_name` — одна свободная строка** из Keycloak, порядок слов не
   гарантируется. Матчинг через `find_by_full_name_words` (любой порядок).
 - **`xlrd==2.0.1`** — только `.xls`; `.xlsx` читает `openpyxl`. Не путать.

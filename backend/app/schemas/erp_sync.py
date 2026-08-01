@@ -36,6 +36,8 @@ class ErpSyncSettingsIn(BaseModel):
     mail_subject_filter: str | None = Field(default=None, max_length=255)
     mail_sender_filter: str | None = Field(default=None, max_length=255)
     mail_attachment_filter: str | None = Field(default=None, max_length=255)
+    # Миграция 090: удалять письма из общего ящика после успешного импорта.
+    delete_after_fetch: bool = False
 
 
 class ErpSyncSettingsOut(BaseModel):
@@ -49,6 +51,7 @@ class ErpSyncSettingsOut(BaseModel):
     mail_subject_filter: str | None = None
     mail_sender_filter: str | None = None
     mail_attachment_filter: str | None = None
+    delete_after_fetch: bool = False
     updated_at: datetime | None = None
 
     model_config = {"from_attributes": True}

@@ -65,6 +65,10 @@
               placeholder=".xlsx"
             />
           </n-form-item>
+          <n-form-item :label="t('admin.erpSync.settings.deleteAfterFetch')">
+            <n-switch v-model:value="form.delete_after_fetch" />
+            <span class="erp-sync__hint">{{ t('admin.erpSync.settings.deleteAfterFetchHint') }}</span>
+          </n-form-item>
           <n-form-item :label="t('admin.erpSync.settings.notifyEmails')">
             <n-input
               v-model:value="notifyEmailsStr"
@@ -111,6 +115,7 @@ interface FormState {
   mail_subject_filter: string | null
   mail_sender_filter: string | null
   mail_attachment_filter: string | null
+  delete_after_fetch: boolean
 }
 
 const form = ref<FormState | null>(null)
@@ -131,6 +136,7 @@ watch(
       mail_subject_filter: d.mail_subject_filter,
       mail_sender_filter: d.mail_sender_filter,
       mail_attachment_filter: d.mail_attachment_filter,
+      delete_after_fetch: d.delete_after_fetch,
     }
     notifyEmailsStr.value = (d.notify_emails ?? []).join(', ')
     isDirty.value = false
@@ -155,6 +161,7 @@ function buildDto(): ErpSyncSettingsIn {
     mail_subject_filter: (f.mail_subject_filter || '').trim() || null,
     mail_sender_filter: (f.mail_sender_filter || '').trim() || null,
     mail_attachment_filter: (f.mail_attachment_filter || '').trim() || null,
+    delete_after_fetch: f.delete_after_fetch,
   }
 }
 

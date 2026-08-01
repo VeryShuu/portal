@@ -5,7 +5,7 @@ import { setActivePinia, createPinia } from 'pinia'
 import { ref } from 'vue'
 
 /**
- * Характеризующий тест виджета «Дни рождения на неделе».
+ * Характеризующий тест виджета «Ближайшие дни рождения сотрудников».
  *
  * Контракты:
  * - рендерит список (ФИО + день месяца) когда есть именинники
@@ -17,7 +17,7 @@ const i18n = createI18n({
   locale: 'ru',
   missingWarn: false,
   fallbackWarn: false,
-  messages: { ru: { home: { birthdays: { title: 'Дни рождения на неделе' } } } },
+  messages: { ru: { home: { birthdays: { title: 'Ближайшие дни рождения сотрудников' } } } },
 })
 
 vi.mock('naive-ui', () => ({
