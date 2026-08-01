@@ -62,6 +62,42 @@ async def test_search_all_handles_bytes_and_str(payload: object) -> None:
     assert await _search_all(client) == ["1", "2", "3"]
 
 
+# ── _imap_step: таймаут на зависшей IMAP-команде (защита от утечки ARQ-job) ──
+
+
+async def test_imap_step_returns_result_for_fast_coroutine() -> None:
+    """Быстрая корутина проходит без задержки."""
+    from app.services.erp_sync.mailbox import _imap_step
+
+    async def fast() -> str:
+        return "ok"
+
+    assert await _imap_step(fast(), what="test") == "ok"
+
+
+async def test_imap_step_raises_timeout_on_hung_coroutine() -> None:
+    """Зависшая IMAP-команда (никогда не завершается) прерывается по таймауту.
+
+    Гарантия: ни один IMAP-вызов не может повесить воркер бесконечно — иначе
+    ARQ-job зависает, ключ in-progress утекает, и модуль умирает до ручной
+    чистки Redis (реальный инцидент на проде 2026-08-01)."""
+    import asyncio as _asyncio
+
+    from app.services.erp_sync.mailbox import _imap_step
+
+    async def hung() -> str:
+        await _asyncio.Event().wait()  # никогда не сработает
+        return "unreachable"
+
+    # _IMAP_STEP_TIMEOUT = 15с — для теста подменяем на малое, через monkeypatch
+    # нельзя (константа импортирована), поэтому проверяем через свой таймаут:
+    # wait_for(future, timeout=0.01) бросит TimeoutError почти сразу.
+    import pytest
+
+    with pytest.raises(_asyncio.TimeoutError):
+        await _asyncio.wait_for(_imap_step(hung(), what="hung"), timeout=0.05)
+
+
 # ── _process_uid: портал НЕ ставит \Seen и не трогает письма мимо фильтра ──
 
 

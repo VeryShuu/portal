@@ -50,12 +50,26 @@ POLL_LOCK_KEY = "erp_sync:imap:poll_lock"
 POLL_LOCK_TTL = 300  # 5 минут — хватает на обработку нескольких писем.
 LAST_SUCCESS_KEY = "erp_sync:last_success_at"  # для watchdog + health-probe.
 
-# Таймауты на IMAP-операции (секунды). 15 c на handshake/login (российские
-# хосты бывают медленные), как в helpdesk.
+# Таймаут на каждую IMAP-команду (секунды). Российские хосты бывают медленные,
+# а firewall/middlebox может принять TCP-handshake и потом молча дропать
+# пакеты — без таймаута такая команда виснет навсегда, ARQ-job не завершается,
+# и ключ arq:in-progress утекает (модуль умирает до ручной чистки Redis).
+# 15 c достаточно для handshake/login и для fetch одного письма.
 _IMAP_STEP_TIMEOUT = 15.0
 
 # Маркер «aioimaplib возвращает плоский список с literal-маркером».
 _LITERAL_RE = re.compile(rb"\{\d+\}")
+
+
+async def _imap_step(coro: Any, *, what: str = "") -> Any:
+    """Обернуть IMAP-команду в ``asyncio.wait_for`` с таймаутом.
+
+    Гарантирует, что ни один IMAP-вызов не может повесить воркер бесконечно:
+    при таймауте бросает ``asyncio.TimeoutError``, который поднимается до
+    ``fetch_unread_attachments`` / ``delete_messages`` и логируется как ошибка.
+    ARQ корректно завершает задачу и очищает ``in-progress`` ключ.
+    """
+    return await asyncio.wait_for(coro, timeout=_IMAP_STEP_TIMEOUT)
 
 
 @dataclass
@@ -209,7 +223,7 @@ async def _search_all(client: Any) -> list[str]:
     (см. докстринг модуля). Маркер «обработано» — дедуп по ``Message-ID``
     в БД, не почтовый флаг.
     """
-    typ, data = await client.search("ALL")
+    typ, data = await _imap_step(client.search("ALL"), what="search")
     if typ != "OK" or not data or not data[0]:
         return []
     raw = data[0]
@@ -247,14 +261,12 @@ async def delete_messages(email_settings: EmailSettings, uids: list[str]) -> int
         use_ssl=email_settings.imap_use_ssl,
     )
     try:
-        await asyncio.wait_for(client.wait_hello_from_server(), timeout=_IMAP_STEP_TIMEOUT)
-        await asyncio.wait_for(
-            client.login(email_settings.imap_username, password), timeout=_IMAP_STEP_TIMEOUT
-        )
-        await client.select(email_settings.imap_folder)
+        await _imap_step(client.wait_hello_from_server(), what="hello")
+        await _imap_step(client.login(email_settings.imap_username, password), what="login")
+        await _imap_step(client.select(email_settings.imap_folder), what="select")
         for uid in uids:
             try:
-                await client.store(uid, "+FLAGS", "\\Deleted")
+                await _imap_step(client.store(uid, "+FLAGS", "\\Deleted"), what="store")
                 deleted += 1
             except Exception:
                 logger.warning("erp_sync.mailbox.mark_deleted_failed", uid=uid, exc_info=True)
@@ -262,7 +274,7 @@ async def delete_messages(email_settings: EmailSettings, uids: list[str]) -> int
         # вешает флаг — письмо остаётся в папке. Best-effort: при падении письма
         # останутся с флагом (оператор дочистит), debug-лог для диагностики.
         try:
-            await client.expunge()
+            await _imap_step(client.expunge(), what="expunge")
         except Exception:
             logger.debug("erp_sync.mailbox.expunge_failed", exc_info=True)
     finally:
@@ -307,11 +319,9 @@ async def fetch_unread_attachments(
     )
     results: list[tuple[AttachmentCandidate, str]] = []
     try:
-        await asyncio.wait_for(client.wait_hello_from_server(), timeout=_IMAP_STEP_TIMEOUT)
-        await asyncio.wait_for(
-            client.login(email_settings.imap_username, password), timeout=_IMAP_STEP_TIMEOUT
-        )
-        await client.select(email_settings.imap_folder)
+        await _imap_step(client.wait_hello_from_server(), what="hello")
+        await _imap_step(client.login(email_settings.imap_username, password), what="login")
+        await _imap_step(client.select(email_settings.imap_folder), what="select")
 
         uids = await _search_all(client)
         for uid in uids:
@@ -341,7 +351,7 @@ async def _process_uid(
     «обработано» — дедуп по ``Message-ID`` в БД, а не почтовый флаг.
     См. докстринг модуля.
     """
-    typ, data = await client.fetch(uid, "(RFC822)")
+    typ, data = await _imap_step(client.fetch(uid, "(RFC822)"), what="fetch")
     if typ != "OK":
         return None
     raw = _extract_rfc822(data)
@@ -389,7 +399,7 @@ async def probe_imap_connection(
         client = _make_imap_client_raw(host=host, port=port, use_ssl=use_ssl)
         await asyncio.wait_for(client.wait_hello_from_server(), timeout=10)
         await asyncio.wait_for(client.login(username, password), timeout=10)
-        resp = await client.select(folder)
+        resp = await asyncio.wait_for(client.select(folder), timeout=10)
         ok = bool(resp and "OK" in resp[0])
         await client.logout()
         if ok:
