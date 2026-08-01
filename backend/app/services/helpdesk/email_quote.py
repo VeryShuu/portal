@@ -157,12 +157,19 @@ def build_reply_marker_html(ticket_number: int) -> str:
     )
 
 
-def strip_quoted_reply(text: str) -> str:
+def strip_quoted_reply(text: str, *, keep_forward: bool = False) -> str:
     """Обрезать цитату предыдущего письма из plain-text тела.
 
     Слои (по надёжности):
-      1. Наш маркер ``REPLY_MARKER_TOKEN`` — режем строго по нему.
+      1. Наш маркер ``REPLY_MARKER_TOKEN`` — режем строго по нему (всегда,
+         даже при ``keep_forward``: маркер проставляется только исходящими
+         письмами портала, его наличие = заявитель отвечает на наше письмо,
+         даже если matching по Message-ID не сработал → цитату убрать).
       2. Эвристика ``_QUOTE_PATTERNS`` — режем по первому совпадению.
+         Пропускается при ``keep_forward=True``: для **новой** заявки
+         forward-блок (``-----Original Message-----`` / Outlook ``From:/Sent:`` /
+         Gmail ``wrote:``) — это часто суть обращения (bounce, ошибка,
+         пересланный контекст), а не цитата. Отрезание ломало такие заявки.
 
     Если ничего не найдено — возвращает ``text`` без изменений.
     """
@@ -180,6 +187,11 @@ def strip_quoted_reply(text: str) -> str:
         return kept or text  # пустой ответ выше маркера → вернуть как есть
 
     # 2. Эвристика: первое (самое раннее) совпадение паттерна цитаты.
+    # Для новых заявок (keep_forward=True) пропускаем — forward-блок
+    # может быть сутью обращения (см. docstring).
+    if keep_forward:
+        return text
+
     earliest = len(text)
     for pat in _QUOTE_PATTERNS:
         m = pat.search(text)
@@ -191,7 +203,7 @@ def strip_quoted_reply(text: str) -> str:
     return text
 
 
-def strip_quoted_html(html: str) -> str:
+def strip_quoted_html(html: str, *, keep_forward: bool = False) -> str:
     """Обрезать цитату предыдущего письма из HTML-тела.
 
     Многослойная обрезка (каждый слой работает с результатом предыдущего):
@@ -200,9 +212,15 @@ def strip_quoted_html(html: str) -> str:
          почтовый клиент оборачивает фразу в теги (``<p class="MsoNormal">``,
          ``<strong>``) и может прилепить ``↩`` из иконки маркера, поэтому
          ``_OWN_MARKER_HTML_RE`` допускает предшествующие теги/``↩``/``<hr>``.
+         Применяется всегда (даже при ``keep_forward``): маркер проставляется
+         только исходящими письмами портала, его наличие = заявитель отвечает
+         на наше письмо, даже если matching не сработал → цитату убрать.
       2. Outlook quote-header ``<b>From:</b>`` / ``<b>От:</b>`` — отрезает
-         процитированный ответ агента над маркером.
+         процитированный ответ агента над маркером. **Пропускается при
+         ``keep_forward=True``** (новая заявка — forward может быть сутью
+         обращения, см. ``strip_quoted_reply``).
       3. HTML quote-контейнеры почтовых клиентов (``gmail_quote`` и т.п.).
+         **Пропускается при ``keep_forward=True``** (та же причина).
 
     Универсальный ``<blockquote>`` без классов не трогает — это легитимное
     форматирование. Точная обрезка сбалансированных тегов не реализуется: на
@@ -222,6 +240,11 @@ def strip_quoted_html(html: str) -> str:
         # Подчистить висячие открывающие теги в хвосте (например, ``<div><strong>``
         # если закрывающих тегов маркера ниже уже нет после обрезки).
         kept = _DANGLING_OPEN_TAGS_RE.sub("", kept).rstrip()
+
+    if keep_forward:
+        # Новая заявка: forward-блок (Outlook From:/Sent:, gmail_quote, …) —
+        # часто суть обращения (bounce/ошибка/пересланный контекст), не цитата.
+        return kept or html
 
     # 2. Outlook quote-header (отрезает процитированный ответ агента).
     m = _HTML_OUTLOOK_HEADER_RE.search(kept)

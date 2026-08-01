@@ -467,7 +467,7 @@ Retry-классификация (отличается от email): 429/5xx/time
 3. **Идемпотентность**: `Message-ID` (или synthetic id для писем без него) проверяется в `helpdesk_email_log`; повтор → `skipped`.
 4. **Matching**: по `In-Reply-To`/`References` → `helpdesk_messages.email_message_id`; fallback по токену `[#TKT-{number}]` в теме; последний (опциональный) fallback — plus-маркер `+TKT-{number}` в адресе получателя (`Delivered-To`/`X-Original-To`/`To`). Нет матча → новый тикет (`source=email`). `[#TKT-N]` найден, но живого тикета нет (в архиве) → новый тикет с `references_archived_ticket_number=N`. **Безопасность:** для fallback'ов по subject/recipient-токену (угадываемый последовательный `number`) отправитель сверяется с `ticket.requester_email` (case-insensitive); при несовпадении создаётся новый тикет (защита от инъекции сообщения в чужой тикет). `References`-матч (секретный `Message-ID` исходящего) — без сверки отправителя. **PII в логах:** при несовпадении отправителя логируется маскированный email (``u***@domain``, `_email_domain`) — полное значение хранится в БД/почте, но не в info-логах (защита от попадания адресов в access-логи/агрегатор логов).
 5. **Инициатор**: `From` → нормализованный email → `LOWER(users.email)`; найден → `requester_user_id`, иначе гостевая заявка. **Cc** (миграция `083`): заголовок `Cc` парсится `threading.extract_cc` → `[{"email","name"}]` сохраняется в `helpdesk_messages.cc`. Из списка выкидывается `support_address` (иначе ответ «всем» уйдёт в собственный ящик → петля/дубль). `Bcc` не парсится (невидим получателю по RFC 5322). Участники тикета «в сборе» (`participants`) агрегируются в рантайме в сериализаторе карточки — не хранятся в БД.
-6. Тело: `text/plain` предпочитается, иначе деривация из sanitized `text/html` (`nh3`). **Отсечение цитаты** предыдущего письма — маркер-разделитель `REPLY_MARKER_TOKEN` + эвристика quoted-reply (см. ниже «Отсечение цитат во входящих ответах»). **Локализация картинок + обычные вложения** (`_localize_attachments_and_images`, см. §6): inline `cid:` (`multipart/related`/`Content-ID`) и внешние `http(s)://` сохраняются в локальный FS, `src` переписывается на `/api/v1/helpdesk/attachments/{id}`; `Content-Disposition: attachment`-части — через `save_image_bytes` (MIME/лимиты/path-traversal guard). Снимает CSP-блок http-картинок и битые `cid:` (раньше — MVP-заглушка без сохранения).
+6. Тело: `text/plain` предпочитается, иначе деривация из sanitized `text/html` (`nh3`). **Отсечение цитаты** предыдущего письма — маркер-разделитель `REPLY_MARKER_TOKEN` + эвристика quoted-reply (см. ниже «Отсечение цитат во входящих ответах»). **Forward для новых заявок не отрезается** (`keep_forward=True`, см. ниже «Отсечение цитат / Forward для новых заявок»): forward-блок (`-----Original Message-----`, Outlook `From:/Sent:`, Gmail `wrote:`) часто = суть обращения (bounce об ошибке доставки, пересланный контекст проблемы), а не цитата. **Локализация картинок + обычные вложения** (`_localize_attachments_and_images`, см. §6): inline `cid:` (`multipart/related`/`Content-ID`) и внешние `http(s)://` сохраняются в локальный FS, `src` переписывается на `/api/v1/helpdesk/attachments/{id}`; `Content-Disposition: attachment`-части — через `save_image_bytes` (MIME/лимиты/path-traversal guard). MIME allow-list `HELPDESK_ATTACHMENT_ALLOWED_MIMES` включает `message/rfc822` и `message/delivery-status` — bounce-вложения из NDN (Postfix `details.txt` / `Undelivered Message Headers.txt`, `python-magic` определяет их как `message/rfc822`). Снимает CSP-блок http-картинок и битые `cid:` (раньше — MVP-заглушка без сохранения).
 7. Статус: `pending` → `open` (без окна); `closed` → `open` в окне reopen (иначе без изменений); `new`/`open` — без изменений.
 8. `helpdesk_email_log` (`created`/`appended`), пометить `\Seen` (и при `delete_after_fetch` — `STORE +FLAGS \Deleted` + `EXPUNGE` в конце цикла). Удаление применяется и для `skipped`-писем (уже видели/anti-loop), а не только для успешно созданных.
 
@@ -523,6 +523,23 @@ Retry-классификация (отличается от email): 429/5xx/time
    - HTML: quote-контейнеры с классами `gmail_quote`/`moz-cite-prefix`/`WordSection1/2`
 
 **Точка вызова** — `_extract_bodies` (`ingress.py`): strip применяется к `plain` и `html` до санитизации, и повторно — к деривации plain ← html. Сырьё (неочищенное тело) **не сохраняется** — при `delete_after_fetch=false` оригинал доступен в почтовом ящике.
+
+#### Forward для новых заявок (`keep_forward`)
+
+> Проблема (баг от 01.08.2026): заявитель пересылал в поддержку bounce об ошибке доставки (`message size exceeds limit`). Forward-блок `-----Original Message-----` отрезался эвристикой цитат как «цитата предыдущего письма» — суть заявки терялась, в ленте оставался только текст «не отправляется письмо» без объяснения причины.
+
+Маркеры forward (`-----Original Message-----`, Outlook `From:/Sent:`, Gmail `wrote:`) и reply-цитаты **одни и те же** — почтовые клиенты используют их для обоих случаев. Различение идёт по контексту матчинга:
+
+- **Новая заявка** (`_match_ticket` вернул `None`) → `keep_forward=True`: forward-блок **не отрезается**. Это часто суть обращения (bounce, ошибка, пересланный контекст проблемы).
+- **Ответ на существующий тикет** (есть матч по `References`/токену) → `keep_forward=False` (дефолт): forward-блок режется как цитата (чтобы не дублировать прошлое письмо в ленте).
+
+Параметр `keep_forward` пробрасывается из `_ingest_message` (`ticket is None` после `_match_ticket`) в `_extract_bodies` → `strip_quoted_reply`/`strip_quoted_html`.
+
+**Маркер `REPLY_MARKER_TOKEN` режется всегда** — даже при `keep_forward=True`: он проставляется только исходящими письмами портала, его наличие однозначно = заявитель отвечает на наш тикет (не новая заявка), цитату убрать. Это страховка: если matching по `Message-ID`/токену не сработал (письмо ушло в архив, реорганизация ящика), но маркер в теле есть — значит это ответ, а не новая заявка с forward.
+
+**Ограничения (осознанные):**
+- Подпись отправителя в plain-only письмах не отрезается (`strip_email_signature` работает по HTML-маркерам: логотип `Mage_Ru.png`, цвета). Подпись в plain-only письмах (как от Pantina) остаётся в теле — но контакты заявителя видны в карточке (`RequesterProfileCard`), так что это не критично. Для HTML-писем подпись отрезается как обычно.
+- Ответ заявителя с пересланным внутри ещё одним письмом (forward внутри reply на наш тикет) — отрежется целиком как цитата (нельзя различить без full RFC5322-threading).
 
 ### Отсечение корпоративной email-подписи (`email_signature.py`)
 

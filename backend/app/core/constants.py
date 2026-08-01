@@ -53,6 +53,12 @@ HELPDESK_ATTACHMENT_ALLOWED_MIMES: frozenset[str] = frozenset(
         "application/msword",
         "application/vnd.ms-excel",
         "application/vnd.ms-powerpoint",
+        # Bounce/forward-вложения (письма-уведомления о недоставке и пересланные
+        # сообщения): ``message/delivery-status`` (Postfix NDN), ``message/rfc822``
+        # (вложенные заголовки/тела писем — magic так определяет ``text/rfc822-headers``
+        # и ``message/rfc822``-части из bounce). См. helpdesk IMAP-ingress.
+        "message/rfc822",
+        "message/delivery-status",
     }
 )
 # Inline-картинки rich-редактора ответов (POST /tickets/{id}/inline-media).

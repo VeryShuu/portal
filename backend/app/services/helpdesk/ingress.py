@@ -631,7 +631,11 @@ async def _ingest_message(
 
     requester = await _find_user_by_email(db, sender_email)
 
-    body_text, body_html = _extract_bodies(msg)
+    # ``keep_forward``: для НОВОЙ заявки (нет матча с тикетом) forward-блок
+    # письма не отрезается — это часто суть обращения (bounce об ошибке доставки,
+    # пересланный контекст проблемы). Для ответа на существующий тикет forward
+    # режется как цитата (чтобы не дублировать прошлое письмо в ленте).
+    body_text, body_html = _extract_bodies(msg, keep_forward=ticket is None)
     # ``_extract_bodies`` возвращает ``tuple[str | None, str | None]``, но ниже по
     # потоку (HelpdeskTicket/Message, html_to_plain) требует ``str``. Пустое тело
     # входящего письма тоже валидно (напр. только вложения) — нормализуем в "".
@@ -842,7 +846,7 @@ def _derive_subject(raw: str | None) -> str:
     return threading_utils.strip_subject_token(raw or "") or "(без темы)"
 
 
-def _extract_bodies(msg: Message) -> tuple[str, str | None]:
+def _extract_bodies(msg: Message, *, keep_forward: bool = False) -> tuple[str, str | None]:
     """Извлечь ``(text/plain, text/html|None)``. HTML — sanitized.
 
     Инвариант: если есть HTML — он же источник истины для ``plain`` (как в
@@ -850,6 +854,14 @@ def _extract_bodies(msg: Message) -> tuple[str, str | None]:
     из HTML, отсутствуют и в ``plain`` (а значит — в ``body_text``,
     ``description``, MAX- и email-уведомлениях). Для писем без HTML (text/plain
     only) возвращается оригинальный plain после ``strip_quoted_reply``.
+
+    ``keep_forward`` — для **новых** заявок (нет матча с существующим тикетом):
+    forward-блок письма (``-----Original Message-----``, Outlook ``From:/Sent:``,
+    Gmail ``wrote:``) не отрезается. Для новой заявки forward — часто суть
+    обращения (bounce об ошибке доставки, пересланный контекст проблемы), а не
+    цитата. См. ``email_quote.strip_quoted_reply`` (параметр ``keep_forward``).
+    Маркер ``REPLY_MARKER_TOKEN`` режется всегда — он проставляется только
+    исходящими письмами портала, его наличие = ответ на наш тикет.
     """
     plain = None
     html = None
@@ -873,10 +885,11 @@ def _extract_bodies(msg: Message) -> tuple[str, str | None]:
     # Отсечение цитаты предыдущего письма (маркер-разделитель + эвристика).
     # До санитации HTML — чтобы поймать quote-контейнеры по классам до того,
     # как nh3 их переформатирует. См. ``email_quote``.
+    # ``keep_forward``: для новых заявок forward-блок не режется (суть обращения).
     if plain is not None:
-        plain = strip_quoted_reply(plain)
+        plain = strip_quoted_reply(plain, keep_forward=keep_forward)
     if html is not None:
-        html = strip_quoted_html(html)
+        html = strip_quoted_html(html, keep_forward=keep_forward)
 
     # Отсечение корпоративной подписи (логотип Mage_Ru.png + фирменные цвета).
     # После снятия цитаты (цитата может содержать подпись отправителя — её
@@ -898,7 +911,7 @@ def _extract_bodies(msg: Message) -> tuple[str, str | None]:
         html = sanitize_html(html)
         # ``strip_quoted_reply`` повторно: html-цитата могла оставить
         # «On … wrote:» / заголовки Outlook и после снятия тегов.
-        plain = strip_quoted_reply(html_to_plain(html))
+        plain = strip_quoted_reply(html_to_plain(html), keep_forward=keep_forward)
     return (plain or "").strip() or "(пустое сообщение)", html
 
 
