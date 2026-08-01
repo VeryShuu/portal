@@ -109,6 +109,102 @@ class TestEmailSettingsModels:
         out = email_settings_to_out(s)
         assert out.password_set is False
 
+    # ── IMAP-блок (ADR-048: общий приёмник почты) ──────────────────────────────
+
+    def test_imap_defaults(self):
+        from app.api.branding import EmailSettings
+
+        s = EmailSettings()
+        assert s.imap_host == ""
+        assert s.imap_port == 993
+        assert s.imap_use_ssl is True
+        assert s.imap_username == ""
+        assert s.imap_password == ""
+        assert s.imap_folder == "INBOX"
+
+    def test_imap_to_out_masks_password(self):
+        from app.services.email_settings import EmailSettings, email_settings_to_out
+
+        s = EmailSettings(imap_host="imap.local", imap_username="u", imap_password="secret")
+        out = email_settings_to_out(s)
+        assert out.imap_host == "imap.local"
+        assert out.imap_username == "u"
+        assert out.imap_password_set is True
+        assert not hasattr(out, "imap_password")
+
+    def test_imap_configured_requires_host_username_password(self):
+        from app.services.email_settings import EmailSettings, imap_configured
+
+        assert imap_configured(EmailSettings()) is False
+        assert imap_configured(EmailSettings(imap_host="h", imap_username="u")) is False
+        assert (
+            imap_configured(EmailSettings(imap_host="h", imap_username="u", imap_password="p"))
+            is True
+        )
+
+    def test_imap_password_fernet_roundtrip(self, tmp_path):
+        """save→read: imap_password хранится Fernet-шифром (imap_password_enc на
+        диске), plaintext не утекает, после reload расшифровывается обратно."""
+        import json
+
+        from app.services import email_settings as es_mod
+        from app.services.email_settings import (
+            EmailSettings,
+            load_email_settings,
+            save_email_settings,
+        )
+
+        f = tmp_path / "email-settings.json"
+        with (
+            patch.object(es_mod, "EMAIL_SETTINGS_FILE", f),
+            patch.object(es_mod, "BRANDING_DIR", tmp_path),
+        ):
+            save_email_settings(
+                EmailSettings(
+                    host="smtp.local",
+                    password="smtp-pw",
+                    imap_host="imap.local",
+                    imap_username="u",
+                    imap_password="imap-secret",
+                    imap_folder="INBOX",
+                )
+            )
+
+            # На диске — imap_password_enc (Fernet), НЕ plaintext imap_password.
+            on_disk = json.loads(f.read_text("utf-8"))
+            assert "imap_password_enc" in on_disk
+            assert "imap_password" not in on_disk
+            # SMTP-пароль остаётся plaintext (намеренно, ADR-048).
+            assert on_disk["password"] == "smtp-pw"
+
+            # После reload — imap_password расшифрован обратно, SMTP как есть.
+            loaded = load_email_settings()
+            assert loaded.imap_password == "imap-secret"
+            assert loaded.imap_host == "imap.local"
+            assert loaded.password == "smtp-pw"
+
+    def test_imap_password_keep_semantics_on_save(self, tmp_path):
+        """load→save без изменений сохраняет тот же imap-пароль (round-trip stable)."""
+        from app.services import email_settings as es_mod
+        from app.services.email_settings import (
+            EmailSettings,
+            load_email_settings,
+            save_email_settings,
+        )
+
+        f = tmp_path / "email-settings.json"
+        with (
+            patch.object(es_mod, "EMAIL_SETTINGS_FILE", f),
+            patch.object(es_mod, "BRANDING_DIR", tmp_path),
+        ):
+            save_email_settings(
+                EmailSettings(imap_host="imap.local", imap_username="u", imap_password="p1")
+            )
+            # Reload и save без правок — пароль сохраняется.
+            s = load_email_settings()
+            save_email_settings(s)
+            assert load_email_settings().imap_password == "p1"
+
 
 # ── load_settings / save_settings ──────────────────────────────────────────
 

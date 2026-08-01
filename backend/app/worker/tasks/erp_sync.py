@@ -25,12 +25,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import AsyncSessionLocal
 from app.core.logging import get_logger
 from app.models.erp_sync import ErpSyncRun, ErpSyncSettings
+from app.services.email_settings import imap_configured, load_email_settings
 from app.services.erp_sync.importer import Attachment, attachment_hash, run_import
 from app.services.erp_sync.mailbox import (
     LAST_POLL_KEY,
     LAST_SUCCESS_KEY,
     POLL_LOCK_KEY,
     POLL_LOCK_TTL,
+    MailFilters,
     fetch_unread_attachments,
 )
 
@@ -117,8 +119,9 @@ async def run_erp_sync(ctx: dict, *, triggered_by: str = "cron") -> dict:
         settings_row = settings
 
     # Для manual-запуска poll_enabled не проверяем (админ явно хочет «забрать
-    # сейчас»), но IMAP должен быть настроен.
-    if not settings_row.imap_host or not settings_row.imap_username:
+    # сейчас»), но общий IMAP должен быть настроен (ADR-048: приёмка общая).
+    email_settings = load_email_settings()
+    if not imap_configured(email_settings):
         return {"skipped": "imap_not_configured"}
 
     lock_token = await _acquire_lock(redis, POLL_LOCK_KEY, POLL_LOCK_TTL)
@@ -128,7 +131,13 @@ async def run_erp_sync(ctx: dict, *, triggered_by: str = "cron") -> dict:
     await redis.set(LAST_POLL_KEY, datetime.now(UTC).isoformat())
     summary = {"processed": 0, "errors": 0}
     try:
-        candidates = await fetch_unread_attachments(settings_row)
+        # Фильтры писём — per-module (остались в erp_sync_settings), IMAP — общий.
+        filters = MailFilters(
+            subject_filter=settings_row.mail_subject_filter,
+            sender_filter=settings_row.mail_sender_filter,
+            attachment_filter=settings_row.mail_attachment_filter,
+        )
+        candidates = await fetch_unread_attachments(email_settings, filters)
         for candidate, _uid in candidates:
             try:
                 async with AsyncSessionLocal() as db:

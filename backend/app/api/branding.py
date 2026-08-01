@@ -262,7 +262,8 @@ async def reset_login_bg(editor: EditorDep, redis: RedisDep) -> dict:
     "/admin/email-settings", response_model=EmailSettingsOut, summary="Получить настройки email"
 )
 async def get_email_settings(_admin: AdminDep) -> EmailSettingsOut:
-    """Возвращает текущие настройки SMTP. Пароль не возвращается, только флаг password_set."""
+    """Возвращает текущие настройки SMTP + общего IMAP. Пароли не возвращаются,
+    только флаги password_set / imap_password_set."""
     return email_settings.email_settings_to_out(email_settings.load_email_settings())
 
 
@@ -272,14 +273,22 @@ async def get_email_settings(_admin: AdminDep) -> EmailSettingsOut:
 async def save_email_settings(
     body: EmailSettingsIn, admin: AdminDep, redis: RedisDep
 ) -> EmailSettingsOut:
-    """Сохраняет настройки SMTP в /data/branding/email-settings.json.
-    Переопределяет значения из .env — они больше не используются для отправки.
-    Если password передан как null или '***' — существующий пароль не меняется.
+    """Сохраняет SMTP + общий IMAP в /data/branding/email-settings.json.
+
+    Пароли (SMTP, IMAP) — write-only с keep/clear/update семантикой:
+    ``null``/``'***'`` = оставить прежний, ``''`` = очистить, иное = обновить.
+    IMAP-пароль хранится Fernet-шифром, SMTP — plaintext (ADR-048).
     """
     existing = email_settings.load_email_settings()
     new_password = existing.password
     if body.password is not None and body.password != email_settings.EMAIL_PASSWORD_MASK:
         new_password = body.password
+
+    # IMAP-пароль: keep/clear/update. По умолчанию — оставляем прежний (plaintext
+    # уже расшифрован в модели при load). encode/save зашифрует его на диске.
+    new_imap_password = existing.imap_password
+    if body.imap_password is not None:
+        new_imap_password = body.imap_password
 
     settings = EmailSettings(
         host=body.host,
@@ -289,10 +298,21 @@ async def save_email_settings(
         password=new_password,
         use_tls=body.use_tls,
         use_starttls=body.use_starttls,
+        imap_host=body.imap_host,
+        imap_port=body.imap_port,
+        imap_use_ssl=body.imap_use_ssl,
+        imap_username=body.imap_username,
+        imap_password=new_imap_password,
+        imap_folder=body.imap_folder,
     )
     email_settings.save_email_settings(settings)
     await _audit(redis, str(admin.id), "email_settings")
-    logger.info("branding.email_settings_saved", host=body.host, port=body.port)
+    logger.info(
+        "branding.email_settings_saved",
+        host=body.host,
+        port=body.port,
+        imap_host=body.imap_host,
+    )
     return email_settings.email_settings_to_out(settings)
 
 
@@ -316,3 +336,16 @@ async def test_email_settings(
     )
     await _audit(redis, str(admin.id), "email_test")
     return {"detail": "Test email queued", "to": body.to}
+
+
+@router.post("/admin/email-settings/imap/test", summary="Проверить подключение общего IMAP-ящика")
+async def test_imap_settings(admin: AdminDep, _redis: RedisDep) -> dict:
+    """Проверяет подключение к общему IMAP-ящику (login + select folder).
+
+    Использует сохранённые настройки. Возвращает ``{"ok": bool, "detail": str}``.
+    ``detail`` маскируется (aioimaplib может echo'ить LOGIN с паролем — грабля H-9).
+    """
+    settings = email_settings.load_email_settings()
+    ok, detail = await email_settings.test_imap_connection(settings)
+    await _audit(_redis, str(admin.id), "email_imap_test")
+    return {"ok": ok, "detail": detail}

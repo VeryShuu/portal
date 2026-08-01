@@ -13,12 +13,11 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, status
-from sqlalchemy import select
 
 from app.api.deps import AdminDep, DbDep, RedisDep, require_erp_sync_module
 from app.core.logging import get_logger
-from app.models.erp_sync import ErpSyncSettings
 from app.schemas.erp_sync import ErpSyncRunNowResponse
+from app.services.email_settings import imap_configured, load_email_settings
 from app.services.erp_sync.importer import Attachment, attachment_hash, run_import
 from app.services.erp_sync.parser import SUPPORTED_FORMATS, detect_format
 
@@ -34,23 +33,19 @@ _MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 @router.post("/run", response_model=ErpSyncRunNowResponse)
 async def run_now(
     admin: AdminDep,
-    db: DbDep,
     request: Request,
 ) -> ErpSyncRunNowResponse:
     """Поставить mailbox-poll в ARQ-очередь (немедленно, не ждать cron).
 
     Импорт выполнится в воркере с ``triggered_by='manual'``. ``poll_enabled``
-    НЕ проверяется (админ явно хочет «забрать сейчас»), но IMAP должен быть
-    настроен — задача вернёт ``imap_not_configured``, если нет.
+    НЕ проверяется (админ явно хочет «забрать сейчас»), но общий IMAP должен
+    быть настроен (ADR-048) — задача вернёт ``imap_not_configured``, если нет.
     """
-    # Защита: mailbox должен быть настроен.
-    settings = (
-        await db.execute(select(ErpSyncSettings).where(ErpSyncSettings.id == 1))
-    ).scalar_one_or_none()
-    if settings is None or not settings.imap_host or not settings.imap_username:
+    # Защита: общий IMAP-ящик должен быть настроен во вкладке Email.
+    if not imap_configured(load_email_settings()):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="IMAP mailbox is not configured",
+            detail="IMAP mailbox is not configured (see Email tab)",
         )
 
     pool = getattr(request.app.state, "arq_pool", None)

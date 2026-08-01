@@ -1,21 +1,15 @@
 /**
  * API-клиент для ERP-синхронизации (docs/erp-sync.md).
  *
- * Настройки ящика (singleton, write-only password), проверка подключения,
- * ручной запуск импорта (mailbox-trigger + multipart-upload), история runs.
+ * Per-module настройки (фильтры писём + переключатели). IMAP-приёмка общая —
+ * во вкладке Email (ADR-048). Ручной запуск импорта + история runs.
  */
 import { api, apiUpload } from './index'
 
-// ── Settings (singleton) ───────────────────────────────────────────────────
+// ── Settings (singleton, per-module) ───────────────────────────────────────
 
 export interface ErpSyncSettingsOut {
   enabled: boolean
-  imap_host: string | null
-  imap_port: number
-  imap_use_ssl: boolean
-  imap_username: string | null
-  imap_password_set: boolean // write-only: значение никогда не возвращается
-  imap_folder: string
   poll_interval_seconds: number
   expected_interval_days: number
   notify_emails: string[] | null
@@ -28,12 +22,6 @@ export interface ErpSyncSettingsOut {
 
 export interface ErpSyncSettingsIn {
   enabled: boolean
-  imap_host: string | null
-  imap_port: number
-  imap_use_ssl: boolean
-  imap_username: string | null
-  imap_password?: string | null // write-only: omit в buildDto, если не введён
-  imap_folder: string
   poll_interval_seconds: number
   expected_interval_days: number
   notify_emails: string[] | null
@@ -41,11 +29,6 @@ export interface ErpSyncSettingsIn {
   mail_subject_filter: string | null
   mail_sender_filter: string | null
   mail_attachment_filter: string | null
-}
-
-export interface ErpSyncTestResult {
-  ok: boolean
-  error?: string | null
 }
 
 // ── Runs (история импортов) ─────────────────────────────────────────────────
@@ -124,10 +107,6 @@ export function fetchErpSyncSettings(): Promise<ErpSyncSettingsOut> {
 
 export function putErpSyncSettings(dto: ErpSyncSettingsIn): Promise<ErpSyncSettingsOut> {
   return api<ErpSyncSettingsOut>('/erp-sync/settings', { method: 'PUT', body: dto })
-}
-
-export function testErpSync(): Promise<ErpSyncTestResult> {
-  return api<ErpSyncTestResult>('/erp-sync/test', { method: 'POST' })
 }
 
 export function runErpSyncNow(): Promise<ErpSyncRunNowResponse> {

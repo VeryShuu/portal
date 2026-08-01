@@ -1,8 +1,12 @@
-"""Settings CRUD + IMAP-test для ERP-sync (клон helpdesk/settings.py).
+"""Settings CRUD для ERP-sync (фильтры писём + переключатели).
+
+IMAP-приёмка вынесена в общие настройки портала (ADR-048, вкладка Email).
+Здесь остались только per-module настройки: ``enabled`` / ``poll_*`` /
+``notify_emails`` и фильтры писём (``mail_subject_filter`` / ``mail_sender_filter``
+/ ``mail_attachment_filter``).
 
 Singleton-строка (``id=1``) уже создана миграцией 087 с defaults — поэтому
 ``GET`` всегда возвращает конфигурацию (``enabled=false`` по умолчанию).
-Пароль write-only: в ответе только ``imap_password_set: bool``.
 """
 
 from __future__ import annotations
@@ -12,11 +16,9 @@ from sqlalchemy import select
 
 from app.api.deps import AdminDep, DbDep, RedisDep, require_erp_sync_module
 from app.core.logging import get_logger
-from app.core.secret_crypto import decrypt_secret, encrypt_secret
 from app.models.erp_sync import ErpSyncSettings
-from app.schemas.erp_sync import ErpSyncSettingsIn, ErpSyncSettingsOut, ErpSyncTestResult
+from app.schemas.erp_sync import ErpSyncSettingsIn, ErpSyncSettingsOut
 from app.services.audit import push_audit_event
-from app.services.erp_sync.mailbox import probe_imap_connection
 
 logger = get_logger(__name__)
 
@@ -37,12 +39,6 @@ async def _load_singleton(db: DbDep) -> ErpSyncSettings:
 def _to_out(row: ErpSyncSettings) -> ErpSyncSettingsOut:
     return ErpSyncSettingsOut(
         enabled=row.enabled,
-        imap_host=row.imap_host,
-        imap_port=row.imap_port,
-        imap_use_ssl=row.imap_use_ssl,
-        imap_username=row.imap_username,
-        imap_password_set=bool(row.imap_password_enc),
-        imap_folder=row.imap_folder,
         poll_interval_seconds=row.poll_interval_seconds,
         expected_interval_days=row.expected_interval_days,
         notify_emails=row.notify_emails,
@@ -90,21 +86,14 @@ async def put_settings(
 
 
 def _apply_fields(row: ErpSyncSettings, p: ErpSyncSettingsIn) -> None:
-    """Перенести поля из payload в row. Пароль write-only.
+    """Перенести per-module поля из payload в row.
 
-    IMAP-блок целиком nullable (в отличие от helpdesk): модуль можно
-    сконфигурить с пустым ящиком и включить позже. ``poll_enabled=true`` без
-    настроенного IMAP — валидно на уровне схемы, но cron-задача сама вернёт
+    IMAP-приёмка теперь общая (ADR-048) — здесь только переключатели, расписание,
+    уведомления и фильтры писём. ``poll_enabled=true`` без настроенного общего
+    IMAP — валидно на уровне схемы, но cron-задача сама вернёт
     ``imap_not_configured`` (защита в run_erp_sync).
     """
     row.enabled = p.enabled
-    row.imap_host = (p.imap_host or "").strip() or None
-    row.imap_port = p.imap_port
-    row.imap_use_ssl = p.imap_use_ssl
-    row.imap_username = (p.imap_username or "").strip() or None
-    if p.imap_password:  # write-only: пусто/None = оставить прежний шифр
-        row.imap_password_enc = encrypt_secret(p.imap_password)
-    row.imap_folder = p.imap_folder
     row.poll_interval_seconds = p.poll_interval_seconds
     row.expected_interval_days = p.expected_interval_days
     row.notify_emails = p.notify_emails
@@ -112,34 +101,3 @@ def _apply_fields(row: ErpSyncSettings, p: ErpSyncSettingsIn) -> None:
     row.mail_subject_filter = (p.mail_subject_filter or "").strip() or None
     row.mail_sender_filter = (p.mail_sender_filter or "").strip() or None
     row.mail_attachment_filter = (p.mail_attachment_filter or "").strip() or None
-
-
-@router.post("/test", response_model=ErpSyncTestResult)
-async def test_connection(_admin: AdminDep, db: DbDep) -> ErpSyncTestResult:
-    """Проверка IMAP-подключения (login + select folder).
-
-    Маскируем исключения: aioimaplib в некоторых из них echo'ит LOGIN-команду
-    с паролем (грабля H-9 из helpdesk).
-    """
-    row = await _load_singleton(db)
-    if not row.imap_host or not row.imap_username or not row.imap_password_enc:
-        return ErpSyncTestResult(ok=False, error="IMAP не настроен (host/username/password).")
-    password = decrypt_secret(row.imap_password_enc)
-    try:
-        ok, detail = await probe_imap_connection(
-            host=row.imap_host,
-            port=row.imap_port,
-            username=row.imap_username,
-            password=password,
-            use_ssl=row.imap_use_ssl,
-            folder=row.imap_folder,
-        )
-    except Exception:
-        # H-9: не возвращаем str(exc) — может содержать пароль.
-        logger.exception("erp_sync.test_connection_failed")
-        return ErpSyncTestResult(ok=False, error="Ошибка подключения (см. логи сервера).")
-    if ok:
-        return ErpSyncTestResult(ok=True)
-    # detail из probe может содержать тип исключения — scrubb'им.
-    safe = detail if len(detail) < 200 else detail[:200] + "…"
-    return ErpSyncTestResult(ok=False, error=safe)

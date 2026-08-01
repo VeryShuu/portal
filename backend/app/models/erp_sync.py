@@ -131,16 +131,6 @@ class ErpSyncSettings(Base):
     enabled: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default=text("FALSE"), default=False
     )
-    imap_host: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    imap_port: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("993"))
-    imap_use_ssl: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, server_default=text("TRUE"), default=True
-    )
-    imap_username: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    imap_password_enc: Mapped[str | None] = mapped_column(Text, nullable=True)
-    imap_folder: Mapped[str] = mapped_column(
-        String(100), nullable=False, server_default=text("'INBOX'"), default="INBOX"
-    )
     poll_interval_seconds: Mapped[int] = mapped_column(
         Integer, nullable=False, server_default=text("900"), default=900
     )

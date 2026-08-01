@@ -425,6 +425,7 @@ tests/integration/test_migrations.py::test_migration_revision_round_trip[085]
 tests/integration/test_migrations.py::test_migration_revision_round_trip[086]
 tests/integration/test_migrations.py::test_migration_revision_round_trip[087]
 tests/integration/test_migrations.py::test_migration_revision_round_trip[088]
+tests/integration/test_migrations.py::test_migration_revision_round_trip[089]
 tests/integration/test_migrations.py::test_migrations_full_lifecycle
 tests/integration/test_migrations.py::test_migrations_stepwise_down_up
 tests/integration/test_migrations_nightly.py::test_alembic_upgrade_head_on_clean_container
@@ -932,6 +933,11 @@ tests/unit/test_branding.py::TestEmailSettingsModels::test_email_settings_in_pas
 tests/unit/test_branding.py::TestEmailSettingsModels::test_email_settings_in_port_validation
 tests/unit/test_branding.py::TestEmailSettingsModels::test_email_settings_to_out_masks_password
 tests/unit/test_branding.py::TestEmailSettingsModels::test_email_settings_to_out_no_password
+tests/unit/test_branding.py::TestEmailSettingsModels::test_imap_configured_requires_host_username_password
+tests/unit/test_branding.py::TestEmailSettingsModels::test_imap_defaults
+tests/unit/test_branding.py::TestEmailSettingsModels::test_imap_password_fernet_roundtrip
+tests/unit/test_branding.py::TestEmailSettingsModels::test_imap_password_keep_semantics_on_save
+tests/unit/test_branding.py::TestEmailSettingsModels::test_imap_to_out_masks_password
 tests/unit/test_branding.py::TestFindDeleteFiles::test_delete_files_no_error_on_missing
 tests/unit/test_branding.py::TestFindDeleteFiles::test_delete_files_removes_existing
 tests/unit/test_branding.py::TestFindDeleteFiles::test_find_file_picks_first_existing
@@ -1166,7 +1172,6 @@ tests/unit/test_erp_sync_parser.py::TestParseGender::test_english
 tests/unit/test_erp_sync_parser.py::TestParseGender::test_invalid
 tests/unit/test_erp_sync_parser.py::TestParseGender::test_russian_full
 tests/unit/test_erp_sync_schemas.py::TestErpSyncMiscSchemas::test_run_now_response
-tests/unit/test_erp_sync_schemas.py::TestErpSyncMiscSchemas::test_test_result
 tests/unit/test_erp_sync_schemas.py::TestErpSyncModuleGate::test_all_module_settings_drops_unknown_keys_silently
 tests/unit/test_erp_sync_schemas.py::TestErpSyncModuleGate::test_all_module_settings_includes_erp_sync
 tests/unit/test_erp_sync_schemas.py::TestErpSyncModuleGate::test_all_module_settings_parse_erp_sync_from_json
@@ -1179,7 +1184,7 @@ tests/unit/test_erp_sync_schemas.py::TestErpSyncRunSchemas::test_run_out_validat
 tests/unit/test_erp_sync_schemas.py::TestErpSyncSettingsSchemas::test_settings_in_defaults
 tests/unit/test_erp_sync_schemas.py::TestErpSyncSettingsSchemas::test_settings_in_poll_interval_bounds
 tests/unit/test_erp_sync_schemas.py::TestErpSyncSettingsSchemas::test_settings_out_defaults
-tests/unit/test_erp_sync_schemas.py::TestErpSyncSettingsSchemas::test_settings_out_no_plaintext_password_field
+tests/unit/test_erp_sync_schemas.py::TestErpSyncSettingsSchemas::test_settings_out_no_imap_fields
 tests/unit/test_feedback_schema.py::TestEnumValues::test_category_values
 tests/unit/test_feedback_schema.py::TestEnumValues::test_status_values
 tests/unit/test_feedback_schema.py::TestFeedbackInMessage::test_message_empty_default

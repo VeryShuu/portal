@@ -21,23 +21,13 @@ TRIGGERED_BY_VALUES = ("cron", "manual")
 
 
 class ErpSyncSettingsIn(BaseModel):
-    """Конфиг ящика, на который ERP шлёт отчёты. ``imap_password`` — write-only:
+    """Per-module настройки ERP-sync. IMAP-приёмка общая (ADR-048, вкладка Email);
 
-    * при **создании** (первый ``PUT`` с ``enabled=true``) — обязателен;
-    * при **обновлении** — опционален; ``None`` = «оставить прежний шифр».
-
-    В отличие от helpdesk, IMAP-блок целиком nullable: модуль может быть
-    выключен (``enabled=false``) с пустым ящиком, и только при включении
-    требуется валидная конфигурация (проверяется в API-слое, не в схеме).
+    здесь только переключатели, расписание, уведомления и фильтры писём
+    (``mail_*_filter``), по которым модуль отбирает «свои» письма из общего ящика.
     """
 
     enabled: bool = False
-    imap_host: str | None = Field(default=None, max_length=255)
-    imap_port: int = Field(ge=1, le=65535, default=993)
-    imap_use_ssl: bool = True
-    imap_username: str | None = Field(default=None, max_length=255)
-    imap_password: str | None = Field(default=None, min_length=1, max_length=512)
-    imap_folder: str = Field(min_length=1, max_length=100, default="INBOX")
     poll_interval_seconds: int = Field(ge=60, le=3600, default=900)
     expected_interval_days: int = Field(ge=1, le=30, default=4)
     notify_emails: list[str] | None = Field(default=None, max_length=100)
@@ -49,18 +39,9 @@ class ErpSyncSettingsIn(BaseModel):
 
 
 class ErpSyncSettingsOut(BaseModel):
-    """Текущие настройки. Пароль никогда не возвращается — только признак того,
-    что он задан. ``configured`` здесь всегда ``True`` (singleton-строка
-    создаётся миграцией 087 с defaults), поле оставлено для консистентности с
-    ``HelpdeskMailboxSettingsOut``."""
+    """Текущие per-module настройки ERP-sync. IMAP живёт во вкладке Email."""
 
     enabled: bool = False
-    imap_host: str | None = None
-    imap_port: int = 993
-    imap_use_ssl: bool = True
-    imap_username: str | None = None
-    imap_password_set: bool = False
-    imap_folder: str = "INBOX"
     poll_interval_seconds: int = 900
     expected_interval_days: int = 4
     notify_emails: list[str] | None = None
@@ -132,10 +113,3 @@ class ErpSyncRunNowResponse(BaseModel):
     )
     job_id: str | None = None
     run_id: int | None = None
-
-
-class ErpSyncTestResult(BaseModel):
-    """Результат проверки подключения к ящику (``POST /erp-sync/test``)."""
-
-    ok: bool
-    error: str | None = None

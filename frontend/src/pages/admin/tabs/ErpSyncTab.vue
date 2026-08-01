@@ -14,7 +14,6 @@
         <n-button
           type="primary"
           :loading="running"
-          :disabled="!mailboxConfigured"
           @click="onRunNow"
         >
           <template #icon>
@@ -59,13 +58,12 @@
 </template>
 
 <script setup lang="ts">
-import { computed, defineAsyncComponent, ref } from 'vue'
+import { defineAsyncComponent, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { NButton, NIcon, NUpload, useMessage, type UploadCustomRequestOptions } from 'naive-ui'
 import { CloudUploadOutline, SyncOutline } from '@vicons/ionicons5'
 import { parseApiError } from '../../../utils/parseApiError'
 import { importErpSyncFile, runErpSyncNow } from '../../../api/erpSync'
-import { useErpSyncSettingsQuery } from '../../../queries/erpSync'
 import { useQueryClient } from '@tanstack/vue-query'
 import { queryKeys } from '../../../queries/keys'
 
@@ -78,11 +76,6 @@ const ErpSyncSettings = defineAsyncComponent(
 )
 const ErpSyncRuns = defineAsyncComponent(
   () => import('../../../components/admin/ErpSyncRuns.vue'),
-)
-
-const { data: settings } = useErpSyncSettingsQuery()
-const mailboxConfigured = computed(
-  () => Boolean(settings.value?.imap_host && settings.value?.imap_username),
 )
 
 const running = ref(false)
