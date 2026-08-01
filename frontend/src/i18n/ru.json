@@ -35,7 +35,7 @@
     "viewAll": "Смотреть все",
     "createFirstBookmark": "Добавить первую закладку",
     "birthdays": {
-      "title": "Дни рождения на неделе"
+      "title": "Ближайшие дни рождения сотрудников"
     }
   },
   "auth": {
@@ -1446,7 +1446,9 @@
         "senderFilter": "Фильтр по отправителю",
         "attachmentFilter": "Фильтр по имени вложения",
         "notifyEmails": "Получатели отчётов (email, через запятую)",
-        "notifyEmailsPlaceholder": "Пусто = все администраторы"
+        "notifyEmailsPlaceholder": "Пусто = все администраторы",
+        "deleteAfterFetch": "Удалять письмо после импорта",
+        "deleteAfterFetchHint": "Удалять отработанные ERP-отчёты из общего ящика. Дедуп по Message-ID защищает от повторов и без удаления."
       },
       "actions": {
         "title": "Запуск импорта",
@@ -1472,6 +1474,7 @@
           "cron": "авто",
           "manual": "вручную"
         },
+        "triggeredBy": "Источник",
         "updated": "Обновлено",
         "problems": "Проблем",
         "attachment": "Файл"

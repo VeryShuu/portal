@@ -99,7 +99,7 @@ const columns = computed<DataTableColumns<ErpSyncRun>>(() => [
   {
     title: t('admin.erpSync.runs.status.label'),
     key: 'status',
-    width: 120,
+    width: 160,
     render: (row) =>
       h(
         NTag,
@@ -108,7 +108,7 @@ const columns = computed<DataTableColumns<ErpSyncRun>>(() => [
       ),
   },
   {
-    title: t('admin.erpSync.runs.trigger'),
+    title: t('admin.erpSync.runs.triggeredBy'),
     key: 'triggered_by',
     width: 100,
     render: (row) => t(`admin.erpSync.runs.trigger.${row.triggered_by}`),

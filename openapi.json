@@ -3999,6 +3999,11 @@
       "ErpSyncSettingsIn": {
         "description": "Per-module настройки ERP-sync. IMAP-приёмка общая (ADR-048, вкладка Email);\n\nздесь только переключатели, расписание, уведомления и фильтры писём\n(``mail_*_filter``), по которым модуль отбирает «свои» письма из общего ящика.",
         "properties": {
+          "delete_after_fetch": {
+            "default": false,
+            "title": "Delete After Fetch",
+            "type": "boolean"
+          },
           "enabled": {
             "default": false,
             "title": "Enabled",
@@ -4081,6 +4086,11 @@
       "ErpSyncSettingsOut": {
         "description": "Текущие per-module настройки ERP-sync. IMAP живёт во вкладке Email.",
         "properties": {
+          "delete_after_fetch": {
+            "default": false,
+            "title": "Delete After Fetch",
+            "type": "boolean"
+          },
           "enabled": {
             "default": false,
             "title": "Enabled",

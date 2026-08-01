@@ -113,9 +113,10 @@ class ErpSyncSettings(Base):
     Фильтрация почты (миграция 088) — для общего ящика, куда может сыпаться
     разная почта: ``mail_subject_filter`` / ``mail_sender_filter`` /
     ``mail_attachment_filter`` — опциональные CI-подстроки. Поллинг берёт
-    ``SEARCH UNSEEN`` и фильтрует post-fetch (IMAP ``SEARCH SUBJECT`` ненадёжен
-    с MIME/B-encoded кириллицей). Письма мимо фильтра **не** помечаются
-    ``\\Seen`` (не трогаем чужую почту на общем ящике).
+    ``SEARCH ALL`` и фильтрует post-fetch (IMAP ``SEARCH SUBJECT`` ненадёжен
+    с MIME/B-encoded кириллицей). Портал **не** ставит флаг ``\\Seen``: ящик
+    общий (его читают люди), а маркер «обработано» — дедуп по ``Message-ID``
+    в ``erp_sync_runs`` (UNIQUE). Письма мимо фильтра не трогаются.
     """
 
     __tablename__ = "erp_sync_settings"
@@ -145,6 +146,13 @@ class ErpSyncSettings(Base):
     mail_subject_filter: Mapped[str | None] = mapped_column(String(255), nullable=True)
     mail_sender_filter: Mapped[str | None] = mapped_column(String(255), nullable=True)
     mail_attachment_filter: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Миграция 090: удалять письма из общего ящика после успешного импорта
+    # (STORE +FLAGS \Deleted + EXPUNGE). Клон helpdesk-паттерна. Default FALSE —
+    # удаление необратимо, админ включает осознанно. Дедуп по message_id (UNIQUE
+    # в erp_sync_runs) защищает от повторной обработки и без удаления.
+    delete_after_fetch: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("FALSE"), default=False
+    )
     updated_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )

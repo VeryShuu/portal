@@ -2805,7 +2805,8 @@ cron-поллинг ящика отключены (404). Сам импорт (pi
   "poll_enabled": true,
   "mail_subject_filter": "Сотрудники",
   "mail_sender_filter": "erp@company.local",
-  "mail_attachment_filter": null
+  "mail_attachment_filter": null,
+  "delete_after_fetch": false
 }
 ```
 

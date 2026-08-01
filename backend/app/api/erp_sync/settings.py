@@ -46,6 +46,7 @@ def _to_out(row: ErpSyncSettings) -> ErpSyncSettingsOut:
         mail_subject_filter=row.mail_subject_filter,
         mail_sender_filter=row.mail_sender_filter,
         mail_attachment_filter=row.mail_attachment_filter,
+        delete_after_fetch=row.delete_after_fetch,
         updated_at=row.updated_at,
     )
 
@@ -101,3 +102,4 @@ def _apply_fields(row: ErpSyncSettings, p: ErpSyncSettingsIn) -> None:
     row.mail_subject_filter = (p.mail_subject_filter or "").strip() or None
     row.mail_sender_filter = (p.mail_sender_filter or "").strip() or None
     row.mail_attachment_filter = (p.mail_attachment_filter or "").strip() or None
+    row.delete_after_fetch = p.delete_after_fetch

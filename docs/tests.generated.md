@@ -426,6 +426,7 @@ tests/integration/test_migrations.py::test_migration_revision_round_trip[086]
 tests/integration/test_migrations.py::test_migration_revision_round_trip[087]
 tests/integration/test_migrations.py::test_migration_revision_round_trip[088]
 tests/integration/test_migrations.py::test_migration_revision_round_trip[089]
+tests/integration/test_migrations.py::test_migration_revision_round_trip[090]
 tests/integration/test_migrations.py::test_migrations_full_lifecycle
 tests/integration/test_migrations.py::test_migrations_stepwise_down_up
 tests/integration/test_migrations_nightly.py::test_alembic_upgrade_head_on_clean_container
@@ -1136,6 +1137,19 @@ tests/unit/test_erp_sync_mailbox_report.py::TestReportBodies::test_subject_with_
 tests/unit/test_erp_sync_mailbox_report.py::TestReportHelpers::test_fmt_value_date
 tests/unit/test_erp_sync_mailbox_report.py::TestReportHelpers::test_fmt_value_none
 tests/unit/test_erp_sync_mailbox_report.py::TestReportHelpers::test_gender_label
+tests/unit/test_erp_sync_mailbox_search.py::test_delete_messages_continues_on_store_error
+tests/unit/test_erp_sync_mailbox_search.py::test_delete_messages_empty_uids_noop
+tests/unit/test_erp_sync_mailbox_search.py::test_delete_messages_marks_and_expunges
+tests/unit/test_erp_sync_mailbox_search.py::test_delete_messages_no_password_returns_zero
+tests/unit/test_erp_sync_mailbox_search.py::test_process_uid_filtered_out_does_not_touch_mailbox
+tests/unit/test_erp_sync_mailbox_search.py::test_process_uid_matching_does_not_mark_seen
+tests/unit/test_erp_sync_mailbox_search.py::test_process_uid_no_attachment_does_not_mark_seen
+tests/unit/test_erp_sync_mailbox_search.py::test_search_all_empty_on_non_ok_status
+tests/unit/test_erp_sync_mailbox_search.py::test_search_all_empty_when_no_data
+tests/unit/test_erp_sync_mailbox_search.py::test_search_all_empty_when_no_messages
+tests/unit/test_erp_sync_mailbox_search.py::test_search_all_handles_bytes_and_str[1 2 3_0]
+tests/unit/test_erp_sync_mailbox_search.py::test_search_all_handles_bytes_and_str[1 2 3_1]
+tests/unit/test_erp_sync_mailbox_search.py::test_search_all_returns_all_uids
 tests/unit/test_erp_sync_parser.py::TestDetectFormat::test_csv
 tests/unit/test_erp_sync_parser.py::TestDetectFormat::test_path_with_dirs
 tests/unit/test_erp_sync_parser.py::TestDetectFormat::test_tsv

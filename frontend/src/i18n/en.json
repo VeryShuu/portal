@@ -35,7 +35,7 @@
     "viewAll": "View all",
     "createFirstBookmark": "Add your first bookmark",
     "birthdays": {
-      "title": "Birthdays this week"
+      "title": "Upcoming employee birthdays"
     }
   },
   "auth": {
@@ -1446,7 +1446,9 @@
         "senderFilter": "Sender filter",
         "attachmentFilter": "Attachment name filter",
         "notifyEmails": "Report recipients (emails, comma-separated)",
-        "notifyEmailsPlaceholder": "Empty = all admins"
+        "notifyEmailsPlaceholder": "Empty = all admins",
+        "deleteAfterFetch": "Delete message after import",
+        "deleteAfterFetchHint": "Remove processed ERP reports from the shared mailbox. Message-ID dedup prevents reprocessing even without deletion."
       },
       "actions": {
         "title": "Run import",
@@ -1472,6 +1474,7 @@
           "cron": "auto",
           "manual": "manual"
         },
+        "triggeredBy": "Source",
         "updated": "Updated",
         "problems": "Issues",
         "attachment": "File"

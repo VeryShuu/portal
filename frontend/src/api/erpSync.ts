@@ -17,6 +17,7 @@ export interface ErpSyncSettingsOut {
   mail_subject_filter: string | null
   mail_sender_filter: string | null
   mail_attachment_filter: string | null
+  delete_after_fetch: boolean
   updated_at: string | null
 }
 
@@ -29,6 +30,7 @@ export interface ErpSyncSettingsIn {
   mail_subject_filter: string | null
   mail_sender_filter: string | null
   mail_attachment_filter: string | null
+  delete_after_fetch: boolean
 }
 
 // ── Runs (история импортов) ─────────────────────────────────────────────────

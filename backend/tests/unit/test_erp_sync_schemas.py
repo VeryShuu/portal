@@ -71,6 +71,8 @@ class TestErpSyncSettingsSchemas:
         assert s.mail_subject_filter is None
         assert s.mail_sender_filter is None
         assert s.mail_attachment_filter is None
+        # Миграция 090: удаление писем после импорта (default off).
+        assert s.delete_after_fetch is False
 
     def test_settings_in_poll_interval_bounds(self):
         from pydantic import ValidationError
@@ -94,6 +96,8 @@ class TestErpSyncSettingsSchemas:
         # IMAP-полей в Out больше нет (переехали во вкладку Email).
         assert not hasattr(s, "imap_host")
         assert not hasattr(s, "imap_password_set")
+        # Миграция 090: удаление писем после импорта (default off).
+        assert s.delete_after_fetch is False
 
     def test_settings_out_no_imap_fields(self):
         """ADR-048: IMAP вынесен в общие настройки — в ErpSyncSettingsOut
