@@ -34,13 +34,33 @@ async def list_events(
     params: dict[str, Any],
     limit: int,
     offset: int,
+    cursor_sql: str | None = None,
+    cursor_params: dict[str, Any] | None = None,
 ) -> Sequence[RowMapping]:
+    """Список событий с пагинацией.
+
+    cursor_sql / cursor_params — keyset-условие (audit M2). Если передано —
+    добавляется в WHERE (после существующих фильтров), а OFFSET игнорируется
+    (курсор и OFFSET взаимоисключающи; caller передаёт что-то одно). Иначе —
+    классический OFFSET-путь (backward-compat).
+    """
     # f-string собирает только статический WHERE-фрагмент; данные через params.
+    # cursor_sql тоже статическая строка (tuple-comparison), переменные в bind-params.
+    suffix = ""
+    if cursor_sql:
+        connector = " AND " if where else " WHERE "
+        where = f"{where}{connector}{cursor_sql}"
+        params = {**params, **(cursor_params or {})}
+        suffix = "\n        LIMIT :limit"
+    else:
+        suffix = "\n        LIMIT :limit OFFSET :offset"
     sql = f"""{_SELECT_COLUMNS}{where}
-        ORDER BY created_at DESC, id DESC
-        LIMIT :limit OFFSET :offset
-        """  # nosec B608 — where статический; данные в params.
-    res = await db.execute(text(sql), {**params, "limit": limit, "offset": offset})
+        ORDER BY created_at DESC, id DESC{suffix}
+        """  # nosec B608 — where/cursor_sql статические; данные в params.
+    bind: dict[str, Any] = {**params, "limit": limit}
+    if not cursor_sql:
+        bind["offset"] = offset
+    res = await db.execute(text(sql), bind)
     return res.mappings().all()
 
 

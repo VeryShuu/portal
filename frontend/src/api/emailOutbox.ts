@@ -39,6 +39,10 @@ export interface EmailOutboxListOut {
   limit: number
   offset: number
   counts_30d: Record<string, number>
+  /** audit M2: opaque keyset-курсор (см. AuditListOut.next_cursor). */
+  next_cursor?: string | null
+  /** audit M2: true когда возможно есть ещё строки. */
+  has_more?: boolean
 }
 
 export interface EmailOutboxFilters {
@@ -48,6 +52,8 @@ export interface EmailOutboxFilters {
   q?: string
   date_from?: string
   date_to?: string
+  /** audit M2: opaque keyset-курсор (приоритет над offset). */
+  cursor?: string
   limit?: number
   offset?: number
 }

@@ -29,18 +29,36 @@ async def list_outbox(
     params: dict[str, Any],
     limit: int,
     offset: int,
+    cursor_sql: str | None = None,
+    cursor_params: dict[str, Any] | None = None,
 ) -> Sequence[RowMapping]:
-    # where собирается из статического allow-list в роуте; данные в params.
+    """Список outbox-записей с пагинацией.
+
+    cursor_sql / cursor_params — keyset-условие (audit M2). Если передано —
+    добавляется в WHERE, OFFSET игнорируется. Иначе — backward-compat OFFSET.
+    """
+    # where/cursor_sql собираются из статического allow-list; данные в params.
+    effective_where = where
+    bind: dict[str, Any] = {**params}
+    if cursor_sql:
+        connector = " AND " if where else " WHERE "
+        effective_where = f"{where}{connector}{cursor_sql}"
+        bind.update(cursor_params or {})
+        pagination = "LIMIT :limit"
+    else:
+        bind["offset"] = offset
+        pagination = "LIMIT :limit OFFSET :offset"
+    bind["limit"] = limit
     sql = f"""
         SELECT id, kind, to_email, subject, status, attempts, max_attempts,
                next_attempt_at, last_error, last_error_type, last_error_class,
                related_resource_type, related_resource_id,
                created_at, updated_at, sent_at
-        FROM email_outbox{where}
+        FROM email_outbox{effective_where}
         ORDER BY created_at DESC, id DESC
-        LIMIT :limit OFFSET :offset
-        """  # nosec B608 — where статический; данные в params.
-    res = await db.execute(text(sql), {**params, "limit": limit, "offset": offset})
+        {pagination}
+        """  # nosec B608 — where/cursor_sql статические; данные в params.
+    res = await db.execute(text(sql), bind)
     return res.mappings().all()
 
 

@@ -9,6 +9,21 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 
+def _extract_emails(enqueue_mock, batch_mock=None) -> list[str]:
+    """Собирает to_email из single- + batch-вызовов (audit M3).
+
+    batch(session, items) — items позиционный (args[1]); OutboxItem.to_email —
+    тот же email, что kwarg ``to_email`` single-вызова.
+    """
+    emails = [c.kwargs.get("to_email") for c in enqueue_mock.call_args_list]
+    if batch_mock is not None:
+        for c in batch_mock.call_args_list:
+            items = c.kwargs.get("items") or (c.args[1] if len(c.args) > 1 else [])
+            for item in items:
+                emails.append(item.to_email)
+    return emails
+
+
 def _make_booking(
     room_email: str | None = "room@x.com",
     invited_emails: list[str] | None = None,
@@ -412,20 +427,22 @@ class TestDispatchMeetingEmailsUpdated:
     @pytest.fixture
     def mock_db_and_enqueue(self):
         enqueue_mock = AsyncMock()
+        batch_mock = AsyncMock(return_value=[])
         session_cm, db_mock = _make_session_cm()
 
         with (
             patch("app.core.database.AsyncSessionLocal", return_value=session_cm),
             patch("app.services.email_outbox.enqueue_outbox_email", enqueue_mock),
+            patch("app.services.email_outbox.enqueue_outbox_email_batch", batch_mock),
         ):
-            yield enqueue_mock, db_mock
+            yield (enqueue_mock, batch_mock), db_mock
 
     async def test_updated_with_added_users(self, mock_db_and_enqueue):
         from app.schemas.meetings import InvitedUser
         from app.services.meetings.bookings_service import BookingDiff
         from app.services.meetings.notifications import dispatch_meeting_emails
 
-        enqueue_mock, _ = mock_db_and_enqueue
+        (enqueue_mock, batch_mock), _ = mock_db_and_enqueue
         booking = _make_booking()
         new_user = InvitedUser(
             user_id=str(uuid.uuid4()), full_name="New User", email="new@test.com"
@@ -434,7 +451,7 @@ class TestDispatchMeetingEmailsUpdated:
 
         await dispatch_meeting_emails(booking=booking, action="updated", diff=diff)
 
-        to_emails = [c.kwargs.get("to_email") for c in enqueue_mock.call_args_list]
+        to_emails = _extract_emails(enqueue_mock, batch_mock)
         assert "new@test.com" in to_emails
 
     async def test_updated_with_removed_users(self, mock_db_and_enqueue):
@@ -442,7 +459,7 @@ class TestDispatchMeetingEmailsUpdated:
         from app.services.meetings.bookings_service import BookingDiff
         from app.services.meetings.notifications import dispatch_meeting_emails
 
-        enqueue_mock, _ = mock_db_and_enqueue
+        (enqueue_mock, batch_mock), _ = mock_db_and_enqueue
         booking = _make_booking()
         removed_user = InvitedUser(
             user_id=str(uuid.uuid4()), full_name="Removed", email="removed@test.com"
@@ -451,7 +468,7 @@ class TestDispatchMeetingEmailsUpdated:
 
         await dispatch_meeting_emails(booking=booking, action="updated", diff=diff)
 
-        to_emails = [c.kwargs.get("to_email") for c in enqueue_mock.call_args_list]
+        to_emails = _extract_emails(enqueue_mock, batch_mock)
         assert "removed@test.com" in to_emails
 
     async def test_updated_with_unchanged_users_non_participant_changed(self, mock_db_and_enqueue):
@@ -459,7 +476,7 @@ class TestDispatchMeetingEmailsUpdated:
         from app.services.meetings.bookings_service import BookingDiff
         from app.services.meetings.notifications import dispatch_meeting_emails
 
-        enqueue_mock, _ = mock_db_and_enqueue
+        (enqueue_mock, batch_mock), _ = mock_db_and_enqueue
         booking = _make_booking()
         unchanged_user = InvitedUser(
             user_id=str(uuid.uuid4()), full_name="Unchanged", email="unchanged@test.com"
@@ -468,48 +485,48 @@ class TestDispatchMeetingEmailsUpdated:
 
         await dispatch_meeting_emails(booking=booking, action="updated", diff=diff)
 
-        to_emails = [c.kwargs.get("to_email") for c in enqueue_mock.call_args_list]
+        to_emails = _extract_emails(enqueue_mock, batch_mock)
         assert "unchanged@test.com" in to_emails
 
     async def test_updated_with_old_series_uid(self, mock_db_and_enqueue):
         from app.services.meetings.bookings_service import BookingDiff
         from app.services.meetings.notifications import dispatch_meeting_emails
 
-        enqueue_mock, _ = mock_db_and_enqueue
+        (enqueue_mock, batch_mock), _ = mock_db_and_enqueue
         series_id = uuid.uuid4()
         booking = _make_booking(series_id=series_id, invited_emails=["user@test.com"])
         diff = BookingDiff(old_series_uid=f"series-{series_id}@portal.local")
 
         await dispatch_meeting_emails(booking=booking, action="updated", diff=diff)
 
-        assert enqueue_mock.call_count >= 1
+        assert enqueue_mock.call_count + batch_mock.call_count >= 1
 
     async def test_updated_diff_none_only_sends_to_organizer_and_room(self, mock_db_and_enqueue):
         from app.services.meetings.notifications import dispatch_meeting_emails
 
-        enqueue_mock, _ = mock_db_and_enqueue
+        (enqueue_mock, batch_mock), _ = mock_db_and_enqueue
         booking = _make_booking(room_email="room@x.com")
 
         await dispatch_meeting_emails(booking=booking, action="updated", diff=None)
 
-        to_emails = [c.kwargs.get("to_email") for c in enqueue_mock.call_args_list]
+        to_emails = _extract_emails(enqueue_mock, batch_mock)
         assert "room@x.com" in to_emails
 
     async def test_created_with_invited_users(self, mock_db_and_enqueue):
         from app.services.meetings.notifications import dispatch_meeting_emails
 
-        enqueue_mock, _ = mock_db_and_enqueue
+        (enqueue_mock, batch_mock), _ = mock_db_and_enqueue
         booking = _make_booking(invited_emails=["invited@test.com"])
 
         await dispatch_meeting_emails(booking=booking, action="created")
 
-        to_emails = [c.kwargs.get("to_email") for c in enqueue_mock.call_args_list]
+        to_emails = _extract_emails(enqueue_mock, batch_mock)
         assert "invited@test.com" in to_emails
 
     async def test_organizer_notified_when_not_invited(self, mock_db_and_enqueue):
         from app.services.meetings.notifications import dispatch_meeting_emails
 
-        enqueue_mock, db_mock = mock_db_and_enqueue
+        (enqueue_mock, batch_mock), db_mock = mock_db_and_enqueue
         organizer = SimpleNamespace(
             email="organizer@test.com", full_name="Organizer", notify_email=True
         )
@@ -519,5 +536,5 @@ class TestDispatchMeetingEmailsUpdated:
 
         await dispatch_meeting_emails(booking=booking, action="created")
 
-        to_emails = [c.kwargs.get("to_email") for c in enqueue_mock.call_args_list]
+        to_emails = _extract_emails(enqueue_mock, batch_mock)
         assert "organizer@test.com" in to_emails

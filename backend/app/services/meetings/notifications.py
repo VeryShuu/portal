@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Literal
 
 from app.core.logging import get_logger
+from app.services.email_outbox import OutboxItem
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -49,8 +50,12 @@ async def _enqueue_all_recipients(
 ) -> None:
     """Send *method* to every invited user, the organizer and the rooms."""
     ical_bytes = ical(method)
-    for user in list(booking.invited_users or []):
-        await _enqueue(session, booking, user, method, ical_bytes)
+    # Batch: один INSERT на всех invited вместо N round-trip (audit M3).
+    invited_emails = [
+        (u.get("email", "") if isinstance(u, dict) else getattr(u, "email", "")) or ""
+        for u in (booking.invited_users or [])
+    ]
+    await _enqueue_many(session, booking, invited_emails, method, ical_bytes)
     await _enqueue_organizer(session, booking, organizer_user, method, ical_bytes, already_notified)
     await _enqueue_room_emails(session, booking, method, ical_bytes, already_notified)
 
@@ -87,8 +92,8 @@ async def _enqueue_series_relink(
     """
     cancel_old = ical_with_uid("CANCEL", old_series_uid)
     cancel_notified: set[str] = set(invited_emails)
-    for user in list(booking.invited_users or []):
-        await _enqueue(session, booking, user, "CANCEL", cancel_old)
+    # Batch CANCEL для всех invited одним INSERT (audit M3).
+    await _enqueue_many(session, booking, list(invited_emails), "CANCEL", cancel_old)
     await _enqueue_organizer(
         session, booking, organizer_user, "CANCEL", cancel_old, cancel_notified
     )
@@ -96,14 +101,8 @@ async def _enqueue_series_relink(
 
     req_bytes = ical("REQUEST")
     req_notified: set[str] = set(invited_emails)
-    for user in list(booking.invited_users or []):
-        await _enqueue(
-            session,
-            booking,
-            user if isinstance(user, dict) else user.model_dump(),
-            "REQUEST",
-            req_bytes,
-        )
+    # Batch REQUEST для всех invited одним INSERT (audit M3).
+    await _enqueue_many(session, booking, list(invited_emails), "REQUEST", req_bytes)
     await _enqueue_organizer(session, booking, organizer_user, "REQUEST", req_bytes, req_notified)
     await _enqueue_room_emails(session, booking, "REQUEST", req_bytes, req_notified)
 
@@ -133,18 +132,19 @@ async def _enqueue_updated_with_diff(
 
     if diff.added_users:
         ical_bytes = ical("REQUEST")
-        for invited in diff.added_users:
-            await _enqueue(session, booking, invited.model_dump(), "REQUEST", ical_bytes)
+        # Batch: один INSERT на всех добавленных (audit M3).
+        added_emails = [getattr(invited, "email", "") or "" for invited in diff.added_users]
+        await _enqueue_many(session, booking, added_emails, "REQUEST", ical_bytes)
 
     if diff.removed_users:
         cancel_bytes = ical("CANCEL")
-        for invited in diff.removed_users:
-            await _enqueue(session, booking, invited.model_dump(), "CANCEL", cancel_bytes)
+        removed_emails = [getattr(invited, "email", "") or "" for invited in diff.removed_users]
+        await _enqueue_many(session, booking, removed_emails, "CANCEL", cancel_bytes)
 
     if diff.non_participant_changed and diff.unchanged_users:
         req_bytes = ical("REQUEST")
-        for invited in diff.unchanged_users:
-            await _enqueue(session, booking, invited.model_dump(), "REQUEST", req_bytes)
+        unchanged_emails = [getattr(invited, "email", "") or "" for invited in diff.unchanged_users]
+        await _enqueue_many(session, booking, unchanged_emails, "REQUEST", req_bytes)
 
     await _enqueue_organizer_and_rooms(session, booking, organizer_user, ical, already_notified)
 
@@ -332,6 +332,85 @@ async def _enqueue(
             "meetings.email.enqueue_failed",
             error=str(exc),
             to=to_email,
+            booking_id=str(booking.id),
+        )
+
+
+def _build_outbox_item(
+    booking: MeetingBooking,
+    to_email: str,
+    method: str,
+    subject: str,
+    html_body: str,
+    ical_bytes: bytes,
+) -> OutboxItem | None:
+    """Build one outbox item; returns None if email is empty (skip).
+
+    subject/html_body передаются уже построенными — для batch'а они считаются
+    один раз на method (они зависят только от booking+method, не от получателя).
+    """
+    if not to_email:
+        return None
+    from app.services.email_outbox import KIND_MEETING, encode_ical_bytes
+
+    return OutboxItem(
+        kind=KIND_MEETING,
+        to_email=to_email,
+        subject=subject,
+        body_html=html_body,
+        payload={"method": method, "ical_b64": encode_ical_bytes(ical_bytes)},
+        related_resource_type="meeting_booking",
+        related_resource_id=booking.id,
+    )
+
+
+async def _enqueue_many(
+    session: AsyncSession,
+    booking: MeetingBooking,
+    emails: list[str],
+    method: str,
+    ical_bytes: bytes,
+) -> None:
+    """Batch-INSERT нескольких получателей одним запросом (audit M3).
+
+    Заменяет цикл ``for user in invited: await _enqueue(...)`` (N round-trip)
+    одним multi-row INSERT. subject/html_body строятся один раз — они одинаковы
+    для всех получателей одного method. Пустые/дубли emails пропускаются
+    (семантика прежнего цикла). Ошибки логируются на уровне batch'а (как и в
+    ``_enqueue``), транзакция не прерывается — caller сам решает commit.
+    """
+    if not emails:
+        return
+    # Дедупликация с сохранением порядка (раньше дубли могли попасть в INSERT,
+    # но приводили к нескольким письмам — см. characterization-тесты на дедуп).
+    seen: set[str] = set()
+    unique_emails: list[str] = []
+    for email in emails:
+        if email and email not in seen:
+            seen.add(email)
+            unique_emails.append(email)
+    if not unique_emails:
+        return
+    try:
+        from app.services.email_outbox import enqueue_outbox_email_batch
+
+        subject = _build_subject(booking, method)
+        html_body = _build_html_body(booking, method)
+        items = [
+            item
+            for item in (
+                _build_outbox_item(booking, email, method, subject, html_body, ical_bytes)
+                for email in unique_emails
+            )
+            if item is not None
+        ]
+        if items:
+            await enqueue_outbox_email_batch(session, items)
+    except Exception as exc:
+        logger.exception(
+            "meetings.email.enqueue_batch_failed",
+            error=str(exc),
+            recipients=len(unique_emails),
             booking_id=str(booking.id),
         )
 
