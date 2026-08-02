@@ -9,10 +9,12 @@ from __future__ import annotations
 
 import csv
 import io
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Query
 from fastapi.responses import Response, StreamingResponse
 
 from app.api.deps import AdminDep, DbDep
@@ -104,6 +106,172 @@ async def get_dashboard(
     )
 
 
+# ─── Tabular datasets (top-N lists) ─────────────────────────────────────────
+#
+# 6 list-endpoints (top-articles/news/files/links, departments, stale-content)
+# повторяют идентичный паттерн: fetch rows → map to Out-model. Реестр ниже —
+# единый источник истины (repo_fn + mapper + export columns), а эндпоинты и
+# /export-обработчик — тонкий wiring. Добавление нового dataset = 1 запись в
+# ``_DATASETS`` + 1 endpoint-функция (для URL); маппинг/экспорт подтягиваются
+# автоматически.
+
+RowMapping = Any  # SQLAlchemy RowMapping — доступ по ключу r["..."]
+RowMapper = Callable[[RowMapping], Any]
+
+
+@dataclass(frozen=True, slots=True)
+class DatasetSpec:
+    """Спецификация табличного dataset'а для list-endpoint'а и экспорта.
+
+    ``repo_fn`` принимает (db, *, cutoff, limit) и возвращает sequence RowMapping.
+    ``mapper`` превращает RowMapping в Out-модель (валидация + int-коерцция).
+    ``export_columns`` — список (data_key, ru_label) для CSV/XLSX-экспорта.
+    ``has_limit`` — некоторые dataset'ы (departments) не принимают limit.
+    """
+
+    repo_fn: Callable[..., Awaitable[Any]]
+    mapper: RowMapper
+    export_columns: list[tuple[str, str]]
+    has_limit: bool = True
+
+
+def _top_article(r: RowMapping) -> TopArticleOut:
+    return TopArticleOut(
+        id=r["id"],
+        title=r["title"],
+        section_title=r["section_title"],
+        view_count=int(r["view_count"] or 0),
+        published_at=r["published_at"],
+        updated_at=r["updated_at"],
+    )
+
+
+def _top_news(r: RowMapping) -> TopNewsOut:
+    return TopNewsOut(
+        id=r["id"],
+        title=r["title"],
+        view_count=int(r["view_count"] or 0),
+        published_at=r["published_at"],
+    )
+
+
+def _top_file(r: RowMapping) -> TopFileOut:
+    return TopFileOut(
+        resource_id=r["resource_id"],
+        title=r["title"] or "",
+        downloads=int(r["downloads"]),
+        last_download=r["last_download"],
+    )
+
+
+def _top_link(r: RowMapping) -> TopLinkOut:
+    return TopLinkOut(
+        resource_id=r["resource_id"],
+        title=r["title"] or "",
+        clicks=int(r["clicks"]),
+        unique_users=int(r["unique_users"]),
+        last_click=r["last_click"],
+    )
+
+
+def _department(r: RowMapping) -> DepartmentOut:
+    return DepartmentOut(
+        department=r["department"],
+        total_users=int(r["total_users"]),
+        active_users=int(r["active_users"]),
+        events=int(r["events"]),
+    )
+
+
+def _stale_content(r: RowMapping) -> StaleContentItem:
+    return StaleContentItem(
+        kind=r["kind"],
+        id=r["id"],
+        title=r["title"],
+        view_count=int(r["view_count"] or 0),
+        updated_at=r["updated_at"],
+    )
+
+
+_DATASETS: dict[str, DatasetSpec] = {
+    "top-articles": DatasetSpec(
+        repo_fn=repo.fetch_top_articles,
+        mapper=_top_article,
+        export_columns=[
+            ("title", "Название"),
+            ("section_title", "Раздел"),
+            ("view_count", "Просмотры"),
+            ("updated_at", "Обновлено"),
+        ],
+    ),
+    "top-news": DatasetSpec(
+        repo_fn=repo.fetch_top_news,
+        mapper=_top_news,
+        export_columns=[
+            ("title", "Название"),
+            ("view_count", "Просмотры"),
+            ("published_at", "Опубликовано"),
+        ],
+    ),
+    "top-files": DatasetSpec(
+        repo_fn=repo.fetch_top_files,
+        mapper=_top_file,
+        export_columns=[
+            ("title", "Название"),
+            ("downloads", "Скачиваний"),
+            ("last_download", "Последнее скачивание"),
+        ],
+    ),
+    "top-links": DatasetSpec(
+        repo_fn=repo.fetch_top_links,
+        mapper=_top_link,
+        export_columns=[
+            ("title", "Название"),
+            ("clicks", "Переходы"),
+            ("unique_users", "Уникальных"),
+            ("last_click", "Последний переход"),
+        ],
+    ),
+    "departments": DatasetSpec(
+        repo_fn=repo.fetch_department_activity,
+        mapper=_department,
+        has_limit=False,
+        export_columns=[
+            ("department", "Отдел"),
+            ("total_users", "Всего сотрудников"),
+            ("active_users", "Активных"),
+            ("events", "Событий"),
+        ],
+    ),
+    "stale-content": DatasetSpec(
+        repo_fn=repo.fetch_stale_content,
+        mapper=_stale_content,
+        export_columns=[
+            ("kind", "Тип"),
+            ("title", "Название"),
+            ("view_count", "Просмотры"),
+            ("updated_at", "Обновлено"),
+        ],
+    ),
+}
+
+
+async def _fetch_dataset(db: Any, name: str, days: int, limit: int) -> list[RowMapping]:
+    """Вызывает repo_fn датасета с единым контрактом (cutoff [+ limit])."""
+    spec = _DATASETS[name]
+    cutoff = _cutoff(days)
+    if spec.has_limit:
+        rows = await spec.repo_fn(db, cutoff=cutoff, limit=limit)
+    else:
+        rows = await spec.repo_fn(db, cutoff=cutoff)
+    return list(rows)
+
+
+def _export_pattern() -> str:
+    """Regexp для Query-валидации датасетов в /export (источник истины — реестр)."""
+    return "^(" + "|".join(_DATASETS) + ")$"
+
+
 @router.get("/top-articles", summary="Топ статей KB по просмотрам")
 async def top_articles(
     _admin: AdminDep,
@@ -111,18 +279,8 @@ async def top_articles(
     days: int = Query(30, ge=1, le=365),
     limit: int = Query(20, ge=1, le=100),
 ) -> list[TopArticleOut]:
-    rows = await repo.fetch_top_articles(db, cutoff=_cutoff(days), limit=limit)
-    return [
-        TopArticleOut(
-            id=r["id"],
-            title=r["title"],
-            section_title=r["section_title"],
-            view_count=int(r["view_count"] or 0),
-            published_at=r["published_at"],
-            updated_at=r["updated_at"],
-        )
-        for r in rows
-    ]
+    rows = await _fetch_dataset(db, "top-articles", days, limit)
+    return [_top_article(r) for r in rows]
 
 
 @router.get("/top-news", summary="Топ новостей по просмотрам")
@@ -132,16 +290,8 @@ async def top_news(
     days: int = Query(30, ge=1, le=365),
     limit: int = Query(20, ge=1, le=100),
 ) -> list[TopNewsOut]:
-    rows = await repo.fetch_top_news(db, cutoff=_cutoff(days), limit=limit)
-    return [
-        TopNewsOut(
-            id=r["id"],
-            title=r["title"],
-            view_count=int(r["view_count"] or 0),
-            published_at=r["published_at"],
-        )
-        for r in rows
-    ]
+    rows = await _fetch_dataset(db, "top-news", days, limit)
+    return [_top_news(r) for r in rows]
 
 
 @router.get("/top-files", summary="Топ файлов по скачиваниям (audit_log)")
@@ -151,16 +301,8 @@ async def top_files(
     days: int = Query(30, ge=1, le=365),
     limit: int = Query(20, ge=1, le=100),
 ) -> list[TopFileOut]:
-    rows = await repo.fetch_top_files(db, cutoff=_cutoff(days), limit=limit)
-    return [
-        TopFileOut(
-            resource_id=r["resource_id"],
-            title=r["title"] or "",
-            downloads=int(r["downloads"]),
-            last_download=r["last_download"],
-        )
-        for r in rows
-    ]
+    rows = await _fetch_dataset(db, "top-files", days, limit)
+    return [_top_file(r) for r in rows]
 
 
 @router.get("/top-links", summary="Топ ярлыков по переходам (audit_log)")
@@ -170,17 +312,8 @@ async def top_links(
     days: int = Query(30, ge=1, le=365),
     limit: int = Query(20, ge=1, le=100),
 ) -> list[TopLinkOut]:
-    rows = await repo.fetch_top_links(db, cutoff=_cutoff(days), limit=limit)
-    return [
-        TopLinkOut(
-            resource_id=r["resource_id"],
-            title=r["title"] or "",
-            clicks=int(r["clicks"]),
-            unique_users=int(r["unique_users"]),
-            last_click=r["last_click"],
-        )
-        for r in rows
-    ]
+    rows = await _fetch_dataset(db, "top-links", days, limit)
+    return [_top_link(r) for r in rows]
 
 
 @router.get("/departments", summary="Активность по отделам")
@@ -189,16 +322,8 @@ async def departments(
     db: DbDep,
     days: int = Query(30, ge=1, le=365),
 ) -> list[DepartmentOut]:
-    rows = await repo.fetch_department_activity(db, cutoff=_cutoff(days))
-    return [
-        DepartmentOut(
-            department=r["department"],
-            total_users=int(r["total_users"]),
-            active_users=int(r["active_users"]),
-            events=int(r["events"]),
-        )
-        for r in rows
-    ]
+    rows = await _fetch_dataset(db, "departments", days, limit=0)
+    return [_department(r) for r in rows]
 
 
 @router.get("/stale-content", summary="Застойный контент (0 просмотров / давно не обновлялся)")
@@ -208,17 +333,8 @@ async def stale_content(
     days: int = Query(90, ge=1, le=3650),
     limit: int = Query(20, ge=1, le=100),
 ) -> list[StaleContentItem]:
-    rows = await repo.fetch_stale_content(db, cutoff=_cutoff(days), limit=limit)
-    return [
-        StaleContentItem(
-            kind=r["kind"],
-            id=r["id"],
-            title=r["title"],
-            view_count=int(r["view_count"] or 0),
-            updated_at=r["updated_at"],
-        )
-        for r in rows
-    ]
+    rows = await _fetch_dataset(db, "stale-content", days, limit)
+    return [_stale_content(r) for r in rows]
 
 
 @router.get("/feedback", summary="Статистика обращений (feedback)")
@@ -252,61 +368,12 @@ async def resource_trend(
     return [DailyPoint(day=r[0], count=int(r[1])) for r in rows]
 
 
-_EXPORT_COLUMNS: dict[str, list[tuple[str, str]]] = {
-    "top-articles": [
-        ("title", "Название"),
-        ("section_title", "Раздел"),
-        ("view_count", "Просмотры"),
-        ("updated_at", "Обновлено"),
-    ],
-    "top-news": [
-        ("title", "Название"),
-        ("view_count", "Просмотры"),
-        ("published_at", "Опубликовано"),
-    ],
-    "top-files": [
-        ("title", "Название"),
-        ("downloads", "Скачиваний"),
-        ("last_download", "Последнее скачивание"),
-    ],
-    "top-links": [
-        ("title", "Название"),
-        ("clicks", "Переходы"),
-        ("unique_users", "Уникальных"),
-        ("last_click", "Последний переход"),
-    ],
-    "departments": [
-        ("department", "Отдел"),
-        ("total_users", "Всего сотрудников"),
-        ("active_users", "Активных"),
-        ("events", "Событий"),
-    ],
-    "stale-content": [
-        ("kind", "Тип"),
-        ("title", "Название"),
-        ("view_count", "Просмотры"),
-        ("updated_at", "Обновлено"),
-    ],
-}
+# ─── Export (CSV/XLSX) ───────────────────────────────────────────────────────
 
 
 async def _export_rows(db: Any, dataset: str, days: int, limit: int) -> list[dict[str, Any]]:
-    cutoff = _cutoff(days)
-    if dataset == "top-articles":
-        rows = await repo.fetch_top_articles(db, cutoff=cutoff, limit=limit)
-    elif dataset == "top-news":
-        rows = await repo.fetch_top_news(db, cutoff=cutoff, limit=limit)
-    elif dataset == "top-files":
-        rows = await repo.fetch_top_files(db, cutoff=cutoff, limit=limit)
-    elif dataset == "top-links":
-        rows = await repo.fetch_top_links(db, cutoff=cutoff, limit=limit)
-    elif dataset == "departments":
-        rows = await repo.fetch_department_activity(db, cutoff=cutoff)
-    elif dataset == "stale-content":
-        rows = await repo.fetch_stale_content(db, cutoff=cutoff, limit=limit)
-    else:  # pragma: no cover - guarded by route validation
-        raise HTTPException(status_code=400, detail="unknown dataset")
-    columns = _EXPORT_COLUMNS[dataset]
+    rows = await _fetch_dataset(db, dataset, days, limit)
+    columns = _DATASETS[dataset].export_columns
     out: list[dict[str, Any]] = []
     for r in rows:
         item: dict[str, Any] = {}
@@ -329,15 +396,12 @@ def _cell(value: Any) -> str:
 async def export_dataset(
     _admin: AdminDep,
     db: DbDep,
-    dataset: str = Query(
-        ...,
-        pattern="^(top-articles|top-news|top-files|top-links|departments|stale-content)$",
-    ),
+    dataset: str = Query(..., pattern=_export_pattern()),
     fmt: str = Query("csv", alias="format", pattern="^(csv|xlsx)$"),
     days: int = Query(30, ge=1, le=3650),
     limit: int = Query(100, ge=1, le=1000),
 ) -> Response:
-    columns = _EXPORT_COLUMNS[dataset]
+    columns = _DATASETS[dataset].export_columns
     rows = await _export_rows(db, dataset, days, limit)
     headers = [label for _key, label in columns]
     keys = [key for key, _label in columns]

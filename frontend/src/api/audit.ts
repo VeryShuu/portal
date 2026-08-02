@@ -19,6 +19,11 @@ export interface AuditListOut {
   total: number
   limit: number
   offset: number
+  /** audit M2: opaque курсор последнего элемента страницы (для keyset next-page).
+   * null когда страница последняя (или включён OFFSET-режим без курсора). */
+  next_cursor?: string | null
+  /** audit M2: true когда возможно есть ещё строки (страница заполнена полностью). */
+  has_more?: boolean
 }
 
 export interface AuditFilters {
@@ -32,6 +37,9 @@ export interface AuditFilters {
   /** audit [H3]: глубокий поиск по metadata::text (Seq Scan, медленно на больших объёмах).
    * По умолчанию off — q ищет только по user_email/resource_title (btree+trgm). */
   extended_search?: boolean
+  /** audit M2: opaque keyset-курсор (приоритет над offset). Передаётся как ?cursor=;
+   * страница N+1 использует next_cursor из ответа страницы N. */
+  cursor?: string
   limit?: number
   offset?: number
 }

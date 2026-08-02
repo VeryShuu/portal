@@ -9,6 +9,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, HTTPException, Query, status
 
 from app.api import email_outbox_repo as repo
+from app.api._cursor_pagination import cursor_clause, decode_cursor, encode_cursor
 from app.api.deps import AdminDep, DbDep
 from app.core.logging import get_logger
 from app.services.email_outbox import cancel as outbox_cancel
@@ -59,6 +60,7 @@ async def list_outbox(
     date_from: Annotated[datetime | None, Query()] = None,
     date_to: Annotated[datetime | None, Query()] = None,
     q: Annotated[str | None, Query(max_length=200)] = None,
+    cursor: Annotated[str | None, Query(max_length=512)] = None,
     limit: int = Query(50, ge=1, le=_MAX_LIMIT),
     offset: int = Query(0, ge=0),
 ) -> dict:
@@ -90,15 +92,40 @@ async def list_outbox(
     where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
 
     total = await repo.count_outbox(db, where=where, params=params)
-    rows = await repo.list_outbox(db, where=where, params=params, limit=limit, offset=offset)
+
+    # audit M2: cursor → keyset (O(log n) по idx_email_outbox_created_id),
+    # иначе backward-compat OFFSET. cursor и offset взаимоисключающи.
+    cursor_sql: str | None = None
+    cursor_params: dict[str, Any] | None = None
+    decoded = decode_cursor(cursor) if cursor else None
+    if decoded is not None:
+        cursor_sql, cursor_params = cursor_clause(decoded)
+
+    rows = await repo.list_outbox(
+        db,
+        where=where,
+        params=params,
+        limit=limit,
+        offset=offset,
+        cursor_sql=cursor_sql,
+        cursor_params=cursor_params,
+    )
     counts = await repo.counts_by_status_last_30d(db)
 
+    # next_cursor для следующей страницы (id — UUID, хранится как str в dict).
+    items = [_row_to_dict(r) for r in rows]
+    next_cursor: str | None = None
+    if len(items) >= limit and items:
+        next_cursor = encode_cursor(rows[-1]["created_at"], items[-1]["id"])
+
     return {
-        "items": [_row_to_dict(r) for r in rows],
+        "items": items,
         "total": int(total),
         "limit": limit,
         "offset": offset,
         "counts_30d": counts,
+        "next_cursor": next_cursor,
+        "has_more": len(items) >= limit,
     }
 
 

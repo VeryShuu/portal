@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import base64
 import uuid
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
@@ -92,6 +93,80 @@ async def enqueue_outbox_email(
         to=to_email,
     )
     return new_id
+
+
+@dataclass(frozen=True, slots=True)
+class OutboxItem:
+    """Одна строка для batch-INSERT. Семантически идентичен kwargs enqueue_outbox_email."""
+
+    kind: str
+    to_email: str
+    subject: str
+    body_html: str = ""
+    body_text: str | None = None
+    payload: dict[str, Any] | None = None
+    related_resource_type: str | None = None
+    related_resource_id: uuid.UUID | None = None
+    created_by_user_id: uuid.UUID | None = None
+    max_attempts: int = OUTBOX_MAX_ATTEMPTS
+
+
+async def enqueue_outbox_email_batch(
+    session: AsyncSession,
+    items: list[OutboxItem],
+) -> list[uuid.UUID]:
+    """Создаёт несколько PENDING-записей одним multi-row INSERT (audit M3).
+
+    Эквивалентен N вызовам ``enqueue_outbox_email``, но с одним round-trip к БД —
+    критично для крупных встреч/серий (20 участников × 10 инстансов = 200 строк).
+    Outbox-инвариант сохранён: commit по-прежнему на caller'е, INSERT идёт в той
+    же сессии/транзакции. Пустой список → no-op (возвращает []).
+    """
+    if not items:
+        return []
+    rows = await session.execute(
+        text(
+            """
+            INSERT INTO email_outbox (
+                kind, to_email, subject, body_html, body_text, payload,
+                related_resource_type, related_resource_id, created_by_user_id,
+                max_attempts
+            )
+            SELECT
+                i.kind, i.to_email, i.subject, i.body_html, i.body_text,
+                CAST(i.payload AS JSONB),
+                i.rtype, i.rid, i.uid, i.max_attempts
+            FROM unnest(
+                :kinds, :emails, :subjects, :htmls, :texts, :payloads,
+                :rtypes, :rids, :uids, :max_attempts
+            ) AS i(
+                kind text, to_email text, subject text, body_html text,
+                body_text text, payload text, rtype text, rid uuid, uid uuid,
+                max_attempts int
+            )
+            RETURNING id
+            """
+        ),
+        {
+            "kinds": [it.kind for it in items],
+            "emails": [it.to_email for it in items],
+            "subjects": [it.subject for it in items],
+            "htmls": [it.body_html for it in items],
+            "texts": [it.body_text for it in items],
+            "payloads": [_json_dumps(it.payload or {}) for it in items],
+            "rtypes": [it.related_resource_type for it in items],
+            "rids": [it.related_resource_id for it in items],
+            "uids": [it.created_by_user_id for it in items],
+            "max_attempts": [it.max_attempts for it in items],
+        },
+    )
+    ids = [r for r in rows.scalars().all()]
+    logger.info(
+        "email_outbox.enqueued_batch",
+        count=len(ids),
+        kinds=sorted({it.kind for it in items}),
+    )
+    return ids
 
 
 async def claim_pending(session: AsyncSession, *, limit: int = 20) -> list[dict]:

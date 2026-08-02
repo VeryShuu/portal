@@ -106,7 +106,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, h, shallowRef } from 'vue'
+import { computed, reactive, h, shallowRef, watch } from 'vue'
 import { BASE_URL } from '../../../api'
 import { ofetch } from 'ofetch'
 import { useI18n } from 'vue-i18n'
@@ -116,6 +116,7 @@ import {
   type AuditEvent, type AuditFilters,
 } from '../../../api/audit'
 import { useAuditEventTypesQuery, useAuditQueueQuery, useAuditEventsQuery } from '../../../queries/admin'
+import { useCursorPager } from '../../../composables/useCursorPager'
 import { parseApiError } from '../../../utils/parseApiError'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -140,32 +141,42 @@ const auditFilters = reactive<AuditFilters>({
   extended_search: false,
 })
 
-const paginationState = reactive({ page: 1, pageSize: 50 })
+// audit M2: гибридная page→cursor пагинация (useCursorPager). sequential
+// forward/back перебор — keyset (O(log n) по idx_audit_log_created_id);
+// прыжок через страницы — fallback на OFFSET (корректно, медленно).
+const cursorPager = useCursorPager(50)
 
-const committedParams = shallowRef<AuditFilters & { limit: number; offset: number }>({
-  limit: 50,
-  offset: 0,
-})
+// Активные фильтры меняют query-key → авто-refetch; cursor/buildParams обновляется
+// при смене страницы. committedParams реактивно собирает filters + pager-params.
+const committedFilters = shallowRef<AuditFilters>({})
+
+const committedParams = computed<AuditFilters & { limit: number; offset: number; cursor?: string }>(() => ({
+  ...committedFilters.value,
+  ...cursorPager.buildParams(),
+}))
 
 const { data: auditData, isLoading: loadingAudit } = useAuditEventsQuery(committedParams)
+
+// audit M2: сохраняем next_cursor из ответа для следующей страницы.
+watch(() => auditData.value, (data) => {
+  if (data) cursorPager.consumeResponse(data.next_cursor)
+})
 
 const auditEvents = computed(() => auditData.value?.items ?? [])
 const auditTotal = computed(() => auditData.value?.total ?? null)
 
 const auditPagination = computed(() => ({
-  page: paginationState.page,
-  pageSize: paginationState.pageSize,
+  page: cursorPager.pager.page,
+  pageSize: cursorPager.pager.pageSize,
   itemCount: auditData.value?.total ?? 0,
   pageSizes: [25, 50, 100, 200],
   showSizePicker: true,
   onChange: (page: number) => {
-    paginationState.page = page
-    committedParams.value = { ...committedParams.value, offset: (page - 1) * paginationState.pageSize }
+    cursorPager.goToPage(page)
   },
   onUpdatePageSize: (size: number) => {
-    paginationState.page = 1
-    paginationState.pageSize = size
-    committedParams.value = { ...committedParams.value, limit: size, offset: 0 }
+    cursorPager.setPageSize(size)
+    reloadAudit()
   },
 }))
 
@@ -254,12 +265,10 @@ function reloadAudit() {
     message.error(t('admin.audit.filters.userIdInvalid'))
     return
   }
-  paginationState.page = 1
-  committedParams.value = {
-    ..._activeAuditFilters(),
-    limit: paginationState.pageSize,
-    offset: 0,
-  }
+  // audit M2: смена фильтров сбрасывает кеш курсоров (старые cursor'ы невалидны
+  // для нового набора данных) и возвращается на 1-ю страницу (OFFSET-путь).
+  cursorPager.reset()
+  committedFilters.value = _activeAuditFilters()
 }
 
 function resetAuditFilters() {

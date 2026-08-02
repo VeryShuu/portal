@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/vue-query'
-import type { MaybeRef } from 'vue'
+import { computed, toValue, type MaybeRef, type MaybeRefOrGetter } from 'vue'
 import { queryKeys } from './keys'
 import {
   type HelpdeskAgentIn,
@@ -187,11 +187,17 @@ export function useReplyMyTicketMutation(id: string) {
 
 // ── Tickets: agent inbox ───────────────────────────────────────────────────
 
-export function useAgentInboxQuery(params: HelpdeskInboxParams = {}) {
+export function useAgentInboxQuery(
+  params: MaybeRefOrGetter<HelpdeskInboxParams> = {},
+  options: { enabled?: MaybeRefOrGetter<boolean> } = {},
+) {
   return useQuery({
-    queryKey: queryKeys.helpdesk.inbox(params as Record<string, unknown>),
-    queryFn: () => fetchAgentTickets(params),
+    queryKey: computed(() => queryKeys.helpdesk.inbox(toValue(params) as Record<string, unknown>)),
+    queryFn: () => fetchAgentTickets(toValue(params)),
     staleTime: 0,
+    enabled: typeof options.enabled === 'function'
+      ? options.enabled
+      : () => toValue(options.enabled ?? true),
   })
 }
 

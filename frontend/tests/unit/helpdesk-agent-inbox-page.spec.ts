@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
 import { createPinia, setActivePinia } from 'pinia'
+import { VueQueryPlugin, QueryClient } from '@tanstack/vue-query'
 
 const ru = {
   helpdesk: {
@@ -126,9 +127,19 @@ function makeTicket(over: Partial<{ id: string; subject: string; status: string 
   return { id: 't1', number: 42, subject: 'VPN', status: 'new', last_activity_at: '2026-07-17T00:00:00Z', ...over }
 }
 
+function makeQueryClient() {
+  return new QueryClient({
+    defaultOptions: {
+      queries: { retry: false, gcTime: 0, staleTime: 0 },
+      mutations: { retry: false },
+    },
+  })
+}
+
 function mountPage() {
+  // Свежий QueryClient на каждый mount — изоляция кэша между тестами.
   return mount(HelpdeskAgentInboxPage, {
-    global: { plugins: [i18n], stubs },
+    global: { plugins: [i18n, [VueQueryPlugin, { queryClient: makeQueryClient() }]], stubs },
   })
 }
 

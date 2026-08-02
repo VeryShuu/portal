@@ -1,5 +1,5 @@
 <!-- AUTO-GENERATED — do not edit manually. Run: cd backend && python -m scripts.generate_api_contracts_doc --output ../docs/api-contracts.generated.md -->
-<!-- Generated: 2026-07-31 10:15 UTC -->
+<!-- Generated: 2026-08-02 07:32 UTC -->
 
 # API Contracts (auto-generated)
 
@@ -60,6 +60,7 @@
 | `date_from` | query | `any` |  |  |
 | `date_to` | query | `any` |  |  |
 | `q` | query | `any` |  |  |
+| `cursor` | query | `any` |  |  |
 | `limit` | query | `integer` |  |  |
 | `offset` | query | `integer` |  |  |
 | `portal_session` | cookie | `any` |  |  |
@@ -357,6 +358,7 @@
 | `date_to` | query | `any` |  |  |
 | `q` | query | `any` |  |  |
 | `extended_search` | query | `boolean` |  |  |
+| `cursor` | query | `any` |  |  |
 | `limit` | query | `integer` |  |  |
 | `offset` | query | `integer` |  |  |
 | `portal_session` | cookie | `any` |  |  |
@@ -863,7 +865,8 @@ Content-Type: `application/json` — schema: `BrandingSettings`
 
 **Получить настройки email**
 
-Возвращает текущие настройки SMTP. Пароль не возвращается, только флаг password_set.
+Возвращает текущие настройки SMTP + общего IMAP. Пароли не возвращаются,
+только флаги password_set / imap_password_set.
 
 **Parameters**
 
@@ -882,9 +885,11 @@ Content-Type: `application/json` — schema: `BrandingSettings`
 
 **Сохранить настройки email**
 
-Сохраняет настройки SMTP в /data/branding/email-settings.json.
-Переопределяет значения из .env — они больше не используются для отправки.
-Если password передан как null или '***' — существующий пароль не меняется.
+Сохраняет SMTP + общий IMAP в /data/branding/email-settings.json.
+
+Пароли (SMTP, IMAP) — write-only с keep/clear/update семантикой:
+``null``/``'***'`` = оставить прежний, ``''`` = очистить, иное = обновить.
+IMAP-пароль хранится Fernet-шифром, SMTP — plaintext (ADR-048).
 
 **Parameters**
 
@@ -905,12 +910,40 @@ Content-Type: `application/json` — schema: `EmailSettingsIn`
 | `password` | any |  | Pass null or '***' to keep existing password; pass '' to clear; pass new value to update |
 | `use_tls` | boolean |  |  |
 | `use_starttls` | boolean |  |  |
+| `imap_host` | string |  |  |
+| `imap_port` | integer |  |  |
+| `imap_use_ssl` | boolean |  |  |
+| `imap_username` | string |  |  |
+| `imap_password` | any |  |  |
+| `imap_folder` | string |  |  |
 
 **Responses**
 
 | Status | Description | Schema |
 |--------|-------------|--------|
 | 200 | Successful Response | `EmailSettingsOut` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `POST /api/v1/admin/email-settings/imap/test`
+
+**Проверить подключение общего IMAP-ящика**
+
+Проверяет подключение к общему IMAP-ящику (login + select folder).
+
+Использует сохранённые настройки. Возвращает ``{"ok": bool, "detail": str}``.
+``detail`` маскируется (aioimaplib может echo'ить LOGIN с паролем — грабля H-9).
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | object |
 | 422 | Validation Error | `HTTPValidationError` |
 
 ### `POST /api/v1/admin/email-settings/test`
@@ -1270,6 +1303,7 @@ Content-Type: `application/json` — schema: `UpdateEntryRequest`
 | `date_from` | query | `any` |  |  |
 | `date_to` | query | `any` |  |  |
 | `q` | query | `any` |  |  |
+| `cursor` | query | `any` |  |  |
 | `limit` | query | `integer` |  |  |
 | `offset` | query | `integer` |  |  |
 | `portal_session` | cookie | `any` |  |  |
@@ -1395,8 +1429,8 @@ Content-Type: `multipart/form-data` — schema: `Body_import_file_api_v1_erp_syn
 Поставить mailbox-poll в ARQ-очередь (немедленно, не ждать cron).
 
 Импорт выполнится в воркере с ``triggered_by='manual'``. ``poll_enabled``
-НЕ проверяется (админ явно хочет «забрать сейчас»), но IMAP должен быть
-настроен — задача вернёт ``imap_not_configured``, если нет.
+НЕ проверяется (админ явно хочет «забрать сейчас»), но общий IMAP должен
+быть настроен (ADR-048) — задача вернёт ``imap_not_configured``, если нет.
 
 **Parameters**
 
@@ -1487,12 +1521,6 @@ Content-Type: `application/json` — schema: `ErpSyncSettingsIn`
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `enabled` | boolean |  |  |
-| `imap_host` | any |  |  |
-| `imap_port` | integer |  |  |
-| `imap_use_ssl` | boolean |  |  |
-| `imap_username` | any |  |  |
-| `imap_password` | any |  |  |
-| `imap_folder` | string |  |  |
 | `poll_interval_seconds` | integer |  |  |
 | `expected_interval_days` | integer |  |  |
 | `notify_emails` | any |  |  |
@@ -1500,34 +1528,13 @@ Content-Type: `application/json` — schema: `ErpSyncSettingsIn`
 | `mail_subject_filter` | any |  |  |
 | `mail_sender_filter` | any |  |  |
 | `mail_attachment_filter` | any |  |  |
+| `delete_after_fetch` | boolean |  |  |
 
 **Responses**
 
 | Status | Description | Schema |
 |--------|-------------|--------|
 | 200 | Successful Response | `ErpSyncSettingsOut` |
-| 422 | Validation Error | `HTTPValidationError` |
-
-### `POST /api/v1/erp-sync/test`
-
-**Test Connection**
-
-Проверка IMAP-подключения (login + select folder).
-
-Маскируем исключения: aioimaplib в некоторых из них echo'ит LOGIN-команду
-с паролем (грабля H-9 из helpdesk).
-
-**Parameters**
-
-| Name | In | Type | Required | Description |
-|------|----|------|----------|-------------|
-| `portal_session` | cookie | `any` |  |  |
-
-**Responses**
-
-| Status | Description | Schema |
-|--------|-------------|--------|
-| 200 | Successful Response | `ErpSyncTestResult` |
 | 422 | Validation Error | `HTTPValidationError` |
 
 ---
@@ -8502,6 +8509,29 @@ Content-Type: `application/json` — schema: `PatchRoleRequest`
 | Status | Description | Schema |
 |--------|-------------|--------|
 | 200 | Successful Response | `UserPublic` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `GET /api/v1/users/birthdays`
+
+**Именинники текущей и следующей недели**
+
+Дни рождения сотрудников на текущей и следующей неделе (Пн–Вс × 2).
+
+Виджет на главной. Виден всем авторизованным (``birth_date`` — публичное поле
+пользователя, как в справочнике ``/staff``). Без пагинации: именинников двух
+недель физически мало. Сортировка — хронологически по дате рождения.
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | `BirthdayList` |
 | 422 | Validation Error | `HTTPValidationError` |
 
 ### `GET /api/v1/users/departments`

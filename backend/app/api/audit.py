@@ -12,6 +12,7 @@ from fastapi import APIRouter, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
 
 from app.api import audit_repo
+from app.api._cursor_pagination import cursor_clause, decode_cursor, encode_cursor
 from app.api.deps import AdminDep, DbDep, RedisDep
 from app.core.logging import get_logger
 from app.services.audit import AUDIT_QUEUE_KEY
@@ -92,6 +93,7 @@ async def list_audit_events(
     date_to: Annotated[datetime | None, Query()] = None,
     q: Annotated[str | None, Query(max_length=200)] = None,
     extended_search: Annotated[bool, Query()] = False,
+    cursor: Annotated[str | None, Query(max_length=512)] = None,
     limit: int = Query(50, ge=1, le=_MAX_LIMIT),
     offset: int = Query(0, ge=0),
 ) -> dict[str, Any]:
@@ -108,7 +110,31 @@ async def list_audit_events(
 
     total = await audit_repo.count_events(db, where=where, params=params)
 
-    rows = await audit_repo.list_events(db, where=where, params=params, limit=limit, offset=offset)
+    # audit M2: если передан cursor — keyset-путь (O(log n) по idx_audit_log_created_id),
+    # иначе backward-compat OFFSET. cursor и offset взаимоисключающи.
+    cursor_sql: str | None = None
+    cursor_params: dict[str, Any] | None = None
+    decoded = decode_cursor(cursor) if cursor else None
+    if decoded is not None:
+        # audit_log.id — BIGSERIAL; cursor хранит id как строку, приводим к int
+        # для корректного tuple-comparison с integer-колонкой.
+        cursor_sql, cursor_params = cursor_clause(decoded)
+        try:
+            cursor_params = {**cursor_params, "cursor_id": int(decoded.id)}
+        except ValueError:
+            # Мусорный id в курсоре (не число) → fallback в OFFSET.
+            cursor_sql = None
+            cursor_params = None
+
+    rows = await audit_repo.list_events(
+        db,
+        where=where,
+        params=params,
+        limit=limit,
+        offset=offset,
+        cursor_sql=cursor_sql,
+        cursor_params=cursor_params,
+    )
 
     items = []
     for r in rows:
@@ -128,7 +154,21 @@ async def list_audit_events(
             }
         )
 
-    return {"items": items, "total": int(total), "limit": limit, "offset": offset}
+    # next_cursor = курсор последнего элемента текущей страницы (для следующей).
+    # has_more = страница заполнена полностью (возможно есть ещё).
+    next_cursor: str | None = None
+    if len(items) >= limit and items:
+        last = items[-1]
+        next_cursor = encode_cursor(rows[-1]["created_at"], last["id"])
+
+    return {
+        "items": items,
+        "total": int(total),
+        "limit": limit,
+        "offset": offset,
+        "next_cursor": next_cursor,
+        "has_more": len(items) >= limit,
+    }
 
 
 @router.get("/event-types", summary="Уникальные типы событий (admin)")

@@ -37,6 +37,9 @@ tests/integration/test_api_smoke.py::test_health_always_ok
 tests/integration/test_api_smoke.py::test_news_draft_status_forbidden_for_reader
 tests/integration/test_api_smoke.py::test_news_list_unauthenticated_401
 tests/integration/test_api_smoke.py::test_news_list_with_filters
+tests/integration/test_audit_keyset_cursor.py::test_cursor_page_matches_offset_page
+tests/integration/test_audit_keyset_cursor.py::test_full_traversal_no_gaps_no_duplicates
+tests/integration/test_audit_keyset_cursor.py::test_keyset_uses_index_not_seq_scan
 tests/integration/test_audit_partitions_real.py::test_audit_insert_routes_to_current_partition
 tests/integration/test_audit_partitions_real.py::test_audit_log_table_is_partitioned
 tests/integration/test_audit_partitions_real.py::test_initial_partitions_created
@@ -427,6 +430,7 @@ tests/integration/test_migrations.py::test_migration_revision_round_trip[087]
 tests/integration/test_migrations.py::test_migration_revision_round_trip[088]
 tests/integration/test_migrations.py::test_migration_revision_round_trip[089]
 tests/integration/test_migrations.py::test_migration_revision_round_trip[090]
+tests/integration/test_migrations.py::test_migration_revision_round_trip[091]
 tests/integration/test_migrations.py::test_migrations_full_lifecycle
 tests/integration/test_migrations.py::test_migrations_stepwise_down_up
 tests/integration/test_migrations_nightly.py::test_alembic_upgrade_head_on_clean_container
@@ -681,6 +685,13 @@ tests/unit/test_analytics.py::test_top_links_query_filters_links_visited_event
 tests/unit/test_analytics.py::test_top_links_requires_admin_role
 tests/unit/test_analytics.py::test_top_links_response_schema
 tests/unit/test_analytics.py::test_top_news_response_schema
+tests/unit/test_analytics_registry.py::test_departments_has_no_limit_others_have
+tests/unit/test_analytics_registry.py::test_every_dataset_has_mapper_and_columns
+tests/unit/test_analytics_registry.py::test_export_pattern_matches_exactly_registry_keys
+tests/unit/test_analytics_registry.py::test_export_rows_maps_datetime_to_isoformat
+tests/unit/test_analytics_registry.py::test_fetch_dataset_with_limit_passes_limit_to_repo
+tests/unit/test_analytics_registry.py::test_fetch_dataset_without_limit_omits_limit
+tests/unit/test_analytics_registry.py::test_registry_covers_six_tabular_datasets
 tests/unit/test_arq_log_filter.py::test_arq_banner_kept
 tests/unit/test_arq_log_filter.py::test_empty_message_kept
 tests/unit/test_arq_log_filter.py::test_helpdesk_poll_cron_filtered
@@ -1065,6 +1076,12 @@ tests/unit/test_core_utils.py::TestStreamUploadToPath::test_creates_parent_dirs
 tests/unit/test_core_utils.py::TestStreamUploadToPath::test_no_mime_check_when_allowed_mimes_is_none
 tests/unit/test_core_utils.py::TestStreamUploadToPath::test_success_returns_size_and_mime
 tests/unit/test_core_utils.py::TestStreamUploadToPath::test_uses_content_type_when_magic_unavailable
+tests/unit/test_cursor_pagination.py::test_cursor_clause_returns_tuple_comparison
+tests/unit/test_cursor_pagination.py::test_cursor_is_opaque_no_leading_structure
+tests/unit/test_cursor_pagination.py::test_decode_invalid_cursor_returns_none_for_fallback
+tests/unit/test_cursor_pagination.py::test_different_timestamps_produce_different_cursors
+tests/unit/test_cursor_pagination.py::test_encode_decode_roundtrip_int_id
+tests/unit/test_cursor_pagination.py::test_encode_decode_roundtrip_uuid_id
 tests/unit/test_deps_group_sync.py::test_db_failure_rolls_back_and_keeps_old_groups
 tests/unit/test_deps_group_sync.py::test_groups_changed_persists_and_invalidates
 tests/unit/test_deps_group_sync.py::test_groups_unchanged_is_noop_even_if_reordered
@@ -2937,17 +2954,6 @@ tests/unit/test_meetings_audit_unit.py::TestPushMeetingsAudit::test_db_failure_i
 tests/unit/test_meetings_audit_unit.py::TestPushMeetingsAudit::test_falls_back_to_client_host_when_no_forwarded_header
 tests/unit/test_meetings_audit_unit.py::TestPushMeetingsAudit::test_no_request_no_user
 tests/unit/test_meetings_audit_unit.py::TestPushMeetingsAudit::test_writes_row_with_forwarded_ip_and_user_metadata
-tests/unit/test_meetings_bookings_helpers.py::test_compute_diff_conservation_and_disjoint
-tests/unit/test_meetings_bookings_helpers.py::test_compute_diff_filters_all_malformed_entries
-tests/unit/test_meetings_bookings_helpers.py::test_compute_diff_non_participant_changed_passthrough
-tests/unit/test_meetings_bookings_helpers.py::test_compute_diff_reflexive_all_unchanged
-tests/unit/test_meetings_bookings_helpers.py::test_compute_diff_symmetric_direction_swap
-tests/unit/test_meetings_bookings_helpers.py::test_date_range_converts_non_utc_timezone_to_utc
-tests/unit/test_meetings_bookings_helpers.py::test_date_range_handles_dst_timezone
-tests/unit/test_meetings_bookings_helpers.py::test_date_range_returns_full_day_bounds_in_utc
-tests/unit/test_meetings_bookings_helpers.py::test_to_utc_assigns_utc_to_naive_datetime
-tests/unit/test_meetings_bookings_helpers.py::test_to_utc_converts_non_utc_aware_to_utc
-tests/unit/test_meetings_bookings_helpers.py::test_to_utc_keeps_aware_datetime_unchanged_in_utc
 tests/unit/test_meetings_bookings_limit.py::TestBookingsListLimitCap::test_default_and_bounds
 tests/unit/test_meetings_bookings_limit.py::TestBookingsListLimitCap::test_my_endpoint_cap_unchanged
 tests/unit/test_meetings_guard.py::TestMeetingsGuard::test_disabled_returns_404
@@ -3018,6 +3024,12 @@ tests/unit/test_meetings_notifications_extra.py::TestGetFromEmail::test_uses_cac
 tests/unit/test_meetings_notifications_extra.py::TestLoadOrganizer::test_creator_id_fetches_user
 tests/unit/test_meetings_notifications_extra.py::TestLoadOrganizer::test_exception_returns_none
 tests/unit/test_meetings_notifications_extra.py::TestLoadOrganizer::test_no_creator_id_returns_none
+tests/unit/test_meetings_outbox_batch.py::TestBatchInsertOnCreated::test_50_recipients_single_batch_insert
+tests/unit/test_meetings_outbox_batch.py::TestBatchInsertOnCreated::test_cancelled_uses_cancel_method_in_batch
+tests/unit/test_meetings_outbox_batch.py::TestBatchInsertOnCreated::test_duplicate_emails_deduplicated_in_batch
+tests/unit/test_meetings_outbox_batch.py::TestBatchInsertOnCreated::test_zero_recipients_no_batch_call
+tests/unit/test_meetings_outbox_batch.py::test_enqueue_outbox_email_batch_empty_list_is_noop
+tests/unit/test_meetings_outbox_batch.py::test_enqueue_outbox_email_batch_returns_uuids_from_returning
 tests/unit/test_meetings_recurrence.py::TestBuildRruleString::test_biweekly_interval_2
 tests/unit/test_meetings_recurrence.py::TestBuildRruleString::test_daily
 tests/unit/test_meetings_recurrence.py::TestBuildRruleString::test_invalid_tz_falls_back_to_utc
@@ -4735,6 +4747,7 @@ tests/unit/test_worker_tasks.py::TestRefreshCustomMetrics::test_no_pool_skips_db
 tests/unit/test_worker_tasks.py::TestRefreshCustomMetrics::test_photo_storage_calculated
 tests/unit/test_worker_tasks.py::TestRefreshCustomMetrics::test_returns_snapshot_dict
 tests/unit/test_worker_tasks.py::TestRefreshCustomMetrics::test_saves_snapshot_to_redis
+(pytest collection failed; check backend venv)
 ```
 
 ## Frontend Vitest (tests/unit/*.spec.ts)
@@ -4758,6 +4771,8 @@ birthdays-widget.spec.ts
 bookmarks-tab.spec.ts
 branding-store.spec.ts
 cc-recipient-picker.spec.ts
+cov-audit3-useLinkColumns.spec.ts
+cov-audit3-useLinkForm.spec.ts
 cov-core-api-index.spec.ts
 cov-core-api-photos.spec.ts
 cov-core-editor-extensions.spec.ts

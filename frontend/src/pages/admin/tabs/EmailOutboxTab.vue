@@ -181,7 +181,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, h, reactive, ref, shallowRef } from 'vue'
+import { computed, h, reactive, ref, shallowRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   NButton,
@@ -206,6 +206,7 @@ import {
   useCancelEmailOutboxMutation,
 } from '../../../queries/admin'
 import { parseApiError } from '../../../utils/parseApiError'
+import { useCursorPager } from '../../../composables/useCursorPager'
 
 const { t } = useI18n()
 const message = useMessage()
@@ -233,12 +234,23 @@ const filters = reactive<EmailOutboxFilters>({
   kind: '',
   to_email: '',
   q: '',
-  limit: 50,
-  offset: 0,
 })
 
-const committedParams = shallowRef<EmailOutboxFilters>({ limit: 50, offset: 0 })
+// audit M2: гибридная page→cursor пагинация (useCursorPager). Email-outbox —
+// быстрорастущая таблица, keyset критичен на больших объёмах.
+const cursorPager = useCursorPager(50)
+const committedFilters = shallowRef<EmailOutboxFilters>({})
+
+const committedParams = computed<EmailOutboxFilters>(() => ({
+  ...committedFilters.value,
+  ...cursorPager.buildParams(),
+}))
 const { data: listData, isLoading: loading } = useEmailOutboxQuery(committedParams)
+
+// audit M2: сохраняем next_cursor из ответа для следующей страницы.
+watch(() => listData.value, (data) => {
+  if (data) cursorPager.consumeResponse(data.next_cursor)
+})
 
 const items = computed<EmailOutboxItem[]>(() => listData.value?.items ?? [])
 const total = computed(() => listData.value?.total ?? 0)
@@ -269,8 +281,8 @@ const kindOptions = [
 ]
 
 const pagination = computed(() => ({
-  page: Math.floor((committedParams.value.offset ?? 0) / (committedParams.value.limit ?? 50)) + 1,
-  pageSize: committedParams.value.limit ?? 50,
+  page: cursorPager.pager.page,
+  pageSize: cursorPager.pager.pageSize,
   itemCount: total.value,
   showSizePicker: false,
 }))
@@ -364,14 +376,13 @@ function activeParams(): EmailOutboxFilters {
 }
 
 function reload() {
-  committedParams.value = activeParams()
+  // audit M2: смена фильтров сбрасывает кеш курсоров (невалидны для нового набора).
+  cursorPager.reset()
+  committedFilters.value = activeParams()
 }
 
 function onPageChange(page: number) {
-  committedParams.value = {
-    ...committedParams.value,
-    offset: (page - 1) * (committedParams.value.limit ?? 50),
-  }
+  cursorPager.goToPage(page)
 }
 
 function resetFilters() {

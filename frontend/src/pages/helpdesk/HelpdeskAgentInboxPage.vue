@@ -24,19 +24,19 @@
     </div>
 
     <!-- Режим поиска: плоский список (FTS по всем тикетам) -->
-    <n-spin :show="loading">
+    <n-spin :show="searchLoading">
       <template v-if="isSearchMode">
         <h2 class="inbox-section__title">
           {{ t('helpdesk.searchResults') }}
         </h2>
         <n-empty
-          v-if="!loading && items.length === 0"
+          v-if="!searchLoading && searchItems.length === 0"
           :description="t('helpdesk.noTickets')"
           style="margin: 48px 0"
         />
         <TicketList
           v-else
-          :items="items"
+          :items="searchItems"
           :taking-id="takingId"
           @open="goToTicket"
           @take="onTake"
@@ -80,12 +80,12 @@
             @take="onTake"
           />
           <div
-            v-if="newTotal > newLimit"
+            v-if="newTotal > LIMIT"
             class="helpdesk-pagination"
           >
             <n-pagination
               :page="newPage"
-              :page-size="newLimit"
+              :page-size="LIMIT"
               :item-count="newTotal"
               @update:page="changeNewPage"
             />
@@ -128,12 +128,12 @@
             @take="onTake"
           />
           <div
-            v-if="inWorkTotal > inWorkLimit"
+            v-if="inWorkTotal > LIMIT"
             class="helpdesk-pagination"
           >
             <n-pagination
               :page="inWorkPage"
-              :page-size="inWorkLimit"
+              :page-size="LIMIT"
               :item-count="inWorkTotal"
               @update:page="changeInWorkPage"
             />
@@ -151,39 +151,31 @@ import { useRouter } from 'vue-router'
 import { NSpin, NEmpty, NPagination, NInput, NRadioGroup, NRadioButton, NButton, useMessage } from 'naive-ui'
 import TicketList from '../../components/helpdesk/TicketList.vue'
 import { useAuthStore } from '../../stores/auth'
-import {
-  fetchAgentTickets,
-  takeTicket,
-  type HelpdeskTicketListItem,
-} from '../../api/helpdesk'
 import { parseApiError } from '../../utils/parseApiError'
+import { useAgentInboxQuery } from '../../queries/helpdesk'
+import { takeTicket } from '../../api/helpdesk'
+import { useQueryClient } from '@tanstack/vue-query'
+import { queryKeys } from '../../queries/keys'
+import type { HelpdeskInboxParams } from '../../api/helpdesk'
 
 const { t } = useI18n()
 const router = useRouter()
 const message = useMessage()
 const auth = useAuthStore()
+const qc = useQueryClient()
+
+const LIMIT = 20
 
 // ── Search (плоский режим, FTS по всем) ──────────────────────────────────────
 const q = ref('')
-const items = ref<HelpdeskTicketListItem[]>([])
-const searchTotal = ref(0)
 const searchPage = ref(1)
-const searchLimit = 20
-const loading = ref(false)
+const isSearchMode = computed(() => q.value.trim().length > 0)
 
 // ── Блок «Новые заявки» (неназначенные + status=new) ─────────────────────────
-const newItems = ref<HelpdeskTicketListItem[]>([])
-const newTotal = ref(0)
 const newPage = ref(1)
-const newLimit = 20
-const newLoading = ref(false)
 
 // ── Блок «В работе» (мои / все назначенные, активные) ────────────────────────
-const inWorkItems = ref<HelpdeskTicketListItem[]>([])
-const inWorkTotal = ref(0)
 const inWorkPage = ref(1)
-const inWorkLimit = 20
-const inWorkLoading = ref(false)
 const assignmentScope = ref<'mine' | 'all'>(
   localStorage.getItem('helpdesk.inbox.scope') === 'all' ? 'all' : 'mine',
 )
@@ -191,125 +183,94 @@ const assignmentScope = ref<'mine' | 'all'>(
 const takingId = ref<string | null>(null)
 const myId = computed(() => auth.user?.id)
 
-const isSearchMode = computed(() => q.value.trim().length > 0)
 // Архив вынесен на отдельную страницу /helpdesk/archive (роут helpdesk-archive).
 const archiveHref = '/helpdesk/archive'
 
-// ── Загрузка ─────────────────────────────────────────────────────────────────
+// ── Server state через TanStack Query (раньше — ручные ref + load*) ──────────
+// useAgentInboxQuery реактивен к MaybeRefOrGetter<params>: смена page/scope/q
+// пересоздаёт params → queryKey меняется → авто-refetch. enabled отключает
+// запрос, пока условие не выполнено (search-only / inWork-mine ждёт myId).
+const newParams = computed<HelpdeskInboxParams>(() => ({
+  status: 'new',
+  unassigned: true,
+  limit: LIMIT,
+  offset: (newPage.value - 1) * LIMIT,
+}))
+const newQ = useAgentInboxQuery(newParams, { enabled: () => !isSearchMode.value })
+const newItems = computed(() => newQ.data.value?.items ?? [])
+const newTotal = computed(() => newQ.data.value?.total ?? 0)
+const newLoading = computed(() => newQ.isLoading.value)
 
-async function loadNew() {
-  newLoading.value = true
-  try {
-    const res = await fetchAgentTickets({
-      status: 'new',
-      unassigned: true,
-      limit: newLimit,
-      offset: (newPage.value - 1) * newLimit,
-    })
-    newItems.value = res.items
-    newTotal.value = res.total
-  } catch (e) {
-    message.error(parseApiError(e, t))
-  } finally {
-    newLoading.value = false
-  }
-}
-
-function changeNewPage(p: number) {
-  newPage.value = p
-  loadNew()
-}
-
-async function loadInWork() {
-  // Защита: в режиме «Только мои» нужен assignee=myId. Если user ещё не
-  // загружен (bootstrap async), не шлём запрос без assignee — иначе бэкенд
-  // вернёт все активные тикеты (включая неназначенные). Перезагрузка
-  // сработает через watch(myId) после загрузки user.
+const inWorkParams = computed<HelpdeskInboxParams>(() => {
   const isMine = assignmentScope.value === 'mine'
-  if (isMine && !myId.value) return
-  inWorkLoading.value = true
-  try {
-    const res = await fetchAgentTickets({
-      activeOnly: true, // активные (new/open/pending); closed — в архиве
-      // «Только мои» → assignee=me. «Все назначенные» → assigned=true
-      // (assignee IS NOT NULL, иначе вернулись бы и неназначенные, которые
-      // уже в верхнем блоке «Новые заявки»).
-      assignee: isMine ? myId.value : undefined,
-      assigned: !isMine || undefined,
-      limit: inWorkLimit,
-      offset: (inWorkPage.value - 1) * inWorkLimit,
-    })
-    inWorkItems.value = res.items
-    inWorkTotal.value = res.total
-  } catch (e) {
-    message.error(parseApiError(e, t))
-  } finally {
-    inWorkLoading.value = false
-  }
-}
-
-async function loadSearch() {
-  if (!isSearchMode.value) return
-  loading.value = true
-  try {
-    const res = await fetchAgentTickets({
-      q: q.value.trim(),
-      limit: searchLimit,
-      offset: (searchPage.value - 1) * searchLimit,
-    })
-    items.value = res.items
-    searchTotal.value = res.total
-  } catch (e) {
-    message.error(parseApiError(e, t))
-  } finally {
-    loading.value = false
-  }
-}
-
-async function loadAll() {
-  if (isSearchMode.value) {
-    await loadSearch()
-  } else {
-    await Promise.all([loadNew(), loadInWork()])
-  }
-}
-
-// user может быть ещё не загружен при первичном mount (bootstrap async).
-// Когда myId появится — перезагружаем блок «В работе» (зависит от assignee).
-watch(myId, (newId, oldId) => {
-  if (newId && !oldId && !isSearchMode.value) {
-    void loadInWork()
+  return {
+    activeOnly: true, // активные (new/open/pending); closed — в архиве
+    // «Только мои» → assignee=me. «Все назначенные» → assigned=true
+    // (assignee IS NOT NULL, иначе вернулись бы и неназначенные, которые
+    // уже в верхнем блоке «Новые заявки»).
+    assignee: isMine ? myId.value : undefined,
+    assigned: !isMine || undefined,
+    limit: LIMIT,
+    offset: (inWorkPage.value - 1) * LIMIT,
   }
 })
+// Защита: в режиме «Только мои» нужен assignee=myId. Если user ещё не загружен
+// (bootstrap async), запрос не активен — иначе бэкенд вернёт все активные тикеты
+// (включая неназначенные). Когда myId появится → enabled станет true → авто-fetch.
+const inWorkQ = useAgentInboxQuery(inWorkParams, { enabled: () => !isSearchMode.value && (assignmentScope.value === 'all' || !!myId.value) })
+const inWorkItems = computed(() => inWorkQ.data.value?.items ?? [])
+const inWorkTotal = computed(() => inWorkQ.data.value?.total ?? 0)
+const inWorkLoading = computed(() => inWorkQ.isLoading.value)
+
+const searchParams = computed<HelpdeskInboxParams>(() => ({
+  q: q.value.trim(),
+  limit: LIMIT,
+  offset: (searchPage.value - 1) * LIMIT,
+}))
+const searchQ = useAgentInboxQuery(searchParams, { enabled: () => isSearchMode.value })
+const searchItems = computed(() => searchQ.data.value?.items ?? [])
+const searchTotal = computed(() => searchQ.data.value?.total ?? 0)
+const searchLoading = computed(() => searchQ.isLoading.value)
+const searchLimit = LIMIT
+
+// Query-ошибки не всплывают в toast автоматически (main.ts::QueryCache.onError
+// только console.error). Сохраняем прежний UX: показываем message.error при
+// провале любого из трёх запросов. Дедупликация — разовый toast на каждый error.
+watch(() => newQ.error.value, (e) => { if (e) message.error(parseApiError(e, t)) })
+watch(() => inWorkQ.error.value, (e) => { if (e) message.error(parseApiError(e, t)) })
+watch(() => searchQ.error.value, (e) => { if (e) message.error(parseApiError(e, t)) })
 
 // ── Handlers ─────────────────────────────────────────────────────────────────
+// Реактивность: page/scope/q меняют computed params → queryKey → авто-refetch.
+// Handlers только сбрасывают производный state (page) — ручной refetch не нужен.
 
 function onSearchChange() {
   searchPage.value = 1
-  if (isSearchMode.value) loadSearch()
-  else loadAll()
 }
 
 function onScopeChange() {
   localStorage.setItem('helpdesk.inbox.scope', assignmentScope.value)
   inWorkPage.value = 1
-  loadInWork()
+}
+
+function changeNewPage(p: number) {
+  newPage.value = p
 }
 
 function changeInWorkPage(p: number) {
   inWorkPage.value = p
-  loadInWork()
 }
 
 function changeSearchPage(p: number) {
   searchPage.value = p
-  loadSearch()
 }
 
 function goToTicket(id: string) {
   router.push({ name: 'helpdesk-ticket', params: { id } })
 }
 
+// onTake: прямой вызов takeTicket + invalidate inbox/agentTicketCounts (зеркало
+// useTakeTicketMutation, но без per-id hook — здесь id динамический).
 async function onTake(id: string) {
   takingId.value = id
   try {
@@ -318,15 +279,15 @@ async function onTake(id: string) {
     // Взятый тикет уходит из «Новых» (статус ≠ new / появился assignee) →
     // возвращаем блок «Новые» на 1-ю страницу, иначе можно остаться на пустой.
     newPage.value = 1
-    await loadAll()
+    await qc.invalidateQueries({ queryKey: queryKeys.helpdesk.agentTicket(id) })
+    await qc.invalidateQueries({ queryKey: queryKeys.helpdesk.inbox() })
+    await qc.invalidateQueries({ queryKey: queryKeys.helpdesk.agentTicketCounts() })
   } catch (e) {
     message.error(parseApiError(e, t))
   } finally {
     takingId.value = null
   }
 }
-
-loadAll()
 </script>
 
 <style scoped>

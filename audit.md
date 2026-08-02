@@ -96,13 +96,13 @@ XS-S правки, не требующие архитектурных решен
 - **[H8]** Silent except → `logger.debug`/`exc_info` · S · **[x] сделано**
 - **[H9]** PII-маскинг IP/телефоны · M · **[x] сделано** (только IP — телефон/ФИО в логах отсутствуют по аудиту)
 - **[M1]** Comments list/count consistency ⚠️ UX-согласование · S
-- **[M2]** Keyset pagination audit/outbox · M
-- **[M3]** Batch INSERT meetings outbox · M
+- **[M2]** Keyset pagination audit/outbox · M · **[x] сделано**
+- **[M3]** Batch INSERT meetings outbox · M · **[x] сделано**
 - **[M4]** meetings bookings limit=100 · S
 - **[M6]** Декомпозиция `_ingest_message` · M
 - **[M9]** keycloak_admin God Module · M
-- **[M14]** `HelpdeskAgentInboxPage.vue` → TanStack Query · M
-- **[M12]** LinksTab.vue → composable · M
+- **[M14]** `HelpdeskAgentInboxPage.vue` → TanStack Query · M · **[x] сделано**
+- **[M12]** LinksTab.vue → composable · M · **[x] сделано**
 - **[M19]** `useModulesState` дублированный watcher · XS
 - **[M20]** screenshot-service `/ready` · S
 - **[M21]** gitleaks/trivy/ZAP pin versions · XS · **[x] сделано**
@@ -115,7 +115,7 @@ XS-S правки, не требующие архитектурных решен
 - **[H6]** `EventType` enum — довести или удалить ⚠️ decision · M/S
 - **[H7]** enum для role/status/direction · M (~50 мест)
 - **[M7]** helpdesk email/notification в Jinja2 · M
-- **[M8]** generic `dataset_endpoint` analytics · S-M
+- **[M8]** generic `dataset_endpoint` analytics · S-M · **[x] сделано**
 - **[M11]** Service Locator → DI · M (11 модулей)
 - **[M13]** frontend api/*.ts → generated types · M
 - **[M17]** `secret_crypto` KDF + key-versioning · L
@@ -150,19 +150,19 @@ XS-S правки, не требующие архитектурных решен
 | H11 | 🟠 High | CI/CD | Pin Actions по SHA | S | 1 | [x] 2026-07-26 |
 | H12 | 🟠 High | Infra | Backup retention | M | 1 | [ ] ⚠️ прод |
 | M1  | 🟡 Medium | DB | Comments list/count ⚠️UX | S | 2 | [ ] ⚠️ decision |
-| M2  | 🟡 Medium | Perf | OFFSET → keyset | M | 2 | [ ] |
-| M3  | 🟡 Medium | Perf | Batch INSERT outbox | M | 2 | [ ] |
+| M2  | 🟡 Medium | Perf | OFFSET → keyset | M | 2 | [x] 2026-08-02 |
+| M3  | 🟡 Medium | Perf | Batch INSERT outbox | M | 2 | [x] 2026-08-02 |
 | M4  | 🟡 Medium | Perf | meetings limit=100 | S | 2 | [x] 2026-07-27 |
 | M5  | 🟡 Medium | DB | Drop redundant indexes | S | 1 | [ ] ⚠️ прод |
 | M6  | 🟡 Medium | Code Smell | `_ingest_message` Long Method | M | 2 | [ ] |
 | M7  | 🟡 Medium | Code Smell | helpdesk email/notification sprawl | M | 3 | [ ] |
-| M8  | 🟡 Medium | Code Smell | analytics boilerplate | S-M | 3 | [ ] |
+| M8  | 🟡 Medium | Code Smell | analytics boilerplate | S-M | 3 | [x] 2026-08-02 |
 | M9  | 🟡 Medium | Architecture | keycloak_admin God Module | M | 2 | [ ] |
 | M10 | 🟡 Medium | Code Smell | Magic numbers | XS | 1 | [x] 2026-07-26 |
 | M11 | 🟡 Medium | Architecture | Service Locator → DI | M | 3 | [ ] ⚠️ decision |
-| M12 | 🟡 Medium | Frontend | LinksTab.vue composable | M | 2 | [ ] |
+| M12 | 🟡 Medium | Frontend | LinksTab.vue composable | M | 2 | [x] 2026-08-02 |
 | M13 | 🟡 Medium | Frontend | api/*.ts → generated types | M | 3 | [ ] |
-| M14 | 🟡 Medium | Frontend | HelpdeskAgentInboxPage → Query | M | 2 | [ ] |
+| M14 | 🟡 Medium | Frontend | HelpdeskAgentInboxPage → Query | M | 2 | [x] 2026-08-02 |
 | M15 | 🟡 Medium | Docker | Dockerfile DRY | S | 1 | [x] 2026-07-26 |
 | M16 | 🟡 Medium | Docker | Compose volumes DRY | XS | 1 | [—] 2026-07-26 отклонено |
 | M17 | 🟡 Medium | Config | secret_crypto KDF | L | 3 | [ ] ⚠️ прод |
@@ -733,7 +733,7 @@ XS-S правки, не требующие архитектурных решен
 - **Сложность:** M
 - **Риск регрессии:** Средний (frontend). Стратегия: backward-compat `offset`, поэтапная миграция UI.
 - **Ожидаемый эффект:** O(log N) вместо O(N) на audit/outbox.
-- **Статус:** [ ]
+- **Статус:** [x] 2026-08-02 — выполнено. (1) **Миграция 091**: `idx_audit_log_created_id` + `idx_email_outbox_created_id` (created_at DESC, id DESC). CONCURRENTLY не поддерживается на партиционированной audit_log (PG limitation, см. миграцию 033) — обычный CREATE INDEX (PG развернёт на партиции), email_outbox для консистентности тоже обычный. (2) **Backend**: общий helper `app/api/_cursor_pagination.py` (encode/decode cursor = opaque base64url `created_at|id`, cursor_clause = tuple-comparison). `?cursor=` добавлен в `GET /audit` + `GET /admin/email-outbox` (приоритет над offset, backward-compat). Response: `next_cursor` + `has_more` (не ломая `{items,total,limit,offset}`). (3) **Frontend**: `composables/useCursorPager.ts` — гибридная page→cursor (Map<page, cursor>; sequential forward — keyset, random jump — OFFSET fallback). AuditTab + EmailOutboxTab мигрированы. (4) **Integration-тест** `test_audit_keyset_cursor.py` (3): cursor-страница == OFFSET-страница, EXPLAIN → index scan (не Seq Scan), полный обход без пропусков/дубликатов (2000 строк). openapi.json (+34 cursor-params), api-contracts/db-schema/tests.generated.md регенерированы. ci_lint ✓, 4113 backend + 2185 frontend unit ✓, 3 integration ✓.
 
 ---
 
@@ -758,7 +758,7 @@ XS-S правки, не требующие архитектурных решен
 - **Сложность:** M
 - **Риск регрессии:** Средний. Стратегия: characterization-тест текущего поведения первым.
 - **Ожидаемый эффект:** −90% round-trip на больших встречах.
-- **Статус:** [ ]
+- **Статус:** [x] 2026-08-02 — выполнено. В `email_outbox.py` добавлены `OutboxItem` dataclass + `enqueue_outbox_email_batch(session, items)` — multi-row INSERT через `unnest(...)` (один round-trip вместо N). В `meetings/notifications.py`: `_enqueue_many` (сбор emails → дедупликация → batch) заменил циклы `for user in invited: await _enqueue(...)` в `_enqueue_all_recipients` (created/cancelled), `_enqueue_updated_with_diff` (added/removed/unchanged), `_enqueue_series_relink` (2 цикла). subject/html_body строятся один раз на method (были per-user — одинаковы). Organizer/rooms оставлены через single `_enqueue` (1-3 строки, не узкое место). Outbox-инвариант сохранён (commit на caller'е, lazy import в `_enqueue_many` для test-patching). Новые тесты `test_meetings_outbox_batch.py` (6): 50 recipients → 1 batch-INSERT, zero recipients → no-op, dedup, CANCEL method, empty-list no-op, RETURNING id. Существующие 70 meetings-notifications тестов адаптированы (helpers `_extract_to_emails`/`_extract_to_method` объединяют single+batch). ci_lint ✓, 4113 unit-тестов ✓.
 
 ---
 
@@ -900,7 +900,7 @@ XS-S правки, не требующие архитектурных решен
 - **Сложность:** S-M
 - **Риск регрессии:** Low.
 - **Ожидаемый эффект:** −~120 LOC; extensible.
-- **Статус:** [ ]
+- **Статус:** [x] 2026-08-02 — выполнено. Создан `DatasetSpec` dataclass + реестр `_DATASETS` (6 list-dataset'ов: top-articles/news/files/links, departments, stale-content) — единый источник истины (repo_fn + mapper + export_columns + has_limit). Эндпоинты стали тонкими (вызов `_fetch_dataset` + list comprehension), `_export_rows` упрощён (использует реестр вместо if/elif), `_export_pattern()` строится из реестра (раньше хардкод). dashboard/feedback/resource-trend оставлены как есть (нестандартные). Честная оценка: файл **вырос** 378→439 LOC (+ mapper-функции + dataclass), но выгода M8 — не LOC, а **single source of truth**: добавление dataset'а = 1 запись в `_DATASETS` вместо правки 5 мест (endpoint + repo-call + _EXPORT_COLUMNS + _export_rows + schema). Новые тесты `test_analytics_registry.py` (7): registry covers 6 datasets, export-pattern matches, every dataset has mapper+columns, has_limit flag, fetch with/without limit, export_rows datetime→isoformat. 24 существующих characterization-теста зелёные (URL/output 1:1).
 
 ---
 
@@ -1015,7 +1015,7 @@ XS-S правки, не требующие архитектурных решен
 - **Сложность:** M
 - **Риск регрессии:** Medium (CRUD-пути). Стратегия: тесты первыми, по одной единице.
 - **Ожидаемый эффект:** −~200 LOC из страницы; тестируемость; переиспользование.
-- **Статус:** [ ]
+- **Статус:** [x] 2026-08-02 — выполнено. Разведка выявила, что `useLinkIconUpload.ts` **уже готов** (37 LOC, использовался в LinkFormModal) и идентичен inline-дубликату LinksTab — задача свелась к выносу 2 composables + подключению готового. Созданы `composables/useLinkColumns.ts` (columns через `h()`, образец useUsersTableColumns) и `composables/useLinkForm.ts` (state + CRUD: openAdd/openEdit/openDelete/submitLink, DI icon-instance). LinksTab.vue: script setup 279→~42 LOC (template/style без изменений). Pinia-store синхронизация оставлена (устоявшийся двойной source-of-truth для links). Новые тесты: `cov-audit3-useLinkColumns.spec.ts` (4) + `cov-audit3-useLinkForm.spec.ts` (11: openAdd/openEdit/delete-confirm/cancel/error, submit create/edit/icon-upload/icon-delete/error, rules). Существующие 4 LinksTab-теста + 6 LinkFormModal-тестов зелёные. lint:check (0 errors) + typecheck ✓.
 
 ---
 
@@ -1071,7 +1071,7 @@ XS-S правки, не требующие архитектурных решен
 - **Сложность:** M
 - **Риск регрессии:** Medium. Стратегия: characterization-тесты, поэтапная миграция.
 - **Ожидаемый эффект:** Унификация data-layer; −~80 LOC ручного state.
-- **Статус:** [ ]
+- **Статус:** [x] 2026-08-02 — выполнено. Разведка выявила что `useAgentInboxQuery` и `useTakeTicketMutation` **уже существуют** в `queries/helpdesk.ts` (страница их просто не использовала). Чтобы работал с реактивными params (page/scope/q), `useAgentInboxQuery` модернизирован: принимает `MaybeRefOrGetter<HelpdeskInboxParams>` + `options.enabled` (mirror `useAuditEventsQuery`). Страница: 9 ручных ref + 4 load-функции → 3 `useAgentInboxQuery` (new/inWork/search) с `computed` params + `enabled`-guarded (auth-bootstrap watch myId). onTake: `qc.invalidateQueries` (inbox/agentTicket/agentTicketCounts) вместо ручного `loadAll()`. Query-ошибки показываются через `watch(query.error)` (раньше в load* — QueryCache.onError только console.error). 10 characterization-тестов адаптированы под VueQueryPlugin mount (mock api/helpdesk сохранён — TanStack Query выполняет queryFn с mock'ом). typecheck + lint + 10 тестов зелёные.
 
 ---
 
@@ -1502,6 +1502,7 @@ XS-S правки, не требующие архитектурных решен
 | 2026-07-28 | Reydan (ZCode) | **Спринт 1: C1 + C2 + H3 — все 3 выполнены.** **[C1]** `.env.example` дефолт-секреты убраны (SECRET_KEY/POSTGRES_PASSWORD/REDIS_PASSWORD/ADMIN_*/LOCAL_AUTH_ENABLED=false — все пустыми/закрыты). `config.py`: `@model_validator(mode="after") _validate_production_secrets` — в production (и только в production) block-list `_INSECURE_SECRET_KEY_VALUES` + `len(SECRET_KEY) ≥ 48` + reject `change_me_on_first_login` для ADMIN_PASSWORD. `setup.sh::preflight()`: prod-gate по образцу semver-lock (SECRET_KEY не дефолт + ≥48; ADMIN_PASSWORD не дефолт если задан). Список `missing` в preflight скорректирован: ADMIN_* могут быть пустыми (bootstrap skip — `app/core/bootstrap.py:28`). 6 unit-тестов (+ dev/staging regression-tests). **[C2]** `docker-compose.yml` redis: `user: "999:1000"` (UID 999, GID 1000 — уточнено по факту образа, не 999:999 из плана). Smoke-тест: entrypoint от redis-юзера создаёт ACL `/tmp/redis.acl` (`-rw------- redis redis`), redis-server стартует, `/data` доступен для AOF. `docker compose config --quiet` ✓. **[H3]** КРИТИЧЕСКАЯ НАХОДКА при разведке: вариант (A) jsonpath `$.** ? (@ like_regex ...)` **НЕ ускоряется GIN jsonb_path_ops** — документация PG: `like_regex` применяется как post-filter, индекс для regex не используется (EXPLAIN подтвердил Seq Scan даже с GIN миграции 033 на 1500 строк × 3 партиции). Дополнительно: jsonpath-экранирование regex требует удвоения backslash (одинарный `\.` → `.` → `.*` матчит всё = ReDoS). После консультации с пользователем выбран **вариант (B)**: `?extended_search=true` (по умолчанию off). По умолчанию `q` ищет только по `user_email`/`resource_title` (btree+trgm); `metadata::text ILIKE` — осознанный медленный режим. Frontend: `n-switch` + tooltip в `AuditTab.vue`, `AuditFilters` расширен, i18n ru+en (search placeholder обновлён, добавлены extendedSearch/extendedSearchHint). **Финальные проверки:** backend ci_lint ✓ (698 файлов, ruff+mypy+format), 51 unit-тест audit+config ✓; frontend lint:check ✓ (0 errors, 10 pre-existing warnings), typecheck ✓, i18n:check ✓ (2137 keys), 2130 unit ✓. Регенерированы: openapi.json (extended_search в 2 endpoints), api-contracts.generated.md (+2 строк extended_search), tests.generated.md (+9 тестов, hypothesis-тесты сохранены — локально не собираются без hypothesis, в CI есть). Карточки C1/C2/H3 обновлены до [x]. |
 | 2026-07-28 | Reydan (ZCode) | **C2 CI-fix: `user:` сломал compose-smoke.** После мёрджа коммита `12290e4` CI workflow `compose / up + healthcheck smoke` упал: redis unhealthy → каскадный fail migrations/backend. **Причина**: bind-mount `base_data/redis:/data` приходит в контейнер root-owned (`mkdir -p` в CI от root); compose-директива `user: "999:1000"` применяется к entrypoint целиком → redis-юзер не может создать `appendonlydir` в `/data` → `Can't open or create append-only dir appendonlydir: Permission denied`. Мой локальный smoke-тест это упустил (тестировал на свежем контейнере где `/data` уже redis-owned из образа). **Фикс**: убрал `user:` (entrypoint стартует от root), добавил `chown -R 999:1000 /data /tmp/redis.acl` в entrypoint (как `docker-entrypoint.sh` у postgres), затем `exec su redis -s /bin/sh -c 'exec redis-server ...'` для drop-privileges (gosu/su-exec в redis-alpine нет — только busybox `su`). Локальная верификация CI-сценария (root-owned volume): redis-server PID 1 работает от uid=999 (`/proc/<pid>/status` → Uid/Gid 999/1000), healthcheck → healthy, ACL/AOF создаются, `redis-cli ping` → PONG. Карточка C2 обновлена: сложность S→M, подход `user:` → entrypoint-chown. |
 | 2026-07-29 | Reydan (ZCode) | **Спринт 2: H9 (PII-маскинг) + окончание H8 (silent-except) — оба выполнены.** **[H9]** Аудит кодовой базы через subagent показал что задача **значительно меньше** чем в карточке: телефонов и ФИО в логах **фактически нет** (только в XLSX-выгрузке, не в `logger.*`), IP — единственный реальный вектор через `client_ip` contextvar (каждый HTTP-запрос) + uvicorn.access message. Критический риск: regex IP по всем строковым значениям сломал бы SSRF/Security-логи (`url=http://192.168.1.1/...` в bookmarks/email_images/collabora). **Реализация**: `mask_ipv4_last_octet` хелпер (`192.168.1.100` → `192.168.1.x`, сохраняет subnet для debug), применяется в `middleware/logging.py` ДО `bind_request_context(client_ip=...)` — источник маскируется, processor не нужен для contextvar. Для uvicorn.access message — IPv4-regex в `_mask_pii_value`, но **только для ключей** `event`/`message`/`msg` (`_PII_IPV4_VALUE_KEYS` whitelist) — URL/origin/blocked_ip НЕ маскируются. Телефон/ФИО НЕ добавлены (defensive-ключи впустую = мёртвый код). 13 новых тестов (5 параметризованных + 4 сценарных). Сложность M→S. **[H8]** AST-классификация ~58 мест с `except Exception`: ~21 стоило править (A+B), ~37 — сознательные fallback/cleanup. Правки: `meetings/recurrence.py` (ZoneInfo fallback — debug-лог), `nextcloud/webdav/_client.py` (version.json parse — сужен до ValueError/KeyError + debug), `keycloak_admin.py` get_sync_status (JSON parse — сужен + debug), `health.py` `_probe_optional_integrations` (3 probe-crashed — debug). `files_shares_persistence.py` и `keycloak_admin.py:143,152` — уже логируются (не silent). ruff BLE001 НЕ включён (отдельный PR). **Проверки**: ci_lint ✓ (698 файлов), 3907 unit ✓ (+12 от Спринта 1), 110 затронутых модулей ✓. Карточки H9/H8 обновлены, сложность H9 M→S. |
+| 2026-08-02 | Reydan (ZCode) | **Спринт 3 (Batch 3): M12 + M14 + M8 + M3 + M2 — все 5 выполнены.** Выбраны с пользователем как сбалансированный микс (2 frontend + 3 backend). Разведка через 3 параллельных subagent'ов вскрыла что карточки **переоценены**: M12/M14 проще чем в аудите (готовые composables/hooks уже существовали), а M9 (изначально в списке) оказался недооценённой (2-3 PR, риск регрессии на admin Keycloak) — заменён на M2 по решению пользователя. **[M12]** `useLinkIconUpload.ts` уже готов и идентичен inline-коду LinksTab → вынесены `useLinkColumns` + `useLinkForm`, LinksTab script setup 279→42 LOC, 15 новых тестов. **[M14]** `useAgentInboxQuery`/`useTakeTicketMutation` уже существовали — модернизирован хук под `MaybeRefOrGetter` (реактивные params), страница переписана на 3 query + invalidateQueries, 10 characterization-тестов адаптированы под VueQueryPlugin. **[M8]** `DatasetSpec` dataclass + реестр `_DATASETS` (single source of truth, add dataset = 1 запись вместо 5 правок), 7 новых тестов, 24 characterization зелёные. **[M3]** `enqueue_outbox_email_batch` (multi-row INSERT через unnest) + `_enqueue_many` заменили N циклов в meetings notifications, 6 новых тестов (50 recipients → 1 INSERT), 70 существующих адаптированы. **[M2]** миграция 091 (индексы `(created_at DESC, id DESC)`) + общий `_cursor_pagination.py` + `?cursor=` в audit/outbox (backward-compat offset) + `useCursorPager` (гибрид page→cursor) + 3 integration-теста (cursor==OFFSET, index scan, no-gaps). **Проверки**: ci_lint ✓ (736 файлов), 4113 backend unit ✓ (+6), 2185 frontend unit ✓ (+15), 3 integration ✓, i18n ✓ (2243 keys). Регенерированы openapi.json (+34), api-contracts/db-schema/tests.generated.md. Карточки обновлены до [x]. План фичи — `docs/wip/audit-batch-3.md`. |
 
 ---
 

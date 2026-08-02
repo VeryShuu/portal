@@ -42,8 +42,19 @@ def arq_pool():
     return pool
 
 
-def _extract_to_emails(enqueue_mock) -> list[str]:
-    return [call.kwargs.get("to_email") for call in enqueue_mock.call_args_list]
+def _extract_to_emails(enqueue_mock, batch_mock=None) -> list[str]:
+    """Собирает to_email из single-вызовов + batch-вызовов (audit M3).
+
+    batch_mock.call_args_list содержит вызовы ``batch(session, items)`` — items
+    позиционный (args[1]); раскрываем его в плоский список emails.
+    """
+    emails = [call.kwargs.get("to_email") for call in enqueue_mock.call_args_list]
+    if batch_mock is not None:
+        for call in batch_mock.call_args_list:
+            items = call.kwargs.get("items") or (call.args[1] if len(call.args) > 1 else [])
+            for item in items:
+                emails.append(item.to_email)
+    return emails
 
 
 def _ical_builder_mock() -> ModuleType:
@@ -77,13 +88,14 @@ class TestRoomEmailDispatch:
     @pytest.fixture
     def mock_db_and_enqueue(self):
         enqueue_mock = AsyncMock()
+        batch_mock = AsyncMock(return_value=[])
         db_mock = AsyncMock()
         db_mock.__aenter__ = AsyncMock(return_value=db_mock)
         db_mock.__aexit__ = AsyncMock(return_value=None)
 
         begin_mock = AsyncMock()
         begin_mock.__aenter__ = AsyncMock()
-        begin_mock.__aexit__ = AsyncMock()
+        begin_mock.__aexit__ = AsyncMock(return_value=None)
         db_mock.begin = MagicMock(return_value=begin_mock)
 
         session_cm = MagicMock()
@@ -93,8 +105,9 @@ class TestRoomEmailDispatch:
         with (
             patch("app.core.database.AsyncSessionLocal", return_value=session_cm),
             patch("app.services.email_outbox.enqueue_outbox_email", enqueue_mock),
+            patch("app.services.email_outbox.enqueue_outbox_email_batch", batch_mock),
         ):
-            yield enqueue_mock
+            yield enqueue_mock, batch_mock
 
     async def test_created_sends_to_room_email(self, mock_db_and_enqueue):
         from app.services.meetings.notifications import dispatch_meeting_emails
@@ -102,7 +115,8 @@ class TestRoomEmailDispatch:
         booking = _make_booking(room_email="room@x.com")
         await dispatch_meeting_emails(booking=booking, action="created")
 
-        to_emails = _extract_to_emails(mock_db_and_enqueue)
+        enqueue_mock, batch_mock = mock_db_and_enqueue
+        to_emails = _extract_to_emails(enqueue_mock, batch_mock)
         assert "room@x.com" in to_emails
 
     async def test_cancelled_sends_cancel_to_room_email(self, mock_db_and_enqueue):
@@ -111,7 +125,8 @@ class TestRoomEmailDispatch:
         booking = _make_booking(room_email="room@x.com")
         await dispatch_meeting_emails(booking=booking, action="cancelled")
 
-        to_emails = _extract_to_emails(mock_db_and_enqueue)
+        enqueue_mock, batch_mock = mock_db_and_enqueue
+        to_emails = _extract_to_emails(enqueue_mock, batch_mock)
         assert "room@x.com" in to_emails
 
     async def test_updated_without_diff_sends_to_room_email(self, mock_db_and_enqueue):
@@ -120,7 +135,8 @@ class TestRoomEmailDispatch:
         booking = _make_booking(room_email="room@x.com")
         await dispatch_meeting_emails(booking=booking, action="updated", diff=None)
 
-        to_emails = _extract_to_emails(mock_db_and_enqueue)
+        enqueue_mock, batch_mock = mock_db_and_enqueue
+        to_emails = _extract_to_emails(enqueue_mock, batch_mock)
         assert "room@x.com" in to_emails
 
     async def test_no_duplicate_when_room_email_in_invited(self, mock_db_and_enqueue):
@@ -129,7 +145,8 @@ class TestRoomEmailDispatch:
         booking = _make_booking(room_email="room@x.com", invited_emails=["room@x.com"])
         await dispatch_meeting_emails(booking=booking, action="created")
 
-        to_emails = _extract_to_emails(mock_db_and_enqueue)
+        enqueue_mock, batch_mock = mock_db_and_enqueue
+        to_emails = _extract_to_emails(enqueue_mock, batch_mock)
         assert to_emails.count("room@x.com") == 1
 
     async def test_no_room_email_skipped(self, mock_db_and_enqueue):
@@ -138,7 +155,9 @@ class TestRoomEmailDispatch:
         booking = _make_booking(room_email=None)
         await dispatch_meeting_emails(booking=booking, action="created")
 
-        assert mock_db_and_enqueue.call_count == 0
+        enqueue_mock, batch_mock = mock_db_and_enqueue
+        assert enqueue_mock.call_count == 0
+        assert batch_mock.call_count == 0
 
 
 class TestEnqueueMeetingEmailsInSession:
@@ -172,10 +191,12 @@ class TestEnqueueMeetingEmailsInSession:
         booking = _make_booking(room_email="room@x.com")
         passed_session = AsyncMock()
         enqueue_mock = AsyncMock()
+        batch_mock = AsyncMock(return_value=[])
         session_local = MagicMock()
 
         with (
             patch("app.services.email_outbox.enqueue_outbox_email", enqueue_mock),
+            patch("app.services.email_outbox.enqueue_outbox_email_batch", batch_mock),
             patch("app.core.database.AsyncSessionLocal", session_local),
         ):
             await enqueue_meeting_emails(passed_session, booking=booking, action="created")
@@ -183,9 +204,11 @@ class TestEnqueueMeetingEmailsInSession:
         # No separate session/transaction is opened (outbox invariant).
         session_local.assert_not_called()
         passed_session.commit.assert_not_called()
-        # The outbox row is written through the caller-provided session.
-        assert enqueue_mock.call_count >= 1
-        for call in enqueue_mock.call_args_list:
+        # The outbox rows are written through the caller-provided session —
+        # и single (organizer/rooms), и batch (invited) используют passed_session.
+        all_calls = enqueue_mock.call_args_list + batch_mock.call_args_list
+        assert len(all_calls) >= 1
+        for call in all_calls:
             assert call.args[0] is passed_session
 
 
@@ -195,11 +218,22 @@ def _invited(email: str, full_name: str = "User"):
     return InvitedUser(user_id=str(uuid.uuid4()), full_name=full_name, email=email)
 
 
-def _extract_to_method(enqueue_mock) -> list[tuple[str, str]]:
-    return [
+def _extract_to_method(enqueue_mock, batch_mock=None) -> list[tuple[str, str]]:
+    """Собирает (to_email, method) из single- + batch-вызовов (audit M3).
+
+    OutboxItem хранит payload как dict (как и single-вызов), поэтому method
+    извлекается одинаково из обоих источников.
+    """
+    pairs = [
         (c.kwargs.get("to_email"), c.kwargs.get("payload", {}).get("method"))
         for c in enqueue_mock.call_args_list
     ]
+    if batch_mock is not None:
+        for call in batch_mock.call_args_list:
+            items = call.kwargs.get("items") or (call.args[1] if len(call.args) > 1 else [])
+            for item in items:
+                pairs.append((item.to_email, (item.payload or {}).get("method")))
+    return pairs
 
 
 class TestUpdatedWithDiffDispatch:
@@ -235,12 +269,16 @@ class TestUpdatedWithDiffDispatch:
             yield
 
     @pytest.fixture
-    def enqueue_mock(self):
-        mock = AsyncMock()
-        with patch("app.services.email_outbox.enqueue_outbox_email", mock):
-            yield mock
+    def enqueue_mocks(self):
+        single = AsyncMock()
+        batch = AsyncMock(return_value=[])
+        with (
+            patch("app.services.email_outbox.enqueue_outbox_email", single),
+            patch("app.services.email_outbox.enqueue_outbox_email_batch", batch),
+        ):
+            yield single, batch
 
-    async def test_added_users_get_request(self, enqueue_mock):
+    async def test_added_users_get_request(self, enqueue_mocks):
         from app.services.meetings.bookings_service import BookingDiff
         from app.services.meetings.notifications import enqueue_meeting_emails
 
@@ -248,9 +286,10 @@ class TestUpdatedWithDiffDispatch:
         diff = BookingDiff(added_users=[_invited("new@x.com")])
         await enqueue_meeting_emails(AsyncMock(), booking=booking, action="updated", diff=diff)
 
-        assert ("new@x.com", "REQUEST") in _extract_to_method(enqueue_mock)
+        single, batch = enqueue_mocks
+        assert ("new@x.com", "REQUEST") in _extract_to_method(single, batch)
 
-    async def test_removed_users_get_cancel(self, enqueue_mock):
+    async def test_removed_users_get_cancel(self, enqueue_mocks):
         from app.services.meetings.bookings_service import BookingDiff
         from app.services.meetings.notifications import enqueue_meeting_emails
 
@@ -258,9 +297,10 @@ class TestUpdatedWithDiffDispatch:
         diff = BookingDiff(removed_users=[_invited("gone@x.com")])
         await enqueue_meeting_emails(AsyncMock(), booking=booking, action="updated", diff=diff)
 
-        assert ("gone@x.com", "CANCEL") in _extract_to_method(enqueue_mock)
+        single, batch = enqueue_mocks
+        assert ("gone@x.com", "CANCEL") in _extract_to_method(single, batch)
 
-    async def test_unchanged_users_resent_only_on_non_participant_change(self, enqueue_mock):
+    async def test_unchanged_users_resent_only_on_non_participant_change(self, enqueue_mocks):
         from app.services.meetings.bookings_service import BookingDiff
         from app.services.meetings.notifications import enqueue_meeting_emails
 
@@ -268,9 +308,10 @@ class TestUpdatedWithDiffDispatch:
         diff = BookingDiff(unchanged_users=[_invited("same@x.com")], non_participant_changed=True)
         await enqueue_meeting_emails(AsyncMock(), booking=booking, action="updated", diff=diff)
 
-        assert ("same@x.com", "REQUEST") in _extract_to_method(enqueue_mock)
+        single, batch = enqueue_mocks
+        assert ("same@x.com", "REQUEST") in _extract_to_method(single, batch)
 
-    async def test_unchanged_users_not_resent_without_non_participant_change(self, enqueue_mock):
+    async def test_unchanged_users_not_resent_without_non_participant_change(self, enqueue_mocks):
         from app.services.meetings.bookings_service import BookingDiff
         from app.services.meetings.notifications import enqueue_meeting_emails
 
@@ -278,10 +319,11 @@ class TestUpdatedWithDiffDispatch:
         diff = BookingDiff(unchanged_users=[_invited("same@x.com")], non_participant_changed=False)
         await enqueue_meeting_emails(AsyncMock(), booking=booking, action="updated", diff=diff)
 
-        assert ("same@x.com", "REQUEST") not in _extract_to_method(enqueue_mock)
+        single, batch = enqueue_mocks
+        assert ("same@x.com", "REQUEST") not in _extract_to_method(single, batch)
 
     async def test_series_relink_cancels_old_uid_then_requests(
-        self, enqueue_mock, _patch_ical_builder
+        self, enqueue_mocks, _patch_ical_builder
     ):
         from app.services.meetings.bookings_service import BookingDiff
         from app.services.meetings.notifications import enqueue_meeting_emails
@@ -290,7 +332,8 @@ class TestUpdatedWithDiffDispatch:
         diff = BookingDiff(old_series_uid="series-1@portal.local")
         await enqueue_meeting_emails(AsyncMock(), booking=booking, action="updated", diff=diff)
 
-        methods = [m for _, m in _extract_to_method(enqueue_mock)]
+        single, batch = enqueue_mocks
+        methods = [m for _, m in _extract_to_method(single, batch)]
         assert "CANCEL" in methods and "REQUEST" in methods
         # CANCEL (old UID) is enqueued before the new REQUEST.
         assert methods.index("CANCEL") < methods.index("REQUEST")
