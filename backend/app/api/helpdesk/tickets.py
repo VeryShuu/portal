@@ -364,6 +364,14 @@ async def add_my_message(
         ),
         context="requester_reply",
     )
+    # Email-уведомление агенту о новом сообщении от заявителя (best-effort,
+    # через outbox ``kind=generic`` — симметрично in-app выше). Как
+    # ``notify_ticket_created_email`` при создании заявки: отдельный канал,
+    # сбой не роняет бизнес-операцию.
+    await _try_notify(
+        notifications_service.notify_requester_reply_email(db, ticket=ticket, message=message),
+        context="requester_reply_email",
+    )
     return message_to_out(message)
 
 

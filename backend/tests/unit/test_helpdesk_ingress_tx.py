@@ -279,6 +279,7 @@ async def test_ingest_commits_once_with_log_in_same_transaction() -> None:
         ),
         patch("app.services.helpdesk.notifications.notify_ticket_created", new=AsyncMock()),
         patch("app.services.helpdesk.notifications.notify_requester_reply", new=AsyncMock()),
+        patch("app.services.helpdesk.notifications.notify_requester_reply_email", new=AsyncMock()),
     ):
         await _ingest_message(db, redis, _new_ticket_msg(), "<abc@x>", settings_row, summary)
 
@@ -312,6 +313,7 @@ async def test_ingest_does_not_call_write_log_separately() -> None:
         ),
         patch("app.services.helpdesk.notifications.notify_ticket_created", new=AsyncMock()),
         patch("app.services.helpdesk.notifications.notify_requester_reply", new=AsyncMock()),
+        patch("app.services.helpdesk.notifications.notify_requester_reply_email", new=AsyncMock()),
         patch("app.services.helpdesk.ingress._write_log", new=AsyncMock()) as wl,
     ):
         await _ingest_message(db, redis, _new_ticket_msg(), "<abc@x>", settings_row, summary)
@@ -361,6 +363,7 @@ async def test_ingest_localizes_remote_post_commit_not_in_transaction() -> None:
         ),
         patch("app.services.helpdesk.notifications.notify_ticket_created", new=AsyncMock()),
         patch("app.services.helpdesk.notifications.notify_requester_reply", new=AsyncMock()),
+        patch("app.services.helpdesk.notifications.notify_requester_reply_email", new=AsyncMock()),
     ):
         await _ingest_message(db, redis, _new_ticket_msg(), "<abc@x>", settings_row, summary)
 
@@ -481,6 +484,7 @@ async def test_ingest_cleans_up_files_on_commit_failure() -> None:
         patch("app.services.helpdesk.ingress.cleanup_recorded_files", side_effect=_track_cleanup),
         patch("app.services.helpdesk.notifications.notify_ticket_created", new=AsyncMock()),
         patch("app.services.helpdesk.notifications.notify_requester_reply", new=AsyncMock()),
+        patch("app.services.helpdesk.notifications.notify_requester_reply_email", new=AsyncMock()),
         pytest.raises(RuntimeError, match="db connection lost"),
     ):
         await _ingest_message(db, redis, _new_ticket_msg(), "<abc@x>", settings_row, summary)

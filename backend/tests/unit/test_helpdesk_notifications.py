@@ -324,10 +324,15 @@ class TestFanOut:
 
 
 def _agent_user(
-    *, uid: uuid.UUID | None = None, email: str = "agent@company.local"
+    *,
+    uid: uuid.UUID | None = None,
+    email: str = "agent@company.local",
+    notify_email: bool = True,
 ) -> SimpleNamespace:
-    """Агент как User-заглушка (нужен только id+email для enqueue)."""
-    return SimpleNamespace(id=uid or uuid.uuid4(), email=email, full_name="Агент")
+    """Агент как User-заглушка (нужен id+email+notify_email для enqueue)."""
+    return SimpleNamespace(
+        id=uid or uuid.uuid4(), email=email, full_name="Агент", notify_email=notify_email
+    )
 
 
 def _first_message(*, text: str = "Текст заявки", html: str | None = None) -> SimpleNamespace:
@@ -557,6 +562,168 @@ class TestNotifyTicketCreatedEmail:
         kwargs = enqueue.await_args.kwargs
         assert kwargs["related_resource_type"] == "helpdesk_ticket"
         assert kwargs["related_resource_id"] == ticket.id
+
+
+# ── Email-уведомление агенту о новом сообщении от заявителя ─────────────────
+
+
+def _patch_load_user(user: object | None) -> Any:
+    """Мок local-import ``load_user`` (импортируется внутри
+    ``notify_requester_reply_email`` из ``app.services.helpdesk.outbound``)."""
+    return patch(
+        "app.services.helpdesk.outbound.load_user",
+        new=AsyncMock(return_value=user),
+    )
+
+
+class TestNotifyRequesterReplyEmail:
+    """``notify_requester_reply_email`` — email-зеркало in-app
+    ``notify_requester_reply``: assignee (если назначен) или все агенты."""
+
+    @pytest.mark.asyncio
+    async def test_assigned_ticket_emails_only_assignee(self):
+        """Тикет назначен → 1 письмо на assignee, агенты не опрашиваются."""
+        assignee = _agent_user(email="assignee@c.local")
+        ticket = _ticket(number=5, subject="Тема", assignee_user_id=assignee.id)
+        db = _db_returning_agents([])  # не должно зваться
+
+        with (
+            _patch_load_user(assignee),
+            _patch_resolve_requester(_requester_user()),
+            patch.object(notif, "enqueue_outbox_email", new=AsyncMock()) as enqueue,
+        ):
+            sent = await notif.notify_requester_reply_email(
+                db, ticket=ticket, message=_first_message()
+            )
+
+        assert sent == 1
+        assert enqueue.await_count == 1
+        assert enqueue.await_args.kwargs["to_email"] == "assignee@c.local"
+        # При назначенном assignee список агентов не грузится.
+        db.execute.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_unassigned_ticket_emails_all_agents(self):
+        """Тикет не назначен → письма всем агентам (как «новая заявка»)."""
+        a1, a2 = _agent_user(email="a1@c.local"), _agent_user(email="a2@c.local")
+        db = _db_returning_agents([a1, a2])
+        ticket = _ticket(number=6, assignee_user_id=None)
+
+        with (
+            _patch_resolve_requester(_requester_user()),
+            patch.object(notif, "enqueue_outbox_email", new=AsyncMock()) as enqueue,
+        ):
+            sent = await notif.notify_requester_reply_email(
+                db, ticket=ticket, message=_first_message()
+            )
+
+        assert sent == 2
+        tos = [call.kwargs["to_email"] for call in enqueue.await_args_list]
+        assert {"a1@c.local", "a2@c.local"} == set(tos)
+
+    @pytest.mark.asyncio
+    async def test_assignee_with_notify_email_false_sends_nothing(self):
+        """Consent: assignee отключил email-уведомления → 0 писем, commit не зовётся."""
+        assignee = SimpleNamespace(id=uuid.uuid4(), email="mute@c.local", notify_email=False)
+        ticket = _ticket(assignee_user_id=assignee.id)
+        db = _db_returning_agents([])
+
+        with (
+            _patch_load_user(assignee),
+            patch.object(notif, "enqueue_outbox_email", new=AsyncMock()) as enqueue,
+        ):
+            sent = await notif.notify_requester_reply_email(
+                db, ticket=ticket, message=_first_message()
+            )
+
+        assert sent == 0
+        enqueue.assert_not_awaited()
+        db.commit.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_unassigned_no_agents_zero_sent(self):
+        """Не назначан + нет агентов с notify_email+notify_new → 0 писем."""
+        db = _db_returning_agents([])
+        ticket = _ticket(assignee_user_id=None)
+
+        with (
+            _patch_resolve_requester(_requester_user()),
+            patch.object(notif, "enqueue_outbox_email", new=AsyncMock()) as enqueue,
+        ):
+            sent = await notif.notify_requester_reply_email(
+                db, ticket=ticket, message=_first_message()
+            )
+
+        assert sent == 0
+        enqueue.assert_not_awaited()
+        db.commit.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_payload_has_ticket_number_for_image_embedding(self):
+        """``payload.smtp_source=helpdesk`` + ``ticket_number`` — маркер для воркера
+        на встраивание inline-картинок ответа (как в «новой заявке»)."""
+        a = _agent_user()
+        db = _db_returning_agents([a])
+        ticket = _ticket(number=42, assignee_user_id=None)
+
+        with (
+            _patch_resolve_requester(_requester_user()),
+            patch.object(notif, "enqueue_outbox_email", new=AsyncMock()) as enqueue,
+        ):
+            await notif.notify_requester_reply_email(db, ticket=ticket, message=_first_message())
+        payload = enqueue.await_args.kwargs["payload"]
+        assert payload["smtp_source"] == "helpdesk"
+        assert payload["ticket_number"] == 42
+
+    @pytest.mark.asyncio
+    async def test_uses_generic_kind(self):
+        a = _agent_user()
+        db = _db_returning_agents([a])
+        with (
+            _patch_resolve_requester(_requester_user()),
+            patch.object(notif, "enqueue_outbox_email", new=AsyncMock()) as enqueue,
+        ):
+            await notif.notify_requester_reply_email(
+                db, ticket=_ticket(assignee_user_id=None), message=_first_message()
+            )
+        assert enqueue.await_args.kwargs["kind"] == "generic"
+
+    @pytest.mark.asyncio
+    async def test_subject_has_ticket_token(self):
+        a = _agent_user()
+        db = _db_returning_agents([a])
+        with (
+            _patch_resolve_requester(_requester_user()),
+            patch.object(notif, "enqueue_outbox_email", new=AsyncMock()) as enqueue,
+        ):
+            await notif.notify_requester_reply_email(
+                db, ticket=_ticket(number=77, subject="Тема"), message=_first_message()
+            )
+        subject = enqueue.await_args.kwargs["subject"]
+        assert "[#TKT-77]" in subject
+        assert "Новое сообщение" in subject
+
+    @pytest.mark.asyncio
+    async def test_commits_after_enqueuing(self):
+        a1, a2 = _agent_user(), _agent_user()
+        db = _db_returning_agents([a1, a2])
+        with (
+            _patch_resolve_requester(_requester_user()),
+            patch.object(notif, "enqueue_outbox_email", new=AsyncMock()),
+        ):
+            await notif.notify_requester_reply_email(
+                db, ticket=_ticket(assignee_user_id=None), message=_first_message()
+            )
+        db.commit.assert_awaited_once()
+
+
+class TestBuildRequesterReplyAgentSubject:
+    def test_has_ticket_token_and_subject(self):
+        ticket = _ticket(number=42, subject="Не работает 1С")
+        subject = notif.build_requester_reply_agent_subject(ticket)
+        assert "[#TKT-42]" in subject
+        assert "Новое сообщение" in subject
+        assert "Не работает 1С" in subject
 
 
 class TestBuildNewTicketAgentSubject:

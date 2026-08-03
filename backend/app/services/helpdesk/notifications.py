@@ -28,13 +28,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.constants import HELPDESK_REOPEN_WINDOW_DAYS
 from app.core.logging import get_logger
 from app.core.sanitize import sanitize_html
-from app.models.helpdesk import HelpdeskAgent, HelpdeskMaxBotSettings, HelpdeskTicket
+from app.models.helpdesk import (
+    HelpdeskAgent,
+    HelpdeskMaxBotSettings,
+    HelpdeskMessage,
+    HelpdeskTicket,
+)
 from app.models.user import User
 from app.services.email_outbox import KIND_GENERIC, enqueue_outbox_email
 from app.services.helpdesk.email_quote import html_to_plain
 from app.services.helpdesk.email_signature import strip_email_signature
 from app.services.helpdesk.email_template import (
     render_new_ticket_agent_email,
+    render_requester_reply_agent_email,
     render_system_email,
 )
 from app.services.messenger_outbox import PROVIDER_MAX, enqueue_messenger_message
@@ -320,6 +326,16 @@ def build_new_ticket_agent_subject(ticket: HelpdeskTicket) -> str:
     return f"[#TKT-{ticket.number}] Новая заявка: {ticket.subject}"
 
 
+def build_requester_reply_agent_subject(ticket: HelpdeskTicket) -> str:
+    """Тема письма-уведомления агенту о новом сообщении от заявителя.
+
+    Симметрично ``build_new_ticket_agent_subject``: тикет-токен ``[#TKT-{number}]``
+    + краткое описание события. Email — ``kind=generic`` (не входит в email-тред
+    тикета с заявителем), но токен даёт агенту быструю идентификацию заявки в почте.
+    """
+    return f"[#TKT-{ticket.number}] Новое сообщение: {ticket.subject}"
+
+
 async def _load_agents_for_email(db: AsyncSession) -> list[User]:
     """Все активные helpdesk-агенты, которым слать email о новых заявках.
 
@@ -415,6 +431,96 @@ async def notify_ticket_created_email(
     await db.commit()
     sent = len(agents)
     logger.info("helpdesk.notify_created_email_sent", ticket_id=str(ticket.id), sent=sent)
+    return sent
+
+
+async def notify_requester_reply_email(
+    db: AsyncSession,
+    *,
+    ticket: HelpdeskTicket,
+    message: HelpdeskMessage,
+) -> int:
+    """Отправить email-уведомление агенту о новом сообщении от заявителя.
+
+    Симметрично in-app ``notify_requester_reply`` (зеркало по получателям), но
+    email-каналом. Получатель:
+    * если тикет назначен — ответственный агент (``assignee``);
+    * иначе — все активные helpdesk-агенты (через ``_load_agents_for_email``).
+
+    Гейт согласия: получатель с ``User.notify_email=False`` письмо не получает
+    (для assignee проверяется явно; ``_load_agents_for_email`` уже фильтрует по
+    ``notify_email`` + ``notify_new``). Это уважает consent пользователя — как
+    in-app уважает ``notify_inapp``.
+
+    Использует outbox ``kind=generic`` (как ``notify_ticket_created_email``):
+    письмо не входит в email-тред тикета с заявителем (нет threading-заголовков
+    ``Message-ID``/``References``), не требует настроенного
+    ``helpdesk_mailbox_settings`` для формирования (SMTP-настройки — собственный
+    контур helpdesk через маркер ``payload.smtp_source=helpdesk`` или fallback
+    на общий SMTP портала). Маркер ``ticket_number`` в payload обязателен —
+    воркер ``_embed_helpdesk_images_into_generic`` по нему встраивает inline-картинки
+    ответа заявителя (TipTap rich-редактор) как ``cid:``, иначе почтовый клиент
+    без cookie получит 401 на ``/attachments/{id}``.
+
+    По образцу ``send_digests``/``notify_ticket_created_email``: для каждого
+    получателя — отдельная outbox-запись (персональный ``to_email``), единый
+    ``db.commit`` в конце. Возвращает кол-во поставленных в outbox писем.
+
+    Best-effort: вызывается из роутера/ingress **после** commit бизнес-операции
+    (как ``notify_ticket_created_email``). Сам делает ``db.commit()``.
+    """
+    # Получатели: assignee (один) или все агенты (если не назначен).
+    if ticket.assignee_user_id is not None:
+        from app.services.helpdesk.outbound import load_user
+
+        assignee = await load_user(db, ticket.assignee_user_id)
+        # Уважаем consent: если assignee отключил email-уведомления — не шлём.
+        if assignee is None or not (assignee.notify_email or False):
+            return 0
+        recipients: list[User] = [assignee]
+    else:
+        recipients = await _load_agents_for_email(db)
+
+    if not recipients:
+        return 0
+
+    # Резолвим пользователя-заявителя для блока контактов (ФИО/телефоны из модели
+    # User, как в карточке тикета и уведомлении о новой заявке). Гость без
+    # аккаунта → None → шаблон берёт имя/email из снимка тикета.
+    from app.services.helpdesk.tickets import resolve_requester_user
+
+    requester = await resolve_requester_user(db, ticket=ticket)
+
+    html_body, plain_body = render_requester_reply_agent_email(
+        ticket=ticket,
+        message=message,
+        requester=requester,
+    )
+    subject = build_requester_reply_agent_subject(ticket)
+
+    for agent in recipients:
+        await enqueue_outbox_email(
+            db,
+            kind=KIND_GENERIC,
+            to_email=agent.email,
+            subject=subject,
+            body_html=html_body,
+            body_text=plain_body,
+            # ``ticket_number`` — маркер для воркера: встраивает inline-картинки
+            # ответа заявителя как ``cid:`` (см. ``_embed_helpdesk_images_into_generic``).
+            payload={"smtp_source": "helpdesk", "ticket_number": ticket.number},
+            related_resource_type="helpdesk_ticket",
+            related_resource_id=ticket.id,
+            created_by_user_id=agent.id,
+        )
+
+    await db.commit()
+    sent = len(recipients)
+    logger.info(
+        "helpdesk.notify_requester_reply_email_sent",
+        ticket_id=str(ticket.id),
+        sent=sent,
+    )
     return sent
 
 
