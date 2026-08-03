@@ -1552,6 +1552,17 @@
         "test": "Send test message",
         "testOk": "Message sent — check the chat in MAX",
         "testFail": "Send failed (see details)"
+      },
+      "digest": {
+        "title": "Daily ticket digest",
+        "sectionHint": "Schedule for sending an email digest of active tickets to support agents.",
+        "hint": "Time is in UTC (the worker runs in UTC). 08:00 UTC = 11:00 MSK. The digest is sent once a day at the specified time. For \"Weekdays\" — Mon–Fri only. The minute must be 0 (cron runs hourly at :00).",
+        "enabled": "Enable daily digest",
+        "digestHour": "Send hour (UTC, 0–23)",
+        "digestMinute": "Minute (0–59, usually 0)",
+        "digestSchedule": "Schedule",
+        "scheduleWeekdays": "Weekdays (Mon–Fri)",
+        "scheduleDaily": "Every day"
       }
     }
   },

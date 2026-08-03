@@ -9,6 +9,8 @@ const mockDeleteHelpdeskAgent = vi.fn()
 const mockPutHelpdeskMailbox = vi.fn()
 const mockFetchHelpdeskMaxBot = vi.fn()
 const mockPutHelpdeskMaxBot = vi.fn()
+const mockFetchHelpdeskDigest = vi.fn()
+const mockPutHelpdeskDigest = vi.fn()
 const mockFetchMyTickets = vi.fn()
 const mockFetchMyTicket = vi.fn()
 const mockCreateMyTicket = vi.fn()
@@ -30,6 +32,8 @@ vi.mock('../../src/api/helpdesk', () => ({
   putHelpdeskMailbox: mockPutHelpdeskMailbox,
   fetchHelpdeskMaxBot: mockFetchHelpdeskMaxBot,
   putHelpdeskMaxBot: mockPutHelpdeskMaxBot,
+  fetchHelpdeskDigest: mockFetchHelpdeskDigest,
+  putHelpdeskDigest: mockPutHelpdeskDigest,
   fetchMyTickets: mockFetchMyTickets,
   fetchMyTicket: mockFetchMyTicket,
   createMyTicket: mockCreateMyTicket,
@@ -287,6 +291,26 @@ describe('src/queries/helpdesk', () => {
     const dto = { enabled: true, chat_id: '100', bot_token: 'tok' }
     await m.mutationFn(dto)
     expect(mockPutHelpdeskMaxBot).toHaveBeenCalledWith(dto)
+    await m.onSuccess()
+    expect(mockInvalidate).toHaveBeenCalled()
+  })
+
+  it('useHelpdeskDigestQuery registers query and calls fetchHelpdeskDigest', async () => {
+    const { useHelpdeskDigestQuery } = await import('../../src/queries/helpdesk')
+    useHelpdeskDigestQuery()
+    mockFetchHelpdeskDigest.mockResolvedValueOnce({})
+    await capturedQueries[capturedQueries.length - 1].queryFn()
+    expect(mockFetchHelpdeskDigest).toHaveBeenCalledWith()
+  })
+
+  it('usePutHelpdeskDigestMutation calls putHelpdeskDigest and invalidates', async () => {
+    const { usePutHelpdeskDigestMutation } = await import('../../src/queries/helpdesk')
+    usePutHelpdeskDigestMutation()
+    const m = capturedMutations[capturedMutations.length - 1]
+    mockPutHelpdeskDigest.mockResolvedValueOnce({})
+    const dto = { enabled: true, digest_hour: 5, digest_minute: 0, digest_schedule: 'daily' }
+    await m.mutationFn(dto)
+    expect(mockPutHelpdeskDigest).toHaveBeenCalledWith(dto)
     await m.onSuccess()
     expect(mockInvalidate).toHaveBeenCalled()
   })

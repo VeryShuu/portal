@@ -1789,6 +1789,16 @@ tests/unit/test_helpdesk_email_template.py::TestRenderReplyEmail::test_no_histor
 tests/unit/test_helpdesk_email_template.py::TestRenderReplyEmail::test_no_reply_marker_in_email
 tests/unit/test_helpdesk_email_template.py::TestRenderReplyEmail::test_plain_has_ticket_header_line
 tests/unit/test_helpdesk_email_template.py::TestRenderReplyEmail::test_wraps_agent_reply_with_header_and_footer
+tests/unit/test_helpdesk_email_template.py::TestRenderRequesterReplyAgentEmail::test_announces_new_message
+tests/unit/test_helpdesk_email_template.py::TestRenderRequesterReplyAgentEmail::test_body_is_reply_not_first_message
+tests/unit/test_helpdesk_email_template.py::TestRenderRequesterReplyAgentEmail::test_contacts_block_shows_requester
+tests/unit/test_helpdesk_email_template.py::TestRenderRequesterReplyAgentEmail::test_footer_is_agent_style_no_reply_cta
+tests/unit/test_helpdesk_email_template.py::TestRenderRequesterReplyAgentEmail::test_guest_falls_back_to_message_author
+tests/unit/test_helpdesk_email_template.py::TestRenderRequesterReplyAgentEmail::test_has_header_with_ticket_number_and_subject
+tests/unit/test_helpdesk_email_template.py::TestRenderRequesterReplyAgentEmail::test_message_from_label_with_requester_name
+tests/unit/test_helpdesk_email_template.py::TestRenderRequesterReplyAgentEmail::test_plain_has_ticket_header_line
+tests/unit/test_helpdesk_email_template.py::TestRenderRequesterReplyAgentEmail::test_portal_link_in_footer
+tests/unit/test_helpdesk_email_template.py::TestRenderRequesterReplyAgentEmail::test_subject_escaped_against_xss
 tests/unit/test_helpdesk_email_template.py::TestRenderSystemEmail::test_system_email_has_no_assignee_in_header
 tests/unit/test_helpdesk_email_template.py::TestRenderSystemEmail::test_wraps_content_without_marker_or_history
 tests/unit/test_helpdesk_email_template.py::TestReplyMarkers::test_html_marker_cut_by_strip
@@ -1957,6 +1967,7 @@ tests/unit/test_helpdesk_models.py::TestHelpdeskTicket::test_user_fks_set_null_o
 tests/unit/test_helpdesk_models.py::TestHelpdeskTicketArchive::test_composite_pk
 tests/unit/test_helpdesk_models.py::TestHelpdeskTicketArchive::test_payload_jsonb
 tests/unit/test_helpdesk_notifications.py::TestBuildNewTicketAgentSubject::test_has_ticket_token_and_subject
+tests/unit/test_helpdesk_notifications.py::TestBuildRequesterReplyAgentSubject::test_has_ticket_token_and_subject
 tests/unit/test_helpdesk_notifications.py::TestFanOut::test_commits_before_publish_and_returns_count
 tests/unit/test_helpdesk_notifications.py::TestFanOut::test_empty_user_ids_zero_sent
 tests/unit/test_helpdesk_notifications.py::TestIsMaxLinkSafeUrl::test_safe_urls_pass[http://example.com:8080/path?q=1]
@@ -1984,6 +1995,14 @@ tests/unit/test_helpdesk_notifications.py::TestNotifyAgentReply::test_no_request
 tests/unit/test_helpdesk_notifications.py::TestNotifyAgentReply::test_notifies_requester
 tests/unit/test_helpdesk_notifications.py::TestNotifyRequesterReply::test_assigned_ticket_notifies_assignee_only
 tests/unit/test_helpdesk_notifications.py::TestNotifyRequesterReply::test_unassigned_ticket_notifies_all_agents
+tests/unit/test_helpdesk_notifications.py::TestNotifyRequesterReplyEmail::test_assigned_ticket_emails_only_assignee
+tests/unit/test_helpdesk_notifications.py::TestNotifyRequesterReplyEmail::test_assignee_with_notify_email_false_sends_nothing
+tests/unit/test_helpdesk_notifications.py::TestNotifyRequesterReplyEmail::test_commits_after_enqueuing
+tests/unit/test_helpdesk_notifications.py::TestNotifyRequesterReplyEmail::test_payload_has_ticket_number_for_image_embedding
+tests/unit/test_helpdesk_notifications.py::TestNotifyRequesterReplyEmail::test_subject_has_ticket_token
+tests/unit/test_helpdesk_notifications.py::TestNotifyRequesterReplyEmail::test_unassigned_no_agents_zero_sent
+tests/unit/test_helpdesk_notifications.py::TestNotifyRequesterReplyEmail::test_unassigned_ticket_emails_all_agents
+tests/unit/test_helpdesk_notifications.py::TestNotifyRequesterReplyEmail::test_uses_generic_kind
 tests/unit/test_helpdesk_notifications.py::TestNotifyStatusChanged::test_closed_includes_reopen_window
 tests/unit/test_helpdesk_notifications.py::TestNotifyStatusChanged::test_no_requester_zero_sent
 tests/unit/test_helpdesk_notifications.py::TestNotifyTicketAssigned::test_actor_is_assignee_excludes_self
@@ -2959,17 +2978,6 @@ tests/unit/test_meetings_audit_unit.py::TestPushMeetingsAudit::test_db_failure_i
 tests/unit/test_meetings_audit_unit.py::TestPushMeetingsAudit::test_falls_back_to_client_host_when_no_forwarded_header
 tests/unit/test_meetings_audit_unit.py::TestPushMeetingsAudit::test_no_request_no_user
 tests/unit/test_meetings_audit_unit.py::TestPushMeetingsAudit::test_writes_row_with_forwarded_ip_and_user_metadata
-tests/unit/test_meetings_bookings_helpers.py::test_compute_diff_conservation_and_disjoint
-tests/unit/test_meetings_bookings_helpers.py::test_compute_diff_filters_all_malformed_entries
-tests/unit/test_meetings_bookings_helpers.py::test_compute_diff_non_participant_changed_passthrough
-tests/unit/test_meetings_bookings_helpers.py::test_compute_diff_reflexive_all_unchanged
-tests/unit/test_meetings_bookings_helpers.py::test_compute_diff_symmetric_direction_swap
-tests/unit/test_meetings_bookings_helpers.py::test_date_range_converts_non_utc_timezone_to_utc
-tests/unit/test_meetings_bookings_helpers.py::test_date_range_handles_dst_timezone
-tests/unit/test_meetings_bookings_helpers.py::test_date_range_returns_full_day_bounds_in_utc
-tests/unit/test_meetings_bookings_helpers.py::test_to_utc_assigns_utc_to_naive_datetime
-tests/unit/test_meetings_bookings_helpers.py::test_to_utc_converts_non_utc_aware_to_utc
-tests/unit/test_meetings_bookings_helpers.py::test_to_utc_keeps_aware_datetime_unchanged_in_utc
 tests/unit/test_meetings_bookings_limit.py::TestBookingsListLimitCap::test_default_and_bounds
 tests/unit/test_meetings_bookings_limit.py::TestBookingsListLimitCap::test_my_endpoint_cap_unchanged
 tests/unit/test_meetings_guard.py::TestMeetingsGuard::test_disabled_returns_404
@@ -4763,6 +4771,7 @@ tests/unit/test_worker_tasks.py::TestRefreshCustomMetrics::test_no_pool_skips_db
 tests/unit/test_worker_tasks.py::TestRefreshCustomMetrics::test_photo_storage_calculated
 tests/unit/test_worker_tasks.py::TestRefreshCustomMetrics::test_returns_snapshot_dict
 tests/unit/test_worker_tasks.py::TestRefreshCustomMetrics::test_saves_snapshot_to_redis
+(pytest collection failed; check backend venv)
 ```
 
 ## Frontend Vitest (tests/unit/*.spec.ts)
@@ -4872,6 +4881,7 @@ helpdesk-agent-inbox-page.spec.ts
 helpdesk-agent-ticket-detail-page.spec.ts
 helpdesk-api-cc.spec.ts
 helpdesk-api-counts.spec.ts
+helpdesk-digest-settings.spec.ts
 helpdesk-my-archive-page.spec.ts
 helpdesk-my-ticket-detail-page.spec.ts
 helpdesk-my-tickets-page.spec.ts
