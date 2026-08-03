@@ -32,6 +32,17 @@
       </div>
       <HelpdeskMaxBotSettings />
     </div>
+
+    <!-- Секция: ежедневная сводка заявок (расписание) -->
+    <div class="helpdesk-section">
+      <div class="branding-section__title">
+        {{ t('admin.helpdesk.digest.title') }}
+      </div>
+      <div class="branding-section__hint">
+        {{ t('admin.helpdesk.digest.sectionHint') }}
+      </div>
+      <HelpdeskDigestSettings />
+    </div>
   </div>
 </template>
 
@@ -49,6 +60,9 @@ const HelpdeskMailboxSettings = defineAsyncComponent(
 )
 const HelpdeskMaxBotSettings = defineAsyncComponent(
   () => import('../../../components/admin/HelpdeskMaxBotSettings.vue'),
+)
+const HelpdeskDigestSettings = defineAsyncComponent(
+  () => import('../../../components/admin/HelpdeskDigestSettings.vue'),
 )
 </script>
 

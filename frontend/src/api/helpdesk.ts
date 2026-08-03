@@ -468,6 +468,40 @@ export function testHelpdeskMaxBot(): Promise<HelpdeskMaxBotTestResult> {
   })
 }
 
+// ── Daily digest settings ───────────────────────────────────────────────────
+
+export type HelpdeskDigestSchedule = 'weekdays' | 'daily'
+
+export interface HelpdeskDigestSettingsOut {
+  enabled: boolean
+  /** Час срабатывания (0–23) — время UTC воркера (08:00 UTC = 11:00 МСК). */
+  digest_hour: number
+  /** Минута срабатывания (0–59). Должна быть 0 — cron запускается ежечасно в :00. */
+  digest_minute: number
+  digest_schedule: HelpdeskDigestSchedule
+  updated_at: string | null
+}
+
+export interface HelpdeskDigestSettingsIn {
+  enabled: boolean
+  digest_hour: number
+  digest_minute: number
+  digest_schedule: HelpdeskDigestSchedule
+}
+
+export function fetchHelpdeskDigest(): Promise<HelpdeskDigestSettingsOut> {
+  return api<HelpdeskDigestSettingsOut>('/helpdesk/settings/digest')
+}
+
+export function putHelpdeskDigest(
+  dto: HelpdeskDigestSettingsIn,
+): Promise<HelpdeskDigestSettingsOut> {
+  return api<HelpdeskDigestSettingsOut>('/helpdesk/settings/digest', {
+    method: 'PUT',
+    body: dto,
+  })
+}
+
 // ── User search (CC typeahead) ──────────────────────────────────────────────
 
 /** Результат поиска пользователя для CC-селектора агента (``GET /users/search``). */

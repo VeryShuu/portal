@@ -30,6 +30,7 @@ from app.services.helpdesk.email_template import (
     render_history_block,
     render_new_ticket_agent_email,
     render_reply_email,
+    render_requester_reply_agent_email,
     render_system_email,
 )
 
@@ -929,3 +930,112 @@ class TestRenderNewTicketAgentEmail:
         assert "TKT-99" in plain_out
         assert "Тест тема" in plain_out
         assert "Тело заявки здесь" in plain_out
+
+
+# ── render_requester_reply_agent_email (уведомление агенту об ответе клиента) ─
+
+
+class TestRenderRequesterReplyAgentEmail:
+    """Письмо-уведомление агенту о новом сообщении от заявителя. Симметрично
+    ``render_new_ticket_agent_email``, но для ответа по существующему тикету."""
+
+    def test_has_header_with_ticket_number_and_subject(self) -> None:
+        html_out, _ = render_requester_reply_agent_email(
+            ticket=_ticket(number=203, subject="1С зависает"),
+            message=_msg(text="ответ"),
+        )
+        assert "#203" in html_out
+        assert "1С зависает" in html_out
+
+    def test_announces_new_message(self) -> None:
+        """Контент: «Новое сообщение по заявке.» (не «новая заявка»)."""
+        html_out, plain_out = render_requester_reply_agent_email(
+            ticket=_ticket(),
+            message=_msg(text="текст"),
+        )
+        assert "Новое сообщение по заявке" in html_out
+        assert "Новое сообщение по заявке" in plain_out
+        # Семантическое отличие от «новой заявки».
+        assert "Поступила новая заявка" not in html_out
+
+    def test_body_is_reply_not_first_message(self) -> None:
+        """Тело берётся из ``message`` (ответ заявителя), не из первого сообщения тикета."""
+        html_out, plain_out = render_requester_reply_agent_email(
+            ticket=_ticket(),
+            message=_msg(text="Это мой новый ответ"),
+        )
+        assert "Это мой новый ответ" in html_out
+        assert "Это мой новый ответ" in plain_out
+
+    def test_message_from_label_with_requester_name(self) -> None:
+        """Подпись «Сообщение от — {ФИО заявителя}» над телом (из модели User)."""
+        requester = _requester()
+        html_out, plain_out = render_requester_reply_agent_email(
+            ticket=_ticket(),
+            message=_msg(text="x"),
+            requester=requester,
+        )
+        assert "Сообщение от" in html_out
+        assert "Третьякова Виктория Юрьевна" in html_out
+        assert "Сообщение от" in plain_out
+
+    def test_guest_falls_back_to_message_author(self) -> None:
+        """Гость без аккаунта (requester=None) → подпись из ``message.author_name``."""
+        msg = _msg(text="x", author_name="Гость Вася", author_email="g@x.test")
+        html_out, plain_out = render_requester_reply_agent_email(
+            ticket=_ticket(),
+            message=msg,
+            requester=None,
+        )
+        assert "Гость Вася" in html_out
+        assert "Гость Вася" in plain_out
+
+    def test_contacts_block_shows_requester(self) -> None:
+        """Блок контактов заявителя (кто ответил) — как в «новой заявке»."""
+        requester = _requester()
+        html_out, plain_out = render_requester_reply_agent_email(
+            ticket=_ticket(),
+            message=_msg(text="x"),
+            requester=requester,
+        )
+        assert "ФИО:" in html_out
+        assert "tretyakova.vu@mage.ru" in html_out
+        assert "+7 999 123-45-67" in html_out
+        assert "tretyakova.vu@mage.ru" in plain_out
+
+    def test_footer_is_agent_style_no_reply_cta(self) -> None:
+        """Агентский футер (без «ответьте на письмо») — агент работает через портал."""
+        html_out, _ = render_requester_reply_agent_email(
+            ticket=_ticket(),
+            message=_msg(text="x"),
+        )
+        assert "ответив на это письмо" not in html_out.lower()
+        assert "автоматическое уведомление" in html_out.lower()
+
+    def test_subject_escaped_against_xss(self) -> None:
+        """Пользовательские данные экранируются."""
+        requester = _requester(full_name="<script>x</script>")
+        html_out, _ = render_requester_reply_agent_email(
+            ticket=_ticket(subject="ok"),
+            message=_msg(text="x"),
+            requester=requester,
+        )
+        assert "<script>" not in html_out
+        assert "&lt;script&gt;" in html_out
+
+    def test_plain_has_ticket_header_line(self) -> None:
+        _, plain_out = render_requester_reply_agent_email(
+            ticket=_ticket(number=77, subject="Тест тема"),
+            message=_msg(text="Тело ответа"),
+        )
+        assert "TKT-77" in plain_out
+        assert "Тест тема" in plain_out
+        assert "Тело ответа" in plain_out
+
+    def test_portal_link_in_footer(self) -> None:
+        html_out, _ = render_requester_reply_agent_email(
+            ticket=_ticket(),
+            message=_msg(text="x"),
+            portal_url="https://portal.local/helpdesk/tickets/1",
+        )
+        assert "https://portal.local/helpdesk/tickets/1" in html_out

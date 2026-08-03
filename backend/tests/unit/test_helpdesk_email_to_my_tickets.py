@@ -133,6 +133,18 @@ def _disable_post_ingest_effects() -> Any:
             new=AsyncMock(),
         )
     )
+    stack.enter_context(
+        patch(
+            "app.services.helpdesk.notifications.notify_requester_reply",
+            new=AsyncMock(),
+        )
+    )
+    stack.enter_context(
+        patch(
+            "app.services.helpdesk.notifications.notify_requester_reply_email",
+            new=AsyncMock(),
+        )
+    )
     return stack
 
 
