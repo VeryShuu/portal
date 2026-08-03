@@ -33,7 +33,7 @@ dependencies = [
     "arq>=0.26.0",
     "structlog>=24.1.0",
     "prometheus-fastapi-instrumentator>=7.0.0,<9.0",
-    "fastapi-limiter==0.1.6",
+    "fastapi-limiter==0.2.0",
     "nh3>=0.2.14",
     "python-magic>=0.4.27",
     "python-docx>=1.1.0",
@@ -48,7 +48,7 @@ dependencies = [
     # ERP-sync: парсинг legacy .xls (OLE2, Excel 97-2003). Формат заморожен,
     # ломаться нечему; версия 2.0.1 намеренно оставила только .xls (xlsx читает
     # openpyxl выше). См. docs/wip/erp-sync.md.
-    "xlrd==2.0.1",
+    "xlrd==2.0.2",
     "Pillow>=10.3.0",
     "pillow-heif>=0.16.0",
     "blurhash>=1.1.4",
@@ -90,7 +90,7 @@ dev = [
     # 2026-07-24: UP041 в ruff 0.15.22, no-any-return в mypy 2.3.0).
     # Обновление — отдельным PR через Dependabot + правка кода под новые правила.
     # Локальная проверка как CI: ./scripts/ci-lint.sh (см. AGENTS.md §CI).
-    "ruff==0.15.22",
+    "ruff==0.16.1",
     "mypy==2.3.0",
     "radon==6.0.1",
 ]
