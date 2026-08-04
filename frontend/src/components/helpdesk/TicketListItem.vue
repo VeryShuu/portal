@@ -5,61 +5,102 @@
     :title="ticket.unread ? t('helpdesk.hasUnread') : undefined"
     role="button"
     tabindex="0"
+    :style="{ gridTemplateColumns: gridTemplate }"
     @click="$emit('open', ticket.id)"
     @keydown.enter="$emit('open', ticket.id)"
     @keydown.space.prevent="$emit('open', ticket.id)"
   >
-    <span class="ticket-row__cell ticket-row__num">
-      <span
-        v-if="ticket.unread"
-        class="ticket-row__unread-dot"
-        :aria-label="t('helpdesk.hasUnread')"
-      />
-      #{{ ticket.number }}
-    </span>
-    <span class="ticket-row__cell ticket-row__status">
-      <TicketStatusBadge :status="ticket.status" />
-    </span>
-    <span class="ticket-row__cell ticket-row__subject">{{ ticket.subject }}</span>
-    <span
-      v-if="agentMode"
-      class="ticket-row__cell ticket-row__requester"
-      :title="ticket.requester_name ?? ticket.requester_email"
+    <template
+      v-for="col in visibleColumns"
+      :key="col.id"
     >
-      {{ ticket.requester_name ?? ticket.requester_email }}
-    </span>
-    <span class="ticket-row__cell ticket-row__assignee">
+      <!-- Номер тикета + индикатор непрочитанного -->
       <span
-        v-if="ticket.assignee_name"
-        :title="ticket.assignee_name"
-      >{{ ticket.assignee_name }}</span>
-      <n-button
-        v-else-if="agentMode"
-        size="tiny"
-        type="primary"
-        ghost
-        :loading="taking"
-        @click.stop="$emit('take', ticket.id)"
+        v-if="col.id === 'number'"
+        class="ticket-row__cell ticket-row__num"
       >
-        {{ t('helpdesk.take') }}
-      </n-button>
+        <span
+          v-if="ticket.unread"
+          class="ticket-row__unread-dot"
+          :aria-label="t('helpdesk.hasUnread')"
+        />
+        #{{ ticket.number }}
+      </span>
+      <!-- Статус -->
       <span
-        v-else
-        class="ticket-row__muted"
-      >—</span>
-    </span>
-    <span class="ticket-row__cell ticket-row__date">{{ formatDate(ticket.last_activity_at) }}</span>
+        v-else-if="col.id === 'status'"
+        class="ticket-row__cell ticket-row__status"
+      >
+        <TicketStatusBadge :status="ticket.status" />
+      </span>
+      <!-- Тема (FIXED — всегда видна) -->
+      <span
+        v-else-if="col.id === 'subject'"
+        class="ticket-row__cell ticket-row__subject"
+      >{{ ticket.subject }}</span>
+      <!-- Инициатор (только агентский режим) -->
+      <span
+        v-else-if="col.id === 'requester'"
+        class="ticket-row__cell ticket-row__requester"
+        :title="ticket.requester_name ?? ticket.requester_email"
+      >
+        {{ ticket.requester_name ?? ticket.requester_email }}
+      </span>
+      <!-- Ответственный / кнопка «Взять» -->
+      <span
+        v-else-if="col.id === 'assignee'"
+        class="ticket-row__cell ticket-row__assignee"
+      >
+        <span
+          v-if="ticket.assignee_name"
+          :title="ticket.assignee_name"
+        >{{ ticket.assignee_name }}</span>
+        <n-button
+          v-else-if="agentMode"
+          size="tiny"
+          type="primary"
+          ghost
+          :loading="taking"
+          @click.stop="$emit('take', ticket.id)"
+        >
+          {{ t('helpdesk.take') }}
+        </n-button>
+        <span
+          v-else
+          class="ticket-row__muted"
+        >—</span>
+      </span>
+      <!-- Возраст заявки (дни от created_at; считается на фронте) -->
+      <span
+        v-else-if="col.id === 'age'"
+        class="ticket-row__cell ticket-row__age"
+        :class="{ 'ticket-row__age--stale': ageDays >= STALE_DAYS }"
+        :title="t('helpdesk.ageSinceCreated')"
+      >{{ t('helpdesk.ageDays', { n: ageDays }, ageDays) }}</span>
+      <!-- Обновлено (last_activity_at) -->
+      <span
+        v-else-if="col.id === 'updated'"
+        class="ticket-row__cell ticket-row__date"
+      >{{ formatDate(ticket.last_activity_at) }}</span>
+    </template>
   </div>
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { NButton } from 'naive-ui'
 import TicketStatusBadge from './TicketStatusBadge.vue'
+import { ticketAgeDays } from '../../utils/helpdeskTicketAge'
+import type { HelpdeskColumnMeta } from '../../composables/useHelpdeskInboxColumns'
 import type { HelpdeskTicketListItem } from '../../api/helpdesk'
 
-defineProps<{
+const props = defineProps<{
   ticket: HelpdeskTicketListItem
+  /** Колонки для рендера (от TicketList — единый источник истины). */
+  visibleColumns: HelpdeskColumnMeta[]
+  /** CSS grid-template-columns — должен совпадать с шапкой TicketList. */
+  gridTemplate: string
   agentMode?: boolean
   taking?: boolean
 }>()
@@ -70,6 +111,14 @@ defineEmits<{
 }>()
 
 const { t } = useI18n()
+
+// «Возраст» заявки в днях (полные сутки от created_at). Бэкенд уже отдаёт
+// created_at в TicketListItemOut, поэтому колонка считается на фронте без
+// правок API. Функция вынесена в utils/helpdeskTicketAge для unit-тестов.
+const ageDays = computed(() => ticketAgeDays(props.ticket.created_at))
+
+/** Порог «зависшей» заявки (дн.) — лёгкая визуальная подсветка. */
+const STALE_DAYS = 7
 
 function formatDate(iso: string): string {
   // Fixed-width numeric format so the date column aligns perfectly across
@@ -85,11 +134,12 @@ function formatDate(iso: string): string {
 </script>
 
 <style scoped>
-/* Agent view: # | State | Subject | Requester | Owner | Updated (6 cols)
-   User view: # | State | Subject | Assignee | Updated (5 cols, no requester) */
+/* Шапка и строка рендерятся из одного reactive-state (useHelpdeskInboxColumns),
+   поэтому grid-template-columns задаётся инлайн из props/gridTemplate — все
+   строки таблицы выровнены с шапкой. Колонки (Agent): # | State | Subject |
+   Requester | Owner | Age | Updated. Subject = flex (minmax(0,1fr)). */
 .ticket-row {
   display: grid;
-  grid-template-columns: 56px 92px minmax(0, 1fr) 150px 104px;
   align-items: center;
   gap: 12px;
   padding: 8px 14px;
@@ -97,9 +147,6 @@ function formatDate(iso: string): string {
   cursor: pointer;
   transition: background 0.12s ease;
   outline: none;
-}
-.ticket-row--agent {
-  grid-template-columns: 56px 92px minmax(0, 1fr) 150px 150px 104px;
 }
 .ticket-row:hover,
 .ticket-row:focus-visible {
@@ -165,6 +212,18 @@ function formatDate(iso: string): string {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.ticket-row__age {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+/* Зависшие заявки (>= STALE_DAYS) — приглушённый акцент, чтобы бросались
+   в глаза при сканировании инбокса. Не красный (не ошибка), а амбер. */
+.ticket-row__age--stale {
+  color: var(--color-warning, #b07900);
+  font-weight: 600;
+}
 .ticket-row__date {
   font-size: 12px;
   color: var(--color-text-muted);
@@ -178,10 +237,11 @@ function formatDate(iso: string): string {
 }
 
 @media (max-width: 720px) {
-  /* Stack into a compact two-line card on narrow viewports. */
-  .ticket-row,
-  .ticket-row--agent {
-    grid-template-columns: auto 1fr auto;
+  /* На узких экранах grid ломается — переключаемся на компактный двухстрочный
+     вид, как в исходной версии. Порядок колонок сохраняется через
+     grid-template-areas, но age здесь не показываем (экономим место). */
+  .ticket-row {
+    grid-template-columns: auto 1fr auto !important;
     grid-template-areas:
       "num status date"
       "subject subject subject"
@@ -194,6 +254,7 @@ function formatDate(iso: string): string {
   .ticket-row__subject { grid-area: subject; }
   .ticket-row__requester { grid-area: requester; }
   .ticket-row__assignee { grid-area: assignee; }
+  .ticket-row__age { display: none; }
   .ticket-row__date { grid-area: date; text-align: right; }
 }
 </style>

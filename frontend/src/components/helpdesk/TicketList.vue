@@ -1,19 +1,86 @@
 <template>
   <div class="ticket-table">
-    <div class="ticket-table__head ticket-table__head--agent">
-      <span>{{ t('helpdesk.columnNumber') }}</span>
-      <span>{{ t('helpdesk.columnState') }}</span>
-      <span>{{ t('helpdesk.columnSubject') }}</span>
-      <span>{{ t('helpdesk.columnRequester') }}</span>
-      <span>{{ t('helpdesk.columnOwner') }}</span>
-      <span>{{ t('helpdesk.columnUpdated') }}</span>
+    <div
+      ref="headEl"
+      class="ticket-table__head"
+      :class="{ 'ticket-table__head--sortable': isAgent }"
+      :style="{ gridTemplateColumns: headGridTemplate }"
+    >
+      <span
+        v-for="col in visibleColumns"
+        :key="col.id"
+        :data-column-id="col.id"
+        class="ticket-table__th"
+        :class="{
+          'ticket-table__th--fixed': col.fixed,
+          'ticket-table__th--draggable': isAgent && !col.fixed,
+        }"
+      >
+        <span class="ticket-table__th-label">{{ t(labelKey(col)) }}</span>
+        <span
+          v-if="isAgent && !col.fixed"
+          class="ticket-table__grip"
+          :title="t('helpdesk.dragColumnHint')"
+        >⠿</span>
+      </span>
+      <span
+        v-if="isAgent"
+        class="ticket-table__th ticket-table__settings"
+      >
+        <n-popover
+          trigger="click"
+          placement="bottom-end"
+          :width="260"
+        >
+          <template #trigger>
+            <n-button
+              quaternary
+              circle
+              size="tiny"
+              :title="t('helpdesk.columnsSettings')"
+            >
+              <template #icon>
+                <n-icon><component :is="OptionsOutline" /></n-icon>
+              </template>
+            </n-button>
+          </template>
+          <div class="col-settings">
+            <div class="col-settings__title">
+              {{ t('helpdesk.columnsShowHide') }}
+            </div>
+            <div
+              v-for="col in togglableColumns"
+              :key="col.id"
+              class="col-settings__row"
+            >
+              <n-checkbox
+                :checked="!state.hidden.includes(col.id)"
+                @update:checked="toggleColumn(col.id)"
+              >
+                {{ t(labelKey(col)) }}
+              </n-checkbox>
+            </div>
+            <div class="col-settings__footer">
+              <n-button
+                size="tiny"
+                quaternary
+                @click="resetColumns"
+              >
+                {{ t('helpdesk.columnsReset') }}
+              </n-button>
+            </div>
+          </div>
+        </n-popover>
+      </span>
     </div>
     <div class="ticket-table__body">
       <TicketListItem
         v-for="ticket in items"
         :key="ticket.id"
         :ticket="ticket"
-        agent-mode
+        :visible-columns="visibleColumns"
+        :grid-template="gridTemplate"
+        :agent-mode="isAgent"
         :taking="takingId === ticket.id"
         @open="$emit('open', $event)"
         @take="$emit('take', $event)"
@@ -23,14 +90,26 @@
 </template>
 
 <script setup lang="ts">
+import { computed, onBeforeUnmount, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import Sortable from 'sortablejs'
+import { NPopover, NButton, NIcon, NCheckbox } from 'naive-ui'
+import { OptionsOutline } from '@vicons/ionicons5'
 import TicketListItem from './TicketListItem.vue'
+import {
+  useHelpdeskInboxColumns,
+  type HelpdeskColumnMeta,
+  type HelpdeskColumnId,
+  type HelpdeskColumnMode,
+} from '../../composables/useHelpdeskInboxColumns'
 import type { HelpdeskTicketListItem } from '../../api/helpdesk'
 
-defineProps<{
+const props = defineProps<{
   items: HelpdeskTicketListItem[]
   /** id тикета, для которого сейчас идёт take-запрос (показывает спиннер). */
   takingId?: string | null
+  /** Пресет колонок: ``'agent'`` (полный, настраиваемый) / ``'user'`` (упрощённый). */
+  mode?: HelpdeskColumnMode
 }>()
 
 defineEmits<{
@@ -39,6 +118,94 @@ defineEmits<{
 }>()
 
 const { t } = useI18n()
+const mode = computed(() => props.mode ?? 'agent')
+const isAgent = computed(() => mode.value === 'agent')
+const { state, visibleColumns, gridTemplate, togglableColumns, reorderColumn, toggleColumn, resetColumns } =
+  useHelpdeskInboxColumns(mode.value)
+
+// Шапка агентского режима получает дополнительную ячейку под «шестерёнку»
+// (28px) — grid-template-columns должен её учесть. User-режим — без ячейки.
+const SETTINGS_CELL = '28px'
+const headGridTemplate = computed(() =>
+  isAgent.value ? `${gridTemplate.value} ${SETTINGS_CELL}` : gridTemplate.value,
+)
+
+/** i18n-ключ метаданных колонки хранится с полным неймспейсом (helpdesk.columnX),
+ * а t() в этом компоненте вызывается без области видимости — убираем префикс. */
+function labelKey(col: HelpdeskColumnMeta): string {
+  return col.labelKey.replace('helpdesk.', '')
+}
+
+// ── Drag-and-drop порядка колонок (только в агентском режиме) ────────────────
+// sortablejs физически двигает DOM-узлы шапки, но порядок рендера определяется
+// реактивным ``state.order``. Поэтому после onEnd: (1) читаем итоговый порядок
+// колонок из DOM, чтобы определить ``beforeId`` (сосед справа от moved);
+// (2) возвращаем DOM к исходному виду — Vue перекроет ре-рендер из state;
+// (3) мутируем state через ``reorderColumn`` — паттерн проекта (см.
+// useSortableGroups). handle = «гrip»-иконка, чтобы клик по заголовку не
+// запускал перетаскивание (важно для будущей сортировки по столбцу).
+const headEl = useTemplateRef<HTMLElement>('headEl')
+let sortableInstance: Sortable | null = null
+
+function domColumnOrder(): HelpdeskColumnId[] {
+  const root = headEl.value
+  if (!root) return visibleColumns.value.map((c) => c.id)
+  const nodes = root.querySelectorAll<HTMLElement>('[data-column-id]')
+  return Array.from(nodes).map((el) => el.dataset.columnId as HelpdeskColumnId)
+}
+
+function teardownSortable() {
+  if (sortableInstance) {
+    sortableInstance.destroy()
+    sortableInstance = null
+  }
+}
+
+function setupSortable() {
+  if (sortableInstance || !headEl.value) return
+  sortableInstance = Sortable.create(headEl.value, {
+    handle: '.ticket-table__grip',
+    animation: 150,
+    ghostClass: 'ticket-table__ghost',
+    chosenClass: 'ticket-table__chosen',
+    dragClass: 'ticket-table__drag',
+    draggable: '.ticket-table__th--draggable',
+    filter: '.ticket-table__settings',
+    onEnd(evt) {
+      const moved = evt.item
+      const parent = evt.to
+      // (1) Пока DOM в переставленном состоянии — фиксируем новый порядок и
+      // соседа справа от moved (это и есть beforeId для reorderColumn).
+      const movedId = moved?.dataset.columnId as HelpdeskColumnId | undefined
+      const order = domColumnOrder()
+      let beforeId: HelpdeskColumnId | null = null
+      if (movedId) {
+        const idx = order.indexOf(movedId)
+        if (idx >= 0 && idx + 1 < order.length) beforeId = order[idx + 1] ?? null
+      }
+      // (2) Revert DOM: вставляем moved обратно на oldIndex — источник истины
+      // это state, Vue сам перерисует.
+      if (moved && parent && evt.oldIndex != null) {
+        const refNode = parent.children[evt.oldIndex] ?? null
+        if (refNode) parent.insertBefore(moved, refNode)
+        else parent.appendChild(moved)
+      }
+      // (3) Мутируем state (persist → localStorage).
+      if (movedId) reorderColumn(movedId, beforeId)
+    },
+  })
+}
+
+watch(
+  () => isAgent.value,
+  (enabled) => {
+    if (enabled) setupSortable()
+    else teardownSortable()
+  },
+  { immediate: true },
+)
+
+onBeforeUnmount(teardownSortable)
 </script>
 
 <style scoped>
@@ -50,7 +217,6 @@ const { t } = useI18n()
 }
 .ticket-table__head {
   display: grid;
-  grid-template-columns: 56px 92px minmax(0, 1fr) 150px 150px 104px;
   gap: 12px;
   padding: 8px 14px;
   font-size: 11px;
@@ -60,11 +226,80 @@ const { t } = useI18n()
   color: var(--color-text-muted);
   background: var(--color-bg-muted);
   border-bottom: 1px solid var(--color-border);
+  position: relative;
+  align-items: center;
 }
-.ticket-table__head--agent span:last-child {
-  text-align: right;
+.ticket-table__th {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.ticket-table__th-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ticket-table__head--sortable .ticket-table__th--draggable {
+  cursor: grab;
+}
+.ticket-table__head--sortable .ticket-table__th--draggable:active {
+  cursor: grabbing;
+}
+.ticket-table__grip {
+  cursor: grab;
+  color: var(--color-text-muted);
+  opacity: 0.4;
+  font-size: 13px;
+  line-height: 1;
+  user-select: none;
+  flex-shrink: 0;
+}
+.ticket-table__head--sortable .ticket-table__th--draggable:hover .ticket-table__grip {
+  opacity: 0.9;
+}
+.ticket-table__settings {
+  justify-self: end;
+}
+/* ghost/clone-состояния sortablejs — лёгкая подсветка перетаскиваемой колонки */
+.ticket-table__ghost {
+  opacity: 0.4;
+}
+.ticket-table__chosen {
+  opacity: 0.85;
+}
+.ticket-table__drag {
+  background: var(--color-surface);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  border-radius: 4px;
+  padding: 2px 6px;
 }
 .ticket-table__body :deep(.ticket-row:last-child) {
   border-bottom: none;
+}
+/* Меню «шестерёнки» */
+.col-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.col-settings__title {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-muted);
+  margin-bottom: 4px;
+}
+.col-settings__row {
+  display: flex;
+  align-items: center;
+}
+.col-settings__footer {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--color-border);
+  display: flex;
+  justify-content: flex-end;
 }
 </style>
