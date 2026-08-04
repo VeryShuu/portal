@@ -51,12 +51,22 @@ export interface HelpdeskColumnMeta {
   fixed?: boolean
   /** Можно ли скрыть через меню «шестерёнки». FIXED-колонки — нет. */
   hideable?: boolean
+  /** Горизонтальное выравнивание ячейки и заголовка. По умолчанию ``start``. */
+  align?: 'start' | 'end'
+  /** Разрешена ли серверная сортировка по этой колонке. */
+  sortable?: boolean
 }
 
 /** Полный дескриптор каждой колонки (метаданные стабильны между пресетами). */
 export const COLUMN_META: Record<HelpdeskColumnId, HelpdeskColumnMeta> = {
-  number: { id: 'number', labelKey: 'helpdesk.columnNumber', defaultWidth: 56, hideable: false },
-  status: { id: 'status', labelKey: 'helpdesk.columnState', defaultWidth: 92 },
+  number: {
+    id: 'number',
+    labelKey: 'helpdesk.columnNumber',
+    defaultWidth: 56,
+    hideable: false,
+    sortable: true,
+  },
+  status: { id: 'status', labelKey: 'helpdesk.columnState', defaultWidth: 92, sortable: true },
   subject: {
     id: 'subject',
     labelKey: 'helpdesk.columnSubject',
@@ -64,10 +74,26 @@ export const COLUMN_META: Record<HelpdeskColumnId, HelpdeskColumnMeta> = {
     fixed: true,
     hideable: false,
   },
-  requester: { id: 'requester', labelKey: 'helpdesk.columnRequester', defaultWidth: 200 },
-  assignee: { id: 'assignee', labelKey: 'helpdesk.columnOwner', defaultWidth: 200 },
-  age: { id: 'age', labelKey: 'helpdesk.columnAge', defaultWidth: 80 },
-  updated: { id: 'updated', labelKey: 'helpdesk.columnUpdated', defaultWidth: 104 },
+  requester: {
+    id: 'requester',
+    labelKey: 'helpdesk.columnRequester',
+    defaultWidth: 200,
+    sortable: true,
+  },
+  assignee: {
+    id: 'assignee',
+    labelKey: 'helpdesk.columnOwner',
+    defaultWidth: 200,
+    sortable: true,
+  },
+  age: { id: 'age', labelKey: 'helpdesk.columnAge', defaultWidth: 80, sortable: true },
+  updated: {
+    id: 'updated',
+    labelKey: 'helpdesk.columnUpdated',
+    defaultWidth: 104,
+    align: 'end',
+    sortable: true,
+  },
 }
 
 /** Порядок колонок по умолчанию для каждого пресета. */

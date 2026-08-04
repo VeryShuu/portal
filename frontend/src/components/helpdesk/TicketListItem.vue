@@ -77,10 +77,10 @@
         :class="{ 'ticket-row__age--stale': ageDays >= STALE_DAYS }"
         :title="t('helpdesk.ageSinceCreated')"
       >{{ t('helpdesk.ageDays', ageDays) }}</span>
-      <!-- Обновлено (last_activity_at) -->
+      <!-- Обновлено (last_activity_at) — выравнивание end, как в шапке -->
       <span
         v-else-if="col.id === 'updated'"
-        class="ticket-row__cell ticket-row__date"
+        class="ticket-row__cell ticket-row__date ticket-row__cell--end"
       >{{ formatDate(ticket.last_activity_at) }}</span>
     </template>
   </div>

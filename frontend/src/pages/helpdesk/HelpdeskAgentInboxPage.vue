@@ -38,8 +38,11 @@
           v-else
           :items="searchItems"
           :taking-id="takingId"
+          :sort-column="sortColumn"
+          :sort-order="sortOrder"
           @open="goToTicket"
           @take="onTake"
+          @sort="onSortToggle"
         />
         <div
           v-if="searchTotal > searchLimit"
@@ -76,8 +79,11 @@
             v-else
             :items="newItems"
             :taking-id="takingId"
+            :sort-column="sortColumn"
+            :sort-order="sortOrder"
             @open="goToTicket"
             @take="onTake"
+            @sort="onSortToggle"
           />
           <div
             v-if="newTotal > LIMIT"
@@ -124,8 +130,11 @@
             v-else
             :items="inWorkItems"
             :taking-id="takingId"
+            :sort-column="sortColumn"
+            :sort-order="sortOrder"
             @open="goToTicket"
             @take="onTake"
+            @sort="onSortToggle"
           />
           <div
             v-if="inWorkTotal > LIMIT"
@@ -154,6 +163,7 @@ import { useAuthStore } from '../../stores/auth'
 import { parseApiError } from '../../utils/parseApiError'
 import { useAgentInboxQuery } from '../../queries/helpdesk'
 import { takeTicket } from '../../api/helpdesk'
+import { useHelpdeskTicketSort } from '../../composables/useHelpdeskTicketSort'
 import { useQueryClient } from '@tanstack/vue-query'
 import { queryKeys } from '../../queries/keys'
 import type { HelpdeskInboxParams } from '../../api/helpdesk'
@@ -170,6 +180,18 @@ const LIMIT = 20
 const q = ref('')
 const searchPage = ref(1)
 const isSearchMode = computed(() => q.value.trim().length > 0)
+
+// Серверная сортировка (общая для всех трёх списков). Клик по заголовку →
+// toggle цикла asc→desc→none→asc; смена сортировки сбрасывает страницу на 1
+// (иначе можно застрять на пустой странице переупорядоченного списка).
+const { sortColumn, sortOrder, apiParams: sortApiParams, toggle: toggleSort } = useHelpdeskTicketSort()
+
+function onSortToggle(id: Parameters<typeof toggleSort>[0]): void {
+  toggleSort(id)
+  newPage.value = 1
+  inWorkPage.value = 1
+  searchPage.value = 1
+}
 
 // ── Блок «Новые заявки» (неназначенные + status=new) ─────────────────────────
 const newPage = ref(1)
@@ -193,6 +215,7 @@ const archiveHref = '/helpdesk/archive'
 const newParams = computed<HelpdeskInboxParams>(() => ({
   status: 'new',
   unassigned: true,
+  ...sortApiParams.value,
   limit: LIMIT,
   offset: (newPage.value - 1) * LIMIT,
 }))
@@ -210,6 +233,7 @@ const inWorkParams = computed<HelpdeskInboxParams>(() => {
     // уже в верхнем блоке «Новые заявки»).
     assignee: isMine ? myId.value : undefined,
     assigned: !isMine || undefined,
+    ...sortApiParams.value,
     limit: LIMIT,
     offset: (inWorkPage.value - 1) * LIMIT,
   }
@@ -224,6 +248,7 @@ const inWorkLoading = computed(() => inWorkQ.isLoading.value)
 
 const searchParams = computed<HelpdeskInboxParams>(() => ({
   q: q.value.trim(),
+  ...sortApiParams.value,
   limit: LIMIT,
   offset: (searchPage.value - 1) * LIMIT,
 }))

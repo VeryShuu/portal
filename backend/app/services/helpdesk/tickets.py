@@ -12,10 +12,12 @@ from __future__ import annotations
 import uuid
 from collections.abc import Sequence
 from datetime import UTC, datetime
+from typing import Any
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import asc, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import aliased, selectinload
+from sqlalchemy.sql import Select
 
 from app.core.logging import get_logger
 from app.models.helpdesk import HelpdeskMessage, HelpdeskTicket
@@ -229,6 +231,8 @@ async def list_my_tickets(
     unassigned: bool = False,
     assigned: bool = False,
     active_only: bool = False,
+    sort: str | None = None,
+    order: str = "desc",
 ) -> Sequence[HelpdeskTicket]:
     """Список тикетов инициатора. ``assignee_name`` подтягивается через
     relationship; для списков достаточно не загружать сообщения.
@@ -249,17 +253,20 @@ async def list_my_tickets(
         conditions.append(HelpdeskTicket.assignee_user_id.is_(None))
     elif assigned:
         conditions.append(HelpdeskTicket.assignee_user_id.is_not(None))
-    res = await db.execute(
+    query = (
         select(HelpdeskTicket)
         .where(*conditions)
         .options(
             selectinload(HelpdeskTicket.assignee),
             selectinload(HelpdeskTicket.requester_user),
         )
-        .order_by(HelpdeskTicket.last_activity_at.desc())
         .limit(limit)
         .offset(offset)
     )
+    query, applied = _apply_sort(query, sort=sort, order=order)
+    if not applied:
+        query = query.order_by(HelpdeskTicket.last_activity_at.desc())
+    res = await db.execute(query)
     return res.scalars().unique().all()
 
 
@@ -331,6 +338,8 @@ async def list_agent_tickets(
     offset: int = 0,
     active_only: bool = False,
     assigned: bool = False,
+    sort: str | None = None,
+    order: str = "desc",
 ) -> Sequence[HelpdeskTicket]:
     """Список тикетов для агентского инбокса со всеми фильтрами ТЗ §4.4."""
     conditions = _agent_filter_conditions(
@@ -342,18 +351,58 @@ async def list_agent_tickets(
         active_only=active_only,
         assigned=assigned,
     )
-    res = await db.execute(
+    query_stmt = (
         select(HelpdeskTicket)
         .where(*conditions)
         .options(
             selectinload(HelpdeskTicket.assignee),
             selectinload(HelpdeskTicket.requester_user),
         )
-        .order_by(HelpdeskTicket.last_activity_at.desc())
         .limit(limit)
         .offset(offset)
     )
+    query_stmt, applied = _apply_sort(query_stmt, sort=sort, order=order)
+    if not applied:
+        query_stmt = query_stmt.order_by(HelpdeskTicket.last_activity_at.desc())
+    res = await db.execute(query_stmt)
     return res.scalars().unique().all()
+
+
+def _apply_sort(stmt: Select, *, sort: str | None, order: str) -> tuple[Select, bool]:
+    """Применить серверную сортировку к ``select(HelpdeskTicket)``-запросу.
+
+    Whitelist полей (защита от инъекций): ``number``, ``status``,
+    ``created_at`` (колонка «Возраст»), ``last_activity_at`` (колонка «Обновлено»)
+    — нативные колонки ``HelpdeskTicket``; ``requester``/``assignee`` — LEFT JOIN
+    к ``users.full_name`` (LEFT, т.к. requester/assignee могут быть NULL: гостевая
+    заявка / неназначенный тикет; INNER выкинул бы такие строки).
+
+    Возвращает ``(stmt, applied)``. ``applied=True`` — сортировка наложена;
+    ``False`` (``sort=None`` или неизвестное поле) — вызывающий код применяет
+    дефолт ``last_activity_at DESC``.
+    """
+    if sort is None:
+        return stmt, False
+    direction_fn = asc if order.lower() == "asc" else desc
+    native: dict[str, Any] = {
+        "number": HelpdeskTicket.number,
+        "status": HelpdeskTicket.status,
+        "created_at": HelpdeskTicket.created_at,
+        "last_activity_at": HelpdeskTicket.last_activity_at,
+    }
+    if sort in native:
+        return stmt.order_by(direction_fn(native[sort])), True
+    if sort in ("requester", "assignee"):
+        user_alias = aliased(User)
+        fk_col = (
+            HelpdeskTicket.requester_user_id
+            if sort == "requester"
+            else HelpdeskTicket.assignee_user_id
+        )
+        stmt = stmt.outerjoin(user_alias, user_alias.id == fk_col)
+        return stmt.order_by(direction_fn(user_alias.full_name)), True
+    # Неизвестное поле — без изменений (вызывающий применит дефолт).
+    return stmt, False
 
 
 def _agent_filter_conditions(

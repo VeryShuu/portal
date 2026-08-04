@@ -82,6 +82,29 @@ def _validate_status_filter(value: str | None) -> str | None:
     return value
 
 
+# Разрешённые поля серверной сортировки списка заявок. Совпадает с whitelist
+# в ``services/helpdesk/tickets.py::_apply_sort``. ``subject`` отсутствует — тема
+# не сортируется (произвольный текст без естественного порядка).
+_SORT_FIELDS = {"number", "status", "requester", "assignee", "created_at", "last_activity_at"}
+_SORT_ORDERS = {"asc", "desc"}
+
+
+def _validate_sort(value: str | None) -> str | None:
+    if value is not None and value not in _SORT_FIELDS:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Invalid sort field"
+        )
+    return value
+
+
+def _validate_sort_order(value: str) -> str:
+    if value not in _SORT_ORDERS:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Invalid order"
+        )
+    return value
+
+
 def _validate_message_body(norm_text: str, norm_html: str | None) -> None:
     """Проверить, что сообщение содержит хоть какой-то контент.
 
@@ -226,10 +249,14 @@ async def list_my_tickets(
     unassigned: bool = Query(default=False),
     assigned: bool = Query(default=False),
     active_only: bool = Query(default=False),
+    sort: str | None = Query(default=None),
+    order: str = Query(default="desc"),
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
 ) -> TicketListOut:
     status_filter = _validate_status_filter(status_filter)
+    sort = _validate_sort(sort)
+    order = _validate_sort_order(order)
     total = await tickets_service.count_my_tickets(
         db,
         user_id=user.id,
@@ -247,6 +274,8 @@ async def list_my_tickets(
         unassigned=unassigned,
         assigned=assigned,
         active_only=active_only,
+        sort=sort,
+        order=order,
     )
     # Unread для заявителя: «есть ли публичные ответы агентов новее last_seen_at».
     # Контракт зеркален агентскому (там — ответы заявителя, direction='inbound'),
@@ -434,11 +463,15 @@ async def list_all_tickets(
     active_only: bool = Query(default=False),
     assigned: bool = Query(default=False),
     q: str | None = Query(default=None, min_length=0, max_length=200),
+    sort: str | None = Query(default=None),
+    order: str = Query(default="desc"),
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
 ) -> TicketListOut:
     status_filter = _validate_status_filter(status_filter)
     source = _validate_source(source)
+    sort = _validate_sort(sort)
+    order = _validate_sort_order(order)
     total = await tickets_service.count_agent_tickets(
         db,
         status_filter=status_filter,
@@ -460,6 +493,8 @@ async def list_all_tickets(
         offset=offset,
         active_only=active_only,
         assigned=assigned,
+        sort=sort,
+        order=order,
     )
     # Enrich одним запросом: какие тикеты имеют непрочитанные ответы заявителя
     # для этого агента (миграция 080). Без этого был бы N+1 — на каждый тикет
