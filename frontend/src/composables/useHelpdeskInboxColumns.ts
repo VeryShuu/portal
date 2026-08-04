@@ -261,7 +261,21 @@ export function useHelpdeskInboxColumns(mode: HelpdeskColumnMode = 'agent'): Use
 
   const gridTemplate = computed<string>(() =>
     visibleColumns.value
-      .map((c) => (c.fixed ? 'minmax(0, 1fr)' : `${state.widths[c.id] ?? c.defaultWidth}px`))
+      .map((c) => {
+        if (c.fixed) {
+          // subject — flex с минимумом 160px: не зажимается до обрезки заголовка,
+          // даже если фиксированные колонки почти съели ширину контейнера.
+          return 'minmax(160px, 1fr)'
+        }
+        const w = state.widths[c.id] ?? c.defaultWidth
+        // Текстовые ФИО-колонки — сжимаемы: minmax(120, width), чтобы при
+        // нехватке места они отдавали ширину subject, а не наоборот. Короткие
+        // фиксированные колонки (number/status/age/updated) — жёсткий px.
+        if (c.id === 'requester' || c.id === 'assignee') {
+          return `minmax(120px, ${w}px)`
+        }
+        return `${w}px`
+      })
       .join(' '),
   )
 

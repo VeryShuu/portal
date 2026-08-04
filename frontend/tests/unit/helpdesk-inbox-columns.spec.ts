@@ -130,8 +130,8 @@ describe('useHelpdeskInboxColumns — пресет agent', () => {
     const mod = await loadModule()
     const { gridTemplate, setColumnWidth } = mod.useHelpdeskInboxColumns('agent')
     setColumnWidth('subject', 500)
-    // subject всегда minmax(0,1fr)
-    expect(gridTemplate.value).toContain('minmax(0, 1fr)')
+    // subject всегда flex (minmax(160px,1fr)) — ширина игнорируется
+    expect(gridTemplate.value).toContain('minmax(160px, 1fr)')
     expect(gridTemplate.value).not.toContain('500px')
   })
 })
@@ -267,15 +267,17 @@ describe('useHelpdeskInboxColumns — gridTemplate', () => {
     localStorage.clear()
   })
 
-  it('subject → minmax(0, 1fr), остальные → px', async () => {
+  it('subject → minmax(160px, 1fr) с минимумом, ФИО — сжимаемы minmax(120px, W)', async () => {
     const mod = await loadModule()
     const { gridTemplate } = mod.useHelpdeskInboxColumns('agent')
-    // ``minmax(0, 1fr)`` содержит пробел → нельзя просто split(' '). Проверяем
+    // ``minmax(...)`` содержит пробел → нельзя просто split(' '). Проверяем
     // наличие нужных фрагментов в строке целиком.
     expect(gridTemplate.value).toContain('56px')
     expect(gridTemplate.value).toContain('92px')
-    expect(gridTemplate.value).toContain('minmax(0, 1fr)')
-    expect(gridTemplate.value).toContain('200px')
+    // subject — flex с минимумом 160px (не зажимается до обрезки заголовка)
+    expect(gridTemplate.value).toContain('minmax(160px, 1fr)')
+    // ФИО-колонки сжимаемы: minmax(120px, 200px)
+    expect(gridTemplate.value).toContain('minmax(120px, 200px)')
     expect(gridTemplate.value).toContain('80px')
     expect(gridTemplate.value).toContain('104px')
   })
@@ -286,6 +288,6 @@ describe('useHelpdeskInboxColumns — gridTemplate', () => {
     toggleColumn('age')
     expect(gridTemplate.value).not.toMatch(/\b80px\b/)
     // subject (flex) остаётся
-    expect(gridTemplate.value).toContain('minmax(0, 1fr)')
+    expect(gridTemplate.value).toContain('minmax(160px, 1fr)')
   })
 })

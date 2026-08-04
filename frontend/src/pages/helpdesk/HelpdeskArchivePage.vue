@@ -1,5 +1,5 @@
 <template>
-  <div class="u-page-wrap u-page-wrap--standard">
+  <div class="u-page-wrap u-page-wrap--wide">
     <header class="page-head page-head--row">
       <h1 class="u-page-head__title">
         {{ t('helpdesk.sectionArchive') }}

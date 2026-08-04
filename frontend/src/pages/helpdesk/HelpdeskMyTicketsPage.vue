@@ -1,5 +1,5 @@
 <template>
-  <div class="u-page-wrap u-page-wrap--standard">
+  <div class="u-page-wrap u-page-wrap--wide">
     <header class="page-head">
       <h1 class="u-page-head__title">
         {{ t('helpdesk.myTitle') }}
