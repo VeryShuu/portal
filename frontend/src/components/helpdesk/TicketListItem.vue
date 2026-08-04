@@ -76,7 +76,7 @@
         class="ticket-row__cell ticket-row__age"
         :class="{ 'ticket-row__age--stale': ageDays >= STALE_DAYS }"
         :title="t('helpdesk.ageSinceCreated')"
-      >{{ t('helpdesk.ageDays', { n: ageDays }, ageDays) }}</span>
+      >{{ t('helpdesk.ageDays', ageDays) }}</span>
       <!-- Обновлено (last_activity_at) -->
       <span
         v-else-if="col.id === 'updated'"
