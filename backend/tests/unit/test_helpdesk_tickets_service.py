@@ -699,7 +699,7 @@ class TestApplySort:
 
     def test_unknown_field_returns_applied_false(self):
         stmt = select(HelpdeskTicket)
-        result, applied = svc._apply_sort(stmt, sort="evil_column", order="asc")
+        _, applied = svc._apply_sort(stmt, sort="evil_column", order="asc")
         assert applied is False
 
     def test_native_column_desc(self):
