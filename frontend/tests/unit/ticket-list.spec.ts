@@ -189,15 +189,16 @@ describe('TicketList.vue', () => {
     expect(wrapper.find('[data-column-id="number"]').classes()).not.toContain('ticket-table__th--active')
   })
 
-  it('колонка updated выровнена по правому краю (align=end)', () => {
+  it('все колонки выровнены по левому краю единообразно (как в OTRS)', () => {
     const wrapper = mount(TicketList, {
       global: globalOptions,
       props: { items: [], mode: 'agent' },
     })
-    const updatedHeader = wrapper.find('[data-column-id="updated"]')
-    expect(updatedHeader.classes()).toContain('ticket-table__th--end')
-    // number — без end-выравнивания
-    expect(wrapper.find('[data-column-id="number"]').classes()).not.toContain('ticket-table__th--end')
+    // Ни у одной колонки нет класса end-выравнивания (раньше у updated был).
+    const headers = wrapper.findAll('[data-column-id]')
+    for (const h of headers) {
+      expect(h.classes()).not.toContain('ticket-table__th--end')
+    }
   })
 
   it('Enter/Space на сортируемом заголовке эмитит sort', async () => {

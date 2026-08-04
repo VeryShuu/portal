@@ -276,15 +276,15 @@ describe('useHelpdeskInboxColumns — gridTemplate', () => {
     expect(gridTemplate.value).toContain('92px')
     expect(gridTemplate.value).toContain('minmax(0, 1fr)')
     expect(gridTemplate.value).toContain('200px')
-    expect(gridTemplate.value).toContain('80px')
-    expect(gridTemplate.value).toContain('104px')
+    expect(gridTemplate.value).toContain('112px')
+    expect(gridTemplate.value).toContain('148px')
   })
 
   it('скрытая колонка исчезает из gridTemplate', async () => {
     const mod = await loadModule()
     const { gridTemplate, toggleColumn } = mod.useHelpdeskInboxColumns('agent')
     toggleColumn('age')
-    expect(gridTemplate.value).not.toMatch(/\b80px\b/)
+    expect(gridTemplate.value).not.toMatch(/\b112px\b/)
     // subject (flex) остаётся
     expect(gridTemplate.value).toContain('minmax(0, 1fr)')
   })

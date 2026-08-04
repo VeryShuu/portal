@@ -77,10 +77,10 @@
         :class="{ 'ticket-row__age--stale': ageDays >= STALE_DAYS }"
         :title="t('helpdesk.ageSinceCreated')"
       >{{ t('helpdesk.ageDays', ageDays) }}</span>
-      <!-- Обновлено (last_activity_at) — выравнивание end, как в шапке -->
+      <!-- Обновлено (last_activity_at) -->
       <span
         v-else-if="col.id === 'updated'"
-        class="ticket-row__cell ticket-row__date ticket-row__cell--end"
+        class="ticket-row__cell ticket-row__date"
       >{{ formatDate(ticket.last_activity_at) }}</span>
     </template>
   </div>
@@ -228,8 +228,6 @@ function formatDate(iso: string): string {
   font-size: 12px;
   color: var(--color-text-muted);
   white-space: nowrap;
-  justify-self: end;
-  text-align: right;
   font-variant-numeric: tabular-nums;
 }
 .ticket-row__muted {
