@@ -2862,6 +2862,46 @@ mailbox — для первичной настройки/диагностики.
 → 404 { "detail": "Run not found" }
 ```
 
+### ERP-sync: отсутствия (миграция 092)
+
+Второй поток — отпуска/отгулы/болезни/командировки. Тот же общий IMAP-ящик,
+отдельные фильтры писем (`mail_absences_*`) и отдельная ARQ-задача. Настройки
+— общие с днями рождения (`GET/PUT /erp-sync/settings` расширены полями
+`absences_poll_enabled`/`mail_absences_*`/`absences_expected_interval_days`).
+Полный план — [`./wip/erp-absences.md`](./wip/erp-absences.md).
+
+### POST /api/v1/erp-sync/absences/run `[admin]`
+Mailbox-trigger для отсутствий: ставит ARQ-задачу `run_erp_absences_sync(triggered_by=manual)`.
+`absences_poll_enabled` НЕ проверяется (админ явно хочет «забрать сейчас»).
+```json
+→ 200 { "status": "queued", "job_id": "erp_absences:run:<admin_id>" }
+→ 400 { "detail": "IMAP mailbox is not configured" }
+```
+
+### POST /api/v1/erp-sync/absences/import-file `[admin]`
+Multipart-upload файла отсутствий → синхронный импорт через `run_absences_import`
+(full-replace). Для первичной настройки/диагностики. Лимит 50 MiB.
+```json
+← multipart: file=<absences.txt>
+→ 200 { "status": "processed", "run_id": 42 }
+→ 400 { "detail": "Неподдерживаемый формат..." }
+```
+
+### GET /api/v1/erp-sync/absences/runs `[admin]`
+Пагинированный список импортов отсутствий (новые первыми). `report` — разделы
+`inserted`/`unmatched`/`ambiguous`/`errors`.
+```
+?limit=20&offset=0
+→ 200 { "items": [ ErpAbsencesRunOut ], "total": 42 }
+```
+
+### GET /api/v1/erp-sync/absences/runs/{run_id} `[admin]`
+Один run отсутствий с полным отчётом.
+```
+→ 200 { /* ErpAbsencesRunOut */ }
+→ 404 { "detail": "Run not found" }
+```
+
 ---
 
 ## §3.6 Файлы (Phase 5 — Nextcloud service account, ADR-032)

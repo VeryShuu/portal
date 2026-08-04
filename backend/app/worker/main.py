@@ -15,6 +15,7 @@ from app.core.logging import (
 )
 from app.worker.tasks.audit import cleanup_idempotency_keys
 from app.worker.tasks.email_outbox import cleanup_email_outbox, process_email_outbox
+from app.worker.tasks.erp_absences_sync import erp_absences_watchdog, run_erp_absences_sync
 from app.worker.tasks.erp_sync import erp_sync_watchdog, run_erp_sync
 from app.worker.tasks.files import startup_sync_nc_folders
 from app.worker.tasks.helpdesk import (
@@ -202,6 +203,8 @@ class WorkerSettings:
         track_arq_job(send_helpdesk_digest),
         track_arq_job(run_erp_sync),
         track_arq_job(erp_sync_watchdog),
+        track_arq_job(run_erp_absences_sync),
+        track_arq_job(erp_absences_watchdog),
         track_arq_job(process_messenger_outbox),
         track_arq_job(cleanup_messenger_outbox),
     ]
@@ -395,6 +398,21 @@ class WorkerSettings:
             "app.worker.tasks.erp_sync.erp_sync_watchdog",
             hour=9,
             minute=0,
+            second=0,
+        ),
+        # ── ERP absences sync (второй поток: отпуска/отгулы/болезни) ───────
+        # Тот же общий IMAP-ящик, отдельные фильтры писем (mail_absences_*).
+        # poll_interval_seconds — общий с днями рождения; absences_poll_enabled
+        # — отдельный per-потоковый гейтинг (проверяется в задаче).
+        cron(
+            "app.worker.tasks.erp_absences_sync.run_erp_absences_sync",
+            minute={5, 20, 35, 50},  # сдвинут на 5 мин от erp_sync, чтобы не коллидить
+            second=0,
+        ),
+        cron(
+            "app.worker.tasks.erp_absences_sync.erp_absences_watchdog",
+            hour=9,
+            minute=5,
             second=0,
         ),
     ]

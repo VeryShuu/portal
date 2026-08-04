@@ -1,24 +1,30 @@
-# Модуль «ERP-синхронизация» (дни рождения и пол сотрудников)
+# Модуль «ERP-синхронизация» (дни рождения + отсутствия сотрудников)
 
-> **Когда читать:** задача касается импорта `birth_date`/`gender` из ERP-выгрузки,
-> mailbox-поллинга, FIO-матчинга, отчётов админу.
+> **Когда читать:** задача касается импорта `birth_date`/`gender` или отсутствий
+> из ERP-выгрузки, mailbox-поллинга, FIO-матчинга, отчётов админу.
 > **Ключевой код:** `backend/app/services/erp_sync/`, `backend/app/worker/tasks/erp_sync.py`,
-> `backend/app/api/erp_sync/`.
-> **Миграции:** `087` (поля + таблицы), `088` (настройки фильтрации почты).
-> **План фичи:** [`./wip/erp-sync.md`](./wip/erp-sync.md) (архитектурные решения + история).
+> `backend/app/worker/tasks/erp_absences_sync.py`, `backend/app/api/erp_sync/`.
+> **Миграции:** `087`–`090` (дни рождения), `092` (отсутствия).
+> **Планы фич:** [`./wip/erp-sync.md`](./wip/erp-sync.md) (дни рождения),
+> [`./wip/erp-absences.md`](./wip/erp-absences.md) (отсутствия).
 
 ## Суть
 
-ERP (1С) шлёт письмо с отчётом «Справочник: Сотрудники» (ФИО, дата рождения,
-пол) на служебный ящик 2 раза в неделю. Портал опрашивает ящик по IMAP (cron),
-парсит вложение, сопоставляет ФИО с `users.full_name` и записывает `birth_date`
-+ `gender` в `users`. Данные видны всем авторизованным в карточке `/staff`
-(как телефоны). Источник истины — ERP: каждый импорт **перетирает** значения;
-diff попадает в email-отчёт админу, чтобы перетирание было видно.
+Модуль принимает **два потока** отчётов от ERP (1С) на общий служебный ящик,
+опрашиваемый по IMAP (cron):
 
-Дополнительно: ручной запуск (mailbox-trigger + multipart-upload файла),
-фильтрация писём на общем ящике, watchdog «отчёты не приходят», multi-channel
-уведомления (email + in-app + Grafana).
+1. **Дни рождения** — отчёт «Справочник: Сотрудники» (ФИО, дата рождения, пол).
+   Портал сопоставляет ФИО с `users.full_name` и записывает `birth_date` + `gender`
+   в `users` (перетирание). Данные видны всем авторизованным в карточке `/staff`.
+2. **Отсутствия** — отчёт «Кадровая история сотрудников за период» (ФИО,
+   должность, подразделение, состояние, начало, окончание). Портал сопоставляет
+   ФИО и ведёт ranged-записи в `erp_absences` (отпуск/отгул/болезнь/командировка)
+   с **full-replace** при каждом импорте. Отображение отсутствий — в разработке
+   (виджет «кого нет на неделе», карточка сотрудника).
+
+Общие для обоих потоков: IMAP-ящик (ADR-048), mailbox/matcher/report-инфраструктура,
+cron-паттерн (distributed-lock + interval-guard + watchdog + probe), multi-channel
+уведомления (email + in-app + Grafana), ручной запуск (mailbox-trigger + multipart-upload).
 
 ## Архитектура (pipeline)
 
@@ -220,3 +226,68 @@ Cron-регистрация: `run_erp_sync` каждые 15 мин (`minute={0,1
   не передаём (run.id — bigint, не UUID; несём в `payload.erp_sync_run_id`).
 - **POST /erp-sync/run использует короткое имя** `enqueue_job("run_erp_sync")`,
   НЕ FQN (AGENTS.md). Cron-регистрация — FQN-строка (асимметрия ARQ).
+
+---
+
+## Поток «Отсутствия» (миграция 092)
+
+Второй поток ERP — отпуска/отгулы/болезни/командировки. Отчёт 1С «Кадровая
+история сотрудников за период» приходит отдельным письмом со своими фильтрами
+(`mail_absences_*`). Полный план и архитектурные решения — в
+[`./wip/erp-absences.md`](./wip/erp-absences.md).
+
+### Схема БД (отсутствия)
+
+- **`erp_absences`** — ranged-записи: `user_id` (FK CASCADE, NOT NULL), `kind`
+  (7-enum: vacation_main/vacation_extra/unpaid_leave/sick/business_trip/
+  day_off_paid/day_off_unpaid), `position`, `department`, `start_date`/`end_date`
+  (CHECK end≥start), `source` ('erp_sync'|'manual'). Индексы: `(user_id)` и
+  `(start_date, end_date)` для range-запросов виджета «кого нет на неделе».
+- **`erp_absences_runs`** — клон `erp_sync_runs` (отдельный лог + дедуп по
+  `message_id`), поле `rows_inserted` вместо `rows_updated`.
+- **Расширение `erp_sync_settings`** — `absences_poll_enabled`, 3 фильтра
+  (`mail_absences_*`), `absences_expected_interval_days` (default 7).
+
+### Парсер (`services/erp_sync/absences_parser.py`)
+
+Иерархическая структура (в отличие от 3 фиксированных колонок дней рождения):
+шапка → заголовок колонок → блоки «ФИО-строка + N строк-периодов». Алгоритм —
+линейный проход с «текущим сотрудником»: строка без даты = сотрудник, строка с
+датой = период. Маппинг «Состояние»→`kind` через contains-матчинг (порядок в
+`_KIND_MAP` важен: «отпуск неоплачиваемый» ловим раньше «отпуск основной»).
+Дедуп по `(fio_norm, kind, start, end)`. Общие хелперы декодирования — в
+`parser_utils.py` (вынесены из `parser.py`, поведение 1:1).
+
+### Импорт (`services/erp_sync/absences_importer.py`) — full-replace
+
+Ключевое отличие от дней рождения (per-field upsert): **full-replace**. Каждый
+отчёт самодостаточен (содержит весь период — обычно год), поэтому перед вставкой:
+`DELETE FROM erp_absences WHERE source='erp_sync'` → `INSERT` matched. Старые
+записи исчезнувших сотрудников стираются автоматически.
+
+**Безопасность failed-файла**: при 0 валидных matched-строк (битый файл / пустой)
+БД **не трогается** — иначе одно кривое письмо сотрёт всю историю отсутствий.
+Инвариант покрыт integration-тестом `test_failed_file_does_not_wipe_db`.
+
+### Worker (`worker/tasks/erp_absences_sync.py`)
+
+Клон `erp_sync.py`: `run_erp_absences_sync` (cron `minute={5,20,35,50}` — сдвинут
+на 5 мин от дней рождения, чтобы не коллидить в lock'ах общего ящика),
+`erp_absences_watchdog` (09:05, по `absences_expected_interval_days × 1.5`),
+`probe_erp_absences` (зарегистрирован в `integration_health` как
+`erp_absences`). Гейтинг: общий `modules.erp_sync.enabled` + per-потоковый
+`absences_poll_enabled`.
+
+### API (`api/erp_sync/`)
+
+- `GET/PUT /erp-sync/settings` — общие, с per-потоковыми полями отсутствий.
+- `GET /erp-sync/absences/runs`, `GET /erp-sync/absences/runs/{id}` — история.
+- `POST /erp-sync/absences/run` (mailbox-trigger), `POST /erp-sync/absences/import-file`
+  (multipart-upload для диагностики/первичной настройки).
+
+### Настройка (admin)
+
+Во вкладке «Администрирование → ERP-синхронизация» блок «Фильтры писем»
+переименован в **«Дни рождения»**, ниже добавлен блок **«Отсутствия в офисе»**:
+`absences_poll_enabled`, `absences_expected_interval_days`, 3 фильтра писем.
+Общие поля (enabled/poll_interval/notify_emails/delete_after_fetch) — наверху.

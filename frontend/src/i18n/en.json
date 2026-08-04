@@ -1439,8 +1439,8 @@
         "pollEnabledHint": "Poll the shared mailbox on a schedule. Can be turned off while keeping manual trigger.",
         "pollInterval": "Poll interval, sec",
         "expectedInterval": "Expected interval, days",
-        "filtersTitle": "Mail filters (for shared mailbox)",
-        "filtersHint": "The mailbox is shared (Email tab) — set filters to pick ERP letters. Empty field = no restriction. Case-insensitive.",
+        "filtersTitle": "Birthdays",
+        "filtersHint": "The mailbox is shared (Email tab) — set filters to pick ERP letters with the employee directory. Empty field = no restriction. Case-insensitive.",
         "subjectFilter": "Subject filter",
         "subjectFilterPlaceholder": "Employees",
         "senderFilter": "Sender filter",
@@ -1448,7 +1448,16 @@
         "notifyEmails": "Report recipients (emails, comma-separated)",
         "notifyEmailsPlaceholder": "Empty = all admins",
         "deleteAfterFetch": "Delete message after import",
-        "deleteAfterFetchHint": "Remove processed ERP reports from the shared mailbox. Message-ID dedup prevents reprocessing even without deletion."
+        "deleteAfterFetchHint": "Remove processed ERP reports from the shared mailbox. Message-ID dedup prevents reprocessing even without deletion.",
+        "absencesTitle": "Office absences",
+        "absencesHint": "The «HR history for period» report arrives as a separate letter. Set its own filters to pick absence reports (vacations/days-off/sick/business trips). The IMAP mailbox and poll interval are shared with birthdays.",
+        "absencesPollEnabled": "Auto-poll absences (cron)",
+        "absencesPollEnabledHint": "Poll the shared mailbox for the absence report on schedule. Can be disabled while keeping manual run.",
+        "absencesExpectedInterval": "Expected absences interval, days",
+        "absencesSubjectFilter": "Subject filter (absences)",
+        "absencesSubjectFilterPlaceholder": "HR history",
+        "absencesSenderFilter": "Sender filter (absences)",
+        "absencesAttachmentFilter": "Attachment name filter (absences)"
       },
       "actions": {
         "title": "Run import",

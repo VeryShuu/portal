@@ -77,6 +77,45 @@
           </n-form-item>
         </div>
 
+        <h4 class="erp-sync__subtitle">
+          {{ t('admin.erpSync.settings.absencesTitle') }}
+        </h4>
+        <p class="erp-sync__hint">
+          {{ t('admin.erpSync.settings.absencesHint') }}
+        </p>
+        <div class="kb-grid">
+          <n-form-item :label="t('admin.erpSync.settings.absencesPollEnabled')">
+            <n-switch v-model:value="form.absences_poll_enabled" />
+            <span class="erp-sync__hint">{{ t('admin.erpSync.settings.absencesPollEnabledHint') }}</span>
+          </n-form-item>
+          <n-form-item :label="t('admin.erpSync.settings.absencesExpectedInterval')">
+            <n-input-number
+              v-model:value="form.absences_expected_interval_days"
+              :min="1"
+              :max="30"
+              style="width: 100%"
+            />
+          </n-form-item>
+          <n-form-item :label="t('admin.erpSync.settings.absencesSubjectFilter')">
+            <n-input
+              v-model:value="form.mail_absences_subject_filter"
+              :placeholder="t('admin.erpSync.settings.absencesSubjectFilterPlaceholder')"
+            />
+          </n-form-item>
+          <n-form-item :label="t('admin.erpSync.settings.absencesSenderFilter')">
+            <n-input
+              v-model:value="form.mail_absences_sender_filter"
+              placeholder="erp@company.local"
+            />
+          </n-form-item>
+          <n-form-item :label="t('admin.erpSync.settings.absencesAttachmentFilter')">
+            <n-input
+              v-model:value="form.mail_absences_attachment_filter"
+              placeholder=".txt"
+            />
+          </n-form-item>
+        </div>
+
         <div class="email-actions">
           <n-button
             type="primary"
@@ -116,6 +155,11 @@ interface FormState {
   mail_sender_filter: string | null
   mail_attachment_filter: string | null
   delete_after_fetch: boolean
+  absences_poll_enabled: boolean
+  mail_absences_subject_filter: string | null
+  mail_absences_sender_filter: string | null
+  mail_absences_attachment_filter: string | null
+  absences_expected_interval_days: number
 }
 
 const form = ref<FormState | null>(null)
@@ -137,6 +181,11 @@ watch(
       mail_sender_filter: d.mail_sender_filter,
       mail_attachment_filter: d.mail_attachment_filter,
       delete_after_fetch: d.delete_after_fetch,
+      absences_poll_enabled: d.absences_poll_enabled,
+      mail_absences_subject_filter: d.mail_absences_subject_filter,
+      mail_absences_sender_filter: d.mail_absences_sender_filter,
+      mail_absences_attachment_filter: d.mail_absences_attachment_filter,
+      absences_expected_interval_days: d.absences_expected_interval_days,
     }
     notifyEmailsStr.value = (d.notify_emails ?? []).join(', ')
     isDirty.value = false
@@ -162,6 +211,11 @@ function buildDto(): ErpSyncSettingsIn {
     mail_sender_filter: (f.mail_sender_filter || '').trim() || null,
     mail_attachment_filter: (f.mail_attachment_filter || '').trim() || null,
     delete_after_fetch: f.delete_after_fetch,
+    absences_poll_enabled: f.absences_poll_enabled,
+    mail_absences_subject_filter: (f.mail_absences_subject_filter || '').trim() || null,
+    mail_absences_sender_filter: (f.mail_absences_sender_filter || '').trim() || null,
+    mail_absences_attachment_filter: (f.mail_absences_attachment_filter || '').trim() || null,
+    absences_expected_interval_days: f.absences_expected_interval_days ?? 7,
   }
 }
 
