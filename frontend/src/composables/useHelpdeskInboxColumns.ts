@@ -64,8 +64,8 @@ export const COLUMN_META: Record<HelpdeskColumnId, HelpdeskColumnMeta> = {
     fixed: true,
     hideable: false,
   },
-  requester: { id: 'requester', labelKey: 'helpdesk.columnRequester', defaultWidth: 180 },
-  assignee: { id: 'assignee', labelKey: 'helpdesk.columnOwner', defaultWidth: 180 },
+  requester: { id: 'requester', labelKey: 'helpdesk.columnRequester', defaultWidth: 200 },
+  assignee: { id: 'assignee', labelKey: 'helpdesk.columnOwner', defaultWidth: 200 },
   age: { id: 'age', labelKey: 'helpdesk.columnAge', defaultWidth: 80 },
   updated: { id: 'updated', labelKey: 'helpdesk.columnUpdated', defaultWidth: 104 },
 }

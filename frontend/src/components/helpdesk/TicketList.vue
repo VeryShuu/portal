@@ -16,7 +16,7 @@
           'ticket-table__th--draggable': isAgent && !col.fixed,
         }"
       >
-        <span class="ticket-table__th-label">{{ t(labelKey(col)) }}</span>
+        <span class="ticket-table__th-label">{{ t(col.labelKey) }}</span>
         <span
           v-if="isAgent && !col.fixed"
           class="ticket-table__grip"
@@ -57,7 +57,7 @@
                 :checked="!state.hidden.includes(col.id)"
                 @update:checked="toggleColumn(col.id)"
               >
-                {{ t(labelKey(col)) }}
+                {{ t(col.labelKey) }}
               </n-checkbox>
             </div>
             <div class="col-settings__footer">
@@ -90,7 +90,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, useTemplateRef, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Sortable from 'sortablejs'
 import { NPopover, NButton, NIcon, NCheckbox } from 'naive-ui'
@@ -98,7 +98,6 @@ import { OptionsOutline } from '@vicons/ionicons5'
 import TicketListItem from './TicketListItem.vue'
 import {
   useHelpdeskInboxColumns,
-  type HelpdeskColumnMeta,
   type HelpdeskColumnId,
   type HelpdeskColumnMode,
 } from '../../composables/useHelpdeskInboxColumns'
@@ -129,12 +128,6 @@ const SETTINGS_CELL = '28px'
 const headGridTemplate = computed(() =>
   isAgent.value ? `${gridTemplate.value} ${SETTINGS_CELL}` : gridTemplate.value,
 )
-
-/** i18n-ключ метаданных колонки хранится с полным неймспейсом (helpdesk.columnX),
- * а t() в этом компоненте вызывается без области видимости — убираем префикс. */
-function labelKey(col: HelpdeskColumnMeta): string {
-  return col.labelKey.replace('helpdesk.', '')
-}
 
 // ── Drag-and-drop порядка колонок (только в агентском режиме) ────────────────
 // sortablejs физически двигает DOM-узлы шапки, но порядок рендера определяется
@@ -196,13 +189,20 @@ function setupSortable() {
   })
 }
 
+// Первичная инициализация DnD — только после mount (headEl.value доступен).
+// watch с immediate:true не годится: в setup() DOM ещё не смонтирован → headEl
+// === null → ранний return из setupSortable → DnD не создавался (баг).
+onMounted(() => {
+  if (isAgent.value) setupSortable()
+})
+
+// Переключение пресета agent↔user в рантайме (если когда-нибудь понадобится).
 watch(
   () => isAgent.value,
   (enabled) => {
     if (enabled) setupSortable()
     else teardownSortable()
   },
-  { immediate: true },
 )
 
 onBeforeUnmount(teardownSortable)
