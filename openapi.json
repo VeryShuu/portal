@@ -3781,6 +3781,76 @@
         "title": "EntryReorderItem",
         "type": "object"
       },
+      "ErpAbsenceList": {
+        "description": "Список отсутствий сотрудника (``GET /users/{id}/absences``).\n\nСортировка — по ``start_date`` ASC (ближайшие отсутствия первыми).",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ErpAbsenceOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total"
+        ],
+        "title": "ErpAbsenceList",
+        "type": "object"
+      },
+      "ErpAbsenceOut": {
+        "description": "Одно отсутствие сотрудника для отображения в профиле (дата — причина).\n\nИсточник — ERP-синхронизация (``erp_absences``). Виден всем авторизованным\n(как и дни рождения в ``/staff``): коллегам важно знать, кто в отпуске/на\nбольничном. ``kind`` — canonical enum (см. ``ABSENCE_KIND_VALUES`` в\n``models/erp_sync.py``); человекочитаемую метку формирует фронтенд через i18n.\n\nПоказываем только актуальные и будущие периоды (``end_date >= today``) —\nпрошлогодние отпуска в профиле неинтересны.",
+        "properties": {
+          "department": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Department"
+          },
+          "end_date": {
+            "format": "date",
+            "title": "End Date",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "position": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Position"
+          },
+          "start_date": {
+            "format": "date",
+            "title": "Start Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "start_date",
+          "end_date"
+        ],
+        "title": "ErpAbsenceOut",
+        "type": "object"
+      },
       "ErpAbsencesRunList": {
         "description": "Пагинированный список импортов отсутствий (``GET /erp-sync/absences/runs``).",
         "properties": {
@@ -40001,6 +40071,66 @@
           }
         },
         "summary": "Профиль сотрудника",
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/api/v1/users/{user_id}/absences": {
+      "get": {
+        "description": "Актуальные и будущие отсутствия сотрудника для профиля.\n\nИсточник — ERP-синхронизация (``erp_absences``). Виден всем авторизованным\n(как и дни рождения): коллегам важно знать, кто в отпуске/на больничном.\nВозвращаем только ``end_date >= today`` (прошлые отпуска неинформативны),\nотсортированные по ``start_date`` ASC.\n\nДанные есть только когда модуль ``erp_sync`` включён и импорты выполнялись;\nиначе список пуст (404 не возвращаем — отсутствие данных это нормальное\nсостояние до первого импорта).",
+        "operationId": "list_user_absences_route_api_v1_users__user_id__absences_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "User Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "portal_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Portal Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpAbsenceList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Отсутствия сотрудника (отпуска/отгулы/болезни/командировки)",
         "tags": [
           "users"
         ]

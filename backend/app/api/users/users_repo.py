@@ -11,6 +11,7 @@ from sqlalchemy import Select, and_, case, delete, func, or_, select, text, tupl
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.erp_sync import ErpAbsence
 from app.models.staff_order import StaffDepartmentOrder
 from app.models.user import User
 from app.utils.keyboard_layout import layout_variants
@@ -165,6 +166,27 @@ async def list_birthdays(
         return (candidate, u.full_name)
 
     return sorted(users, key=sort_key)
+
+
+async def list_user_absences(
+    db: AsyncSession, *, user_id: uuid.UUID, today: date | None = None
+) -> Sequence[ErpAbsence]:
+    """Актуальные и будущие отсутствия сотрудника (``end_date >= today``).
+
+    Сортировка — по ``start_date`` ASC (ближайшие отсутствия первыми). Прошлые
+    периоды (завершённые отпуска/болезни) не возвращаем — в профиле они
+    неинформативны. Источник — ERP-синхронизация (``erp_absences``).
+
+    Не фильтрует по soft-delete пользователя: absence живёт, пока жив ``user_id``
+    (FK ``ON DELETE CASCADE`` удаляет отсутствия вместе с пользователем).
+    """
+    since = today if today is not None else date.today()
+    res = await db.execute(
+        select(ErpAbsence)
+        .where(ErpAbsence.user_id == user_id, ErpAbsence.end_date >= since)
+        .order_by(ErpAbsence.start_date.asc())
+    )
+    return res.scalars().all()
 
 
 async def list_departments(db: AsyncSession, *, ordered: bool = False) -> list[str]:

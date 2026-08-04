@@ -34,6 +34,13 @@
 
         <ProfilePasswordCard v-if="isOwn && auth.isLocalUser" />
 
+        <UserAbsencesCard
+          v-if="user.id"
+          :user-id="user.id"
+          :lang="user.lang"
+          class="profile-absences"
+        />
+
         <DepartmentColleagues
           v-if="user.department"
           :department="user.department"
@@ -140,6 +147,10 @@ const extraAttributes = computed(() => {
 }
 
 .profile-colleagues {
+  grid-column: 1 / -1;
+}
+
+.profile-absences {
   grid-column: 1 / -1;
 }
 

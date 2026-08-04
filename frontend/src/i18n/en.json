@@ -464,6 +464,18 @@
         "showAll": "Show all (+{count})",
         "collapse": "Collapse"
       },
+      "absences": {
+        "title": "Absences",
+        "kinds": {
+          "vacation_main": "Main vacation",
+          "vacation_extra": "Additional vacation",
+          "unpaid_leave": "Unpaid leave",
+          "sick": "Sick leave",
+          "business_trip": "Business trip",
+          "day_off_paid": "Day off (paid)",
+          "day_off_unpaid": "Day off (unpaid)"
+        }
+      },
       "noGroups": "User does not belong to any group",
       "authSource": {
         "keycloak": "Keycloak SSO",
@@ -1467,6 +1479,10 @@
         "runQueued": "Import queued",
         "runQueuedHint": "Import will complete within a minute. History will update automatically.",
         "uploadDone": "Import done (run #{id})"
+      },
+      "absencesActions": {
+        "title": "Run absences import",
+        "hint": "Same actions for the «HR history for period» report. \"Upload file\" is handy for initial parser verification on a real file before enabling auto-polling."
       },
       "runs": {
         "title": "Import history",

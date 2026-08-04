@@ -70,6 +70,35 @@ class BirthdayList(BaseModel):
     total: int
 
 
+class ErpAbsenceOut(BaseModel):
+    """Одно отсутствие сотрудника для отображения в профиле (дата — причина).
+
+    Источник — ERP-синхронизация (``erp_absences``). Виден всем авторизованным
+    (как и дни рождения в ``/staff``): коллегам важно знать, кто в отпуске/на
+    больничном. ``kind`` — canonical enum (см. ``ABSENCE_KIND_VALUES`` в
+    ``models/erp_sync.py``); человекочитаемую метку формирует фронтенд через i18n.
+
+    Показываем только актуальные и будущие периоды (``end_date >= today``) —
+    прошлогодние отпуска в профиле неинтересны.
+    """
+
+    kind: str
+    position: str | None = None
+    department: str | None = None
+    start_date: date
+    end_date: date
+
+
+class ErpAbsenceList(BaseModel):
+    """Список отсутствий сотрудника (``GET /users/{id}/absences``).
+
+    Сортировка — по ``start_date`` ASC (ближайшие отсутствия первыми).
+    """
+
+    items: list[ErpAbsenceOut]
+    total: int
+
+
 class PatchProfileRequest(BaseModel):
     presence_status: str | None = None
     lang: str | None = None
