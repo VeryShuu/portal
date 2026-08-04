@@ -1,10 +1,13 @@
 <template>
-  <div class="ticket-table">
+  <div
+    class="ticket-table"
+    :class="{ 'ticket-table--has-settings': isAgent }"
+  >
     <div
       ref="headEl"
       class="ticket-table__head"
       :class="{ 'ticket-table__head--sortable': isAgent }"
-      :style="{ gridTemplateColumns: headGridTemplate }"
+      :style="{ gridTemplateColumns: gridTemplate }"
     >
       <span
         v-for="col in visibleColumns"
@@ -41,55 +44,58 @@
           @keydown.stop
         >⠿</span>
       </span>
-      <span
-        v-if="isAgent"
-        class="ticket-table__th ticket-table__settings"
+    </div>
+    <!-- «Шестерёнка» настроек колонок — вне grid-flow (absolute), чтобы не ломать
+         выравнивание шапки и строк (раньше была 8-й grid-ячейкой → сдвигала все
+         колонки после subject на 40px влево относительно данных). -->
+    <div
+      v-if="isAgent"
+      class="ticket-table__settings"
+    >
+      <n-popover
+        trigger="click"
+        placement="bottom-end"
+        :width="260"
       >
-        <n-popover
-          trigger="click"
-          placement="bottom-end"
-          :width="260"
-        >
-          <template #trigger>
-            <n-button
-              quaternary
-              circle
-              size="tiny"
-              :title="t('helpdesk.columnsSettings')"
-            >
-              <template #icon>
-                <n-icon><component :is="OptionsOutline" /></n-icon>
-              </template>
-            </n-button>
-          </template>
-          <div class="col-settings">
-            <div class="col-settings__title">
-              {{ t('helpdesk.columnsShowHide') }}
-            </div>
-            <div
-              v-for="col in togglableColumns"
-              :key="col.id"
-              class="col-settings__row"
-            >
-              <n-checkbox
-                :checked="!state.hidden.includes(col.id)"
-                @update:checked="toggleColumn(col.id)"
-              >
-                {{ t(col.labelKey) }}
-              </n-checkbox>
-            </div>
-            <div class="col-settings__footer">
-              <n-button
-                size="tiny"
-                quaternary
-                @click="resetColumns"
-              >
-                {{ t('helpdesk.columnsReset') }}
-              </n-button>
-            </div>
+        <template #trigger>
+          <n-button
+            quaternary
+            circle
+            size="tiny"
+            :title="t('helpdesk.columnsSettings')"
+          >
+            <template #icon>
+              <n-icon><component :is="OptionsOutline" /></n-icon>
+            </template>
+          </n-button>
+        </template>
+        <div class="col-settings">
+          <div class="col-settings__title">
+            {{ t('helpdesk.columnsShowHide') }}
           </div>
-        </n-popover>
-      </span>
+          <div
+            v-for="col in togglableColumns"
+            :key="col.id"
+            class="col-settings__row"
+          >
+            <n-checkbox
+              :checked="!state.hidden.includes(col.id)"
+              @update:checked="toggleColumn(col.id)"
+            >
+              {{ t(col.labelKey) }}
+            </n-checkbox>
+          </div>
+          <div class="col-settings__footer">
+            <n-button
+              size="tiny"
+              quaternary
+              @click="resetColumns"
+            >
+              {{ t('helpdesk.columnsReset') }}
+            </n-button>
+          </div>
+        </div>
+      </n-popover>
     </div>
     <div class="ticket-table__body">
       <TicketListItem
@@ -146,13 +152,6 @@ const mode = computed(() => props.mode ?? 'agent')
 const isAgent = computed(() => mode.value === 'agent')
 const { state, visibleColumns, gridTemplate, togglableColumns, reorderColumn, toggleColumn, resetColumns } =
   useHelpdeskInboxColumns(mode.value)
-
-// Шапка агентского режима получает дополнительную ячейку под «шестерёнку»
-// (28px) — grid-template-columns должен её учесть. User-режим — без ячейки.
-const SETTINGS_CELL = '28px'
-const headGridTemplate = computed(() =>
-  isAgent.value ? `${gridTemplate.value} ${SETTINGS_CELL}` : gridTemplate.value,
-)
 
 // ── Сортировка: состояние живёт в странице (server-state запроса), компонент —
 // чисто презентационный. Клик по заголовку эмитит ``sort``; индикатор/aria
@@ -273,6 +272,7 @@ onBeforeUnmount(teardownSortable)
   border-radius: 8px;
   overflow: hidden;
   background: var(--color-surface);
+  position: relative; /* для absolute-позиционирования «шестерёнки» */
 }
 .ticket-table__head {
   display: grid;
@@ -285,8 +285,15 @@ onBeforeUnmount(teardownSortable)
   color: var(--color-text-muted);
   background: var(--color-bg-muted);
   border-bottom: 1px solid var(--color-border);
-  position: relative;
   align-items: center;
+}
+/* Агентский режим (есть «шестерёнка»): справа отступ у шапки и строк
+   одинаковый (38px), чтобы последняя колонка не налезала на кнопку и шапка
+   выравнивалась со строками по grid. User-режим — без шестерёнки, padding
+   отсутствует (иначе рассинхрон шапка/строка). Класс на корневом .ticket-table. */
+.ticket-table--has-settings .ticket-table__head,
+.ticket-table--has-settings .ticket-table__body .ticket-row {
+  padding-right: 38px;
 }
 .ticket-table__th {
   min-width: 0;
@@ -294,13 +301,14 @@ onBeforeUnmount(teardownSortable)
   align-items: center;
   gap: 4px;
 }
-/* Выравнивание end (для updated — дата вправо) — единообразно для шапки и строки. */
-.ticket-table__th--end {
-  justify-content: flex-end;
-}
+/* Все заголовки и данные выровнены по левому краю единообразно (как в OTRS).
+   Раньше у updated было align:end (дата вправо) — убрано: рассинхрон с другими
+   колонками и заголовком. ``font-variant-numeric: tabular-nums`` на дате даёт
+   ровные столбцы цифр без правого выравнивания. */
 .ticket-table__th-label {
-  overflow: hidden;
-  text-overflow: ellipsis;
+  /* Заголовки столбцов не должны обрезаться (ellipsis) — это糟糕 UX, агент всегда
+     видит полное название колонки. ``overflow: visible`` + ``nowrap``;
+     ширина колонки подбирается так, чтобы вмещать заголовок (COLUMN_META). */
   white-space: nowrap;
 }
 /* Сортируемые заголовки — кликабельны, с hover-подсветкой и индикатором. */
@@ -342,8 +350,21 @@ onBeforeUnmount(teardownSortable)
 .ticket-table__head--sortable .ticket-table__th--draggable:hover .ticket-table__grip {
   opacity: 0.9;
 }
+/* «Шестерёнка» настроек колонок — absolute в правом верхнем углу таблицы,
+   вне grid-flow шапки. Раньше была grid-ячейкой → ломала выравнивание колонок.
+   ``top`` привязан к высоте шапки (padding-top 8px + ~половина строки), чтобы
+   кнопка стояла на одной горизонтали с grip «⠿» и индикатором сортировки. */
 .ticket-table__settings {
-  justify-self: end;
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+}
+.ticket-table__settings :deep(.n-button) {
+  /* Размер иконки на уровне grip «⠿» (13px), чтобы не выглядела крупнее. */
+  font-size: 14px;
 }
 /* ghost/clone-состояния sortablejs — лёгкая подсветка перетаскиваемой колонки */
 .ticket-table__ghost {

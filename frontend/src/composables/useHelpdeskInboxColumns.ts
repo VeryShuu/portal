@@ -86,12 +86,11 @@ export const COLUMN_META: Record<HelpdeskColumnId, HelpdeskColumnMeta> = {
     defaultWidth: 200,
     sortable: true,
   },
-  age: { id: 'age', labelKey: 'helpdesk.columnAge', defaultWidth: 80, sortable: true },
+  age: { id: 'age', labelKey: 'helpdesk.columnAge', defaultWidth: 112, sortable: true },
   updated: {
     id: 'updated',
     labelKey: 'helpdesk.columnUpdated',
-    defaultWidth: 104,
-    align: 'end',
+    defaultWidth: 148,
     sortable: true,
   },
 }
