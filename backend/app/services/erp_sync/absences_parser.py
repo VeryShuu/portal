@@ -274,77 +274,14 @@ def _build_rows(records: list[list[str]]) -> ParsedAbsencesFile:
             # следующий период без сотрудника уйдёт в errors с понятной причиной.
             continue
 
-        # 3. Строка-период. Парсим 5 колонок: position, department, state, start, end.
-        # Колонки приходят в фиксированном порядке после строки-заголовка.
-        if len(cells) < 5:
-            errors.append(
-                ParseError(
-                    raw=" | ".join(cells)[:200],
-                    reason=f"Строка периода без полного набора колонок ({len(cells)}/5)",
-                )
-            )
-            continue
-
-        position = cells[0].strip() or None
-        department = cells[1].strip() or None
-        raw_state = cells[2].strip()
-        raw_start = cells[3]
-        raw_end = cells[4]
-
-        start = parse_absence_date(raw_start)
-        end = parse_absence_date(raw_end)
-        kind = classify_kind(raw_state)
-
-        reasons: list[str] = []
-        if current_fio_norm is None:
-            reasons.append("период без предшествующей строки сотрудника")
-        if start is None:
-            reasons.append(f"дата начала не распознана («{raw_start}»)")
-        if end is None:
-            reasons.append(f"дата окончания не распознана («{raw_end}»)")
-        if kind is None:
-            reasons.append(f"состояние не распознано («{raw_state}»)")
-        if reasons:
-            raw_preview = (
-                f"{current_fio_display or '?'} | {raw_state} | {raw_start} | {raw_end}"
-            ).strip()[:200]
-            errors.append(
-                ParseError(
-                    raw=raw_preview,
-                    reason="; ".join(reasons),
-                )
-            )
-            continue
-
-        # После guards — все not None, но mypy не сужает через список reasons.
-        assert start is not None and end is not None and kind is not None
-        assert current_fio_display is not None and current_fio_norm is not None
-
-        # end < start — ошибка данных (1С такого не шлёт, но защитимся).
-        if end < start:
-            errors.append(
-                ParseError(
-                    raw=f"{current_fio_display} | {raw_state} | {start} > {end}"[:200],
-                    reason="окончание раньше начала",
-                )
-            )
-            continue
-
-        key = (current_fio_norm, kind, start, end)
-        if key in seen:
-            continue  # дедуп идентичных периодов (1С дублирует при нескольких должностях)
-        seen.add(key)
-
-        rows.append(
-            ParsedAbsenceRow(
-                fio=current_fio_display,
-                fio_normalized=current_fio_norm,
-                kind=kind,
-                position=position,
-                department=department,
-                start_date=start,
-                end_date=end,
-            )
+        # 3. Строка-период: валидация + (опционально) добавление в rows.
+        _process_period_row(
+            cells,
+            current_fio_display=current_fio_display,
+            current_fio_norm=current_fio_norm,
+            rows=rows,
+            errors=errors,
+            seen=seen,
         )
 
     logger.info(
@@ -353,3 +290,85 @@ def _build_rows(records: list[list[str]]) -> ParsedAbsencesFile:
         errors=len(errors),
     )
     return ParsedAbsencesFile(rows=rows, errors=errors)
+
+
+def _process_period_row(
+    cells: list[str],
+    *,
+    current_fio_display: str | None,
+    current_fio_norm: str | None,
+    rows: list[ParsedAbsenceRow],
+    errors: list[ParseError],
+    seen: set[tuple[str, str, date, date]],
+) -> None:
+    """Распарсить строку-период и добавить её в ``rows`` либо ``errors``.
+
+    Вынесено из :func:`_build_rows` для снижения цикломатической сложности
+    (quality-чек CC≤10). Все ветки валидации здесь; мутирует переданные списки.
+    """
+    # Колонки приходят в фиксированном порядке после строки-заголовка.
+    if len(cells) < 5:
+        errors.append(
+            ParseError(
+                raw=" | ".join(cells)[:200],
+                reason=f"Строка периода без полного набора колонок ({len(cells)}/5)",
+            )
+        )
+        return
+
+    position = cells[0].strip() or None
+    department = cells[1].strip() or None
+    raw_state = cells[2].strip()
+    raw_start = cells[3]
+    raw_end = cells[4]
+
+    start = parse_absence_date(raw_start)
+    end = parse_absence_date(raw_end)
+    kind = classify_kind(raw_state)
+
+    reasons: list[str] = []
+    if current_fio_norm is None:
+        reasons.append("период без предшествующей строки сотрудника")
+    if start is None:
+        reasons.append(f"дата начала не распознана («{raw_start}»)")
+    if end is None:
+        reasons.append(f"дата окончания не распознана («{raw_end}»)")
+    if kind is None:
+        reasons.append(f"состояние не распознано («{raw_state}»)")
+    if reasons:
+        raw_preview = (
+            f"{current_fio_display or '?'} | {raw_state} | {raw_start} | {raw_end}"
+        ).strip()[:200]
+        errors.append(ParseError(raw=raw_preview, reason="; ".join(reasons)))
+        return
+
+    # После guards — все not None, но mypy не сужает через список reasons.
+    assert start is not None and end is not None and kind is not None
+    assert current_fio_display is not None and current_fio_norm is not None
+
+    # end < start — ошибка данных (1С такого не шлёт, но защитимся).
+    if end < start:
+        errors.append(
+            ParseError(
+                raw=f"{current_fio_display} | {raw_state} | {start} > {end}"[:200],
+                reason="окончание раньше начала",
+            )
+        )
+        return
+
+    key = (current_fio_norm, kind, start, end)
+    if key in seen:
+        return  # дедуп идентичных периодов (1С дублирует при нескольких должностях)
+    seen.add(key)
+
+    rows.append(
+        ParsedAbsenceRow(
+            fio=current_fio_display,
+            fio_normalized=current_fio_norm,
+            kind=kind,
+            position=position,
+            department=department,
+            start_date=start,
+            end_date=end,
+        )
+    )
