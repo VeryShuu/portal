@@ -4887,14 +4887,17 @@ files-table-smoke.spec.ts
 files-toolbar-smoke.spec.ts
 global-search-smoke.spec.ts
 header-theme-toggle.spec.ts
+helpdesk-age-plural.spec.ts
 helpdesk-agent-inbox-page.spec.ts
 helpdesk-agent-ticket-detail-page.spec.ts
 helpdesk-api-cc.spec.ts
 helpdesk-api-counts.spec.ts
 helpdesk-digest-settings.spec.ts
+helpdesk-inbox-columns.spec.ts
 helpdesk-my-archive-page.spec.ts
 helpdesk-my-ticket-detail-page.spec.ts
 helpdesk-my-tickets-page.spec.ts
+helpdesk-ticket-age.spec.ts
 helpdesk-ticket-info-card.spec.ts
 helpdesk-ticket-list-item.spec.ts
 helpdesk-ticket-message-list.spec.ts

@@ -19,26 +19,12 @@
         :description="t('helpdesk.noTickets')"
         style="margin: 48px 0"
       />
-      <div
+      <TicketList
         v-else
-        class="ticket-table"
-      >
-        <div class="ticket-table__head">
-          <span>{{ t('helpdesk.columnNumber') }}</span>
-          <span>{{ t('helpdesk.columnState') }}</span>
-          <span>{{ t('helpdesk.columnSubject') }}</span>
-          <span>{{ t('helpdesk.columnAssignee') }}</span>
-          <span>{{ t('helpdesk.columnUpdated') }}</span>
-        </div>
-        <div class="ticket-table__body">
-          <TicketListItem
-            v-for="ticket in items"
-            :key="ticket.id"
-            :ticket="ticket"
-            @open="goToTicket"
-          />
-        </div>
-      </div>
+        :items="items"
+        mode="user"
+        @open="goToTicket"
+      />
     </n-spin>
 
     <div
@@ -60,7 +46,7 @@ import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { NSpin, NEmpty, NPagination, NButton, useMessage } from 'naive-ui'
-import TicketListItem from '../../components/helpdesk/TicketListItem.vue'
+import TicketList from '../../components/helpdesk/TicketList.vue'
 import { fetchMyTickets, type HelpdeskTicketListItem } from '../../api/helpdesk'
 import { parseApiError } from '../../utils/parseApiError'
 
@@ -112,31 +98,6 @@ load()
   justify-content: space-between;
   align-items: center;
   margin-bottom: 16px;
-}
-.ticket-table {
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  overflow: hidden;
-  background: var(--color-surface);
-}
-.ticket-table__head {
-  display: grid;
-  grid-template-columns: 56px 92px minmax(0, 1fr) 150px 104px;
-  gap: 12px;
-  padding: 8px 14px;
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--color-text-muted);
-  background: var(--color-bg-muted);
-  border-bottom: 1px solid var(--color-border);
-}
-.ticket-table__head span:last-child {
-  text-align: right;
-}
-.ticket-table__body :deep(.ticket-row:last-child) {
-  border-bottom: none;
 }
 .helpdesk-pagination {
   margin-top: 24px;
