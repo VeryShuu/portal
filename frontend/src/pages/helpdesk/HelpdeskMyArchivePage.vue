@@ -1,5 +1,5 @@
 <template>
-  <div class="u-page-wrap u-page-wrap--narrow">
+  <div class="u-page-wrap u-page-wrap--standard">
     <header class="page-head">
       <h1 class="u-page-head__title">
         {{ t('helpdesk.myArchiveTitle') }}
@@ -23,7 +23,10 @@
         v-else
         :items="items"
         mode="user"
+        :sort-column="sortColumn"
+        :sort-order="sortOrder"
         @open="goToTicket"
+        @sort="onSortToggle"
       />
     </n-spin>
 
@@ -48,6 +51,7 @@ import { useRouter } from 'vue-router'
 import { NSpin, NEmpty, NPagination, NButton, useMessage } from 'naive-ui'
 import TicketList from '../../components/helpdesk/TicketList.vue'
 import { fetchMyTickets, type HelpdeskTicketListItem } from '../../api/helpdesk'
+import { useHelpdeskTicketSort } from '../../composables/useHelpdeskTicketSort'
 import { parseApiError } from '../../utils/parseApiError'
 
 const { t } = useI18n()
@@ -63,11 +67,21 @@ const page = ref(1)
 const limit = 20
 const loading = ref(false)
 
+// Серверная сортировка архива заявителя.
+const { sortColumn, sortOrder, apiParams: sortApiParams, toggle: toggleSort } = useHelpdeskTicketSort()
+
+function onSortToggle(id: Parameters<typeof toggleSort>[0]): void {
+  toggleSort(id)
+  page.value = 1
+  load()
+}
+
 async function load() {
   loading.value = true
   try {
     const res = await fetchMyTickets({
       status: 'closed',
+      ...sortApiParams.value,
       limit,
       offset: (page.value - 1) * limit,
     })

@@ -155,6 +155,61 @@ describe('TicketList.vue', () => {
     expect(wrapper.emitted('open')).toEqual([['a']])
     expect(wrapper.emitted('take')).toEqual([['a']])
   })
+
+  // ── Сортировка ────────────────────────────────────────────────────────────
+  it('клик по сортируемому заголовку эмитит sort', async () => {
+    const wrapper = mount(TicketList, {
+      global: globalOptions,
+      props: { items: [], mode: 'agent' },
+    })
+    // number — sortable. data-column-id используется как селектор.
+    const numHeader = wrapper.find('[data-column-id="number"]')
+    await numHeader.trigger('click')
+    expect(wrapper.emitted('sort')).toEqual([['number']])
+  })
+
+  it('клик по subject (не sortable) не эмитит sort', async () => {
+    const wrapper = mount(TicketList, {
+      global: globalOptions,
+      props: { items: [], mode: 'agent' },
+    })
+    await wrapper.find('[data-column-id="subject"]').trigger('click')
+    expect(wrapper.emitted('sort')).toBeUndefined()
+  })
+
+  it('индикатор сортировки показывает направление активной колонки', () => {
+    const wrapper = mount(TicketList, {
+      global: globalOptions,
+      props: { items: [], mode: 'agent', sortColumn: 'updated', sortOrder: 'desc' },
+    })
+    const updatedHeader = wrapper.find('[data-column-id="updated"]')
+    expect(updatedHeader.classes()).toContain('ticket-table__th--active')
+    expect(updatedHeader.find('.ticket-table__sort-indicator--desc').exists()).toBe(true)
+    // другие колонки — без active
+    expect(wrapper.find('[data-column-id="number"]').classes()).not.toContain('ticket-table__th--active')
+  })
+
+  it('колонка updated выровнена по правому краю (align=end)', () => {
+    const wrapper = mount(TicketList, {
+      global: globalOptions,
+      props: { items: [], mode: 'agent' },
+    })
+    const updatedHeader = wrapper.find('[data-column-id="updated"]')
+    expect(updatedHeader.classes()).toContain('ticket-table__th--end')
+    // number — без end-выравнивания
+    expect(wrapper.find('[data-column-id="number"]').classes()).not.toContain('ticket-table__th--end')
+  })
+
+  it('Enter/Space на сортируемом заголовке эмитит sort', async () => {
+    const wrapper = mount(TicketList, {
+      global: globalOptions,
+      props: { items: [], mode: 'agent' },
+    })
+    const statusHeader = wrapper.find('[data-column-id="status"]')
+    await statusHeader.trigger('keydown', { key: 'Enter' })
+    await statusHeader.trigger('keydown', { key: ' ' })
+    expect(wrapper.emitted('sort')).toEqual([['status'], ['status']])
+  })
 })
 
 describe('TicketListItem.vue', () => {

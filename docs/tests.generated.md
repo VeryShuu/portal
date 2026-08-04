@@ -2211,6 +2211,17 @@ tests/unit/test_helpdesk_tickets_service.py::TestAgentTickets::test_count_agent
 tests/unit/test_helpdesk_tickets_service.py::TestAgentTickets::test_fetch_ticket_for_agent_found
 tests/unit/test_helpdesk_tickets_service.py::TestAgentTickets::test_fetch_ticket_for_agent_not_found
 tests/unit/test_helpdesk_tickets_service.py::TestAgentTickets::test_list_agent_returns_sequence
+tests/unit/test_helpdesk_tickets_service.py::TestApplySort::test_assignee_join_to_users_full_name
+tests/unit/test_helpdesk_tickets_service.py::TestApplySort::test_invalid_order_defaults_to_desc[ASCENDING]
+tests/unit/test_helpdesk_tickets_service.py::TestApplySort::test_invalid_order_defaults_to_desc[]
+tests/unit/test_helpdesk_tickets_service.py::TestApplySort::test_invalid_order_defaults_to_desc[random]
+tests/unit/test_helpdesk_tickets_service.py::TestApplySort::test_native_column_asc
+tests/unit/test_helpdesk_tickets_service.py::TestApplySort::test_native_column_desc
+tests/unit/test_helpdesk_tickets_service.py::TestApplySort::test_order_case_insensitive
+tests/unit/test_helpdesk_tickets_service.py::TestApplySort::test_requester_join_to_users_full_name
+tests/unit/test_helpdesk_tickets_service.py::TestApplySort::test_sort_none_returns_applied_false
+tests/unit/test_helpdesk_tickets_service.py::TestApplySort::test_status_sortable
+tests/unit/test_helpdesk_tickets_service.py::TestApplySort::test_unknown_field_returns_applied_false
 tests/unit/test_helpdesk_tickets_service.py::TestAssignTicket::test_new_becomes_open
 tests/unit/test_helpdesk_tickets_service.py::TestAssignTicket::test_non_open_status_unchanged_on_reassign
 tests/unit/test_helpdesk_tickets_service.py::TestAssignTicket::test_reassign_replaces_previous_assignee_and_updates_timestamp
@@ -4901,6 +4912,7 @@ helpdesk-ticket-age.spec.ts
 helpdesk-ticket-info-card.spec.ts
 helpdesk-ticket-list-item.spec.ts
 helpdesk-ticket-message-list.spec.ts
+helpdesk-ticket-sort.spec.ts
 hero-block.spec.ts
 home-links-preview.spec.ts
 home-page.spec.ts

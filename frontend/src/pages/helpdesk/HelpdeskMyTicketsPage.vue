@@ -1,5 +1,5 @@
 <template>
-  <div class="u-page-wrap u-page-wrap--narrow">
+  <div class="u-page-wrap u-page-wrap--standard">
     <header class="page-head">
       <h1 class="u-page-head__title">
         {{ t('helpdesk.myTitle') }}
@@ -45,7 +45,10 @@
           v-else
           :items="waitingItems"
           mode="user"
+          :sort-column="sortColumn"
+          :sort-order="sortOrder"
           @open="goToTicket"
+          @sort="onSortToggle"
         />
       </n-spin>
       <div
@@ -82,7 +85,10 @@
           v-else
           :items="inWorkItems"
           mode="user"
+          :sort-column="sortColumn"
+          :sort-order="sortOrder"
           @open="goToTicket"
+          @sort="onSortToggle"
         />
       </n-spin>
       <div
@@ -114,6 +120,7 @@ import { AddOutline } from '@vicons/ionicons5'
 import TicketList from '../../components/helpdesk/TicketList.vue'
 import TicketCreateModal from '../../components/helpdesk/TicketCreateModal.vue'
 import { fetchMyTickets, type HelpdeskTicketListItem } from '../../api/helpdesk'
+import { useHelpdeskTicketSort } from '../../composables/useHelpdeskTicketSort'
 import { parseApiError } from '../../utils/parseApiError'
 
 const { t } = useI18n()
@@ -138,12 +145,23 @@ const inWorkLoading = ref(false)
 
 const showCreate = ref(false)
 
+// Серверная сортировка своих заявок (общая для обоих блоков).
+const { sortColumn, sortOrder, apiParams: sortApiParams, toggle: toggleSort } = useHelpdeskTicketSort()
+
+function onSortToggle(id: Parameters<typeof toggleSort>[0]): void {
+  toggleSort(id)
+  waitingPage.value = 1
+  inWorkPage.value = 1
+  loadAll()
+}
+
 async function loadWaiting() {
   waitingLoading.value = true
   try {
     const res = await fetchMyTickets({
       unassigned: true,
       activeOnly: true,
+      ...sortApiParams.value,
       limit: waitingLimit,
       offset: (waitingPage.value - 1) * waitingLimit,
     })
@@ -162,6 +180,7 @@ async function loadInWork() {
     const res = await fetchMyTickets({
       assigned: true,
       activeOnly: true,
+      ...sortApiParams.value,
       limit: inWorkLimit,
       offset: (inWorkPage.value - 1) * inWorkLimit,
     })

@@ -14,13 +14,31 @@
         :class="{
           'ticket-table__th--fixed': col.fixed,
           'ticket-table__th--draggable': isAgent && !col.fixed,
+          'ticket-table__th--end': col.align === 'end',
+          'ticket-table__th--sortable-col': col.sortable,
+          'ticket-table__th--active': col.sortable && directionFor(col.id) !== null,
         }"
+        :role="col.sortable ? 'button' : undefined"
+        :tabindex="col.sortable ? 0 : undefined"
+        :aria-sort="ariaSort(col.id)"
+        :title="col.sortable ? sortHint(col.id) : undefined"
+        @click="col.sortable ? onSortClick(col.id) : undefined"
+        @keydown.enter.prevent="col.sortable ? onSortClick(col.id) : undefined"
+        @keydown.space.prevent="col.sortable ? onSortClick(col.id) : undefined"
       >
-        <span class="ticket-table__th-label">{{ t(labelKey(col)) }}</span>
+        <span class="ticket-table__th-label">{{ t(col.labelKey) }}</span>
+        <span
+          v-if="col.sortable"
+          class="ticket-table__sort-indicator"
+          :class="`ticket-table__sort-indicator--${directionFor(col.id) ?? 'none'}`"
+          aria-hidden="true"
+        >{{ sortGlyph(col.id) }}</span>
         <span
           v-if="isAgent && !col.fixed"
           class="ticket-table__grip"
           :title="t('helpdesk.dragColumnHint')"
+          @click.stop
+          @keydown.stop
         >⠿</span>
       </span>
       <span
@@ -57,7 +75,7 @@
                 :checked="!state.hidden.includes(col.id)"
                 @update:checked="toggleColumn(col.id)"
               >
-                {{ t(labelKey(col)) }}
+                {{ t(col.labelKey) }}
               </n-checkbox>
             </div>
             <div class="col-settings__footer">
@@ -90,7 +108,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, useTemplateRef, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Sortable from 'sortablejs'
 import { NPopover, NButton, NIcon, NCheckbox } from 'naive-ui'
@@ -98,10 +116,10 @@ import { OptionsOutline } from '@vicons/ionicons5'
 import TicketListItem from './TicketListItem.vue'
 import {
   useHelpdeskInboxColumns,
-  type HelpdeskColumnMeta,
   type HelpdeskColumnId,
   type HelpdeskColumnMode,
 } from '../../composables/useHelpdeskInboxColumns'
+import type { SortDirection } from '../../composables/useHelpdeskTicketSort'
 import type { HelpdeskTicketListItem } from '../../api/helpdesk'
 
 const props = defineProps<{
@@ -110,11 +128,17 @@ const props = defineProps<{
   takingId?: string | null
   /** Пресет колонок: ``'agent'`` (полный, настраиваемый) / ``'user'`` (упрощённый). */
   mode?: HelpdeskColumnMode
+  /** Текущая колонка серверной сортировки (null = дефолт). */
+  sortColumn?: HelpdeskColumnId | null
+  /** Текущее направление сортировки. */
+  sortOrder?: SortDirection
 }>()
 
-defineEmits<{
+const emit = defineEmits<{
   open: [id: string]
   take: [id: string]
+  /** Клик по сортируемому заголовку (страница обновит server-state запроса). */
+  sort: [id: HelpdeskColumnId]
 }>()
 
 const { t } = useI18n()
@@ -130,10 +154,39 @@ const headGridTemplate = computed(() =>
   isAgent.value ? `${gridTemplate.value} ${SETTINGS_CELL}` : gridTemplate.value,
 )
 
-/** i18n-ключ метаданных колонки хранится с полным неймспейсом (helpdesk.columnX),
- * а t() в этом компоненте вызывается без области видимости — убираем префикс. */
-function labelKey(col: HelpdeskColumnMeta): string {
-  return col.labelKey.replace('helpdesk.', '')
+// ── Сортировка: состояние живёт в странице (server-state запроса), компонент —
+// чисто презентационный. Клик по заголовку эмитит ``sort``; индикатор/aria
+// считаются из props.sortColumn/sortOrder через directionFor-прокси.
+const sortColumnRef = computed(() => props.sortColumn ?? null)
+const sortOrderRef = computed<SortDirection>(() => props.sortOrder ?? 'desc')
+
+function directionFor(id: HelpdeskColumnId): SortDirection | null {
+  return sortColumnRef.value === id ? sortOrderRef.value : null
+}
+
+function sortGlyph(id: HelpdeskColumnId): string {
+  const dir = directionFor(id)
+  if (dir === 'asc') return '▲'
+  if (dir === 'desc') return '▼'
+  return '↕'
+}
+
+function ariaSort(id: HelpdeskColumnId): 'ascending' | 'descending' | 'none' | undefined {
+  const dir = directionFor(id)
+  if (dir === 'asc') return 'ascending'
+  if (dir === 'desc') return 'descending'
+  return dir === null && sortColumnRef.value === null ? 'none' : undefined
+}
+
+function sortHint(id: HelpdeskColumnId): string {
+  const dir = directionFor(id)
+  if (dir === null) return t('helpdesk.sortHintNone')
+  if (dir === 'asc') return t('helpdesk.sortHintAsc')
+  return t('helpdesk.sortHintDesc')
+}
+
+function onSortClick(id: HelpdeskColumnId): void {
+  emit('sort', id)
 }
 
 // ── Drag-and-drop порядка колонок (только в агентском режиме) ────────────────
@@ -142,8 +195,8 @@ function labelKey(col: HelpdeskColumnMeta): string {
 // колонок из DOM, чтобы определить ``beforeId`` (сосед справа от moved);
 // (2) возвращаем DOM к исходному виду — Vue перекроет ре-рендер из state;
 // (3) мутируем state через ``reorderColumn`` — паттерн проекта (см.
-// useSortableGroups). handle = «гrip»-иконка, чтобы клик по заголовку не
-// запускал перетаскивание (важно для будущей сортировки по столбцу).
+// useSortableGroups). handle = «гrip»-иконка, чтобы клик по заголовку (сортировка)
+// не запускал перетаскивание — две разные операции на одном заголовке.
 const headEl = useTemplateRef<HTMLElement>('headEl')
 let sortableInstance: Sortable | null = null
 
@@ -196,13 +249,19 @@ function setupSortable() {
   })
 }
 
+// Первичная инициализация DnD — только после mount (headEl.value доступен).
+// watch с immediate:true не годится: в setup() DOM ещё не смонтирован → headEl
+// === null → ранний return из setupSortable → DnD не создавался (баг).
+onMounted(() => {
+  if (isAgent.value) setupSortable()
+})
+
 watch(
   () => isAgent.value,
   (enabled) => {
     if (enabled) setupSortable()
     else teardownSortable()
   },
-  { immediate: true },
 )
 
 onBeforeUnmount(teardownSortable)
@@ -235,10 +294,35 @@ onBeforeUnmount(teardownSortable)
   align-items: center;
   gap: 4px;
 }
+/* Выравнивание end (для updated — дата вправо) — единообразно для шапки и строки. */
+.ticket-table__th--end {
+  justify-content: flex-end;
+}
 .ticket-table__th-label {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+/* Сортируемые заголовки — кликабельны, с hover-подсветкой и индикатором. */
+.ticket-table__th--sortable-col {
+  cursor: pointer;
+  user-select: none;
+}
+.ticket-table__th--sortable-col:hover {
+  color: var(--color-text);
+}
+.ticket-table__sort-indicator {
+  font-size: 10px;
+  line-height: 1;
+  opacity: 0.45;
+  flex-shrink: 0;
+}
+.ticket-table__th--active .ticket-table__sort-indicator {
+  opacity: 1;
+  color: var(--color-brand, #143a66);
+}
+.ticket-table__th--sortable-col:hover .ticket-table__sort-indicator {
+  opacity: 0.8;
 }
 .ticket-table__head--sortable .ticket-table__th--draggable {
   cursor: grab;

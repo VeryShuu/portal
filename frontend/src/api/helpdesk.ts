@@ -110,6 +110,10 @@ export interface HelpdeskInboxParams {
   activeOnly?: boolean
   assigned?: boolean
   q?: string
+  /** Поле серверной сортировки (number/status/requester/assignee/created_at/last_activity_at). */
+  sort?: string
+  /** Направление сортировки. */
+  order?: 'asc' | 'desc'
   limit?: number
   offset?: number
 }
@@ -123,6 +127,10 @@ export interface HelpdeskMyListParams {
   /** Только активные (new/open/pending) — закрытые скрыты (они в архиве
    *  заявителя). Игнорируется, если задан ``status`` (он точнее). */
   activeOnly?: boolean
+  /** Поле серверной сортировки (number/status/requester/assignee/created_at/last_activity_at). */
+  sort?: string
+  /** Направление сортировки. */
+  order?: 'asc' | 'desc'
   limit?: number
   offset?: number
 }

@@ -224,7 +224,7 @@ describe('useHelpdeskInboxColumns — персистенция (localStorage)', 
     const mod = await loadModule()
     const { state } = mod.useHelpdeskInboxColumns('agent')
     // 'wide' — не число → дефолт
-    expect(state.widths.requester).toBe(180)
+    expect(state.widths.requester).toBe(200)
     // -10 — валидное число, но < MIN → кэмп к MIN_COLUMN_WIDTH (48)
     expect(state.widths.assignee).toBe(48)
     // 99999 — валидное число, но > MAX → кэмп к MAX_COLUMN_WIDTH (600)
@@ -275,7 +275,7 @@ describe('useHelpdeskInboxColumns — gridTemplate', () => {
     expect(gridTemplate.value).toContain('56px')
     expect(gridTemplate.value).toContain('92px')
     expect(gridTemplate.value).toContain('minmax(0, 1fr)')
-    expect(gridTemplate.value).toContain('180px')
+    expect(gridTemplate.value).toContain('200px')
     expect(gridTemplate.value).toContain('80px')
     expect(gridTemplate.value).toContain('104px')
   })

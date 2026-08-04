@@ -1,5 +1,5 @@
 <template>
-  <div class="u-page-wrap u-page-wrap--narrow">
+  <div class="u-page-wrap u-page-wrap--standard">
     <header class="page-head page-head--row">
       <h1 class="u-page-head__title">
         {{ t('helpdesk.sectionArchive') }}
@@ -44,7 +44,10 @@
       <TicketList
         v-else
         :items="items"
+        :sort-column="sortColumn"
+        :sort-order="sortOrder"
         @open="goToTicket"
+        @sort="onSortToggle"
       />
     </n-spin>
 
@@ -70,6 +73,7 @@ import { NSpin, NEmpty, NPagination, NInput, NRadioGroup, NRadioButton, NButton,
 import TicketList from '../../components/helpdesk/TicketList.vue'
 import { useAuthStore } from '../../stores/auth'
 import { fetchAgentTickets, type HelpdeskTicketListItem } from '../../api/helpdesk'
+import { useHelpdeskTicketSort } from '../../composables/useHelpdeskTicketSort'
 import { parseApiError } from '../../utils/parseApiError'
 import { ROUTES } from '../../router'
 
@@ -96,6 +100,15 @@ const assignmentScope = ref<'mine' | 'all'>(
 const loading = ref(false)
 const myId = computed(() => auth.user?.id)
 
+// Серверная сортировка архива (закрытые тикеты).
+const { sortColumn, sortOrder, apiParams: sortApiParams, toggle: toggleSort } = useHelpdeskTicketSort()
+
+function onSortToggle(id: Parameters<typeof toggleSort>[0]): void {
+  toggleSort(id)
+  page.value = 1
+  load()
+}
+
 async function load() {
   // В режиме «Только мои» нужен assignee=myId; если user ещё не загружен —
   // ждём (перезагрузка сработает через watch(myId)).
@@ -110,6 +123,7 @@ async function load() {
       status: 'closed',
       ...scopeParams,
       q: q.value.trim() || undefined,
+      ...sortApiParams.value,
       limit,
       offset: (page.value - 1) * limit,
     })
