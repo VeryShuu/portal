@@ -1484,6 +1484,11 @@
         "title": "Run absences import",
         "hint": "Same actions for the «HR history for period» report. \"Upload file\" is handy for initial parser verification on a real file before enabling auto-polling."
       },
+      "absencesRuns": {
+        "title": "Absences import history",
+        "inserted": "Inserted",
+        "reportInserted": "Inserted ({count})"
+      },
       "runs": {
         "title": "Import history",
         "refresh": "Refresh",

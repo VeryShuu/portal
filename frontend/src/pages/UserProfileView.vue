@@ -83,6 +83,7 @@ import ProfileInfoCard from '../components/profile/ProfileInfoCard.vue'
 import ProfileGroupsCard from '../components/profile/ProfileGroupsCard.vue'
 import ProfilePreferencesCard from '../components/profile/ProfilePreferencesCard.vue'
 import ProfilePasswordCard from '../components/profile/ProfilePasswordCard.vue'
+import UserAbsencesCard from '../components/profile/UserAbsencesCard.vue'
 import { useUserQuery, useUserAttributeSchemaQuery, useUserKeycloakGroupsQuery } from '../queries/users'
 
 type DisplayUser = UserMe | UserPublic

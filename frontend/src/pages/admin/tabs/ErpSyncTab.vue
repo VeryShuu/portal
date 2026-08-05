@@ -105,6 +105,8 @@
     </section>
 
     <ErpSyncRuns />
+
+    <ErpAbsencesRuns />
   </div>
 </template>
 
@@ -134,6 +136,9 @@ const ErpSyncSettings = defineAsyncComponent(
 )
 const ErpSyncRuns = defineAsyncComponent(
   () => import('../../../components/admin/ErpSyncRuns.vue'),
+)
+const ErpAbsencesRuns = defineAsyncComponent(
+  () => import('../../../components/admin/ErpAbsencesRuns.vue'),
 )
 
 const running = ref(false)

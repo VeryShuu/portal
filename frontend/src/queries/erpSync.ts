@@ -9,8 +9,10 @@ import {
   fetchErpSyncRuns,
   fetchErpSyncSettings,
   putErpSyncSettings,
+  fetchErpAbsencesRuns,
   type ErpSyncRunList,
   type ErpSyncSettingsIn,
+  type ErpAbsencesRunList,
 } from '../api/erpSync'
 
 export function useErpSyncSettingsQuery() {
@@ -42,5 +44,16 @@ export function useErpSyncRunsQuery(params: MaybeRefOrGetter<ErpSyncRunsParams>)
     queryFn: () => fetchErpSyncRuns(toValue(params) ?? {}),
     staleTime: 0,
     placeholderData: (prev: ErpSyncRunList | undefined) => prev,
+  })
+}
+
+export function useErpAbsencesRunsQuery(params: MaybeRefOrGetter<ErpSyncRunsParams>) {
+  return useQuery({
+    queryKey: computed(() =>
+      queryKeys.erpSync.absencesRuns(toValue(params) as Record<string, unknown>),
+    ),
+    queryFn: () => fetchErpAbsencesRuns(toValue(params) ?? {}),
+    staleTime: 0,
+    placeholderData: (prev: ErpAbsencesRunList | undefined) => prev,
   })
 }

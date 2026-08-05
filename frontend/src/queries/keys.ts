@@ -148,5 +148,7 @@ export const queryKeys = {
     all: ['erp-sync'] as const,
     settings: () => ['erp-sync', 'settings'] as const,
     runs: (params?: Record<string, unknown>) => ['erp-sync', 'runs', params ?? {}] as const,
+    absencesRuns: (params?: Record<string, unknown>) =>
+      ['erp-sync', 'absences-runs', params ?? {}] as const,
   },
 } as const
