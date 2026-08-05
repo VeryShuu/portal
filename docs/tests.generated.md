@@ -51,6 +51,14 @@ tests/integration/test_birthdays_db.py::test_returns_only_birthday_people_in_ran
 tests/integration/test_birthdays_db.py::test_sorting_across_month_boundary
 tests/integration/test_birthdays_db.py::test_sorting_chronological_by_month_day
 tests/integration/test_bookmarks_race.py::test_concurrent_bookmark_creation_respects_limit
+tests/integration/test_current_status_db.py::test_active_vacation_sets_vacation_status
+tests/integration/test_current_status_db.py::test_business_trip_category
+tests/integration/test_current_status_db.py::test_past_absence_does_not_affect_status
+tests/integration/test_current_status_db.py::test_reset_keeps_user_with_active_absence
+tests/integration/test_current_status_db.py::test_reset_to_working_when_absence_gone
+tests/integration/test_current_status_db.py::test_scoped_recompute_does_not_touch_other_users
+tests/integration/test_current_status_db.py::test_sick_beats_business_trip_and_vacation
+tests/integration/test_current_status_db.py::test_vacation_beats_business_trip
 tests/integration/test_directories_db.py::TestDirectoryTypes::test_create_and_list
 tests/integration/test_directories_db.py::TestDirectoryTypes::test_create_emits_audit
 tests/integration/test_directories_db.py::TestDirectoryTypes::test_module_off_returns_404
@@ -446,6 +454,7 @@ tests/integration/test_migrations.py::test_migration_revision_round_trip[089]
 tests/integration/test_migrations.py::test_migration_revision_round_trip[090]
 tests/integration/test_migrations.py::test_migration_revision_round_trip[091]
 tests/integration/test_migrations.py::test_migration_revision_round_trip[092]
+tests/integration/test_migrations.py::test_migration_revision_round_trip[093]
 tests/integration/test_migrations.py::test_migrations_full_lifecycle
 tests/integration/test_migrations.py::test_migrations_stepwise_down_up
 tests/integration/test_migrations_nightly.py::test_alembic_upgrade_head_on_clean_container
@@ -661,6 +670,16 @@ tests/security/test_xss_sanitization.py::test_table_tags_preserved
 tests/security/test_xss_sanitization.py::test_text_align_style_preserved_as_contract
 tests/security/test_xss_sanitization.py::test_unknown_xss_tag_with_inline_handler_stripped
 tests/security/test_xss_sanitization.py::test_vbscript_protocol_rejected
+tests/unit/test_absences_status.py::TestCategoryPriority::test_sick_has_highest_priority
+tests/unit/test_absences_status.py::TestCategoryPriority::test_unknown_category_defaults_to_working
+tests/unit/test_absences_status.py::TestCategoryPriority::test_vacation_beats_business_trip
+tests/unit/test_absences_status.py::TestCategoryPriority::test_working_is_lowest
+tests/unit/test_absences_status.py::TestKindToCategory::test_all_seven_kinds_mapped
+tests/unit/test_absences_status.py::TestKindToCategory::test_business_trip_maps_to_business_trip
+tests/unit/test_absences_status.py::TestKindToCategory::test_kind_map_covers_all_canonical_values
+tests/unit/test_absences_status.py::TestKindToCategory::test_sick_maps_to_sick
+tests/unit/test_absences_status.py::TestKindToCategory::test_unknown_kind_falls_back_to_working
+tests/unit/test_absences_status.py::TestKindToCategory::test_vacation_kinds_collapse_to_vacation
 tests/unit/test_admin_users.py::TestAdminUserValidationLogic::test_admin_patch_profile_allows_none_fields
 tests/unit/test_admin_users.py::TestAdminUserValidationLogic::test_admin_patch_profile_birth_date_parsed
 tests/unit/test_admin_users.py::TestAdminUserValidationLogic::test_admin_patch_profile_gender_validation
@@ -3078,17 +3097,6 @@ tests/unit/test_meetings_audit_unit.py::TestPushMeetingsAudit::test_db_failure_i
 tests/unit/test_meetings_audit_unit.py::TestPushMeetingsAudit::test_falls_back_to_client_host_when_no_forwarded_header
 tests/unit/test_meetings_audit_unit.py::TestPushMeetingsAudit::test_no_request_no_user
 tests/unit/test_meetings_audit_unit.py::TestPushMeetingsAudit::test_writes_row_with_forwarded_ip_and_user_metadata
-tests/unit/test_meetings_bookings_helpers.py::test_compute_diff_conservation_and_disjoint
-tests/unit/test_meetings_bookings_helpers.py::test_compute_diff_filters_all_malformed_entries
-tests/unit/test_meetings_bookings_helpers.py::test_compute_diff_non_participant_changed_passthrough
-tests/unit/test_meetings_bookings_helpers.py::test_compute_diff_reflexive_all_unchanged
-tests/unit/test_meetings_bookings_helpers.py::test_compute_diff_symmetric_direction_swap
-tests/unit/test_meetings_bookings_helpers.py::test_date_range_converts_non_utc_timezone_to_utc
-tests/unit/test_meetings_bookings_helpers.py::test_date_range_handles_dst_timezone
-tests/unit/test_meetings_bookings_helpers.py::test_date_range_returns_full_day_bounds_in_utc
-tests/unit/test_meetings_bookings_helpers.py::test_to_utc_assigns_utc_to_naive_datetime
-tests/unit/test_meetings_bookings_helpers.py::test_to_utc_converts_non_utc_aware_to_utc
-tests/unit/test_meetings_bookings_helpers.py::test_to_utc_keeps_aware_datetime_unchanged_in_utc
 tests/unit/test_meetings_bookings_limit.py::TestBookingsListLimitCap::test_default_and_bounds
 tests/unit/test_meetings_bookings_limit.py::TestBookingsListLimitCap::test_my_endpoint_cap_unchanged
 tests/unit/test_meetings_guard.py::TestMeetingsGuard::test_disabled_returns_404
@@ -4882,6 +4890,7 @@ tests/unit/test_worker_tasks.py::TestRefreshCustomMetrics::test_no_pool_skips_db
 tests/unit/test_worker_tasks.py::TestRefreshCustomMetrics::test_photo_storage_calculated
 tests/unit/test_worker_tasks.py::TestRefreshCustomMetrics::test_returns_snapshot_dict
 tests/unit/test_worker_tasks.py::TestRefreshCustomMetrics::test_saves_snapshot_to_redis
+(pytest collection failed; check backend venv)
 ```
 
 ## Frontend Vitest (tests/unit/*.spec.ts)
@@ -5111,6 +5120,7 @@ use-news-comments.spec.ts
 use-phone-format.spec.ts
 use-staff-export.spec.ts
 use-staff-view.spec.ts
+user-avatar.spec.ts
 user-profile-view.spec.ts
 users-api.spec.ts
 utils-coverage.spec.ts

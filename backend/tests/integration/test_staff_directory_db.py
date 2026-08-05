@@ -30,7 +30,7 @@ async def _create(session, **overrides) -> User:
         full_name="Test User",
         role="reader",
         auth_source="local",
-        presence_status="office",
+        current_status="working",
         notify_email=True,
         notify_inapp=True,
         lang="ru",

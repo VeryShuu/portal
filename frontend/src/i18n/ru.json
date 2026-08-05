@@ -481,11 +481,12 @@
         "keycloak": "Keycloak SSO",
         "local": "Локальная учётная запись"
       },
-      "status": {
-        "label": "Статус",
-        "office": "В офисе",
-        "remote": "Удалённо",
-        "vacation": "В отпуске"
+      "presence": {
+        "working": "Работает",
+        "vacation": "Отпуск / отгул",
+        "sick": "Болезнь",
+        "business_trip": "Командировка",
+        "until": "до {date}"
       }
     },
     "fields": {

@@ -481,11 +481,12 @@
         "keycloak": "Keycloak SSO",
         "local": "Local account"
       },
-      "status": {
-        "label": "Status",
-        "office": "In Office",
-        "remote": "Remote",
-        "vacation": "On Vacation"
+      "presence": {
+        "working": "Working",
+        "vacation": "Vacation / day off",
+        "sick": "Sick",
+        "business_trip": "Business trip",
+        "until": "until {date}"
       }
     },
     "fields": {

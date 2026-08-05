@@ -11,6 +11,13 @@
         class="staff-row__name-text"
         v-html="hl(user.full_name)"
       />
+      <span
+        v-if="user.current_status && user.current_status !== 'working'"
+        class="staff-row__presence"
+        :class="`staff-row__presence--${user.current_status}`"
+      >
+        {{ presenceLabel }}
+      </span>
     </td>
     <td class="staff-row__position cell-position">
       <span v-html="hl(user.position)" />
@@ -86,6 +93,7 @@ import { NIcon, useMessage } from 'naive-ui'
 import { CopyOutline } from '@vicons/ionicons5'
 import type { UserPublic } from '../api/users'
 import { usePhoneFormat } from '../composables/usePhoneFormat'
+import { formatDateShort } from '../utils/formatDate'
 
 const props = defineProps<{
   user: UserPublic
@@ -93,9 +101,20 @@ const props = defineProps<{
 }>()
 
 const router = useRouter()
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const message = useMessage()
 const { formatPhone } = usePhoneFormat()
+
+// Текстовая пометка отсутствия в табличном режиме справочника (рядом с ФИО).
+// Кольцо аватарки здесь не рисуется (в таблице аватарок нет) — только подпись.
+const presenceLabel = computed(() => {
+  const status = props.user.current_status
+  if (!status || status === 'working') return ''
+  const label = t(`users.presence.${status}`)
+  const until = props.user.current_status_until
+  if (!until) return label
+  return `${label} · ${t('users.presence.until', { date: formatDateShort(until, locale.value) })}`
+})
 
 const mobilePhone = computed(() => {
   const v = props.user.attributes?.mobile
@@ -142,6 +161,29 @@ async function copyValue(value: string, label: string) {
 .staff-row__name-text {
   font-weight: 500;
   color: var(--color-text);
+}
+.staff-row__presence {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 7px;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 999px;
+  vertical-align: middle;
+  color: var(--color-text-muted);
+  background: rgba(0, 0, 0, 0.05);
+}
+.staff-row__presence--vacation {
+  color: var(--presence-ring-vacation);
+  background: rgba(245, 158, 11, 0.12);
+}
+.staff-row__presence--sick {
+  color: var(--presence-ring-sick);
+  background: rgba(190, 18, 60, 0.1);
+}
+.staff-row__presence--business_trip {
+  color: var(--presence-ring-business_trip);
+  background: rgba(139, 92, 246, 0.12);
 }
 .mono {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;

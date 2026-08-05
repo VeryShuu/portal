@@ -1,5 +1,5 @@
 <!-- AUTO-GENERATED — do not edit manually. Run: cd backend && python -m scripts.generate_api_contracts_doc --output ../docs/api-contracts.generated.md -->
-<!-- Generated: 2026-08-02 07:32 UTC -->
+<!-- Generated: 2026-08-05 19:03 UTC -->
 
 # API Contracts (auto-generated)
 
@@ -1391,6 +1391,101 @@ Content-Type: `application/json` — schema: `UpdateEntryRequest`
 
 ## erp-sync
 
+### `POST /api/v1/erp-sync/absences/import-file`
+
+**Import Absences File**
+
+Импортировать файл отсутствий напрямую (multipart-upload), синхронно.
+
+Общий ``run_absences_import`` с mailbox — отличие только в источнике
+:class:`AbsenceAttachment`. ``message_id=None`` (нет письма; дедуп по hash
+не делаем — каждый upload новый, для перезапуска при отладке).
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `portal_session` | cookie | `any` |  |  |
+
+**Request Body**
+
+Content-Type: `multipart/form-data` — schema: `Body_import_absences_file_api_v1_erp_sync_absences_import_file_post`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `file` | string | ✓ |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | `ErpSyncRunNowResponse` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `POST /api/v1/erp-sync/absences/run`
+
+**Run Absences Now**
+
+Поставить mailbox-poll отсутствий в ARQ-очередь (немедленно).
+
+``absences_poll_enabled`` НЕ проверяется (админ явно хочет «забрать сейчас»),
+но общий IMAP должен быть настроен (ADR-048).
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | `ErpSyncRunNowResponse` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `GET /api/v1/erp-sync/absences/runs`
+
+**List Absences Runs**
+
+Пагинированный список последних импортов отсутствий (новые первыми).
+
+``report`` (JSONB) возвращается как есть — фронтенд рендерит разделы
+inserted/unmatched/ambiguous/errors.
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `limit` | query | `integer` |  |  |
+| `offset` | query | `integer` |  |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | `ErpAbsencesRunList` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `GET /api/v1/erp-sync/absences/runs/{run_id}`
+
+**Get Absences Run**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `run_id` | path | `integer` | ✓ |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | `ErpAbsencesRunOut` |
+| 422 | Validation Error | `HTTPValidationError` |
+
 ### `POST /api/v1/erp-sync/import-file`
 
 **Import File**
@@ -1529,6 +1624,11 @@ Content-Type: `application/json` — schema: `ErpSyncSettingsIn`
 | `mail_sender_filter` | any |  |  |
 | `mail_attachment_filter` | any |  |  |
 | `delete_after_fetch` | boolean |  |  |
+| `absences_poll_enabled` | boolean |  |  |
+| `mail_absences_subject_filter` | any |  |  |
+| `mail_absences_sender_filter` | any |  |  |
+| `mail_absences_attachment_filter` | any |  |  |
+| `absences_expected_interval_days` | integer |  |  |
 
 **Responses**
 
@@ -2782,6 +2882,8 @@ Defense-in-depth: на ошибку маскируем ``str(exc)`` (MAX в JSON
 | `active_only` | query | `boolean` |  |  |
 | `assigned` | query | `boolean` |  |  |
 | `q` | query | `any` |  |  |
+| `sort` | query | `any` |  |  |
+| `order` | query | `string` |  |  |
 | `limit` | query | `integer` |  |  |
 | `offset` | query | `integer` |  |  |
 | `portal_session` | cookie | `any` |  |  |
@@ -2888,6 +2990,8 @@ admin-управление составом), а даёт агентам мин�
 | `unassigned` | query | `boolean` |  |  |
 | `assigned` | query | `boolean` |  |  |
 | `active_only` | query | `boolean` |  |  |
+| `sort` | query | `any` |  |  |
+| `order` | query | `string` |  |  |
 | `limit` | query | `integer` |  |  |
 | `offset` | query | `integer` |  |  |
 | `portal_session` | cookie | `any` |  |  |
@@ -8685,7 +8789,6 @@ Content-Type: `application/json` — schema: `PatchProfileRequest`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `presence_status` | any |  |  |
 | `lang` | any |  |  |
 | `notify_email` | any |  |  |
 | `notify_inapp` | any |  |  |
@@ -8730,6 +8833,35 @@ Content-Type: `application/json` — schema: `PatchProfileRequest`
 | Status | Description | Schema |
 |--------|-------------|--------|
 | 200 | Successful Response | `UserPublic` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `GET /api/v1/users/{user_id}/absences`
+
+**Отсутствия сотрудника (отпуска/отгулы/болезни/командировки)**
+
+Актуальные и будущие отсутствия сотрудника для профиля.
+
+Источник — ERP-синхронизация (``erp_absences``). Виден всем авторизованным
+(как и дни рождения): коллегам важно знать, кто в отпуске/на больничном.
+Возвращаем только ``end_date >= today`` (прошлые отпуска неинформативны),
+отсортированные по ``start_date`` ASC.
+
+Данные есть только когда модуль ``erp_sync`` включён и импорты выполнялись;
+иначе список пуст (404 не возвращаем — отсутствие данных это нормальное
+состояние до первого импорта).
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `user_id` | path | `string` | ✓ |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | `ErpAbsenceList` |
 | 422 | Validation Error | `HTTPValidationError` |
 
 ---

@@ -1,4 +1,5 @@
 import { api } from './index'
+import type { UserStatusCategory } from './users'
 
 export interface UserMe {
   id: string
@@ -9,7 +10,9 @@ export interface UserMe {
   phone: string | null
   role: 'reader' | 'editor' | 'admin'
   avatar_url: string | null
-  presence_status: 'office' | 'remote' | 'vacation'
+  // Вычисляемый статус присутствия (миграция 093) — источник ERP.
+  current_status: UserStatusCategory
+  current_status_until: string | null
   notify_email: boolean
   notify_inapp: boolean
   lang: 'ru' | 'en'

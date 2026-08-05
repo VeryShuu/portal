@@ -34,14 +34,6 @@ from ._common import (
 async def patch_my_profile(db: AsyncSession, user: User, body: PatchProfileRequest) -> User:
     updates: dict = {}
 
-    if body.presence_status is not None:
-        if body.presence_status not in ("office", "remote", "vacation"):
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                detail="Invalid presence_status",
-            )
-        updates["presence_status"] = body.presence_status
-
     if body.lang is not None:
         if body.lang not in ("ru", "en"):
             raise HTTPException(

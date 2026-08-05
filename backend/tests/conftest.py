@@ -275,7 +275,7 @@ def user_factory():
             "auth_source": auth_source,
             "password_hash": None,
             "avatar_url": None,
-            "presence_status": "office",
+            "current_status": "working",
             "notify_email": True,
             "notify_inapp": True,
             "lang": "ru",

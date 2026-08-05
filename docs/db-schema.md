@@ -111,8 +111,11 @@ CREATE TABLE users (
     role             VARCHAR(20)  NOT NULL DEFAULT 'reader'
                          CHECK (role IN ('reader', 'editor', 'admin')),
     avatar_url       VARCHAR(512),                   -- /media/avatars/<user_id>.<ext>
-    presence_status  VARCHAR(20)  NOT NULL DEFAULT 'office'
-                         CHECK (presence_status IN ('office', 'remote', 'vacation')),
+    -- Вычисляемый статус присутствия (миграция 093): ERP-only, ручной выбор убран.
+    -- Пересчёт: absences_importer + cron recompute_daily_presence_status (00:05).
+    current_status       VARCHAR(20) NOT NULL DEFAULT 'working'
+                         CHECK (current_status IN ('working', 'vacation', 'sick', 'business_trip')),
+    current_status_until DATE,                       -- конец активной absence (для tooltip)
     notify_email     BOOLEAN      NOT NULL DEFAULT TRUE,
     notify_inapp     BOOLEAN      NOT NULL DEFAULT TRUE,
     lang             VARCHAR(5)   NOT NULL DEFAULT 'ru'

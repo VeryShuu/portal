@@ -134,6 +134,10 @@ ALTER TABLE erp_sync_settings  -- per-потоковые настройки от
   `ErpSyncTab.vue`. Integration-тесты (6 сценариев).
 - **Остаётся будущей задачей:** виджет «кого нет на неделе» на главной
   (`GET /absences?from=&to=`), отдельная история запусков отсутствий в admin UI.
+- **Готово (фича absence-presence, миграция 093):** вычисляемый статус
+  присутствия `users.current_status` (working/vacation/sick/business_trip) с
+  кольцом аватарки во всём портале. См. `docs/wip/absence-presence.md`. Источник
+  истины — только ERP; ручной `presence_status` дропнут.
 
 ## Чеклист (DoD) — приёмка + парсинг
 

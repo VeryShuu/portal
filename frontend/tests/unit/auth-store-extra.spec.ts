@@ -30,7 +30,7 @@ vi.mock('../../src/stores/notifications', () => ({
 
 const reader = {
   id: 'u1', email: 'u@x.local', full_name: 'U', department: null, position: null,
-  phone: null, role: 'reader' as const, avatar_url: null, presence_status: 'office' as const,
+  phone: null, role: 'reader' as const, avatar_url: null, current_status: 'working', current_status_until: null as const,
   notify_email: true, notify_inapp: true, lang: 'ru', preferences: {},
   auth_source: 'local' as const,
 }

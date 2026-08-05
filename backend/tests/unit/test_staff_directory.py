@@ -43,7 +43,8 @@ def _make_db_user(
     u.role = "reader"
     u.auth_source = "local"
     u.avatar_url = None
-    u.presence_status = "office"
+    u.current_status = "working"
+    u.current_status_until = None
     u.lang = "ru"
     u.notify_email = True
     u.notify_inapp = True

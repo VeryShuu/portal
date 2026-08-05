@@ -1,5 +1,5 @@
 <!-- AUTO-GENERATED — do not edit manually. Run: cd backend && python -m scripts.generate_db_schema_doc --output ../docs/db-schema.generated.md -->
-<!-- Generated: 2026-08-02 07:32 UTC -->
+<!-- Generated: 2026-08-05 19:02 UTC -->
 
 # Database Schema (auto-generated)
 
@@ -12,6 +12,8 @@
 
 - [`bookmarks`](#bookmarks)
 - [`email_outbox`](#email-outbox)
+- [`erp_absences`](#erp-absences)
+- [`erp_absences_runs`](#erp-absences-runs)
 - [`erp_sync_runs`](#erp-sync-runs)
 - [`erp_sync_settings`](#erp-sync-settings)
 - [`feedback`](#feedback)
@@ -83,6 +85,7 @@
 ```mermaid
 erDiagram
     bookmarks ||--o{ users : "FK user_id"
+    erp_absences ||--o{ users : "FK user_id"
     erp_sync_settings ||--o{ users : "FK updated_by_user_id"
     feedback ||--o{ users : "FK user_id"
     feedback_attachments ||--o{ feedback : "FK feedback_id"
@@ -246,18 +249,126 @@ erDiagram
 
 ---
 
+## `erp_absences`
+
+Одна запись об отсутствии сотрудника (отпуск/отгул/болезнь/командировка).
+
+    Второй поток ERP-синхронизации (миграция 092). Источник данных — отчёт 1С
+    «Кадровая история сотрудников за период», который ERP шлёт на общий ящик
+    отдельным письмом (со своими фильтрами, ``mail_absences_*``).
+
+    В отличие от дней рождения (скалярные колонки на ``users``), отсутствия — это
+    **ranged-события** (диапазон дат), поэтому живут в отдельной таблице.
+
+    Контракт — **full-replace** (см. :mod:`absences_importer`): каждый отчёт
+    самодостаточен (содержит весь период — обычно год). Перед вставкой
+    импортёр удаляет все строки ``source='erp_sync'`` и вставляет заново из
+    файла. Старые записи сотрудников, исчезнувших из ERP, стираются автоматически.
+
+    ``user_id`` обязательный — в БД пишутся только сопоставленные с порталом
+    пользователи; незнакомые ФИО попадают в ``report.unmatched`` (запись не
+    создаётся). ``source`` зарезервирован для будущих ручных записей
+    (``'manual'``), которые full-replace не затронет.
+
+### Columns
+
+| Column | Type | Nullable | PK | FK | Unique | Default | Comment |
+|--------|------|----------|----|----|--------|---------|---------|
+| `id` | `BIGINT` |  | ✓ |  |  |  |  |
+| `user_id` | `UUID` |  |  | `users.id` |  |  |  |
+| `kind` | `VARCHAR(40)` |  |  |  |  |  |  |
+| `position` | `TEXT` | ✓ |  |  |  |  |  |
+| `department` | `TEXT` | ✓ |  |  |  |  |  |
+| `start_date` | `DATE` |  |  |  |  |  |  |
+| `end_date` | `DATE` |  |  |  |  |  |  |
+| `source` | `VARCHAR(20)` |  |  |  |  | `'erp_sync'` |  |
+| `created_at` | `TIMESTAMP WITH TIME ZONE` |  |  |  |  | `NOW()` |  |
+| `updated_at` | `TIMESTAMP WITH TIME ZONE` |  |  |  |  | `NOW()` |  |
+
+### Constraints
+
+| Name | Type | Definition |
+|------|------|------------|
+| `ck_erp_absences_kind` | CHECK | `kind IN ('vacation_main', 'vacation_extra', 'unpaid_leave', 'sick', 'business_trip', 'day_off_paid', 'day_off_unpaid')` |
+| `ck_erp_absences_source` | CHECK | `source IN ('erp_sync', 'manual')` |
+| `ck_erp_absences_dates` | CHECK | `end_date >= start_date` |
+
+### Indexes
+
+| Name | Columns | Unique |
+|------|---------|--------|
+| `ix_erp_absences_dates` | `start_date`, `end_date` |  |
+| `ix_erp_absences_user_id` | `user_id` |  |
+
+### Relationships
+
+| Attribute | Target | Type | Back-populates |
+|-----------|--------|------|----------------|
+| `user` | `User` | many-to-one | `` |
+
+---
+
+## `erp_absences_runs`
+
+Один проход импорта отсутствий (клон :class:`ErpSyncRun`).
+
+    ``message_id`` UNIQUE — для дедупа писем (повторная обработка того же письма
+    пропускается). ``NULL`` для ручного upload (``POST /erp-sync/absences/import-file``).
+
+    ``report`` — JSONB со структурированным результатом для email-отчёта:
+    ``inserted`` (ФИО + kind + период), ``unmatched``, ``ambiguous``, ``errors``.
+    Отсутствует секция ``changed`` (нет diff old→new — full-replace, а не upsert)
+    и ``conflicts`` (нет внутридублирующейся логики как у дат рождения —
+    одинаковые периоды просто дедуплицируются парсером).
+
+### Columns
+
+| Column | Type | Nullable | PK | FK | Unique | Default | Comment |
+|--------|------|----------|----|----|--------|---------|---------|
+| `id` | `BIGINT` |  | ✓ |  |  |  |  |
+| `message_id` | `TEXT` | ✓ |  |  | ✓ |  |  |
+| `attachment_hash` | `TEXT` | ✓ |  |  |  |  |  |
+| `attachment_name` | `TEXT` | ✓ |  |  |  |  |  |
+| `triggered_by` | `VARCHAR(20)` |  |  |  |  |  |  |
+| `started_at` | `TIMESTAMP WITH TIME ZONE` |  |  |  |  | `NOW()` |  |
+| `finished_at` | `TIMESTAMP WITH TIME ZONE` | ✓ |  |  |  |  |  |
+| `status` | `VARCHAR(20)` |  |  |  |  |  |  |
+| `rows_total` | `INTEGER` | ✓ |  |  |  |  |  |
+| `rows_matched` | `INTEGER` | ✓ |  |  |  |  |  |
+| `rows_inserted` | `INTEGER` | ✓ |  |  |  |  |  |
+| `rows_unmatched` | `INTEGER` | ✓ |  |  |  |  |  |
+| `rows_ambiguous` | `INTEGER` | ✓ |  |  |  |  |  |
+| `errors` | `INTEGER` | ✓ |  |  |  |  |  |
+| `report` | `JSONB` |  |  |  |  | `'{}'::jsonb` |  |
+
+### Constraints
+
+| Name | Type | Definition |
+|------|------|------------|
+| `ck_erp_absences_runs_status` | CHECK | `status IN ('success', 'partial', 'failed', 'skipped')` |
+| `ck_erp_absences_runs_triggered_by` | CHECK | `triggered_by IN ('cron', 'manual')` |
+| `` | UNIQUE | `message_id` |
+
+### Indexes
+
+| Name | Columns | Unique |
+|------|---------|--------|
+| `ix_erp_absences_runs_started_at` | `None` |  |
+
+---
+
 ## `erp_sync_runs`
 
 Один проход импорта ERP-выгрузки (автоматический по cron или ручной).
 
-``message_id`` — для дедупа писем (UNIQUE): повторная обработка того же
-письма пропускается. ``NULL`` для ручного запуска (когда импорт
-инициирован админом без привязки к письму).
+    ``message_id`` — для дедупа писем (UNIQUE): повторная обработка того же
+    письма пропускается. ``NULL`` для ручного запуска (когда импорт
+    инициирован админом без привязки к письму).
 
-``report`` — JSONB со структурированным результатом для email-отчёта:
-``changed`` (ФИО + поле old→new), ``unmatched`` (ФИО, нет в БД),
-``ambiguous`` (ФИО → несколько кандидатов), ``conflicts`` (одно ФИО с
-разными датами/полом в файле), ``errors`` (невалидные строки).
+    ``report`` — JSONB со структурированным результатом для email-отчёта:
+    ``changed`` (ФИО + поле old→new), ``unmatched`` (ФИО, нет в БД),
+    ``ambiguous`` (ФИО → несколько кандидатов), ``conflicts`` (одно ФИО с
+    разными датами/полом в файле), ``errors`` (невалидные строки).
 
 ### Columns
 
@@ -284,8 +395,8 @@ erDiagram
 
 | Name | Type | Definition |
 |------|------|------------|
-| `ck_erp_sync_runs_status` | CHECK | `status IN ('success', 'partial', 'failed', 'skipped')` |
 | `ck_erp_sync_runs_triggered_by` | CHECK | `triggered_by IN ('cron', 'manual')` |
+| `ck_erp_sync_runs_status` | CHECK | `status IN ('success', 'partial', 'failed', 'skipped')` |
 | `` | UNIQUE | `message_id` |
 
 ### Indexes
@@ -299,32 +410,32 @@ erDiagram
 ## `erp_sync_settings`
 
 Singleton row (``id = 1``) с IMAP-настройками ящика, на который ERP шлёт
-отчёты. Клон паттерна ``helpdesk_mailbox_settings``.
+    отчёты. Клон паттерна ``helpdesk_mailbox_settings``.
 
-Пароль — шифр Fernet (``imap_password_enc``), plaintext write-only:
-API возвращает только ``imap_password_set: bool``.
+    Пароль — шифр Fernet (``imap_password_enc``), plaintext write-only:
+    API возвращает только ``imap_password_set: bool``.
 
-``poll_interval_seconds`` (CHECK 60–3600) — как часто cron опрашивает ящик
-(по умолчанию 900 c = 15 мин). ``expected_interval_days`` — ожидаемый
-интервал между отчётами ERP (2×/неделю ≈ 4 дня); watchdog использует его
-для алерта «письма нет >N дней». ``notify_emails`` — override списка
-адресов для отчётов (NULL = все admin с ``notify_email=true``).
+    ``poll_interval_seconds`` (CHECK 60–3600) — как часто cron опрашивает ящик
+    (по умолчанию 900 c = 15 мин). ``expected_interval_days`` — ожидаемый
+    интервал между отчётами ERP (2×/неделю ≈ 4 дня); watchdog использует его
+    для алерта «письма нет >N дней». ``notify_emails`` — override списка
+    адресов для отчётов (NULL = все admin с ``notify_email=true``).
 
-Двойной гейтинг поллинга (миграция 088):
+    Двойной гейтинг поллинга (миграция 088):
 
-* ``modules.erp_sync.enabled`` (в ``modules.json``) — мастер-переключатель
-  всей фичи (API + cron + UI).
-* ``poll_enabled`` (здесь) — отдельный флаг **авто-поллинга по cron**.
-  Позволяет выключить авто-забор писем, оставив ручной upload (например,
-  при отладке FIO-матчинга). Cron проверяет оба флага.
+    * ``modules.erp_sync.enabled`` (в ``modules.json``) — мастер-переключатель
+      всей фичи (API + cron + UI).
+    * ``poll_enabled`` (здесь) — отдельный флаг **авто-поллинга по cron**.
+      Позволяет выключить авто-забор писем, оставив ручной upload (например,
+      при отладке FIO-матчинга). Cron проверяет оба флага.
 
-Фильтрация почты (миграция 088) — для общего ящика, куда может сыпаться
-разная почта: ``mail_subject_filter`` / ``mail_sender_filter`` /
-``mail_attachment_filter`` — опциональные CI-подстроки. Поллинг берёт
-``SEARCH ALL`` и фильтрует post-fetch (IMAP ``SEARCH SUBJECT`` ненадёжен
-с MIME/B-encoded кириллицей). Портал **не** ставит флаг ``\Seen``: ящик
-общий (его читают люди), а маркер «обработано» — дедуп по ``Message-ID``
-в ``erp_sync_runs`` (UNIQUE). Письма мимо фильтра не трогаются.
+    Фильтрация почты (миграция 088) — для общего ящика, куда может сыпаться
+    разная почта: ``mail_subject_filter`` / ``mail_sender_filter`` /
+    ``mail_attachment_filter`` — опциональные CI-подстроки. Поллинг берёт
+    ``SEARCH ALL`` и фильтрует post-fetch (IMAP ``SEARCH SUBJECT`` ненадёжен
+    с MIME/B-encoded кириллицей). Портал **не** ставит флаг ``\Seen``: ящик
+    общий (его читают люди), а маркер «обработано» — дедуп по ``Message-ID``
+    в ``erp_sync_runs`` (UNIQUE). Письма мимо фильтра не трогаются.
 
 ### Columns
 
@@ -340,6 +451,11 @@ API возвращает только ``imap_password_set: bool``.
 | `mail_sender_filter` | `VARCHAR(255)` | ✓ |  |  |  |  |  |
 | `mail_attachment_filter` | `VARCHAR(255)` | ✓ |  |  |  |  |  |
 | `delete_after_fetch` | `BOOLEAN` |  |  |  |  | `FALSE` |  |
+| `absences_poll_enabled` | `BOOLEAN` |  |  |  |  | `FALSE` |  |
+| `mail_absences_subject_filter` | `VARCHAR(255)` | ✓ |  |  |  |  |  |
+| `mail_absences_sender_filter` | `VARCHAR(255)` | ✓ |  |  |  |  |  |
+| `mail_absences_attachment_filter` | `VARCHAR(255)` | ✓ |  |  |  |  |  |
+| `absences_expected_interval_days` | `INTEGER` |  |  |  |  | `7` |  |
 | `updated_by_user_id` | `UUID` | ✓ |  | `users.id` |  |  |  |
 | `created_at` | `TIMESTAMP WITH TIME ZONE` |  |  |  |  | `NOW()` |  |
 | `updated_at` | `TIMESTAMP WITH TIME ZONE` |  |  |  |  | `NOW()` |  |
@@ -348,8 +464,8 @@ API возвращает только ``imap_password_set: bool``.
 
 | Name | Type | Definition |
 |------|------|------------|
-| `ck_erp_sync_settings_singleton` | CHECK | `id = 1` |
 | `ck_erp_sync_settings_poll_interval` | CHECK | `poll_interval_seconds BETWEEN 60 AND 3600` |
+| `ck_erp_sync_settings_singleton` | CHECK | `id = 1` |
 
 ### Relationships
 
@@ -473,8 +589,8 @@ API возвращает только ``imap_password_set: bool``.
 | Name | Type | Definition |
 |------|------|------------|
 | `ck_file_folder_perm_permission` | CHECK | `permission IN ('viewer', 'editor', 'manager')` |
-| `ck_file_folder_perm_subject_type` | CHECK | `subject_type IN ('user', 'group')` |
 | `uq_file_folder_perm_folder_subject` | UNIQUE | `folder_id`, `subject_id` |
+| `ck_file_folder_perm_subject_type` | CHECK | `subject_type IN ('user', 'group')` |
 
 ### Indexes
 
@@ -532,8 +648,8 @@ API возвращает только ``imap_password_set: bool``.
 
 Tracks files uploaded through the portal (migration 038).
 
-One record per file. Soft-deleted when the file is removed via portal.
-Files uploaded directly to Nextcloud (bypassing portal) won't have a record.
+    One record per file. Soft-deleted when the file is removed via portal.
+    Files uploaded directly to Nextcloud (bypassing portal) won't have a record.
 
 ### Columns
 
@@ -562,9 +678,9 @@ Files uploaded directly to Nextcloud (bypassing portal) won't have a record.
 
 Per-file share (ADR-032 / sharing.md).
 
-Addresses a single file by (folder_id, filename); nc_path is stored
-denormalized for persistence and the admin registry. Only viewer/editor
-levels are granted on a file (manager is never issued).
+    Addresses a single file by (folder_id, filename); nc_path is stored
+    denormalized for persistence and the admin registry. Only viewer/editor
+    levels are granted on a file (manager is never issued).
 
 ### Columns
 
@@ -587,8 +703,8 @@ levels are granted on a file (manager is never issued).
 
 | Name | Type | Definition |
 |------|------|------------|
-| `uq_file_share_folder_file_subject` | UNIQUE | `folder_id`, `filename`, `subject_id` |
 | `ck_file_share_subject_type` | CHECK | `subject_type IN ('user', 'group')` |
+| `uq_file_share_folder_file_subject` | UNIQUE | `folder_id`, `filename`, `subject_id` |
 | `ck_file_share_permission` | CHECK | `permission IN ('viewer', 'editor')` |
 
 ### Indexes
@@ -602,8 +718,8 @@ levels are granted on a file (manager is never issued).
 ## `helpdesk_agents`
 
 A support agent — an operational unit, distinct from portal roles
-(``users.role``). Membership in this table is the single source of truth for
-agent privileges (checked per-request by ``require_helpdesk_agent``).
+    (``users.role``). Membership in this table is the single source of truth for
+    agent privileges (checked per-request by ``require_helpdesk_agent``).
 
 ### Columns
 
@@ -626,8 +742,8 @@ agent privileges (checked per-request by ``require_helpdesk_agent``).
 ## `helpdesk_attachments`
 
 File attached to a ticket message. Stored **locally** in
-``/data/helpdesk/TKT-{number}/{filename}`` (по образцу feedback); only
-metadata lives in the DB. Nextcloud is NOT used for helpdesk attachments.
+    ``/data/helpdesk/TKT-{number}/{filename}`` (по образцу feedback); only
+    metadata lives in the DB. Nextcloud is NOT used for helpdesk attachments.
 
 ### Columns
 
@@ -665,12 +781,12 @@ metadata lives in the DB. Nextcloud is NOT used for helpdesk attachments.
 
 Singleton row (``id = 1``) holding the daily digest email schedule.
 
-The digest is sent once per day (cron-driven worker
-``send_helpdesk_digest``) to every active helpdesk agent: their assigned
-``open``/``pending`` tickets plus all ``unassigned`` tickets. Unlike
-:class:`HelpdeskMailboxSettings`, the row is seeded by the migration (no
-NOT NULL column without a DEFAULT), so it always exists and ``enabled``
-can be toggled without a separate "configured" state.
+    The digest is sent once per day (cron-driven worker
+    ``send_helpdesk_digest``) to every active helpdesk agent: their assigned
+    ``open``/``pending`` tickets plus all ``unassigned`` tickets. Unlike
+    :class:`HelpdeskMailboxSettings`, the row is seeded by the migration (no
+    NOT NULL column without a DEFAULT), so it always exists and ``enabled``
+    can be toggled without a separate "configured" state.
 
 ### Columns
 
@@ -696,20 +812,20 @@ can be toggled without a separate "configured" state.
 ## `helpdesk_draft_attachments`
 
 Temporary inline-image uploaded through the ticket **creation** form,
-before the ticket exists (chicken-and-egg: ``POST /tickets/{id}/inline-media``
-needs a ``ticket_id``).
+    before the ticket exists (chicken-and-egg: ``POST /tickets/{id}/inline-media``
+    needs a ``ticket_id``).
 
-On ``create_ticket``, :func:`backfill_draft_images` moves the file to the
-ticket's permanent ``TKT-{number}/inline/`` folder, rewrites ``<img src>``
-to a stable inline-media URL, and deletes this row — all in the ticket
-creation transaction. Rows whose draft was never backfilled (user abandoned
-the form) are purged by the ``cleanup_expired_drafts`` cron after
-``HELPDESK_DRAFT_TTL_HOURS``.
+    On ``create_ticket``, :func:`backfill_draft_images` moves the file to the
+    ticket's permanent ``TKT-{number}/inline/`` folder, rewrites ``<img src>``
+    to a stable inline-media URL, and deletes this row — all in the ticket
+    creation transaction. Rows whose draft was never backfilled (user abandoned
+    the form) are purged by the ``cleanup_expired_drafts`` cron after
+    ``HELPDESK_DRAFT_TTL_HOURS``.
 
-Only metadata lives here; the bytes are on disk at
-``/data/helpdesk/drafts/usr-{user_id}/{filename}``. No relationships —
-drafts are ephemeral, the FK to ``users`` is solely for ``ON DELETE CASCADE``
-cleanup on account deletion.
+    Only metadata lives here; the bytes are on disk at
+    ``/data/helpdesk/drafts/usr-{user_id}/{filename}``. No relationships —
+    drafts are ephemeral, the FK to ``users`` is solely for ``ON DELETE CASCADE``
+    cleanup on account deletion.
 
 ### Columns
 
@@ -735,8 +851,8 @@ cleanup on account deletion.
 ## `helpdesk_email_log`
 
 Idempotency log for IMAP ingress — keyed by the incoming ``Message-ID``
-(or synthetic id) so that re-downloading the same message never creates a
-duplicate ticket/message.
+    (or synthetic id) so that re-downloading the same message never creates a
+    duplicate ticket/message.
 
 ### Columns
 
@@ -760,14 +876,14 @@ duplicate ticket/message.
 ## `helpdesk_mailbox_settings`
 
 Singleton row (``id = 1``) holding the IMAP/SMTP configuration of the
-support mailbox. The IMAP password is stored encrypted at rest
-(``imap_password_enc``); the plaintext is never returned by the API.
+    support mailbox. The IMAP password is stored encrypted at rest
+    (``imap_password_enc``); the plaintext is never returned by the API.
 
-SMTP-блок (``smtp_*``, миграция ``086``) — собственный исходящий контур
-helpdesk: письма уходят с учётки support-ящика, а не с общего порталного
-SMTP. Все колонки nullable — при пустом ``smtp_host`` воркер fallback'ит
-на общий SMTP портала (``/data/branding/email-settings.json``). Пароль —
-шифр Fernet (как ``imap_password_enc``).
+    SMTP-блок (``smtp_*``, миграция ``086``) — собственный исходящий контур
+    helpdesk: письма уходят с учётки support-ящика, а не с общего порталного
+    SMTP. Все колонки nullable — при пустом ``smtp_host`` воркер fallback'ит
+    на общий SMTP портала (``/data/branding/email-settings.json``). Пароль —
+    шифр Fernet (как ``imap_password_enc``).
 
 ### Columns
 
@@ -805,17 +921,17 @@ SMTP. Все колонки nullable — при пустом ``smtp_host`` во�
 ## `helpdesk_max_bot_settings`
 
 Singleton row (``id = 1``) holding the MAX-messenger bot configuration
-for helpdesk notifications (new tickets → common support chat).
+    for helpdesk notifications (new tickets → common support chat).
 
-``bot_token_enc`` is encrypted at rest through ``app.core.secret_crypto``
-(Fernet derived from ``SECRET_KEY``); the plaintext is never returned by
-the API (write-only, like ``HelpdeskMailboxSettings.imap_password_enc``).
+    ``bot_token_enc`` is encrypted at rest through ``app.core.secret_crypto``
+    (Fernet derived from ``SECRET_KEY``); the plaintext is never returned by
+    the API (write-only, like ``HelpdeskMailboxSettings.imap_password_enc``).
 
-By design (mirrors :class:`HelpdeskDigestSettings`, migration 076): every
-column is either nullable or has a DEFAULT, the row is seeded by migration
-081 with ``enabled=False``, and the admin flips the switch in the Helpdesk
-tab after entering the token and chat_id. No separate ``configured`` state
-is tracked — ``enabled=False`` until both token and chat_id are provided.
+    By design (mirrors :class:`HelpdeskDigestSettings`, migration 076): every
+    column is either nullable or has a DEFAULT, the row is seeded by migration
+    081 with ``enabled=False``, and the admin flips the switch in the Helpdesk
+    tab after entering the token and chat_id. No separate ``configured`` state
+    is tracked — ``enabled=False`` until both token and chat_id are provided.
 
 ### Columns
 
@@ -840,7 +956,7 @@ is tracked — ``enabled=False`` until both token and chat_id are provided.
 ## `helpdesk_messages`
 
 A single message in a ticket thread — inbound (from the requester) or
-outbound (from an agent).
+    outbound (from an agent).
 
 ### Columns
 
@@ -854,7 +970,7 @@ outbound (from an agent).
 | `direction` | `VARCHAR(10)` |  |  |  |  |  |  |
 | `body_text` | `TEXT` |  |  |  |  |  |  |
 | `body_html` | `TEXT` | ✓ |  |  |  |  |  |
-| `body_tsvector` | `TSVECTOR` | ✓ |  |  |  | Computed(<sqlalchemy.sql.elements.TextClause object at 0x7d1d6d09dd30>, persisted=True) |  |
+| `body_tsvector` | `TSVECTOR` | ✓ |  |  |  | Computed(<sqlalchemy.sql.elements.TextClause object at 0x7dc84fbf1280>, persisted=True) |  |
 | `cc` | `JSONB` | ✓ |  |  |  |  |  |
 | `source` | `VARCHAR(20)` |  |  |  |  |  |  |
 | `email_message_id` | `VARCHAR(998)` | ✓ |  |  |  |  |  |
@@ -883,21 +999,21 @@ outbound (from an agent).
 
 Per-agent read-state marker: «когда этот агент последний раз видел тикет».
 
-Подсветка непрочитанных заявок в инбоксе агента (миграция 080). Тикет
-«непрочитан» для агента, если существует входящее сообщение
-(``direction='inbound'`` — ответ заявителя) с
-``created_at > COALESCE(last_seen_at, '-infinity')``. Ответы других агентов
-и свои собственные НЕ считаются (агент и так их видел — он их писал).
+    Подсветка непрочитанных заявок в инбоксе агента (миграция 080). Тикет
+    «непрочитан» для агента, если существует входящее сообщение
+    (``direction='inbound'`` — ответ заявителя) с
+    ``created_at > COALESCE(last_seen_at, '-infinity')``. Ответы других агентов
+    и свои собственные НЕ считаются (агент и так их видел — он их писал).
 
-Одна строка на пару ``ticket_id`` × ``user_id`` (UNIQUE-индекс), UPSERT
-через ``ON CONFLICT`` при открытии карточки агента. ``ON DELETE CASCADE``
-на обеих FK → чистится автоматически при архивации/удалении тикета или
-аккаунта, cleanup-cron не нужен.
+    Одна строка на пару ``ticket_id`` × ``user_id`` (UNIQUE-индекс), UPSERT
+    через ``ON CONFLICT`` при открытии карточки агента. ``ON DELETE CASCADE``
+    на обеих FK → чистится автоматически при архивации/удалении тикета или
+    аккаунта, cleanup-cron не нужен.
 
-По образцу ``news_likes`` / ``kb_article_feedback`` (marker-таблица с
-композитным UNIQUE); архитектурно ближе к Zammad/FreeScout
-(``conversation_user`` pivot с ``last_seen_at``), чем к OTRS (per-article
-``ticket_flag`` — избыточно для наших объёмов).
+    По образцу ``news_likes`` / ``kb_article_feedback`` (marker-таблица с
+    композитным UNIQUE); архитектурно ближе к Zammad/FreeScout
+    (``conversation_user`` pivot с ``last_seen_at``), чем к OTRS (per-article
+    ``ticket_flag`` — избыточно для наших объёмов).
 
 ### Columns
 
@@ -927,9 +1043,9 @@ Per-agent read-state marker: «когда этот агент последний
 
 A support request: ``new → open → pending → closed``.
 
-``number`` is the human-readable ``TKT-{number}`` identifier, generated by
-PostgreSQL as an IDENTITY column (not a regular SERIAL) so it cannot be
-overwritten by INSERTs.
+    ``number`` is the human-readable ``TKT-{number}`` identifier, generated by
+    PostgreSQL as an IDENTITY column (not a regular SERIAL) so it cannot be
+    overwritten by INSERTs.
 
 ### Columns
 
@@ -953,7 +1069,7 @@ overwritten by INSERTs.
 | `references_archived_ticket_number` | `BIGINT` | ✓ |  |  |  |  |  |
 | `created_at` | `TIMESTAMP WITH TIME ZONE` |  |  |  |  | `NOW()` |  |
 | `updated_at` | `TIMESTAMP WITH TIME ZONE` |  |  |  |  | `NOW()` |  |
-| `search_tsvector` | `TSVECTOR` | ✓ |  |  |  | Computed(<sqlalchemy.sql.elements.TextClause object at 0x7d1d6d09d5c0>, persisted=True) |  |
+| `search_tsvector` | `TSVECTOR` | ✓ |  |  |  | Computed(<sqlalchemy.sql.elements.TextClause object at 0x7dc84fbb7b00>, persisted=True) |  |
 
 ### Constraints
 
@@ -988,10 +1104,10 @@ overwritten by INSERTs.
 ## `helpdesk_tickets_archive`
 
 Read-only archive of closed tickets (partitioned by ``closed_at``).
-The full ticket with its messages and attachment metadata is captured in
-``payload`` as JSONB; the live row is removed from :class:`HelpdeskTicket`
-after archival. Accessed in practice through raw SQL in the archive
-service; the model exists for metadata introspection and consistent typing.
+    The full ticket with its messages and attachment metadata is captured in
+    ``payload`` as JSONB; the live row is removed from :class:`HelpdeskTicket`
+    after archival. Accessed in practice through raw SQL in the archive
+    service; the model exists for metadata introspection and consistent typing.
 
 ### Columns
 
@@ -1109,8 +1225,8 @@ service; the model exists for metadata introspection and consistent typing.
 | Name | Type | Definition |
 |------|------|------------|
 | `ck_kb_art_perm_permission` | CHECK | `permission IN ('viewer', 'editor', 'manager')` |
-| `uq_kb_art_perm_article_subject` | UNIQUE | `article_id`, `subject_id` |
 | `ck_kb_art_perm_subject_type` | CHECK | `subject_type IN ('user', 'group')` |
+| `uq_kb_art_perm_article_subject` | UNIQUE | `article_id`, `subject_id` |
 
 ### Indexes
 
@@ -1184,7 +1300,7 @@ service; the model exists for metadata introspection and consistent typing.
 | `title` | `VARCHAR(500)` |  |  |  |  |  |  |
 | `body` | `TEXT` |  |  |  |  | `` |  |
 | `inherit_permissions` | `BOOLEAN` |  |  |  |  | `True` |  |
-| `body_tsvector` | `TSVECTOR` | ✓ |  |  |  | Computed(<sqlalchemy.sql.elements.TextClause object at 0x7d1d6cf43d20>, persisted=True) |  |
+| `body_tsvector` | `TSVECTOR` | ✓ |  |  |  | Computed(<sqlalchemy.sql.elements.TextClause object at 0x7dc84fab12e0>, persisted=True) |  |
 | `status` | `VARCHAR(20)` |  |  |  |  | `draft` |  |
 | `version` | `INTEGER` |  |  |  |  | `1` |  |
 | `view_count` | `INTEGER` |  |  |  |  | `0` |  |
@@ -1239,9 +1355,9 @@ service; the model exists for metadata introspection and consistent typing.
 
 | Name | Type | Definition |
 |------|------|------------|
+| `ck_kb_sec_perm_subject_type` | CHECK | `subject_type IN ('user', 'group')` |
 | `uq_kb_sec_perm_section_subject` | UNIQUE | `section_id`, `subject_id` |
 | `ck_kb_sec_perm_permission` | CHECK | `permission IN ('viewer', 'editor', 'manager')` |
-| `ck_kb_sec_perm_subject_type` | CHECK | `subject_type IN ('user', 'group')` |
 
 ### Indexes
 
@@ -1461,8 +1577,8 @@ service; the model exists for metadata introspection and consistent typing.
 
 | Name | Type | Definition |
 |------|------|------------|
-| `ck_meeting_rooms_kind` | CHECK | `kind IN ('physical', 'virtual')` |
 | `uq_meeting_rooms_name` | UNIQUE | `name` |
+| `ck_meeting_rooms_kind` | CHECK | `kind IN ('physical', 'virtual')` |
 
 ### Indexes
 
@@ -1482,16 +1598,16 @@ service; the model exists for metadata introspection and consistent typing.
 ## `messenger_outbox`
 
 Transactional outbox for outbound messenger notifications (mirror of
-:class:`email_outbox` for non-email channels).
+    :class:`email_outbox` for non-email channels).
 
-``provider`` reserves room for future channels (Telegram/Slack); only
-``'max'`` is implemented. CRUD is done through raw SQL in
-:mod:`app.services.messenger_outbox` (FOR UPDATE SKIP LOCKED, retry/backoff);
-this ORM mapping exists only for metadata introspection and typing.
+    ``provider`` reserves room for future channels (Telegram/Slack); only
+    ``'max'`` is implemented. CRUD is done through raw SQL in
+    :mod:`app.services.messenger_outbox` (FOR UPDATE SKIP LOCKED, retry/backoff);
+    this ORM mapping exists only for metadata introspection and typing.
 
-``payload`` (JSONB) stores provider-specific content: for MAX it carries
-``attachments`` (inline-keyboard with a "open on portal" URL button) and
-any extra metadata. ``text`` is the message body itself.
+    ``payload`` (JSONB) stores provider-specific content: for MAX it carries
+    ``attachments`` (inline-keyboard with a "open on portal" URL button) and
+    any extra metadata. ``text`` is the message body itself.
 
 ### Columns
 
@@ -1534,7 +1650,7 @@ any extra metadata. ``text`` is the message body itself.
 | `id` | `UUID` |  | ✓ |  |  | `gen_random_uuid()` |  |
 | `title` | `VARCHAR(500)` |  |  |  |  |  |  |
 | `body` | `TEXT` |  |  |  |  | `` |  |
-| `body_tsvector` | `TSVECTOR` | ✓ |  |  |  | Computed(<sqlalchemy.sql.elements.TextClause object at 0x7d1d6d017e00>, persisted=True) |  |
+| `body_tsvector` | `TSVECTOR` | ✓ |  |  |  | Computed(<sqlalchemy.sql.elements.TextClause object at 0x7dc84f967c50>, persisted=True) |  |
 | `status` | `VARCHAR(20)` |  |  |  |  | `draft` |  |
 | `is_pinned` | `BOOLEAN` |  |  |  |  | `False` |  |
 | `categories` | `VARCHAR(100)[]` |  |  |  |  | `{}` |  |
@@ -1563,10 +1679,10 @@ any extra metadata. ``text`` is the message body itself.
 
 | Name | Type | Definition |
 |------|------|------------|
-| `ck_news_cover_focal_y_range` | CHECK | `cover_focal_y IS NULL OR (cover_focal_y BETWEEN 0 AND 100)` |
 | `ck_news_status` | CHECK | `status IN ('draft', 'published', 'archived')` |
-| `ck_news_cover_focal_zoom_range` | CHECK | `cover_focal_zoom IS NULL OR (cover_focal_zoom BETWEEN 100 AND 300)` |
 | `ck_news_cover_focal_x_range` | CHECK | `cover_focal_x IS NULL OR (cover_focal_x BETWEEN 0 AND 100)` |
+| `ck_news_cover_focal_y_range` | CHECK | `cover_focal_y IS NULL OR (cover_focal_y BETWEEN 0 AND 100)` |
+| `ck_news_cover_focal_zoom_range` | CHECK | `cover_focal_zoom IS NULL OR (cover_focal_zoom BETWEEN 100 AND 300)` |
 
 ### Indexes
 
@@ -1842,8 +1958,8 @@ any extra metadata. ``text`` is the message body itself.
 
 | Name | Type | Definition |
 |------|------|------------|
-| `` | UNIQUE | `news_id` |
 | `ck_news_polls_results_visibility` | CHECK | `results_visibility IN ('always', 'after_vote', 'after_close', 'only_admin_editor')` |
+| `` | UNIQUE | `news_id` |
 
 ### Relationships
 
@@ -2031,9 +2147,9 @@ any extra metadata. ``text`` is the message body itself.
 
 | Name | Type | Definition |
 |------|------|------------|
+| `ck_photo_folder_perm_permission` | CHECK | `permission IN ('viewer', 'uploader', 'manager')` |
 | `ck_photo_folder_perm_subject_type` | CHECK | `subject_type IN ('user', 'group')` |
 | `uq_photo_folder_perm_folder_subject` | UNIQUE | `folder_id`, `subject_type`, `subject_id` |
-| `ck_photo_folder_perm_permission` | CHECK | `permission IN ('viewer', 'uploader', 'manager')` |
 
 ### Indexes
 
@@ -2097,8 +2213,8 @@ any extra metadata. ``text`` is the message body itself.
 
 | Name | Type | Definition |
 |------|------|------------|
-| `uq_photo_folders_parent_slug` | UNIQUE | `parent_id`, `slug` |
 | `ck_photo_folders_storage_kind` | CHECK | `storage_kind IN ('originals', 'import')` |
+| `uq_photo_folders_parent_slug` | UNIQUE | `parent_id`, `slug` |
 
 ### Indexes
 
@@ -2324,7 +2440,8 @@ any extra metadata. ``text`` is the message body itself.
 | `phone` | `VARCHAR(50)` | ✓ |  |  |  |  |  |
 | `role` | `VARCHAR(20)` |  |  |  |  | `reader` |  |
 | `avatar_url` | `VARCHAR(512)` | ✓ |  |  |  |  |  |
-| `presence_status` | `VARCHAR(20)` |  |  |  |  | `office` |  |
+| `current_status` | `VARCHAR(20)` |  |  |  |  | `'working'` |  |
+| `current_status_until` | `DATE` | ✓ |  |  |  |  |  |
 | `notify_email` | `BOOLEAN` |  |  |  |  | `True` |  |
 | `notify_inapp` | `BOOLEAN` |  |  |  |  | `True` |  |
 | `lang` | `VARCHAR(5)` |  |  |  |  | `ru` |  |
@@ -2344,12 +2461,12 @@ any extra metadata. ``text`` is the message body itself.
 
 | Name | Type | Definition |
 |------|------|------------|
+| `ck_users_gender` | CHECK | `gender IS NULL OR gender IN ('male', 'female')` |
+| `ck_users_current_status` | CHECK | `current_status IN ('working', 'vacation', 'sick', 'business_trip')` |
 | `ck_users_role` | CHECK | `role IN ('reader', 'editor', 'admin')` |
 | `ck_users_lang` | CHECK | `lang IN ('ru', 'en')` |
-| `ck_users_presence_status` | CHECK | `presence_status IN ('office', 'remote', 'vacation')` |
-| `ck_users_auth_source` | CHECK | `auth_source IN ('keycloak', 'local')` |
-| `ck_users_gender` | CHECK | `gender IS NULL OR gender IN ('male', 'female')` |
 | `uq_users_keycloak_id` | UNIQUE | `keycloak_id` |
+| `ck_users_auth_source` | CHECK | `auth_source IN ('keycloak', 'local')` |
 
 ### Indexes
 

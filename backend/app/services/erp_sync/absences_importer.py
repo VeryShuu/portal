@@ -20,6 +20,7 @@ notifications — в одной сессии, один ``commit``; SSE-publish �
 from __future__ import annotations
 
 import hashlib
+import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
@@ -34,6 +35,10 @@ from app.services.erp_sync.absences_parser import parse_absences_attachment
 from app.services.erp_sync.absences_report import (
     build_absences_report_bodies,
     build_absences_subject,
+)
+from app.services.erp_sync.absences_status import (
+    recompute_current_status,
+    reset_users_to_working,
 )
 from app.services.erp_sync.matcher import (
     Ambiguous,
@@ -157,10 +162,29 @@ async def run_absences_import(
     # (битый файл / ничего не распознано) — БД не трогаем, status='failed'.
     rows_inserted = 0
     if absence_rows:
+        # Собираем user_id затронутых ДО delete — чтобы после full-replace
+        # пересчитать current_status и для исчезнувших из отчёта (иначе они
+        # останутся в устаревшем статусе). См. absences_status.recompute_*.
+        old_user_ids_result = await db.execute(
+            select(ErpAbsence.user_id).where(ErpAbsence.source == "erp_sync")
+        )
+        affected_user_ids: set[uuid.UUID] = set(old_user_ids_result.scalars().all())
+        new_user_ids = {row.user_id for row in absence_rows}
+        affected_user_ids |= new_user_ids
+
         await db.execute(delete(ErpAbsence).where(ErpAbsence.source == "erp_sync"))
         db.add_all(absence_rows)
         rows_inserted = len(absence_rows)
         await db.flush()  # получить id для логов/диагностики
+
+        # Пересчёт вычисляемого статуса присутствия для всех затронутых
+        # пользователей: активные absence → vacation/sick/business_trip,
+        # исчезнувшие (без активной absence) → working.
+        await recompute_current_status(db, new_user_ids)
+        disappeared = affected_user_ids - new_user_ids
+        if disappeared:
+            await reset_users_to_working(db, disappeared)
+        await db.flush()
 
     # 5. Финальный статус run.
     has_problems = bool(unmatched or ambiguous or parsed.errors)
