@@ -772,6 +772,8 @@ def render_requester_reply_agent_email(
     message: HelpdeskMessage,
     requester: object | None = None,
     portal_url: str | None = None,
+    history_html: str = "",
+    history_plain: str = "",
 ) -> tuple[str, str]:
     """Письмо-уведомление агенту о новом сообщении от заявителя.
 
@@ -780,6 +782,15 @@ def render_requester_reply_agent_email(
     шапка «#номер — тема» → «Новое сообщение по заявке.» → блок контактов
     заявителя (кто ответил) → подпись «Сообщение от — {ФИО/email заявителя}» →
     тело ответа → агентский футер со ссылкой на инбокс.
+
+    Письмо несёт **историю переписки** после нового ответа заявителя —
+    симметрично ``render_reply_email`` (ответ агента инициатору): агент видит в
+    почте тот же диалог, что и инициатор. История собирается caller'ом через
+    ``build_thread_history`` (``exclude_id=message.id``) теми же
+    таймлайн-блоками (``render_history_block``) — единый визуальный язык с
+    письмом инициатору. Параметры по умолчанию пустые → первый ответ заявителя
+    (предыстории нет) рендерится без разделителя истории (обратная совместимость
+    со всеми существующими call-сайтами/тестами).
 
     Письмо отправляется через outbox ``kind=generic`` (не входит в email-тред
     тикета с заявителем — без threading-заголовков), как и уведомление о новой
@@ -830,11 +841,20 @@ def render_requester_reply_agent_email(
     # Подпись «Сообщение от — {ФИО/email}» единым паттерном таймлайна.
     reply_label = f'{_role_prefix()}<span style="color:{_NAME_REQUESTER};">{_esc(who)}</span>'
 
+    # История переписки (симметрично ``render_reply_email``): агент видит весь
+    # диалог, как и инициатор. Переписываем относительные img-src на абсолютные
+    # (веб-вид → почта) тем же вызовом, что в ``render_reply_email`` — иначе
+    # картинки истории (src="/api/...") не грузятся в почтовом клиенте.
+    history_html_abs = _absolutize_img_src(history_html) if history_html else ""
+
     content = (
         f'<div style="padding:0 0 8px;">Новое сообщение по заявке.</div>'
         f"{contacts_html}"
         f'<div style="margin-top:16px;font-weight:600;">{reply_label}</div>'
         f"{body_block}"
+        # История идёт сразу за новым ответом (без отдельного заголовка — блоки
+        # несут свои <hr>-разделители), как в ``render_reply_email``.
+        f"{history_html_abs}"
     )
 
     # Ссылка на тикет в портале — абсолютная (агент кликает из почтового клиента).
@@ -848,12 +868,16 @@ def render_requester_reply_agent_email(
     )
 
     plain_body = (getattr(message, "body_text", None) or "").strip()
+    # История в plain дописывается после нового ответа, если она есть (симметрично
+    # HTML-блоку выше и ``render_reply_email``).
+    history_plain_block = f"\n\n{history_plain}" if history_plain else ""
     plain_out = (
         f"Заявка №TKT-{ticket.number}: {ticket.subject}\n"
         f"{'-' * 40}\n\n"
         f"Новое сообщение по заявке.\n\n"
         f"{contacts_plain}\n\n"
-        f"Сообщение от — {who}:\n{plain_body}\n\n"
+        f"Сообщение от — {who}:\n{plain_body}"
+        f"{history_plain_block}\n\n"
         f"{link}"
     )
     return html_out, plain_out

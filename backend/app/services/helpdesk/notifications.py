@@ -43,6 +43,7 @@ from app.services.helpdesk.email_template import (
     render_requester_reply_agent_email,
     render_system_email,
 )
+from app.services.helpdesk.email_thread import build_thread_history
 from app.services.messenger_outbox import PROVIDER_MAX, enqueue_messenger_message
 from app.services.notifications import create_notification
 
@@ -434,6 +435,35 @@ async def notify_ticket_created_email(
     return sent
 
 
+async def _load_ticket_messages_with_attachments(
+    db: AsyncSession, *, ticket_id: uuid.UUID
+) -> list[HelpdeskMessage]:
+    """Загрузить сообщения тикета (с вложениями) для сборки истории письма.
+
+    Сортировка по ``created_at`` — ``build_thread_history`` ожидает список и
+    сама берёт хвост/реверс. ``selectinload(HelpdeskMessage.attachments)`` нужен,
+    чтобы блок вложений истории рендерился в ``_attachments_html`` (иначе
+    ``getattr(msg, "attachments", None)`` → ``None`` → пустой блок, graceful, но
+    визуально потеряем вложения предшествующих сообщений).
+
+    Явный запрос (а не ``ticket.messages`` relationship): в ingress-пути тикет
+    приходит из ``_match_ticket`` без ``selectinload(messages)`` → обращение к
+    relationship в async-сессии роняет ``MissingGreenlet``. В роутере же
+    ``fetch_ticket_for_user`` уже подгрузил сообщения, но перезапрос одним
+    SELECT дешевле поддержки двух путей (и страхует от будущих call-сайтов).
+    Паттерн — как ``collect_ticket_references`` в ``outbound.py``.
+    """
+    from sqlalchemy.orm import selectinload
+
+    res = await db.execute(
+        select(HelpdeskMessage)
+        .where(HelpdeskMessage.ticket_id == ticket_id)
+        .options(selectinload(HelpdeskMessage.attachments))
+        .order_by(HelpdeskMessage.created_at)
+    )
+    return list(res.scalars().unique().all())
+
+
 async def notify_requester_reply_email(
     db: AsyncSession,
     *,
@@ -446,6 +476,16 @@ async def notify_requester_reply_email(
     email-каналом. Получатель:
     * если тикет назначен — ответственный агент (``assignee``);
     * иначе — все активные helpdesk-агенты (через ``_load_agents_for_email``).
+
+    Письмо несёт **историю переписки** после нового ответа заявителя —
+    симметрично ``enqueue_reply_outbound`` (ответ агента инициатору): агент видит
+    в почте тот же диалог, что и инициатор. История собирается через
+    ``build_thread_history`` (``exclude_id=message.id``) теми же таймлайн-блоками,
+    что и письмо инициатору. Сообщения для истории грузятся явным запросом
+    ``_load_ticket_messages_with_attachments`` — в ingress-пути тикет приходит
+    без подгруженных ``messages`` (в отличие от роутера, где ``selectinload``
+    уже отработал), поэтому нельзя полагаться на relationship (``MissingGreenlet``
+    в async). Паттерн — как ``collect_ticket_references`` в ``outbound.py``.
 
     Гейт согласия: получатель с ``User.notify_email=False`` письмо не получает
     (для assignee проверяется явно; ``_load_agents_for_email`` уже фильтрует по
@@ -491,10 +531,25 @@ async def notify_requester_reply_email(
 
     requester = await resolve_requester_user(db, ticket=ticket)
 
+    # История переписки (симметрично ``enqueue_reply_outbound`` для инициатора):
+    # агент видит в письме тот же диалог — новый ответ заявителя + предшествующая
+    # переписка теми же таймлайн-блоками. Сообщения грузим явно (см.
+    # ``_load_ticket_messages_with_attachments``): в ingress-пути relationship
+    # ``ticket.messages`` не подгружен.
+    messages = await _load_ticket_messages_with_attachments(db, ticket_id=ticket.id)
+    history_html, history_plain = build_thread_history(
+        messages,
+        exclude_id=message.id,
+        ticket_number=ticket.number,
+        assignee_user_id=getattr(ticket, "assignee_user_id", None),
+    )
+
     html_body, plain_body = render_requester_reply_agent_email(
         ticket=ticket,
         message=message,
         requester=requester,
+        history_html=history_html,
+        history_plain=history_plain,
     )
     subject = build_requester_reply_agent_subject(ticket)
 
