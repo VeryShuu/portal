@@ -537,7 +537,11 @@ async def notify_requester_reply_email(
     # ``_load_ticket_messages_with_attachments``): в ingress-пути relationship
     # ``ticket.messages`` не подгружен.
     messages = await _load_ticket_messages_with_attachments(db, ticket_id=ticket.id)
-    history_html, history_plain = build_thread_history(
+    # Деструктуризация ``(plain, html)`` — порядок строго как возвращает
+    # ``build_thread_history`` (см. ``outbound.py:192``: ``history_plain, history_html = ...``).
+    # Перепутать местами → HTML-блоки уйдут в plain-часть письма, а email-цитатник
+    # с ``>`` строками — в HTML (ломает вёрстку истории, как было в #77 v1).
+    history_plain, history_html = build_thread_history(
         messages,
         exclude_id=message.id,
         ticket_number=ticket.number,
