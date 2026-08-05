@@ -1645,6 +1645,8 @@ CREATE UNIQUE INDEX idx_users_email_ci_active ON users (LOWER(email)) WHERE dele
 | 088 | `add_erp_sync_mail_filter_and_poll` | `erp_sync_settings`: `poll_enabled` (двойной гейтинг) + `mail_subject_filter`/`mail_sender_filter`/`mail_attachment_filter` (post-fetch фильтры для общего ящика) | [§«ERP-sync»](#erp-sync-миграция-087) |
 | 089 | `move_erp_imap_to_email_settings` | Бэкфилл IMAP `erp_sync_settings` → `/data/branding/email-settings.json` (ADR-048) + DROP `imap_*` колонок из `erp_sync_settings` | [§«ERP-sync»](#erp-sync-миграция-087) |
 | 090 | `add_erp_sync_delete_after_fetch` | `erp_sync_settings.delete_after_fetch` (удаление писем из общего ящика после успешного импорта) | [§«ERP-sync»](#erp-sync-миграция-087) |
+| 091 | `keyset_pagination_indexes` | Композитные индексы `(created_at DESC, id DESC)` для `audit_log` и `email_outbox` (keyset-пагинация вместо OFFSET) | — |
+| 092 | `add_erp_absences` | `erp_absences` (ranged: user_id+kind+dates) + `erp_absences_runs` (лог) + per-потоковые колонки отсутствий в `erp_sync_settings` (`absences_poll_enabled`, `mail_absences_*`, `absences_expected_interval_days`) | [§«ERP-sync»](#erp-sync-миграция-087) |
 
 ---
 
@@ -1700,4 +1702,40 @@ Email); колонки удалены. Пароль шифруется Fernet в
 удаление на общем ящике необратимо, админ включает осознанно. Дедуп по
 `message_id` (UNIQUE в `erp_sync_runs`) защищает от повторной обработки и без
 удаления.
+
+## ERP-sync: отсутствия (миграция 092)
+
+Второй поток ERP — отпуска/отгулы/болезни/командировки. Отчёт 1С «Кадровая
+история сотрудников за период» приходит отдельным письмом со своими фильтрами.
+Полный план — [`./wip/erp-absences.md`](./wip/erp-absences.md), модульный док —
+[`./erp-sync.md`](./erp-sync.md) §«Поток „Отсутствия“».
+
+### `erp_absences`
+
+Ranged-записи отсутствий: `user_id` (FK→`users` CASCADE, NOT NULL — только
+сопоставленные), `kind` (CHECK enum: `vacation_main`/`vacation_extra`/
+`unpaid_leave`/`sick`/`business_trip`/`day_off_paid`/`day_off_unpaid`),
+`position`, `department`, `start_date`/`end_date` (CHECK end≥start), `source`
+(default `'erp_sync'`, зарезервирован `'manual'` для будущих ручных записей).
+Индексы: `(user_id)` и `(start_date, end_date)` (для range-запросов виджета
+«кого нет на неделе»).
+
+Контракт — **full-replace**: каждый отчёт самодостаточен (содержит весь
+период), перед вставкой `DELETE WHERE source='erp_sync'` → `INSERT` matched.
+Старые записи исчезнувших сотрудников стираются автоматически. При 0 валидных
+matched-строк (битый файл) БД **не трогается**.
+
+### `erp_absences_runs`
+
+Клон `erp_sync_runs`: лог каждого импорта отсутствий + дедуп по `message_id`
+(UNIQUE). Поле `rows_inserted` вместо `rows_updated` (full-replace, не upsert).
+`report` (JSONB) — разделы `inserted`/`unmatched`/`ambiguous`/`errors`.
+
+### `erp_sync_settings` (расширение, миграция 092)
+
+Per-потоковые настройки отсутствий (общие с днями рождения: `enabled`/
+`poll_interval_seconds`/`notify_emails`/`delete_after_fetch`): `absences_poll_enabled`
+(default false, отдельный гейтинг авто-поллинга отсутствий), `mail_absences_subject_filter`/
+`sender_filter`/`attachment_filter` (CI-подстроки для отдельного письма отсутствий),
+`absences_expected_interval_days` (default 7, для watchdog-алерта).
 

@@ -1,5 +1,5 @@
 from app.models.email_outbox import EmailOutbox
-from app.models.erp_sync import ErpSyncRun, ErpSyncSettings
+from app.models.erp_sync import ErpAbsence, ErpAbsencesRun, ErpSyncRun, ErpSyncSettings
 from app.models.feedback import Feedback, FeedbackAttachment, FeedbackReply
 from app.models.files import FileFolder, FileFolderPermission
 from app.models.helpdesk import (
@@ -66,6 +66,8 @@ from app.models.user_attribute_mapping import UserAttributeMapping
 __all__ = [
     "Bookmark",
     "EmailOutbox",
+    "ErpAbsence",
+    "ErpAbsencesRun",
     "ErpSyncRun",
     "ErpSyncSettings",
     "Feedback",

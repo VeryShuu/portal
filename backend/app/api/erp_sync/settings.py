@@ -47,6 +47,11 @@ def _to_out(row: ErpSyncSettings) -> ErpSyncSettingsOut:
         mail_sender_filter=row.mail_sender_filter,
         mail_attachment_filter=row.mail_attachment_filter,
         delete_after_fetch=row.delete_after_fetch,
+        absences_poll_enabled=row.absences_poll_enabled,
+        mail_absences_subject_filter=row.mail_absences_subject_filter,
+        mail_absences_sender_filter=row.mail_absences_sender_filter,
+        mail_absences_attachment_filter=row.mail_absences_attachment_filter,
+        absences_expected_interval_days=row.absences_expected_interval_days,
         updated_at=row.updated_at,
     )
 
@@ -103,3 +108,10 @@ def _apply_fields(row: ErpSyncSettings, p: ErpSyncSettingsIn) -> None:
     row.mail_sender_filter = (p.mail_sender_filter or "").strip() or None
     row.mail_attachment_filter = (p.mail_attachment_filter or "").strip() or None
     row.delete_after_fetch = p.delete_after_fetch
+    # Второй поток — отсутствия. Общие enabled/poll_interval/notify_emails выше;
+    # per-потоковые переключатель и фильтры — здесь.
+    row.absences_poll_enabled = p.absences_poll_enabled
+    row.mail_absences_subject_filter = (p.mail_absences_subject_filter or "").strip() or None
+    row.mail_absences_sender_filter = (p.mail_absences_sender_filter or "").strip() or None
+    row.mail_absences_attachment_filter = (p.mail_absences_attachment_filter or "").strip() or None
+    row.absences_expected_interval_days = p.absences_expected_interval_days

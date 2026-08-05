@@ -174,3 +174,32 @@ export interface BirthdayListResponse {
 export async function fetchBirthdays(): Promise<BirthdayListResponse> {
   return api<BirthdayListResponse>('/users/birthdays')
 }
+
+// ── Отсутствия сотрудника (ERP-sync: отпуска/отгулы/болезни/командировки) ────
+
+/** Canonical kind отсутствия — синхронизирован с ABSENCE_KIND_VALUES в backend. */
+export type UserAbsenceKind =
+  | 'vacation_main'
+  | 'vacation_extra'
+  | 'unpaid_leave'
+  | 'sick'
+  | 'business_trip'
+  | 'day_off_paid'
+  | 'day_off_unpaid'
+
+export interface UserAbsence {
+  kind: UserAbsenceKind
+  position: string | null
+  department: string | null
+  start_date: string // ISO date (YYYY-MM-DD)
+  end_date: string // ISO date
+}
+
+export interface UserAbsenceListResponse {
+  items: UserAbsence[]
+  total: number
+}
+
+export async function fetchUserAbsences(userId: string): Promise<UserAbsenceListResponse> {
+  return api<UserAbsenceListResponse>(`/users/${userId}/absences`)
+}

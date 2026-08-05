@@ -18,6 +18,8 @@ from app.schemas.user import (
     BirthdayList,
     BirthdayOut,
     DepartmentList,
+    ErpAbsenceList,
+    ErpAbsenceOut,
     OfficeList,
     StaffOrderState,
     StaffOrderUpdate,
@@ -108,6 +110,43 @@ async def list_birthdays_route(
                 avatar_url=u.avatar_url,
             )
             for u in items
+        ],
+        total=len(items),
+    )
+
+
+@router.get(
+    "/{user_id}/absences",
+    response_model=ErpAbsenceList,
+    summary="Отсутствия сотрудника (отпуска/отгулы/болезни/командировки)",
+)
+async def list_user_absences_route(
+    user_id: uuid.UUID,
+    db: DbDep,
+    _: CurrentUser,
+) -> ErpAbsenceList:
+    """Актуальные и будущие отсутствия сотрудника для профиля.
+
+    Источник — ERP-синхронизация (``erp_absences``). Виден всем авторизованным
+    (как и дни рождения): коллегам важно знать, кто в отпуске/на больничном.
+    Возвращаем только ``end_date >= today`` (прошлые отпуска неинформативны),
+    отсортированные по ``start_date`` ASC.
+
+    Данные есть только когда модуль ``erp_sync`` включён и импорты выполнялись;
+    иначе список пуст (404 не возвращаем — отсутствие данных это нормальное
+    состояние до первого импорта).
+    """
+    items = await users_repo.list_user_absences(db, user_id=user_id)
+    return ErpAbsenceList(
+        items=[
+            ErpAbsenceOut(
+                kind=a.kind,
+                position=a.position,
+                department=a.department,
+                start_date=a.start_date,
+                end_date=a.end_date,
+            )
+            for a in items
         ],
         total=len(items),
     )
