@@ -57,7 +57,7 @@ const items = ref<UserAbsence[]>([])
 const total = ref(0)
 const loading = ref(false)
 
-const hasAbsences = computed(() => !loading.value && items.value.length > 0)
+const hasAbsences = computed(() => !loading.value && (items.value?.length ?? 0) > 0)
 
 const effectiveLang = computed(() => props.lang ?? (locale.value === 'ru' ? 'ru' : 'en'))
 
