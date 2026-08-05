@@ -80,15 +80,15 @@ def category_priority(category: str) -> int:
     return _CATEGORY_PRIORITY.get(category, _CATEGORY_PRIORITY["working"])
 
 
-# Параметризованный SQL пересчёта. ``:today`` bind, ``:user_ids`` — опциональный
-# массив UUID (NULL = полный пересчёт со сбросом остальных в working).
-# DISTINCT ON (user_id) + ORDER BY user_id, priority — оставляет одну
-# (приоритетную) запись на пользователя. CTE covers как presence
-# (активные absence), так и reset (для полного режима — user'ы без активных
-# absence сбрасываются в working).
+# Пересчёт: для каждого пользователя с активной absence выбираем приоритетную
+# категорию (DISTINCT ON + ORDER BY priority) и обновляем current_status/until.
+# CTE ``active`` одинаковый для scoped и full режимов; различается только
+# фильтр UPDATE — IN (:user_ids) для scoped (importer), без фильтра для full
+# (cron). Разделение на два текста обязательно: asyncpg не выведет тип
+# параметра, если один и тот же bind используется и как NULL-проверка, и как
+# массив в одном выражении (AmbiguousParameterError).
 # nosec B608 — параметризованный SQL без интерполяции пользовательских данных.
-_RECOMPUTE_SQL = text(
-    """
+_ACTIVE_CTE = """
     WITH active AS (
         SELECT DISTINCT ON (ea.user_id)
                ea.user_id,
@@ -104,16 +104,32 @@ _RECOMPUTE_SQL = text(
                    ELSE 1
                END AS priority
         FROM erp_absences ea
-        WHERE ea.start_date <= CAST(:today AS date)
-          AND ea.end_date >= CAST(:today AS date)
+        WHERE ea.start_date <= :today
+          AND ea.end_date >= :today
         ORDER BY ea.user_id, priority ASC, ea.end_date DESC
     )
+"""
+
+_RECOMPUTE_SCOPED_SQL = text(
+    _ACTIVE_CTE
+    + """
     UPDATE users u
-    SET current_status = COALESCE(a.category, 'working'),
+    SET current_status = a.category,
         current_status_until = a.end_date
     FROM active a
     WHERE u.id = a.user_id
-      AND (:user_ids IS NULL OR u.id = ANY(CAST(:user_ids AS UUID[])))
+      AND u.id = ANY(CAST(:user_ids AS UUID[]))
+    """
+)
+
+_RECOMPUTE_FULL_SQL = text(
+    _ACTIVE_CTE
+    + """
+    UPDATE users u
+    SET current_status = a.category,
+        current_status_until = a.end_date
+    FROM active a
+    WHERE u.id = a.user_id
     """
 )
 
@@ -129,25 +145,26 @@ async def recompute_current_status(
     Args:
         db: активная сессия (flush/commit выполняется вызывающей стороной).
         user_ids: ограничение множества пользователей. ``None`` — полный
-            пересчёт всех пользователей с любой ``erp_absences``-записью.
-            Внимание: в режиме ``None`` пользователи без активной absence,
-            у которых ранее был статус, **не сбрасываются** этим запросом
-            (UPDATE только по JOIN с active). Для сброса используйте
-            :func:`reset_users_to_working` или полный cron-режим ниже.
+            пересчёт всех пользователей с активной absence. Внимание: в режиме
+            ``None`` пользователи без активной absence **не сбрасываются** этим
+            запросом (UPDATE только по JOIN с active). Для сброса используйте
+            :func:`reset_users_to_working`.
         today: опорная дата (по умолчанию ``date.today()``).
 
     Returns:
         Количество обновлённых строк (rowcount).
     """
     ref_day = today if today is not None else date.today()
-    ids_param: list[str] | None = None
     if user_ids is not None:
-        ids_param = [str(uid) for uid in user_ids]
-
-    result = await db.execute(
-        _RECOMPUTE_SQL,
-        {"today": ref_day.isoformat(), "user_ids": ids_param},
-    )
+        ids_list = [str(uid) for uid in user_ids]
+        if not ids_list:
+            return 0
+        result = await db.execute(
+            _RECOMPUTE_SCOPED_SQL,
+            {"today": ref_day, "user_ids": ids_list},
+        )
+    else:
+        result = await db.execute(_RECOMPUTE_FULL_SQL, {"today": ref_day})
     updated = int(cast(CursorResult, result).rowcount or 0)
     logger.info(
         "erp_sync.absences_status.recomputed",
@@ -167,8 +184,8 @@ _RESET_SQL = text(
       AND NOT EXISTS (
           SELECT 1 FROM erp_absences ea
           WHERE ea.user_id = users.id
-            AND ea.start_date <= CAST(:today AS date)
-            AND ea.end_date >= CAST(:today AS date)
+            AND ea.start_date <= :today
+            AND ea.end_date >= :today
       )
     """
 )
@@ -182,7 +199,7 @@ async def reset_users_to_working(
 ) -> int:
     """Сбросить перечисленных пользователей без активной absence в ``working``.
 
-    Используется импортёром для user'ов, чьи строки исчезли из отчёта ERP:
+    Используется импортёром для user'ов, чьи строки исчезнули из отчёта ERP:
     после full-replace DELETE их ``current_status`` остаётся устаревшим, а JOIN
     с ``active`` их больше не покрывает. Этот запрос явно сбрасывает их.
     """
@@ -192,7 +209,7 @@ async def reset_users_to_working(
         return 0
     result = await db.execute(
         _RESET_SQL,
-        {"user_ids": ids_list, "today": ref_day.isoformat()},
+        {"user_ids": ids_list, "today": ref_day},
     )
     updated = int(cast(CursorResult, result).rowcount or 0)
     logger.info(
