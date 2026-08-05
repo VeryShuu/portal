@@ -784,6 +784,20 @@ class TestNotifyRequesterReplyEmail:
         assert "Предыдущий ответ агента" in body_html
         assert "Предыдущий ответ агента" in body_text
 
+        # Представления корректны (не перепутаны местами при деструктуризации
+        # возврата ``build_thread_history`` — ``history_plain, history_html``).
+        # ``build_thread_history`` возвращает ``(plain, html)``; перепутать →
+        # HTML-блоки с ``<hr>``/таймлайном уйдут в plain-часть письма, а
+        # email-цитатник ``> ...`` — в HTML (ломает вёрстку, как в #77 v1).
+        # plain-цитатник: заголовок «История заявки» + ``> `` строки.
+        assert "История заявки" in body_text
+        assert "> Предыдущий ответ агента" in body_text
+        # HTML-таймлайн: ``<hr>``-разделитель + подпись «Сообщение от»
+        # (accent-имя автора истории), без ``> `` email-цитатника.
+        assert "<hr" in body_html
+        assert "Сообщение от" in body_html
+        assert "> Предыдущий ответ агента" not in body_html
+
     @pytest.mark.asyncio
     async def test_history_excludes_current_message(self):
         """``build_thread_history(exclude_id=message.id)`` — текущий ответ заявителя
