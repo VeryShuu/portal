@@ -1039,3 +1039,48 @@ class TestRenderRequesterReplyAgentEmail:
             portal_url="https://portal.local/helpdesk/tickets/1",
         )
         assert "https://portal.local/helpdesk/tickets/1" in html_out
+
+    def test_history_appended_after_reply(self) -> None:
+        """При передаче истории — она присутствует в письме после нового ответа
+        заявителя (симметрично ``render_reply_email`` для инициатора)."""
+        html_out, plain_out = render_requester_reply_agent_email(
+            ticket=_ticket(),
+            message=_msg(text="Новый ответ"),
+            history_html="<div data-hist>Предыдущее сообщение</div>",
+            history_plain="От Агент, 01.07.2026:\n> Предыдущее",
+        )
+        # История присутствует в обоих представлениях.
+        assert "Предыдущее сообщение" in html_out
+        assert "Предыдущее" in plain_out
+        # Новый ответ тоже присутствует (он наверху).
+        assert "Новый ответ" in html_out
+        assert "Новый ответ" in plain_out
+
+    def test_empty_history_omitted(self) -> None:
+        """Пустая история (первый ответ заявителя) → письмо без разделителя
+        истории, обратная совместимость со всеми существующими call-сайтами."""
+        html_out, plain_out = render_requester_reply_agent_email(
+            ticket=_ticket(),
+            message=_msg(text="Первый ответ"),
+            history_html="",
+            history_plain="",
+        )
+        # Нет маркера истории из plain-цитатника ``_history_header_plain``.
+        assert "История заявки" not in plain_out
+        # Тело нового ответа присутствует.
+        assert "Первый ответ" in html_out
+
+    def test_history_absolutizes_relative_img_src(self) -> None:
+        """Картинки истории с относительным ``src`` переписываются на абсолютные
+        (тот же вызов ``_absolutize_img_src``, что в ``render_reply_email``)."""
+        html_out, _ = render_requester_reply_agent_email(
+            ticket=_ticket(),
+            message=_msg(text="ответ"),
+            history_html='<img src="/api/v1/helpdesk/attachments/abc">',
+            history_plain="",
+        )
+        # Относительный src переписан на абсолютный с portal_base_url.
+        assert 'src="https://' in html_out or 'src="http://' in html_out
+        assert "/api/v1/helpdesk/attachments/abc" in html_out
+        # Голый относительный src не остался.
+        assert 'src="/api/v1/' not in html_out
