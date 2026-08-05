@@ -7,17 +7,19 @@
     @keydown.enter="goToProfile"
   >
     <td class="staff-row__name">
-      <span
-        class="staff-row__name-text"
-        v-html="hl(user.full_name)"
-      />
-      <span
-        v-if="user.current_status && user.current_status !== 'working'"
-        class="staff-row__presence"
-        :class="`staff-row__presence--${user.current_status}`"
-      >
-        {{ presenceLabel }}
-      </span>
+      <div class="staff-row__name-inner">
+        <span
+          class="staff-row__name-text"
+          v-html="hl(user.full_name)"
+        />
+        <span
+          v-if="user.current_status && user.current_status !== 'working'"
+          class="staff-row__presence"
+          :class="`staff-row__presence--${user.current_status}`"
+        >
+          {{ presenceLabel }}
+        </span>
+      </div>
     </td>
     <td class="staff-row__position cell-position">
       <span v-html="hl(user.position)" />
@@ -158,12 +160,29 @@ async function copyValue(value: string, label: string) {
   vertical-align: middle;
   font-size: 14px;
 }
+/* Ячейка имени: ФИО + пометка отсутствия держим в одной строке (nowrap),
+   иначе пометка переносится вниз и ломает высоту строки таблицы. ФИО
+   обрезается ellipsis, пометка всегда видна справа. */
+.staff-row__name {
+  max-width: 320px;
+}
+.staff-row__name-inner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+  overflow: hidden;
+}
 .staff-row__name-text {
+  flex: 1 1 auto;
+  min-width: 0;
   font-weight: 500;
   color: var(--color-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .staff-row__presence {
-  display: inline-block;
+  flex: none;
   margin-left: 8px;
   padding: 1px 7px;
   font-size: 11px;

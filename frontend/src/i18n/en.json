@@ -445,6 +445,13 @@
   "users": {
     "title": "Employees",
     "notFound": "Employee not found",
+    "presence": {
+      "working": "Working",
+      "vacation": "Vacation / day off",
+      "sick": "Sick",
+      "business_trip": "Business trip",
+      "until": "until {date}"
+    },
     "profile": {
       "title": "Profile",
       "edit": "Edit Profile",
@@ -480,13 +487,6 @@
       "authSource": {
         "keycloak": "Keycloak SSO",
         "local": "Local account"
-      },
-      "presence": {
-        "working": "Working",
-        "vacation": "Vacation / day off",
-        "sick": "Sick",
-        "business_trip": "Business trip",
-        "until": "until {date}"
       }
     },
     "fields": {

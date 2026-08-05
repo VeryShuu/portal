@@ -76,7 +76,6 @@ const tooltipText = computed(() => {
     class="user-avatar"
     :class="ringClass"
     :title="tooltipText"
-    :style="{ '--ua-size': `${size}px` }"
   >
     <n-avatar
       round
@@ -92,16 +91,20 @@ const tooltipText = computed(() => {
 </template>
 
 <style scoped>
+/* Wrapper обжимает n-avatar без padding/фикс.размера — геометрия кольца
+   точно повторяет круг аватара (фикс бага «овал»: раньше width/height=size
+   + padding:3px при внутреннем n-avatar size → искажение пропорций).
+   Ring рисуется через box-shadow на самом wrapper, который круглый
+   (border-radius:50%) и того же размера, что аватар. Резерв под тень даём
+   через margin, чтобы layout не прыгал при появлении кольца. */
 .user-avatar {
-  /* Размер задаётся через CSS-переменную, чтобы ring-тень масштабировалась. */
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: var(--ua-size);
-  height: var(--ua-size);
   border-radius: 50%;
-  /* Reserve 3px for the ring shadow so layout doesn't shift when it appears. */
-  padding: 3px;
+  /* Резерв 3px со всех сторон под box-shadow ring (не даёт layout сдвигаться,
+     когда ring появляется/исчезает). */
+  margin: 3px;
   line-height: 0;
 }
 
@@ -109,8 +112,8 @@ const tooltipText = computed(() => {
   display: block;
 }
 
-/* Ring через box-shadow — не конфликтует с внутренней заливкой n-avatar и не
-   ломает её round. Цвет берётся из дизайн-токенов (tokens.css). */
+/* Ring через box-shadow — рисуется по круглому wrapper, не искажая аватар.
+   Цвет берётся из дизайн-токенов (tokens.css). */
 .user-avatar--working {
   box-shadow: 0 0 0 2px var(--presence-ring-working);
 }
