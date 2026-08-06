@@ -61,8 +61,16 @@ _QUOTE_PATTERNS: tuple[re.Pattern[str], ...] = (
     ),
     # Gmail (en): «On <date>, <author> wrote:» — многострочный заголовок
     re.compile(r"^On\s.+\bwrote:\s*$", re.IGNORECASE | re.MULTILINE),
+    # SOGo / Mail.ru-веб (en): «<date>, <author> wrote:» — без ведущего «On»
+    # (в отличие от Gmail). Корпоративный webmail mail.mage.ru (SOGo) формирует
+    # именно такой заголовок при ответе.
+    re.compile(r"^.+\bwrote:\s*$", re.IGNORECASE | re.MULTILINE),
     # Gmail (ru): «<date> <author> написал(а):» / «написал:» / «написала:»
     re.compile(r"^.+\bнаписа[л](?:\(а\)|а)?:\s*$", re.IGNORECASE | re.MULTILINE),
+    # SOGo / Mail.ru-веб (ru): «<date>, <author> писал(а):» / «писал:» /
+    # «писала:». Отличается от Gmail-ru отсутствием приставки «на-» —
+    # корпоративный webmail mail.mage.ru (SOGo) использует краткую форму.
+    re.compile(r"^.+\bписа[л](?:\(а\)|а)?:\s*$", re.IGNORECASE | re.MULTILINE),
     # Outlook (en/ru): блок заголовков «From:\nSent:\nTo:\nSubject:» /
     # «От:\nОтправлено:\nКому:\nТема:». Берём 2 первые строки как сигнатуру блока.
     re.compile(
@@ -91,6 +99,24 @@ _HTML_QUOTE_RE = re.compile(
 _HTML_OUTLOOK_HEADER_RE = re.compile(
     r"(?:<div\b[^>]*>|<p\b[^>]*>)?\s*<b\b[^>]*>\s*(?:<span\b[^>]*>)?"
     r"(?:From|От)\s*:\s*(?:</span>)?\s*</b>",
+    re.IGNORECASE,
+)
+
+# HTML quote-header (SOGo / Mail.ru-веб): текст-разделитель цитаты
+# «писал(а):» / «писала:» / «писал:» (ru) или «wrote:» (en) внутри ``<p>``/``<div>``
+# **перед** голым ``<blockquote>`` (без gmail_quote/moz-cite-prefix классов).
+# Корпоративный webmail mail.mage.ru (SOGo) оборачивает процитированное письмо в
+# ``<blockquote><div><figure class="table">...#N — тема...</figure></div></blockquote>``,
+# а над ним ставит строку-разделитель в ``<p>`` (часто с датой/отправителем):
+#   ``<p>Ответ<br>Четверг, ..., it@mage.ru писал(а):<br>&nbsp;</p><blockquote>...``
+# Берём с предшествующим открывающим ``<p>``/``<div>`` и захлопывающими
+# inline-тегами/``<br>``/``&nbsp;`` после разделителя — чтобы отрезать блок
+# целиком (как ``_HTML_OUTLOOK_HEADER_RE``). Сам ``<blockquote>`` НИЖЕ по потоку
+# не трогается (легитимное форматирование) — отрезается именно по разделителю.
+_HTML_SOGO_HEADER_RE = re.compile(
+    r"(?:<p\b[^>]*>|<div\b[^>]*>)?\s*(?:<\w+\b[^>]*>\s*)*"
+    r"[^<>]*\b(?:писа[л](?:\(а\)|а)?|wrote)\s*:\s*(?:</\w+>\s*)*"
+    r"(?:<br\s*/?>\s*)*(?:&nbsp;\s*)*",
     re.IGNORECASE,
 )
 
@@ -248,6 +274,14 @@ def strip_quoted_html(html: str, *, keep_forward: bool = False) -> str:
 
     # 2. Outlook quote-header (отрезает процитированный ответ агента).
     m = _HTML_OUTLOOK_HEADER_RE.search(kept)
+    if m:
+        kept = kept[: m.start()].rstrip()
+
+    # 2b. SOGo / Mail.ru-веб: текст-разделитель «писал(а):» / «wrote:» внутри
+    #     ``<p>``/``<div>`` перед голым ``<blockquote>`` (без классов). Сам
+    #     ``<blockquote>`` не трогается (легитимное форматирование) — отрезается
+    #     именно по предшествующему разделителю (см. ``_HTML_SOGO_HEADER_RE``).
+    m = _HTML_SOGO_HEADER_RE.search(kept)
     if m:
         kept = kept[: m.start()].rstrip()
 
