@@ -22,6 +22,11 @@
             class="participant-tag__name"
           >{{ u.full_name }}</span>
           <span class="participant-tag__email">({{ u.email }})</span>
+          <span
+            v-if="u.absence"
+            class="participant-tag__presence"
+            :class="presenceClass(u.absence)"
+          >{{ presenceLabel(u.absence) }}</span>
           <button
             class="participant-tag__remove"
             type="button"
@@ -84,6 +89,7 @@ import { useI18n } from 'vue-i18n'
 import { NButton, NSelect, type SelectOption } from 'naive-ui'
 import { searchParticipants, type InvitedUser } from '../../api/meetings'
 import { useDebounceFn } from '../../composables/useDebounceFn'
+import { usePresenceLabel } from '../../composables/usePresenceLabel'
 import { parseApiError } from '../../utils/parseApiError'
 import PasteParticipantsModal from './PasteParticipantsModal.vue'
 
@@ -102,6 +108,7 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
+const { presenceLabel, presenceClass } = usePresenceLabel()
 const minChars = computed(() => props.minChars ?? 3)
 
 const searchResults = ref<InvitedUser[]>([])
@@ -278,6 +285,31 @@ function onBulkAdd(added: InvitedUser[]): void {
 
 .external-option__email {
   color: var(--color-text);
+}
+
+/* Информационная подпись отсутствия участника (отпуск/болезнь/командировка).
+ * Повторяет формат справочника (StaffRow.vue): мелкая цветная пилюля. */
+.participant-tag__presence {
+  flex: none;
+  margin-left: auto;
+  padding: 1px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 999px;
+  color: var(--color-text-muted);
+  background: rgba(0, 0, 0, 0.05);
+}
+.participant-tag__presence.presence--vacation {
+  color: var(--presence-ring-vacation);
+  background: rgba(245, 158, 11, 0.12);
+}
+.participant-tag__presence.presence--sick {
+  color: var(--presence-ring-sick);
+  background: rgba(190, 18, 60, 0.1);
+}
+.participant-tag__presence.presence--business_trip {
+  color: var(--presence-ring-business_trip);
+  background: rgba(139, 92, 246, 0.12);
 }
 
 .participant-tag__email {

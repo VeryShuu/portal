@@ -47,6 +47,7 @@ async def _enqueue_all_recipients(
     method: Literal["REQUEST", "CANCEL"],
     ical: IcalFn,
     already_notified: set[str],
+    absences_by_email: dict[str, Any],
 ) -> None:
     """Send *method* to every invited user, the organizer and the rooms."""
     ical_bytes = ical(method)
@@ -55,9 +56,13 @@ async def _enqueue_all_recipients(
         (u.get("email", "") if isinstance(u, dict) else getattr(u, "email", "")) or ""
         for u in (booking.invited_users or [])
     ]
-    await _enqueue_many(session, booking, invited_emails, method, ical_bytes)
-    await _enqueue_organizer(session, booking, organizer_user, method, ical_bytes, already_notified)
-    await _enqueue_room_emails(session, booking, method, ical_bytes, already_notified)
+    await _enqueue_many(session, booking, invited_emails, method, ical_bytes, absences_by_email)
+    await _enqueue_organizer(
+        session, booking, organizer_user, method, ical_bytes, already_notified, absences_by_email
+    )
+    await _enqueue_room_emails(
+        session, booking, method, ical_bytes, already_notified, absences_by_email
+    )
 
 
 async def _enqueue_organizer_and_rooms(
@@ -66,13 +71,16 @@ async def _enqueue_organizer_and_rooms(
     organizer_user: Any | None,
     ical: IcalFn,
     already_notified: set[str],
+    absences_by_email: dict[str, Any],
 ) -> None:
     """Send a REQUEST to the organizer and rooms (not the invited list)."""
     req_bytes = ical("REQUEST")
     await _enqueue_organizer(
-        session, booking, organizer_user, "REQUEST", req_bytes, already_notified
+        session, booking, organizer_user, "REQUEST", req_bytes, already_notified, absences_by_email
     )
-    await _enqueue_room_emails(session, booking, "REQUEST", req_bytes, already_notified)
+    await _enqueue_room_emails(
+        session, booking, "REQUEST", req_bytes, already_notified, absences_by_email
+    )
 
 
 async def _enqueue_series_relink(
@@ -83,6 +91,7 @@ async def _enqueue_series_relink(
     invited_emails: set[str],
     ical: IcalFn,
     ical_with_uid: IcalUidFn,
+    absences_by_email: dict[str, Any],
 ) -> None:
     """Unlink-from-series flow: CANCEL the old series UID, then REQUEST the new one.
 
@@ -93,18 +102,26 @@ async def _enqueue_series_relink(
     cancel_old = ical_with_uid("CANCEL", old_series_uid)
     cancel_notified: set[str] = set(invited_emails)
     # Batch CANCEL для всех invited одним INSERT (audit M3).
-    await _enqueue_many(session, booking, list(invited_emails), "CANCEL", cancel_old)
-    await _enqueue_organizer(
-        session, booking, organizer_user, "CANCEL", cancel_old, cancel_notified
+    await _enqueue_many(
+        session, booking, list(invited_emails), "CANCEL", cancel_old, absences_by_email
     )
-    await _enqueue_room_emails(session, booking, "CANCEL", cancel_old, set())
+    await _enqueue_organizer(
+        session, booking, organizer_user, "CANCEL", cancel_old, cancel_notified, absences_by_email
+    )
+    await _enqueue_room_emails(session, booking, "CANCEL", cancel_old, set(), absences_by_email)
 
     req_bytes = ical("REQUEST")
     req_notified: set[str] = set(invited_emails)
     # Batch REQUEST для всех invited одним INSERT (audit M3).
-    await _enqueue_many(session, booking, list(invited_emails), "REQUEST", req_bytes)
-    await _enqueue_organizer(session, booking, organizer_user, "REQUEST", req_bytes, req_notified)
-    await _enqueue_room_emails(session, booking, "REQUEST", req_bytes, req_notified)
+    await _enqueue_many(
+        session, booking, list(invited_emails), "REQUEST", req_bytes, absences_by_email
+    )
+    await _enqueue_organizer(
+        session, booking, organizer_user, "REQUEST", req_bytes, req_notified, absences_by_email
+    )
+    await _enqueue_room_emails(
+        session, booking, "REQUEST", req_bytes, req_notified, absences_by_email
+    )
 
 
 async def _enqueue_updated_with_diff(
@@ -116,6 +133,7 @@ async def _enqueue_updated_with_diff(
     already_notified: set[str],
     ical: IcalFn,
     ical_with_uid: IcalUidFn,
+    absences_by_email: dict[str, Any],
 ) -> None:
     """Differential update: notify added/removed/unchanged users + organizer/rooms."""
     if diff.old_series_uid:
@@ -127,6 +145,7 @@ async def _enqueue_updated_with_diff(
             invited_emails,
             ical,
             ical_with_uid,
+            absences_by_email,
         )
         return
 
@@ -134,19 +153,27 @@ async def _enqueue_updated_with_diff(
         ical_bytes = ical("REQUEST")
         # Batch: один INSERT на всех добавленных (audit M3).
         added_emails = [getattr(invited, "email", "") or "" for invited in diff.added_users]
-        await _enqueue_many(session, booking, added_emails, "REQUEST", ical_bytes)
+        await _enqueue_many(
+            session, booking, added_emails, "REQUEST", ical_bytes, absences_by_email
+        )
 
     if diff.removed_users:
         cancel_bytes = ical("CANCEL")
         removed_emails = [getattr(invited, "email", "") or "" for invited in diff.removed_users]
-        await _enqueue_many(session, booking, removed_emails, "CANCEL", cancel_bytes)
+        await _enqueue_many(
+            session, booking, removed_emails, "CANCEL", cancel_bytes, absences_by_email
+        )
 
     if diff.non_participant_changed and diff.unchanged_users:
         req_bytes = ical("REQUEST")
         unchanged_emails = [getattr(invited, "email", "") or "" for invited in diff.unchanged_users]
-        await _enqueue_many(session, booking, unchanged_emails, "REQUEST", req_bytes)
+        await _enqueue_many(
+            session, booking, unchanged_emails, "REQUEST", req_bytes, absences_by_email
+        )
 
-    await _enqueue_organizer_and_rooms(session, booking, organizer_user, ical, already_notified)
+    await _enqueue_organizer_and_rooms(
+        session, booking, organizer_user, ical, already_notified, absences_by_email
+    )
 
 
 async def enqueue_meeting_emails(
@@ -192,13 +219,21 @@ async def enqueue_meeting_emails(
     organizer_user = await _load_organizer(session, booking)
     already_notified: set[str] = set(invited_emails)
 
+    # Enrich отсутствий один раз на дату встречи. HTML письма общий для всех
+    # получателей — подпись относится к участникам из списка, не к адресату.
+    from app.services.meetings.absence_enrichment import enrich_absences_for_invited
+
+    absences_by_email = await enrich_absences_for_invited(
+        session, booking.invited_users or [], on_date=booking.start_time.date()
+    )
+
     if action == "created":
         await _enqueue_all_recipients(
-            session, booking, organizer_user, "REQUEST", _ical, already_notified
+            session, booking, organizer_user, "REQUEST", _ical, already_notified, absences_by_email
         )
     elif action == "cancelled":
         await _enqueue_all_recipients(
-            session, booking, organizer_user, "CANCEL", _ical, already_notified
+            session, booking, organizer_user, "CANCEL", _ical, already_notified, absences_by_email
         )
     elif action == "updated" and diff is not None:
         await _enqueue_updated_with_diff(
@@ -210,10 +245,11 @@ async def enqueue_meeting_emails(
             already_notified,
             _ical,
             _ical_with_uid,
+            absences_by_email,
         )
     elif action == "updated" and diff is None:
         await _enqueue_organizer_and_rooms(
-            session, booking, organizer_user, _ical, already_notified
+            session, booking, organizer_user, _ical, already_notified, absences_by_email
         )
 
 
@@ -264,6 +300,7 @@ async def _enqueue_organizer(
     method: str,
     ical_bytes: bytes,
     already_sent: set[str],
+    absences_by_email: dict[str, Any],
 ) -> None:
     if organizer is None:
         return
@@ -276,7 +313,7 @@ async def _enqueue_organizer(
         "email": email,
         "full_name": getattr(organizer, "full_name", "") or "",
     }
-    await _enqueue(session, booking, payload, method, ical_bytes)
+    await _enqueue(session, booking, payload, method, ical_bytes, absences_by_email)
     already_sent.add(email)
 
 
@@ -286,6 +323,7 @@ async def _enqueue_room_emails(
     method: str,
     ical_bytes: bytes,
     already_sent: set[str],
+    absences_by_email: dict[str, Any],
 ) -> None:
     seen: set[str] = set()
     for br in booking.rooms:
@@ -296,7 +334,9 @@ async def _enqueue_room_emails(
         if not email or email in already_sent or email in seen:
             continue
         seen.add(email)
-        await _enqueue(session, booking, {"email": email}, method, ical_bytes)
+        # Комнаты — не сотрудники, отсутствие к ним не относится; HTML общий
+        # для всех получателей, поэтому подпись absence в письме комнаты та же.
+        await _enqueue(session, booking, {"email": email}, method, ical_bytes, absences_by_email)
 
 
 async def _enqueue(
@@ -305,6 +345,7 @@ async def _enqueue(
     user_data: dict[str, Any],
     method: str,
     ical_bytes: bytes,
+    absences_by_email: dict[str, Any],
 ) -> None:
     from app.services.email_outbox import KIND_MEETING, encode_ical_bytes, enqueue_outbox_email
 
@@ -313,7 +354,7 @@ async def _enqueue(
         return
     try:
         subject = _build_subject(booking, method)
-        html_body = _build_html_body(booking, method)
+        html_body = _build_html_body(booking, method, absences_by_email)
         await enqueue_outbox_email(
             session,
             kind=KIND_MEETING,
@@ -370,6 +411,7 @@ async def _enqueue_many(
     emails: list[str],
     method: str,
     ical_bytes: bytes,
+    absences_by_email: dict[str, Any],
 ) -> None:
     """Batch-INSERT нескольких получателей одним запросом (audit M3).
 
@@ -395,7 +437,7 @@ async def _enqueue_many(
         from app.services.email_outbox import enqueue_outbox_email_batch
 
         subject = _build_subject(booking, method)
-        html_body = _build_html_body(booking, method)
+        html_body = _build_html_body(booking, method, absences_by_email)
         items = [
             item
             for item in (
@@ -438,7 +480,11 @@ _RU_MONTHS = {
 }
 
 
-def _build_html_body(booking: MeetingBooking, method: str) -> str:
+def _build_html_body(
+    booking: MeetingBooking,
+    method: str,
+    absences_by_email: dict[str, Any] | None = None,
+) -> str:
     import html as _html
     from datetime import UTC
     from zoneinfo import ZoneInfo
@@ -470,15 +516,26 @@ def _build_html_body(booking: MeetingBooking, method: str) -> str:
         (br.room.name, br.room.link) for br in booking.rooms if br.room and br.room.link
     ]
 
-    invited_names = []
+    # Список участников с информационной подписью отсутствия (отпуск/болезнь/
+    # командировка) для тех, у кого absence действует на дату встречи. HTML общий
+    # для всех получателей письма — подпись относится к участнику из списка, а не
+    # к адресату. absences_by_email ключуется lower(email), см. absence_enrichment.
+    abs_map = absences_by_email or {}
+    invited_items: list[str] = []
     for u in booking.invited_users or []:
         name = (
             u.get("full_name", u.get("email", ""))
             if isinstance(u, dict)
             else getattr(u, "full_name", getattr(u, "email", ""))
         )
-        if name:
-            invited_names.append(_html.escape(str(name)))
+        if not name:
+            continue
+        email_raw = u.get("email", "") if isinstance(u, dict) else getattr(u, "email", "")
+        note_html = ""
+        absence = abs_map.get(str(email_raw).lower()) if email_raw else None
+        if absence is not None:
+            note_html = _absence_note_html(absence)
+        invited_items.append(f"<li>{_html.escape(str(name))}{note_html}</li>")
 
     if method == "CANCEL":
         header = "<h2 style='color:#c0392b;text-align:center'>Встреча отменена</h2>"
@@ -494,8 +551,8 @@ def _build_html_body(booking: MeetingBooking, method: str) -> str:
         rooms_links_html = f'<p><strong>Ссылки на комнаты:</strong><ul style="margin:4px 0 0 0;padding-left:20px">{links_items}</ul></p>'
 
     invited_html = ""
-    if invited_names:
-        names_items = "".join(f"<li>{name}</li>" for name in invited_names)
+    if invited_items:
+        names_items = "".join(invited_items)
         invited_html = f'<p><strong>Участники:</strong><ul style="margin:4px 0 0 0;padding-left:20px">{names_items}</ul></p>'
 
     return f"""<!DOCTYPE html>
@@ -518,6 +575,50 @@ def _build_html_body(booking: MeetingBooking, method: str) -> str:
   </table>
 </body>
 </html>"""
+
+
+# Русские подписи категорий отсутствия для письма (i18n в письме не
+# используется — как и существующий хардкод темы «Приглашение на встречу»).
+_PRESENCE_LABELS_RU: dict[str, str] = {
+    "vacation": "В отпуске",
+    "sick": "Болеет",
+    "business_trip": "В командировке",
+}
+
+# Цвета подписи по категории (как CSS-классы в StaffRow.vue / ParticipantPicker).
+_PRESENCE_COLORS: dict[str, str] = {
+    "vacation": "#b45309",  # amber
+    "sick": "#be123c",  # red
+    "business_trip": "#6d28d9",  # purple
+}
+
+
+def _absence_note_html(absence: Any) -> str:
+    """Информационная подпись отсутствия под именем участника (HTML, цветная).
+
+    Формат: «В отпуске · до 15 августа» — мелким цветным текстом. Дата берётся из
+    ``absence.end_date`` (когда отсутствие заканчивается). HTML-экранирование
+    даты не нужно — она формируется из чисел и словаря русских месяцев.
+    """
+    category = getattr(absence, "category", "")
+    label = _PRESENCE_LABELS_RU.get(category, "")
+    if not label:
+        return ""
+    color = _PRESENCE_COLORS.get(category, "#6b7280")
+    end = getattr(absence, "end_date", None)
+    if end is not None:
+        until_str = f"{end.day} {_RU_MONTHS.get(end.month, '')}"
+        return (
+            f'<div style="font-size:11px;color:{color};margin-top:2px">'
+            f"{_html_escape(label)} · до {_html_escape(until_str)}</div>"
+        )
+    return f'<div style="font-size:11px;color:{color};margin-top:2px">{_html_escape(label)}</div>'
+
+
+def _html_escape(s: str) -> str:
+    import html as _html
+
+    return _html.escape(s)
 
 
 def _get_from_email() -> str:

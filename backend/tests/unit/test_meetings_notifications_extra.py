@@ -123,7 +123,7 @@ class TestEnqueueOrganizer:
         session = AsyncMock()
         booking = SimpleNamespace(id=uuid.uuid4())
         with patch("app.services.email_outbox.enqueue_outbox_email", AsyncMock()) as m:
-            await _enqueue_organizer(session, booking, None, "REQUEST", b"VCAL", set())
+            await _enqueue_organizer(session, booking, None, "REQUEST", b"VCAL", set(), {})
         m.assert_not_awaited()
 
     async def test_empty_email_is_noop(self):
@@ -133,7 +133,7 @@ class TestEnqueueOrganizer:
         booking = SimpleNamespace(id=uuid.uuid4(), title="T")
         organizer = SimpleNamespace(email="", full_name="Name", notify_email=True)
         with patch("app.services.email_outbox.enqueue_outbox_email", AsyncMock()) as m:
-            await _enqueue_organizer(session, booking, organizer, "REQUEST", b"VCAL", set())
+            await _enqueue_organizer(session, booking, organizer, "REQUEST", b"VCAL", set(), {})
         m.assert_not_awaited()
 
     async def test_already_sent_is_skipped(self):
@@ -144,7 +144,7 @@ class TestEnqueueOrganizer:
         organizer = SimpleNamespace(email="org@test.com", full_name="Org", notify_email=True)
         with patch("app.services.email_outbox.enqueue_outbox_email", AsyncMock()) as m:
             await _enqueue_organizer(
-                session, booking, organizer, "REQUEST", b"VCAL", {"org@test.com"}
+                session, booking, organizer, "REQUEST", b"VCAL", {"org@test.com"}, {}
             )
         m.assert_not_awaited()
 
@@ -155,7 +155,7 @@ class TestEnqueueOrganizer:
         booking = SimpleNamespace(id=uuid.uuid4(), title="T")
         organizer = SimpleNamespace(email="org@test.com", full_name="Org", notify_email=False)
         with patch("app.services.email_outbox.enqueue_outbox_email", AsyncMock()) as m:
-            await _enqueue_organizer(session, booking, organizer, "REQUEST", b"VCAL", set())
+            await _enqueue_organizer(session, booking, organizer, "REQUEST", b"VCAL", set(), {})
         m.assert_not_awaited()
 
     async def test_enqueues_and_adds_to_already_sent(self):
@@ -183,7 +183,9 @@ class TestEnqueueOrganizer:
                 return_value=SimpleNamespace(timezone="UTC"),
             ),
         ):
-            await _enqueue_organizer(session, booking, organizer, "REQUEST", b"VCAL", already_sent)
+            await _enqueue_organizer(
+                session, booking, organizer, "REQUEST", b"VCAL", already_sent, {}
+            )
         assert "org@test.com" in already_sent
 
 
@@ -194,7 +196,7 @@ class TestEnqueue:
         session = AsyncMock()
         booking = SimpleNamespace(id=uuid.uuid4(), title="T")
         with patch("app.services.email_outbox.enqueue_outbox_email", AsyncMock()) as m:
-            await _enqueue(session, booking, {"email": ""}, "REQUEST", b"VCAL")
+            await _enqueue(session, booking, {"email": ""}, "REQUEST", b"VCAL", {})
         m.assert_not_awaited()
 
     async def test_enqueues_valid_email(self):
@@ -219,7 +221,7 @@ class TestEnqueue:
                 return_value=SimpleNamespace(timezone="UTC"),
             ),
         ):
-            await _enqueue(session, booking, {"email": "user@test.com"}, "REQUEST", b"VCAL")
+            await _enqueue(session, booking, {"email": "user@test.com"}, "REQUEST", b"VCAL", {})
         enqueue_mock.assert_awaited_once()
 
     async def test_exception_is_caught(self):
@@ -246,7 +248,7 @@ class TestEnqueue:
                 return_value=SimpleNamespace(timezone="UTC"),
             ),
         ):
-            await _enqueue(session, booking, {"email": "user@test.com"}, "REQUEST", b"VCAL")
+            await _enqueue(session, booking, {"email": "user@test.com"}, "REQUEST", b"VCAL", {})
 
 
 class TestBuildSubject:
@@ -359,6 +361,96 @@ class TestBuildHtmlBody:
             html = _build_html_body(booking, "REQUEST")
         assert "Test Meeting" in html
 
+    def test_absent_participant_shows_presence_note(self):
+        """Участник с absence на дату встречи → цветная подпись под именем."""
+        from datetime import date
+
+        from app.schemas.meetings import AbsenceInfo
+        from app.services.meetings.notifications import _build_html_body
+
+        booking = _make_booking()
+        booking.invited_users = [
+            {"user_id": "1", "full_name": "Ivanov Ivan", "email": "ivanov@test.com"},
+            {"user_id": "2", "full_name": "Petrov Petr", "email": "petrov@test.com"},
+        ]
+        absences = {
+            "ivanov@test.com": AbsenceInfo(
+                category="vacation", start_date=date(2026, 8, 10), end_date=date(2026, 8, 15)
+            )
+        }
+        with patch(
+            "app.core.system_config.load_system_settings",
+            return_value=SimpleNamespace(timezone="UTC"),
+        ):
+            html = _build_html_body(booking, "REQUEST", absences)
+        # Подпись с категорией и датой окончания присутствует под именем.
+        assert "В отпуске" in html
+        assert "до 15 августа" in html
+        # Участник без отсутствия подписи не имеет.
+        assert "Petrov Petr" in html
+        # Цвет vacation (amber) подставлен в инлайн-стиль.
+        assert "#b45309" in html
+
+    def test_absent_sick_uses_red_color(self):
+        from datetime import date
+
+        from app.schemas.meetings import AbsenceInfo
+        from app.services.meetings.notifications import _build_html_body
+
+        booking = _make_booking()
+        booking.invited_users = [
+            {"user_id": "1", "full_name": "Sidorov S", "email": "sid@test.com"}
+        ]
+        absences = {
+            "sid@test.com": AbsenceInfo(
+                category="sick", start_date=date(2026, 8, 6), end_date=date(2026, 8, 9)
+            )
+        }
+        with patch(
+            "app.core.system_config.load_system_settings",
+            return_value=SimpleNamespace(timezone="UTC"),
+        ):
+            html = _build_html_body(booking, "REQUEST", absences)
+        assert "Болеет" in html
+        assert "#be123c" in html
+
+    def test_no_absences_no_presence_note(self):
+        """Без отсутствий блок участников без подписей (как раньше)."""
+        from app.services.meetings.notifications import _build_html_body
+
+        booking = _make_booking()
+        booking.invited_users = [{"user_id": "1", "full_name": "Alice", "email": "alice@test.com"}]
+        with patch(
+            "app.core.system_config.load_system_settings",
+            return_value=SimpleNamespace(timezone="UTC"),
+        ):
+            html = _build_html_body(booking, "REQUEST", {})
+        assert "В отпуске" not in html
+        assert "Болеет" not in html
+        assert "В командировке" not in html
+        assert "Alice" in html
+
+    def test_external_participant_no_absence_note(self):
+        """Внешний участник не получает подпись (нет user_id-match в users)."""
+        from app.services.meetings.notifications import _build_html_body
+
+        booking = _make_booking()
+        booking.invited_users = [
+            {
+                "user_id": "ext:guest@external.com",
+                "full_name": "guest@external.com",
+                "email": "guest@external.com",
+                "source": "external",
+            }
+        ]
+        # absences_by_email не содержит external-email → подписи нет.
+        with patch(
+            "app.core.system_config.load_system_settings",
+            return_value=SimpleNamespace(timezone="UTC"),
+        ):
+            html = _build_html_body(booking, "REQUEST", {})
+        assert "В отпуске" not in html
+
 
 class TestGetFromEmail:
     def test_returns_default_when_no_file(self):
@@ -408,6 +500,14 @@ class TestDispatchMeetingEmailsUpdated:
         mock_mod = _ical_builder_mock()
         with patch.dict(sys.modules, {"app.services.meetings.ical_builder": mock_mod}):
             yield mock_mod
+
+    @pytest.fixture(autouse=True)
+    def _patch_enrich_absences(self):
+        with patch(
+            "app.services.meetings.absence_enrichment.enrich_absences_for_invited",
+            AsyncMock(return_value={}),
+        ):
+            yield
 
     @pytest.fixture(autouse=True)
     def _patch_system_cfg(self):
