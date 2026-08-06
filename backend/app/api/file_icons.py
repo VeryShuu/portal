@@ -17,7 +17,7 @@ from fastapi.responses import FileResponse, Response
 
 from app.api.deps import AdminDep, RedisDep
 from app.core.logging import get_logger
-from app.core.uploads import stream_upload_to_segments
+from app.core.uploads import safe_join_within, stream_upload_to_segments
 from app.services.audit import make_audit_emitter
 
 logger = get_logger(__name__)
@@ -43,7 +43,11 @@ def _normalize_ext(ext: str) -> str:
 
 
 def _icon_path(ext: str) -> Path:
-    return _ICONS_DIR / f"{ext}.svg"
+    # ext уже отвалидирован через _normalize_ext (regex ^[a-z0-9]{1,16}$),
+    # но дополнительно прогоняем через safe_join_within — признанный CodeQL
+    # py/path-injection guard, чтобы анализ мог это доказать для всех sinks
+    # (stat / FileResponse / unlink), использующих _icon_path.
+    return safe_join_within(_ICONS_DIR, f"{ext}.svg")
 
 
 def _list_icons() -> list[dict[str, str | int]]:
