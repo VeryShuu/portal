@@ -25,6 +25,7 @@ __all__ = [
     "safe_join_within",
     "save_bytes_to_path",
     "stream_upload_to_path",
+    "stream_upload_to_segments",
 ]
 
 try:
@@ -35,19 +36,22 @@ except Exception:  # pragma: no cover - optional fallback when libmagic missing
 CHUNK_SIZE = 1024 * 1024  # 1 MiB
 
 
-async def stream_upload_to_path(
+async def _stream_to_dest(
     file: UploadFile,
     dest: Path,
     *,
     max_size: int,
-    allowed_mimes: AbstractSet[str] | None = None,
+    allowed_mimes: AbstractSet[str] | None,
 ) -> tuple[int, str | None]:
-    """Stream `file` into `dest` aborting early when `max_size` is exceeded.
+    """Shared streaming core for ``stream_upload_to_segments`` / ``stream_upload_to_path``.
 
-    Returns ``(bytes_written, detected_mime)``.
-    Raises ``413`` on overflow, ``422`` on disallowed real MIME.
-    MIME detection happens before the output file is opened so rejected uploads
-    never touch the filesystem.
+    Both public variants differ only in how ``dest`` is constructed; the actual
+    MIME-validation + streamed-write + overflow-abort logic is identical. Keeping
+    it here avoids drift between the two and keeps the FS sinks in one place.
+
+    Returns ``(bytes_written, detected_mime)``. Raises ``413`` on overflow,
+    ``422`` on disallowed real MIME. MIME detection happens before the output
+    file is opened so rejected uploads never touch the filesystem.
     """
     dest.parent.mkdir(parents=True, exist_ok=True)
 
@@ -111,6 +115,57 @@ async def stream_upload_to_path(
         )
 
     return written, detected
+
+
+async def stream_upload_to_segments(
+    file: UploadFile,
+    base_dir: Path,
+    rel_segments: tuple[str, ...],
+    *,
+    max_size: int,
+    allowed_mimes: AbstractSet[str] | None = None,
+) -> tuple[int, str | None]:
+    """Stream ``file`` into ``base_dir / *rel_segments`` with path-traversal guard.
+
+    Streaming counterpart of :func:`save_bytes_to_path`. The destination is
+    built **inside** via :func:`safe_join_within` (the project's recognized
+    ``py/path-injection`` guard) from the trusted ``base_dir`` and
+    ``rel_segments``. Accepting relative segments rather than a pre-built
+    ``dest`` keeps user-derived components (article id, sanitized filename)
+    flowing through the recognized sanitizer, so no tainted path reaches a FS
+    sink — this is what closes the CodeQL ``py/path-injection`` alerts.
+
+    Returns ``(bytes_written, detected_mime)``.
+    Raises ``413`` on overflow, ``422`` on disallowed real MIME, ``404`` on
+    path escape.
+    """
+    dest = safe_join_within(base_dir, *rel_segments)
+    return await _stream_to_dest(file, dest, max_size=max_size, allowed_mimes=allowed_mimes)
+
+
+async def stream_upload_to_path(
+    file: UploadFile,
+    dest: Path,
+    *,
+    max_size: int,
+    allowed_mimes: AbstractSet[str] | None = None,
+) -> tuple[int, str | None]:
+    """Stream ``file`` into a pre-built ``dest`` aborting early on size overflow.
+
+    .. deprecated-internal::
+        Prefer :func:`stream_upload_to_segments` for new callers — it routes
+        path construction through :func:`safe_join_within` and so does not
+        trigger CodeQL ``py/path-injection``. This legacy entrypoint is kept
+        only for callers that build ``dest`` entirely from trusted,
+        server-generated values (UUIDs, sanitized names) and cannot easily
+        express their layout as ``base_dir + rel_segments`` (e.g. temporary
+        ``_tmp_{uuid}`` staging paths that intentionally sit inside an already
+        validated directory).
+
+    Returns ``(bytes_written, detected_mime)``.
+    Raises ``413`` on overflow, ``422`` on disallowed real MIME.
+    """
+    return await _stream_to_dest(file, dest, max_size=max_size, allowed_mimes=allowed_mimes)
 
 
 async def iter_upload_chunks(file: UploadFile) -> AsyncIterator[bytes]:

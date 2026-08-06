@@ -14,7 +14,7 @@ from app.api.deps import CurrentUser, DbDep, RedisDep
 from app.core.config import get_settings
 from app.core.logging import get_logger
 from app.core.system_config import load_system_settings
-from app.core.uploads import stream_upload_to_path
+from app.core.uploads import stream_upload_to_segments
 from app.models.kb import KbArticleFile
 from app.schemas.kb_extra import KbFileList, KbFilePublic
 from app.services.audit import make_audit_emitter
@@ -91,11 +91,14 @@ async def upload_article_file(
 
     original_name = file.filename or "file"
     safe_stored = f"{uuid.uuid4().hex}_{re.sub(r'[^\\w.\\-]', '_', Path(original_name).name)}"
-    dest = KB_FILES_DIR / str(article_id) / safe_stored
 
     max_bytes = load_system_settings().kb_attachment_max_size_mb * 1024 * 1024
-    size, mime = await stream_upload_to_path(
-        file, dest, max_size=max_bytes, allowed_mimes=SAFE_MIME_TYPES
+    size, mime = await stream_upload_to_segments(
+        file,
+        KB_FILES_DIR,
+        (str(article_id), safe_stored),
+        max_size=max_bytes,
+        allowed_mimes=SAFE_MIME_TYPES,
     )
 
     stored_mime = mime or file.content_type or "application/octet-stream"

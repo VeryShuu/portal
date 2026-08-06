@@ -80,7 +80,7 @@ async def _create_db_ticket(db, requester_id: uuid.UUID):
 
 
 def _make_upload_file(filename: str, content_type: str, data: bytes):
-    """Минимальный UploadFile-подобный объект для stream_upload_to_path (мок)."""
+    """Минимальный UploadFile-подобный объект для stream_upload_to_segments (мок)."""
     from types import SimpleNamespace
 
     return SimpleNamespace(
@@ -97,9 +97,9 @@ def _fake_redis() -> AsyncMock:
     return r
 
 
-# Минимальный валидный JPEG-хвост (magic-байты) — stream_upload_to_path мокается,
+# Минимальный валидный JPEG-хвост (magic-байты) — stream_upload_to_segments мокается,
 # но MIME-валидация в реальном коде смотрит на magic.from_buffer; мы мокаем весь
-# stream_upload_to_path, поэтому содержимое не критично.
+# stream_upload_to_segments, поэтому содержимое не критично.
 _JPEG_BYTES = b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00\xff\xd9"
 
 
@@ -147,7 +147,7 @@ class TestUploadInlineMedia:
 
         upload_file = _make_upload_file("screen.jpg", "image/jpeg", _JPEG_BYTES)
         with patch(
-            "app.api.helpdesk.media.stream_upload_to_path", new_callable=AsyncMock
+            "app.api.helpdesk.media.stream_upload_to_segments", new_callable=AsyncMock
         ) as mock_upload:
             mock_upload.return_value = (len(_JPEG_BYTES), "image/jpeg")
             out = await upload_ticket_inline_media(
@@ -191,7 +191,7 @@ class TestUploadInlineMedia:
 
         upload_file = _make_upload_file("big.jpg", "image/jpeg", _JPEG_BYTES)
         with patch(
-            "app.api.helpdesk.media.stream_upload_to_path", new_callable=AsyncMock
+            "app.api.helpdesk.media.stream_upload_to_segments", new_callable=AsyncMock
         ) as mock_upload:
             mock_upload.side_effect = HTTPException(status_code=413, detail="too large")
             with pytest.raises(HTTPException) as exc:

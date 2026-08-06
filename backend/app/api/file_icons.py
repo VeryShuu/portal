@@ -17,7 +17,7 @@ from fastapi.responses import FileResponse, Response
 
 from app.api.deps import AdminDep, RedisDep
 from app.core.logging import get_logger
-from app.core.uploads import stream_upload_to_path
+from app.core.uploads import stream_upload_to_segments
 from app.services.audit import make_audit_emitter
 
 logger = get_logger(__name__)
@@ -93,10 +93,10 @@ async def upload_file_icon(
             detail="Only SVG files are allowed",
         )
     _ICONS_DIR.mkdir(parents=True, exist_ok=True)
-    dest = _icon_path(ext)
-    size, _detected = await stream_upload_to_path(
+    size, _detected = await stream_upload_to_segments(
         file,
-        dest,
+        _ICONS_DIR,
+        (f"{ext}.svg",),
         max_size=_MAX_ICON_SIZE,
         allowed_mimes=_ALLOWED_MIMES,
     )
@@ -110,7 +110,7 @@ async def upload_file_icon(
     return {
         "extension": ext,
         "url": f"/api/v1/files/icons/{ext}",
-        "updated_at": int(dest.stat().st_mtime),
+        "updated_at": int(_icon_path(ext).stat().st_mtime),
     }
 
 

@@ -39,7 +39,7 @@ from app.core.constants import (
     HELPDESK_INLINE_IMAGE_MIMES,
 )
 from app.core.logging import get_logger
-from app.core.uploads import stream_upload_to_path
+from app.core.uploads import stream_upload_to_segments
 from app.models.helpdesk import HelpdeskDraftAttachment, HelpdeskTicket
 from app.models.user import User
 from app.services.helpdesk.attachments import (
@@ -108,10 +108,10 @@ async def create_draft_attachment(
 
     original_name = (file.filename or "image").strip() or "image"
     stored_name = _safe_stored_name(original_name)
-    dest = draft_dir(user.id) / stored_name
-    size, detected_mime = await stream_upload_to_path(
+    size, detected_mime = await stream_upload_to_segments(
         file,
-        dest,
+        draft_dir(user.id),
+        (stored_name,),
         max_size=_MAX_ATTACHMENT_BYTES,
         allowed_mimes=HELPDESK_INLINE_IMAGE_MIMES,
     )

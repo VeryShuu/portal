@@ -34,7 +34,7 @@ from app.core.constants import (
     HELPDESK_MAX_TOTAL_INGRESS_MB,
 )
 from app.core.logging import get_logger
-from app.core.uploads import magic, stream_upload_to_path
+from app.core.uploads import magic, stream_upload_to_segments
 from app.models.helpdesk import HelpdeskAgent, HelpdeskAttachment, HelpdeskTicket
 from app.models.user import User
 
@@ -99,15 +99,15 @@ async def upload_attachments(
         for file in files:
             original_name = (file.filename or "file").strip() or "file"
             stored_name = _safe_stored_name(original_name)
-            dest = dest_dir / stored_name
-            size, mime = await stream_upload_to_path(
+            size, mime = await stream_upload_to_segments(
                 file,
-                dest,
+                dest_dir,
+                (stored_name,),
                 max_size=_MAX_ATTACHMENT_BYTES,
                 allowed_mimes=HELPDESK_ATTACHMENT_ALLOWED_MIMES,
             )
             total_so_far += size
-            recorded_paths.append(dest)
+            recorded_paths.append(dest_dir / stored_name)
             if total_so_far > _MAX_TOTAL_BYTES:
                 # Превышен суммарный лимит — откатываем все записанные файлы.
                 raise HTTPException(

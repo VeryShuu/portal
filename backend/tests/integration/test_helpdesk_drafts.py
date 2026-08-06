@@ -79,7 +79,7 @@ class TestCreateDraftAttachment:
         assert disk.read_bytes() == _PNG_BYTES
 
     async def test_rejects_non_image_mime(self, real_db_session, real_user, files_dir):
-        """``stream_upload_to_path`` checks real MIME via libmagic and rejects
+        """``stream_upload_to_segments`` checks real MIME via libmagic and rejects
         non-images (422). The extension guard itself lives in the router and is
         covered by unit tests; here we exercise the service-level MIME check."""
         from fastapi import HTTPException

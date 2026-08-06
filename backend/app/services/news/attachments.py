@@ -9,7 +9,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.system_config import load_system_settings
-from app.core.uploads import safe_join_within, stream_upload_to_path
+from app.core.uploads import safe_join_within, stream_upload_to_segments
 from app.models.news import News, NewsAttachment
 
 from ._helpers import _NEWS_MEDIA_DIR
@@ -22,10 +22,13 @@ async def upload_attachment(
 ) -> NewsAttachment:
     """Stream and persist an attachment (any MIME type)."""
     att_id = uuid.uuid4()
-    dest = _NEWS_MEDIA_DIR / str(news.id) / "attachments" / str(att_id)
     max_bytes = load_system_settings().news_attachment_max_size_mb * 1024 * 1024
-    written, detected_mime = await stream_upload_to_path(
-        file, dest, max_size=max_bytes, allowed_mimes=None
+    written, detected_mime = await stream_upload_to_segments(
+        file,
+        _NEWS_MEDIA_DIR,
+        (str(news.id), "attachments", str(att_id)),
+        max_size=max_bytes,
+        allowed_mimes=None,
     )
     att = NewsAttachment(
         id=att_id,

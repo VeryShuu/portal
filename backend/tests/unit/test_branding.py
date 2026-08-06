@@ -785,7 +785,7 @@ class TestUploadLogo:
         with (
             patch("app.services.branding_assets.BRANDING_DIR", tmp_path),
             patch(
-                "app.services.branding_assets.stream_upload_to_path",
+                "app.services.branding_assets.stream_upload_to_segments",
                 new_callable=AsyncMock,
                 return_value=(1024, "image/png"),
             ),
@@ -802,7 +802,7 @@ class TestUploadLogo:
         with (
             patch("app.services.branding_assets.BRANDING_DIR", tmp_path),
             patch(
-                "app.services.branding_assets.stream_upload_to_path",
+                "app.services.branding_assets.stream_upload_to_segments",
                 new_callable=AsyncMock,
                 return_value=(2048, "image/jpeg"),
             ),
@@ -836,7 +836,7 @@ class TestUploadFavicon:
         with (
             patch("app.services.branding_assets.BRANDING_DIR", tmp_path),
             patch(
-                "app.services.branding_assets.stream_upload_to_path",
+                "app.services.branding_assets.stream_upload_to_segments",
                 new_callable=AsyncMock,
                 return_value=(256, "image/x-icon"),
             ),
@@ -853,7 +853,7 @@ class TestUploadFavicon:
         with (
             patch("app.services.branding_assets.BRANDING_DIR", tmp_path),
             patch(
-                "app.services.branding_assets.stream_upload_to_path",
+                "app.services.branding_assets.stream_upload_to_segments",
                 new_callable=AsyncMock,
                 return_value=(512, "image/png"),
             ),
@@ -881,7 +881,7 @@ class TestUploadLoginBg:
         with (
             patch("app.services.branding_assets.BRANDING_DIR", tmp_path),
             patch(
-                "app.services.branding_assets.stream_upload_to_path",
+                "app.services.branding_assets.stream_upload_to_segments",
                 new_callable=AsyncMock,
                 return_value=(1024, "image/jpeg"),
             ),
@@ -898,7 +898,7 @@ class TestUploadLoginBg:
         with (
             patch("app.services.branding_assets.BRANDING_DIR", tmp_path),
             patch(
-                "app.services.branding_assets.stream_upload_to_path",
+                "app.services.branding_assets.stream_upload_to_segments",
                 new_callable=AsyncMock,
                 return_value=(800, "image/webp"),
             ),

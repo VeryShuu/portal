@@ -13,7 +13,7 @@ from pathlib import Path
 from fastapi import UploadFile
 
 from app.core.logging import get_logger
-from app.core.uploads import stream_upload_to_path
+from app.core.uploads import stream_upload_to_segments
 
 logger = get_logger(__name__)
 
@@ -81,14 +81,18 @@ async def save_link_icon(file: UploadFile, link_id: uuid.UUID) -> str:
 
     remove_icon_files(link_id)
 
-    dest = LINK_ICONS_DIR / f"{link_id}.{ext}"
-    await stream_upload_to_path(
+    icon_name = f"{link_id}.{ext}"
+    await stream_upload_to_segments(
         file,
-        dest,
+        LINK_ICONS_DIR,
+        (icon_name,),
         max_size=MAX_ICON_SIZE,
         allowed_mimes=ALLOWED_ICON_TYPES,
     )
 
+    # Путь восстановлен из тех же доверенных сегментов (link_id + ext) —
+    # нужен для optimize_link_icon ниже.
+    dest = LINK_ICONS_DIR / icon_name
     icon_url = f"/media/link_icons/{link_id}.{ext}"
     optimized_ext = optimize_link_icon(link_id, dest, ext)
     if optimized_ext:
