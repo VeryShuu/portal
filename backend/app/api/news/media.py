@@ -12,7 +12,7 @@ from fastapi.responses import FileResponse, Response
 
 from app.api.deps import CurrentUser, DbDep, EditorDep, RedisDep
 from app.core.system_config import load_system_settings
-from app.core.uploads import safe_join_within, stream_upload_to_path
+from app.core.uploads import safe_join_within, stream_upload_to_segments
 from app.models.news import News as NewsModel
 from app.schemas.kb_extra import MediaUploadResponse
 from app.schemas.news import (
@@ -275,11 +275,14 @@ async def upload_news_inline_media(
 
     safe_name = re.sub(r"[^\w.\-]", "_", Path(file.filename or "image").name)
     unique_name = f"{uuid.uuid4().hex[:8]}_{safe_name}"
-    dest = NEWS_MEDIA_DIR / str(news_id) / "inline" / unique_name
 
     max_bytes = load_system_settings().kb_media_max_size_mb * 1024 * 1024
-    await stream_upload_to_path(
-        file, dest, max_size=max_bytes, allowed_mimes=ALLOWED_INLINE_IMAGE_MIMES
+    await stream_upload_to_segments(
+        file,
+        NEWS_MEDIA_DIR,
+        (str(news_id), "inline", unique_name),
+        max_size=max_bytes,
+        allowed_mimes=ALLOWED_INLINE_IMAGE_MIMES,
     )
 
     url = f"/api/v1/news/{news_id}/inline-media/{unique_name}"

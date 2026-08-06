@@ -806,7 +806,7 @@ async def test_upload_gallery_image_success():
     with patch("app.services.news.gallery.load_system_settings") as mock_settings:
         mock_settings.return_value.news_attachment_max_size_mb = 10
         with patch(
-            "app.services.news.gallery.stream_upload_to_path",
+            "app.services.news.gallery.stream_upload_to_segments",
             AsyncMock(return_value=(1024, "image/jpeg")),
         ):
             result = await upload_gallery_image(db, news, file)
@@ -835,7 +835,7 @@ async def test_upload_attachment_success():
         mock_settings.return_value.news_attachment_max_size_mb = 10
         with (
             patch(
-                "app.services.news.attachments.stream_upload_to_path",
+                "app.services.news.attachments.stream_upload_to_segments",
                 AsyncMock(return_value=(2048, "application/pdf")),
             ),
             patch("app.services.news.attachments.NewsAttachment", return_value=att_obj),
@@ -994,7 +994,7 @@ async def test_upload_cover_success():
         mock_settings.return_value.news_attachment_max_size_mb = 10
         with (
             patch(
-                "app.services.news.cover.stream_upload_to_path",
+                "app.services.news.cover.stream_upload_to_segments",
                 AsyncMock(return_value=(512, "image/jpeg")),
             ),
             patch("app.services.news.cover._remove_cover_variants"),
@@ -1020,7 +1020,7 @@ async def test_upload_cover_success_no_variants():
         mock_settings.return_value.news_attachment_max_size_mb = 10
         with (
             patch(
-                "app.services.news.cover.stream_upload_to_path",
+                "app.services.news.cover.stream_upload_to_segments",
                 AsyncMock(return_value=(256, "image/png")),
             ),
             patch("app.services.news.cover._remove_cover_variants"),

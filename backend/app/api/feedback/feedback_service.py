@@ -11,7 +11,7 @@ from redis.asyncio import Redis
 from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.uploads import safe_join_within, stream_upload_to_path
+from app.core.uploads import safe_join_within, stream_upload_to_segments
 from app.models.feedback import Feedback, FeedbackAttachment, FeedbackReply
 from app.models.user import User
 from app.schemas.feedback import (
@@ -189,11 +189,11 @@ async def upload_attachment(
     safe_stored = (
         f"{uuid.uuid4().hex}_{re.sub(r'[^A-Za-z0-9._-]', '_', Path(original_name).name)[:200]}"
     )
-    dest = FEEDBACK_FILES_DIR / str(feedback_id) / safe_stored
 
-    size, mime = await stream_upload_to_path(
+    size, mime = await stream_upload_to_segments(
         file,
-        dest,
+        FEEDBACK_FILES_DIR,
+        (str(feedback_id), safe_stored),
         max_size=FEEDBACK_ATTACHMENT_MAX_SIZE,
         allowed_mimes=FEEDBACK_ATTACHMENT_ALLOWED_MIMES,
     )

@@ -11,7 +11,7 @@ from app.core.security import (
     hash_password_async,
     verify_password_async,
 )
-from app.core.uploads import stream_upload_to_path
+from app.core.uploads import stream_upload_to_segments
 from app.models.user import User
 from app.schemas.user import (
     PasswordChangeRequest,
@@ -86,11 +86,11 @@ async def upload_avatar(db: AsyncSession, user: User, file: UploadFile) -> User:
 
     ext = CONTENT_TYPE_TO_EXT.get(file.content_type or "", "jpg")
     filename = f"{user.id}.{ext}"
-    file_path = AVATARS_DIR / filename
 
-    await stream_upload_to_path(
+    await stream_upload_to_segments(
         file,
-        file_path,
+        AVATARS_DIR,
+        (filename,),
         max_size=MAX_AVATAR_SIZE,
         allowed_mimes=ALLOWED_IMG_TYPES,
     )

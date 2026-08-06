@@ -104,6 +104,12 @@ def _backfill_imap_to_email_settings() -> None:
     existing["imap_folder"] = row.imap_folder or "INBOX"
 
     # 4. Запись (atomic_write через tmp + os.replace, chmod 0o600 — пароль в файле).
+    # NOTE(security): хотя в JSON есть ключ ``imap_password_enc``, его значение —
+    # Fernet-токен (шифр, выведенный из SECRET_KEY через encrypt_secret выше), а
+    # НЕ открытый пароль. На диске лежит только ciphertext; CodeQL
+    # ``py/clear-text-storage-sensitive-information`` (alert #47) флажит это как
+    # FP, т.к. не отслеживает семантику encrypt_secret как санитайзера.
+    # lgtm[py/clear-text-storage-sensitive-information]
     EMAIL_SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
     tmp = EMAIL_SETTINGS_FILE.with_suffix(".json.tmp")
     tmp.write_text(json.dumps(existing, indent=2, ensure_ascii=False), encoding="utf-8")

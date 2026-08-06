@@ -155,7 +155,7 @@ async def test_media_upload_returns_url(real_db_session):
 
     csrf_token = "test-csrf-token"
 
-    with patch("app.core.uploads.stream_upload_to_path", new_callable=AsyncMock) as mock_upload:
+    with patch("app.core.uploads.stream_upload_to_segments", new_callable=AsyncMock) as mock_upload:
         mock_upload.return_value = (len(image_bytes), "image/jpeg")
         with patch("app.api.kb.media.KB_MEDIA_DIR"):
             transport = ASGITransport(app=application)
@@ -283,7 +283,7 @@ async def test_file_upload_stores_original_name(real_db_session):
     csrf_token = "test-csrf-token"
 
     with patch(
-        "app.api.kb.attachments.stream_upload_to_path", new_callable=AsyncMock
+        "app.api.kb.attachments.stream_upload_to_segments", new_callable=AsyncMock
     ) as mock_upload:
         mock_upload.return_value = (len(pdf_bytes), "application/pdf")
         with patch("app.api.kb.attachments.KB_FILES_DIR"):

@@ -1112,7 +1112,7 @@ class TestUploadLinkIcon:
 
         with (
             patch(
-                "app.services.link_icon.stream_upload_to_path",
+                "app.services.link_icon.stream_upload_to_segments",
                 new_callable=AsyncMock,
                 return_value=(512, "image/png"),
             ),
@@ -1148,7 +1148,7 @@ class TestUploadLinkIcon:
 
         with (
             patch(
-                "app.services.link_icon.stream_upload_to_path",
+                "app.services.link_icon.stream_upload_to_segments",
                 new_callable=AsyncMock,
                 return_value=(512, "image/png"),
             ),
@@ -1174,7 +1174,7 @@ class TestUploadLinkIcon:
 
         with (
             patch(
-                "app.services.link_icon.stream_upload_to_path",
+                "app.services.link_icon.stream_upload_to_segments",
                 new_callable=AsyncMock,
                 return_value=(512, "image/png"),
             ),
@@ -1206,7 +1206,7 @@ class TestUploadLinkIcon:
         audit_mock = AsyncMock()
         with (
             patch(
-                "app.services.link_icon.stream_upload_to_path",
+                "app.services.link_icon.stream_upload_to_segments",
                 new_callable=AsyncMock,
                 return_value=(512, "image/png"),
             ),

@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.constants import ALLOWED_NEWS_COVER_IMG_TYPES
 from app.core.system_config import load_system_settings
-from app.core.uploads import stream_upload_to_path
+from app.core.uploads import safe_join_within, stream_upload_to_segments
 from app.models.news import News
 
 from ._helpers import (
@@ -33,12 +33,19 @@ async def upload_cover(
             detail="Unsupported image type. Use JPEG, PNG, WebP or GIF",
         )
     ext = _CONTENT_TYPE_TO_EXT.get(file.content_type or "", "jpg")
-    file_path = _NEWS_MEDIA_DIR / str(news.id) / f"cover.{ext}"
+    cover_name = f"cover.{ext}"
     max_bytes = load_system_settings().news_attachment_max_size_mb * 1024 * 1024
-    await stream_upload_to_path(
-        file, file_path, max_size=max_bytes, allowed_mimes=ALLOWED_NEWS_COVER_IMG_TYPES
+    await stream_upload_to_segments(
+        file,
+        _NEWS_MEDIA_DIR,
+        (str(news.id), cover_name),
+        max_size=max_bytes,
+        allowed_mimes=ALLOWED_NEWS_COVER_IMG_TYPES,
     )
-    relative_path = f"{news.id}/cover.{ext}"
+    # Путь восстановлен из тех же доверенных сегментов через признанный CodeQL
+    # py/path-injection guard — нужен для _build_cover_variants ниже.
+    file_path = safe_join_within(_NEWS_MEDIA_DIR, str(news.id), cover_name)
+    relative_path = f"{news.id}/{cover_name}"
     out_dir = _NEWS_MEDIA_DIR / str(news.id)
     _remove_cover_variants(out_dir)
     import asyncio as _asyncio

@@ -16,7 +16,7 @@ from app.core.config import get_settings
 from app.core.logging import get_logger
 from app.core.net_guard import assert_url_safe, resolve_stable_ip
 from app.core.system_config import load_system_settings
-from app.core.uploads import save_bytes_to_path, stream_upload_to_path
+from app.core.uploads import save_bytes_to_path, stream_upload_to_segments
 from app.schemas.kb_extra import MediaUploadResponse, RemoteMediaRequest
 from app.services.kb_acl import require_article_permission
 
@@ -64,10 +64,15 @@ async def upload_article_media(
 
     safe_name = re.sub(r"[^\w.\-]", "_", Path(file.filename or "image").name, flags=re.ASCII)
     unique_name = f"{uuid.uuid4().hex[:8]}_{safe_name}"
-    dest = KB_MEDIA_DIR / str(article_id) / unique_name
 
     max_bytes = load_system_settings().kb_media_max_size_mb * 1024 * 1024
-    await stream_upload_to_path(file, dest, max_size=max_bytes, allowed_mimes=ALLOWED_IMAGE_MIMES)
+    await stream_upload_to_segments(
+        file,
+        KB_MEDIA_DIR,
+        (str(article_id), unique_name),
+        max_size=max_bytes,
+        allowed_mimes=ALLOWED_IMAGE_MIMES,
+    )
 
     url = f"/api/v1/kb/media/{article_id}/{unique_name}"
     return MediaUploadResponse(url=url, filename=unique_name)

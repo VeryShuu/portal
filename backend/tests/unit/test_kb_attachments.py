@@ -138,7 +138,7 @@ class TestUploadFile:
             patch("app.api.kb.attachments._get_article_or_404", AsyncMock(return_value=article)),
             patch("app.api.kb.attachments.require_article_permission", AsyncMock()),
             patch(
-                "app.api.kb.attachments.stream_upload_to_path",
+                "app.api.kb.attachments.stream_upload_to_segments",
                 AsyncMock(return_value=(123, "image/png")),
             ),
             patch(
@@ -179,7 +179,7 @@ class TestUploadFile:
         with (
             patch("app.api.kb.attachments._get_article_or_404", AsyncMock(return_value=article)),
             patch("app.api.kb.attachments.require_article_permission", AsyncMock()),
-            patch("app.api.kb.attachments.stream_upload_to_path", stream_mock),
+            patch("app.api.kb.attachments.stream_upload_to_segments", stream_mock),
             patch(
                 "app.api.kb.attachments.load_system_settings",
                 return_value=MagicMock(kb_attachment_max_size_mb=10),

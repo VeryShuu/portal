@@ -26,7 +26,7 @@ from app.core.constants import (
     HELPDESK_INLINE_IMAGE_MIMES,
     HELPDESK_MAX_ATTACHMENT_MB,
 )
-from app.core.uploads import stream_upload_to_path
+from app.core.uploads import stream_upload_to_segments
 from app.models.helpdesk import HelpdeskAgent, HelpdeskTicket
 from app.schemas.kb_extra import MediaUploadResponse
 
@@ -99,11 +99,11 @@ async def upload_ticket_inline_media(
 
     safe_name = re.sub(r"[^\w.\-]", "_", Path(file.filename or "image").name, flags=re.ASCII)
     unique_name = f"{uuid.uuid4().hex[:8]}_{safe_name}"
-    dest = _ticket_inline_dir(ticket.number) / unique_name
 
-    await stream_upload_to_path(
+    await stream_upload_to_segments(
         file,
-        dest,
+        _ticket_inline_dir(ticket.number),
+        (unique_name,),
         max_size=HELPDESK_MAX_ATTACHMENT_MB * 1024 * 1024,
         allowed_mimes=HELPDESK_INLINE_IMAGE_MIMES,
     )

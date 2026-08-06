@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.constants import ALLOWED_NEWS_COVER_IMG_TYPES
 from app.core.system_config import load_system_settings
-from app.core.uploads import safe_join_within, stream_upload_to_path
+from app.core.uploads import safe_join_within, stream_upload_to_segments
 from app.models.news import News, NewsGalleryImage
 
 from ._helpers import _CONTENT_TYPE_TO_EXT, _NEWS_MEDIA_DIR
@@ -30,10 +30,13 @@ async def upload_gallery_image(
     img_id = uuid.uuid4()
     ext = _CONTENT_TYPE_TO_EXT.get(file.content_type or "", "jpg")
     filename = f"{img_id}.{ext}"
-    dest = _NEWS_MEDIA_DIR / str(news.id) / "gallery" / filename
     max_bytes = load_system_settings().news_attachment_max_size_mb * 1024 * 1024
-    written, _detected = await stream_upload_to_path(
-        file, dest, max_size=max_bytes, allowed_mimes=ALLOWED_NEWS_COVER_IMG_TYPES
+    written, _detected = await stream_upload_to_segments(
+        file,
+        _NEWS_MEDIA_DIR,
+        (str(news.id), "gallery", filename),
+        max_size=max_bytes,
+        allowed_mimes=ALLOWED_NEWS_COVER_IMG_TYPES,
     )
     next_order_subq = (
         select(func.coalesce(func.max(NewsGalleryImage.sort_order), -1) + 1)

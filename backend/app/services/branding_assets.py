@@ -13,7 +13,7 @@ from typing import cast
 from fastapi import HTTPException, UploadFile, status
 
 from app.core.logging import get_logger
-from app.core.uploads import stream_upload_to_path
+from app.core.uploads import stream_upload_to_segments
 from app.schemas.branding import BrandingSettings
 
 logger = get_logger(__name__)
@@ -89,10 +89,11 @@ async def upload_image(
         )
     ext = mime_map[content_type]
     BRANDING_DIR.mkdir(parents=True, exist_ok=True)
-    dest = BRANDING_DIR / f"{prefix}{ext}"
-    size, _detected = await stream_upload_to_path(
+    branding_name = f"{prefix}{ext}"
+    size, _detected = await stream_upload_to_segments(
         file,
-        dest,
+        BRANDING_DIR,
+        (branding_name,),
         max_size=MAX_IMAGE_SIZE,
         allowed_mimes=set(mime_map.keys()),
     )
