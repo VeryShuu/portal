@@ -144,6 +144,65 @@ class TestStripQuotedReplyHeuristics:
         assert strip_quoted_reply(body) == "Ответ"
 
 
+# ── strip_quoted_reply — SOGo / Mail.ru-веб (регрессия прод-тикета) ──────────
+
+
+class TestStripQuotedReplySogoMailRu:
+    """SOGo / Mail.ru-веб (корпоративный webmail mail.mage.ru) формирует
+    разделитель цитаты в виде ``<дата>, <отправитель> писал(а):`` (ru) или
+    ``<date>, <sender> wrote:`` (en) — отличается от Gmail-ru отсутствием
+    приставки «на-» (``писал`` vs ``написал``) и от Gmail-en отсутствием
+    ведущего ``On``. Регрессия прод-тикета №60: ответы заявителя через SOGo
+    сохранялись с неотрезанной историей переписки.
+    """
+
+    def test_sogo_ru_pisal_a(self) -> None:
+        # Реальная строка из прод-тикета №60 (сообщение от Молчанова):
+        # «Четверг, Август 06, 2026 15:21 MSK, it@mage.ru писал(а):»
+        body = (
+            "Ну дела, а как его загрузить?\n"
+            "иконки у меня такой нет\n\n"
+            "Четверг, Август 06, 2026 15:21 MSK, it@mage.ru писал(а):\n"
+            " история переписки ниже\n"
+        )
+        assert strip_quoted_reply(body) == (
+            "Ну дела, а как его загрузить?\nиконки у меня такой нет"
+        )
+
+    def test_sogo_ru_pisala(self) -> None:
+        # Женский род без приставки «на-»: «писала:»
+        body = "Принято\n\n1 июля 2026 г., Агент <a@b.test> писала:\n> текст"
+        assert strip_quoted_reply(body) == "Принято"
+
+    def test_sogo_ru_pisal(self) -> None:
+        # Мужской род без приставки: «писал:»
+        body = "Ок\n\nВчера, Агент <a@b.test> писал:\n> текст"
+        assert strip_quoted_reply(body) == "Ок"
+
+    def test_sogo_en_wrote_no_on_prefix(self) -> None:
+        # SOGo EN: «<date>, <author> wrote:» — без ведущего «On» (как в Gmail).
+        body = (
+            "Thanks!\n\n"
+            "Thursday, August 6, 2026 15:21 MSK, agent@x.test wrote:\n"
+            "> previous message\n"
+        )
+        assert strip_quoted_reply(body) == "Thanks!"
+
+    def test_word_pisal_in_legit_text_not_stripped(self) -> None:
+        # Легитимный текст со словом «писал:» в середине обычной строки не
+        # отрезается: паттерн требует двоеточие в КОНЦЕ строки (``:\s*$``) и
+        # перевод строки перед разделителем (``^`` + ``re.M``).
+        body = "Он писал мне вчера: важный текст на этой же строке"
+        assert strip_quoted_reply(body) == body
+
+    def test_pisal_divider_at_line_end_strips(self) -> None:
+        # «писал:» в конце строки (после перевода) — это разделитель, отрезаем.
+        body = "Ответ сверху\nОтправитель писал:\nцитата ниже"
+        out = strip_quoted_reply(body)
+        assert "Ответ сверху" in out
+        assert "цитата ниже" not in out
+
+
 # ── strip_quoted_reply — edge cases ──────────────────────────────────────────
 
 
@@ -205,6 +264,57 @@ class TestStripQuotedHtml:
 
     def test_empty_string(self) -> None:
         assert strip_quoted_html("") == ""
+
+
+# ── strip_quoted_html — SOGo / Mail.ru-веб (регрессия прод-тикета) ──────────
+
+
+class TestStripQuotedHtmlSogoMailRu:
+    """SOGo (корпоративный webmail mail.mage.ru) оборачивает процитированное
+    письмо в **голый** ``<blockquote>`` без классов ``gmail_quote``/``moz-cite-prefix``
+    (поэтому слой ``_HTML_QUOTE_RE`` его пропускает), а над блоком ставит
+    текст-разделитель «писал(а):»/«wrote:» внутри ``<p>``/``<div>``. Регрессия
+    прод-тикета №60: цитата из-под голого ``<blockquote>`` не отрезалась.
+    Новый слой ``_HTML_SOGO_HEADER_RE`` ловит разделитель и отрезает блок целиком.
+    """
+
+    def test_sogo_html_pisal_a_before_blockquote(self) -> None:
+        # Реальная структура HTML из прод-тикета №60 (сообщение 3 Молчанова):
+        # разделитель «писал(а):» внутри <p> + голый <blockquote> с историей.
+        html = (
+            "<p>Ну дела, а как его загрузить?&nbsp;<br>иконки у меня такой нет&nbsp;"
+            "<br><br>Четверг, Август 06, 2026 15:21 MSK, it@mage.ru писал(а):"
+            "<br><br>&nbsp;</p>"
+            '<blockquote><div><figure class="table"><table><tbody><tr><td>'
+            "<div><strong>#60 — СЭД</strong></div>"
+            "<div>Сообщение от — Борзихин Вячеслав Сергеевич</div>"
+            "</td></tr></tbody></table></figure></div></blockquote>"
+        )
+        out = strip_quoted_html(html)
+        assert "Ну дела" in out
+        assert "писал(а)" not in out
+        assert "#60" not in out
+        assert "Борзихин" not in out
+
+    def test_sogo_html_wrote_before_blockquote(self) -> None:
+        # EN-вариант: разделитель «wrote:» в отдельном <p> перед <blockquote>.
+        html = (
+            "<p>Thanks!</p>"
+            "<p><br><br>Thursday, August 6, 2026 16:28 MSK, it@mage.ru wrote:"
+            "<br><br>&nbsp;</p>"
+            "<blockquote><div>#60 — history below</div></blockquote>"
+        )
+        out = strip_quoted_html(html)
+        assert "Thanks!" in out
+        assert "wrote" not in out
+        assert "#60" not in out
+
+    def test_bare_blockquote_without_sogo_header_not_stripped(self) -> None:
+        # Регресс: голый <blockquote> без предшествующего разделителя НЕ трогается
+        # (легитимное форматирование). ``_HTML_SOGO_HEADER_RE`` требует наличия
+        # разделителя «писал(а):»/«wrote:» — без него отсечение не срабатывает.
+        html = "<p>Ответ</p><blockquote>цитата как форматирование</blockquote>"
+        assert strip_quoted_html(html) == html
 
 
 # ── Round-trip: письмо с историей → ответ заявителя → чистый текст ────────────
@@ -426,3 +536,30 @@ class TestStripQuotedKeepForward:
         out = strip_quoted_html(html)  # keep_forward=False (дефолт)
         assert "Ответ." in out
         assert "Процитированный ответ" not in out
+
+    # ── SOGo / Mail.ru-веб при keep_forward (новая заявка — forward) ───────────
+
+    def test_plain_keeps_sogo_pisal_block(self) -> None:
+        """SOGo «писал(а):» (forward) сохраняется при keep_forward=True — для
+        новой заявки forward-блок может быть сутью обращения (как Gmail/Outlook)."""
+        body = (
+            "Смотрите ниже.\n\n"
+            "Понедельник, Август 06, 2026, sender@x.test писал(а):\n"
+            "> пересланное сообщение\n"
+        )
+        out = strip_quoted_reply(body, keep_forward=True)
+        assert "Смотрите ниже." in out
+        assert "пересланное сообщение" in out
+        assert "писал(а)" in out
+
+    def test_html_keeps_sogo_header(self) -> None:
+        """HTML-разделитель SOGo «писал(а):» + <blockquote> сохраняется при
+        keep_forward=True (новая заявка — forward может быть сутью обращения)."""
+        html = (
+            "<p>Смотрите ниже.</p>"
+            "<p>Отправитель писал(а):<br>&nbsp;</p>"
+            "<blockquote><p>Пересланное сообщение</p></blockquote>"
+        )
+        out = strip_quoted_html(html, keep_forward=True)
+        assert "Смотрите ниже." in out
+        assert "Пересланное сообщение" in out
