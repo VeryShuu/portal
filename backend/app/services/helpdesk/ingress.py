@@ -561,9 +561,11 @@ async def _dispatch_ingest_notifications(
     """Post-commit уведомления: in-app, email-агентам, MAX-messenger.
 
     Все каналы — best-effort: сбой одного не роняет остальные и не влияет на
-    уже закоммиченный тикет. Email- и MAX-уведомления идут только для новых
-    тикетов (для ответов агент уже оповещён in-app, а email-тред ведётся
-    отдельно с заявителем).
+    уже закоммиченный тикет. Для новой заявки шлём email- и MAX-уведомления
+    агентам; для ответа клиента по существующему тикету — email-уведомление
+    агенту (зеркало in-app). MAX при ответе клиента не шлётся — он только для
+    новых заявок (сознательное решение: общий чат поддержки не должен
+    зашумляться репликами переписки).
     """
     # In-app уведомление агентам/assignee.
     try:
@@ -579,30 +581,40 @@ async def _dispatch_ingest_notifications(
     except Exception as exc:
         logger.warning("helpdesk.ingress.notify_failed", error=str(exc))
 
-    if new_status != "created":
-        return
+    if new_status == "created":
+        # Email-уведомление агентам о новой заявке (через outbox ``kind=generic`` —
+        # не требует настроенного mailbox).
+        try:
+            from app.services.helpdesk.notifications import (
+                notify_ticket_created_email,
+            )
 
-    # Email-уведомление агентам о новой заявке (через outbox ``kind=generic`` —
-    # не требует настроенного mailbox).
-    try:
-        from app.services.helpdesk.notifications import (
-            notify_ticket_created_email,
-        )
+            await notify_ticket_created_email(db, ticket=ticket, first_message=message)
+        except Exception as exc:
+            logger.warning("helpdesk.ingress.notify_email_failed", error=str(exc))
 
-        await notify_ticket_created_email(db, ticket=ticket, first_message=message)
-    except Exception as exc:
-        logger.warning("helpdesk.ingress.notify_email_failed", error=str(exc))
+        # MAX-messenger уведомление в общий чат поддержки (через ``messenger_outbox``).
+        # Только при включённом канале.
+        try:
+            from app.services.helpdesk.notifications import (
+                notify_ticket_created_max,
+            )
 
-    # MAX-messenger уведомление в общий чат поддержки (через ``messenger_outbox``).
-    # Только при включённом канале.
-    try:
-        from app.services.helpdesk.notifications import (
-            notify_ticket_created_max,
-        )
+            await notify_ticket_created_max(db, ticket=ticket, first_message=message)
+        except Exception as exc:
+            logger.warning("helpdesk.ingress.notify_max_failed", error=str(exc))
+    else:
+        # Ответ клиента по существующему тикету → email-уведомление агенту
+        # (зеркало in-app ``notify_requester_reply``, email-каналом через outbox
+        # ``kind=generic``). Best-effort, как и все каналы здесь.
+        try:
+            from app.services.helpdesk.notifications import (
+                notify_requester_reply_email,
+            )
 
-        await notify_ticket_created_max(db, ticket=ticket, first_message=message)
-    except Exception as exc:
-        logger.warning("helpdesk.ingress.notify_max_failed", error=str(exc))
+            await notify_requester_reply_email(db, ticket=ticket, message=message)
+        except Exception as exc:
+            logger.warning("helpdesk.ingress.notify_email_failed", error=str(exc))
 
 
 async def _ingest_message(

@@ -39,7 +39,7 @@ def _make_user(db_session, **kwargs):
         role="reader",
         auth_source="local",
         password_hash=None,
-        presence_status="office",
+        current_status="working",
         notify_email=False,
         notify_inapp=False,
         lang="ru",

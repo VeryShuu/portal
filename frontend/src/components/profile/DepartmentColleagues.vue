@@ -42,16 +42,11 @@
           :to="{ name: 'user-profile', params: { id: c.id } }"
           class="colleague-link"
         >
-          <n-avatar
-            round
+          <UserAvatar
+            :user="c"
             :size="40"
-            :src="c.avatar_url ?? undefined"
             class="colleague-avatar"
-          >
-            <template v-if="!c.avatar_url">
-              {{ initials(c.full_name) }}
-            </template>
-          </n-avatar>
+          />
           <span class="colleague-text">
             <span class="colleague-name">{{ c.full_name }}</span>
             <span
@@ -83,8 +78,9 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { NAvatar, NButton, NSpin } from 'naive-ui'
+import { NButton, NSpin } from 'naive-ui'
 import { fetchUsers, type UserPublic } from '../../api/users'
+import UserAvatar from '../UserAvatar.vue'
 
 const props = defineProps<{
   department: string | null | undefined
@@ -110,10 +106,6 @@ const visibleColleagues = computed(() =>
 )
 
 const hasMore = computed(() => filtered.value.length > INITIAL_LIMIT)
-
-function initials(name: string): string {
-  return name.split(' ').slice(0, 2).map((w) => w[0] ?? '').join('').toUpperCase()
-}
 
 async function load(department: string) {
   loading.value = true

@@ -61,7 +61,7 @@ function makeUser(id: string, dept: string | null, hidden = false) {
     phone: null,
     role: 'reader' as const,
     avatar_url: null,
-    presence_status: 'office' as const,
+    current_status: 'working', current_status_until: null as const,
     lang: 'ru' as const,
     created_at: '',
     auth_source: 'local' as const,

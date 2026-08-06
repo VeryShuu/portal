@@ -445,6 +445,13 @@
   "users": {
     "title": "Employees",
     "notFound": "Employee not found",
+    "presence": {
+      "working": "Working",
+      "vacation": "Vacation / day off",
+      "sick": "Sick",
+      "business_trip": "Business trip",
+      "until": "until {date}"
+    },
     "profile": {
       "title": "Profile",
       "edit": "Edit Profile",
@@ -464,16 +471,22 @@
         "showAll": "Show all (+{count})",
         "collapse": "Collapse"
       },
+      "absences": {
+        "title": "Absences",
+        "kinds": {
+          "vacation_main": "Main vacation",
+          "vacation_extra": "Additional vacation",
+          "unpaid_leave": "Unpaid leave",
+          "sick": "Sick leave",
+          "business_trip": "Business trip",
+          "day_off_paid": "Day off (paid)",
+          "day_off_unpaid": "Day off (unpaid)"
+        }
+      },
       "noGroups": "User does not belong to any group",
       "authSource": {
         "keycloak": "Keycloak SSO",
         "local": "Local account"
-      },
-      "status": {
-        "label": "Status",
-        "office": "In Office",
-        "remote": "Remote",
-        "vacation": "On Vacation"
       }
     },
     "fields": {
@@ -1432,23 +1445,37 @@
     },
     "erpSync": {
       "settings": {
-        "title": "ERP sync settings",
-        "hint": "Mail filters and schedule for the ERP module. Mail reception (IMAP mailbox) is shared and configured in the «Email» tab.",
+        "title": "ERP synchronization settings",
+        "hint": "Import of birthdays and absences from ERP (1C) reports. Mail reception (IMAP mailbox) is shared and configured in the «Email» tab.",
+        "commonTitle": "Common settings",
+        "commonHint": "Apply to both streams — birthdays and absences.",
         "enabled": "Module enabled",
-        "pollEnabled": "Auto-polling (cron)",
-        "pollEnabledHint": "Poll the shared mailbox on a schedule. Can be turned off while keeping manual trigger.",
-        "pollInterval": "Poll interval, sec",
-        "expectedInterval": "Expected interval, days",
-        "filtersTitle": "Mail filters (for shared mailbox)",
-        "filtersHint": "The mailbox is shared (Email tab) — set filters to pick ERP letters. Empty field = no restriction. Case-insensitive.",
+        "pollInterval": "Mailbox poll interval, sec",
+        "pollIntervalHint": "How often cron checks the shared mailbox. Shared by both streams (birthdays and absences poll the mailbox in turn with this interval).",
+        "notifyEmails": "Report recipients",
+        "notifyEmailsHint": "Comma-separated email addresses where import reports are sent. Empty = all admins.",
+        "deleteAfterFetch": "Delete message after import",
+        "deleteAfterFetchHint": "Remove processed ERP reports from the shared mailbox. Message-ID dedup prevents reprocessing even without deletion.",
+        "pollEnabled": "Auto-poll birthdays",
+        "pollEnabledHint": "Automatically poll the mailbox for birthday imports on schedule. Can be turned off while keeping the manual trigger button above.",
+        "expectedInterval": "Report frequency, days",
+        "expectedIntervalHint": "How often ERP sends the report. If no letter arrives for longer than this period × 1.5, the system sends an «reports not arriving» alert.",
+        "filtersTitle": "Birthdays",
+        "filtersHint": "ERP letters with the employee directory. Set filters to pick the right letters from the shared mailbox. Empty field = no restriction. Case-insensitive.",
         "subjectFilter": "Subject filter",
         "subjectFilterPlaceholder": "Employees",
         "senderFilter": "Sender filter",
         "attachmentFilter": "Attachment name filter",
-        "notifyEmails": "Report recipients (emails, comma-separated)",
         "notifyEmailsPlaceholder": "Empty = all admins",
-        "deleteAfterFetch": "Delete message after import",
-        "deleteAfterFetchHint": "Remove processed ERP reports from the shared mailbox. Message-ID dedup prevents reprocessing even without deletion."
+        "absencesTitle": "Office absences",
+        "absencesHint": "The «HR history for period» report arrives as a separate letter. Set its own filters to pick absence reports (vacations/days-off/sick/business trips).",
+        "absencesPollEnabled": "Auto-poll absences",
+        "absencesPollEnabledHint": "Automatically poll the mailbox for absence imports on schedule. Can be turned off while keeping the manual trigger button above.",
+        "absencesExpectedInterval": "Absence report frequency, days",
+        "absencesSubjectFilter": "Subject filter",
+        "absencesSubjectFilterPlaceholder": "HR history",
+        "absencesSenderFilter": "Sender filter",
+        "absencesAttachmentFilter": "Attachment name filter"
       },
       "actions": {
         "title": "Run import",
@@ -1458,6 +1485,15 @@
         "runQueued": "Import queued",
         "runQueuedHint": "Import will complete within a minute. History will update automatically.",
         "uploadDone": "Import done (run #{id})"
+      },
+      "absencesActions": {
+        "title": "Run absences import",
+        "hint": "Same actions for the «HR history for period» report. \"Upload file\" is handy for initial parser verification on a real file before enabling auto-polling."
+      },
+      "absencesRuns": {
+        "title": "Absences import history",
+        "inserted": "Inserted",
+        "reportInserted": "Inserted ({count})"
       },
       "runs": {
         "title": "Import history",
@@ -1552,6 +1588,17 @@
         "test": "Send test message",
         "testOk": "Message sent — check the chat in MAX",
         "testFail": "Send failed (see details)"
+      },
+      "digest": {
+        "title": "Daily ticket digest",
+        "sectionHint": "Schedule for sending an email digest of active tickets to support agents.",
+        "hint": "Time is in UTC (the worker runs in UTC). 08:00 UTC = 11:00 MSK. The digest is sent once a day at the specified time. For \"Weekdays\" — Mon–Fri only. The minute must be 0 (cron runs hourly at :00).",
+        "enabled": "Enable daily digest",
+        "digestHour": "Send hour (UTC, 0–23)",
+        "digestMinute": "Minute (0–59, usually 0)",
+        "digestSchedule": "Schedule",
+        "scheduleWeekdays": "Weekdays (Mon–Fri)",
+        "scheduleDaily": "Every day"
       }
     }
   },
@@ -2641,6 +2688,16 @@
     "columnOwner": "Owner",
     "columnAssignee": "Assignee",
     "columnUpdated": "Updated",
+    "columnAge": "Age",
+    "ageDays": "{n} day | {n} days",
+    "ageSinceCreated": "Days since the ticket was created",
+    "columnsSettings": "Column settings",
+    "columnsShowHide": "Show / hide columns",
+    "columnsReset": "Reset",
+    "dragColumnHint": "Drag to reorder columns",
+    "sortHintNone": "Click to sort by this column",
+    "sortHintAsc": "Sorted ascending. Click for descending",
+    "sortHintDesc": "Sorted descending. Click to clear",
     "backToList": "Back to my tickets",
     "backToInbox": "Back to inbox",
     "yourReply": "Your reply",

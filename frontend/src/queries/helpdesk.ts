@@ -3,6 +3,7 @@ import { computed, toValue, type MaybeRef, type MaybeRefOrGetter } from 'vue'
 import { queryKeys } from './keys'
 import {
   type HelpdeskAgentIn,
+  type HelpdeskDigestSettingsIn,
   type HelpdeskInboxParams,
   type HelpdeskMailboxSettingsIn,
   type HelpdeskMaxBotSettingsIn,
@@ -19,11 +20,13 @@ import {
   fetchAgentTickets,
   fetchAssignableAgents,
   fetchHelpdeskAgents,
+  fetchHelpdeskDigest,
   fetchHelpdeskMailbox,
   fetchHelpdeskMaxBot,
   fetchMyTicket,
   fetchMyTicketCounts,
   fetchMyTickets,
+  putHelpdeskDigest,
   putHelpdeskMailbox,
   putHelpdeskMaxBot,
   reopenTicket,
@@ -114,6 +117,24 @@ export function usePutHelpdeskMaxBotMutation() {
   return useMutation({
     mutationFn: (dto: HelpdeskMaxBotSettingsIn) => putHelpdeskMaxBot(dto),
     onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.helpdesk.maxBot() }),
+  })
+}
+
+// ── Daily digest settings ───────────────────────────────────────────────────
+
+export function useHelpdeskDigestQuery() {
+  return useQuery({
+    queryKey: queryKeys.helpdesk.digest(),
+    queryFn: () => fetchHelpdeskDigest(),
+    staleTime: 30_000,
+  })
+}
+
+export function usePutHelpdeskDigestMutation() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (dto: HelpdeskDigestSettingsIn) => putHelpdeskDigest(dto),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.helpdesk.digest() }),
   })
 }
 

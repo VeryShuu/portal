@@ -230,7 +230,7 @@ def _user(
         phone=phone,
         role="reader",
         auth_source="local",
-        presence_status="office",
+        current_status="working",
         lang="ru",
         attributes=attributes if attributes is not None else {},
     )

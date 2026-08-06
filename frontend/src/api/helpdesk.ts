@@ -110,6 +110,10 @@ export interface HelpdeskInboxParams {
   activeOnly?: boolean
   assigned?: boolean
   q?: string
+  /** Поле серверной сортировки (number/status/requester/assignee/created_at/last_activity_at). */
+  sort?: string
+  /** Направление сортировки. */
+  order?: 'asc' | 'desc'
   limit?: number
   offset?: number
 }
@@ -123,6 +127,10 @@ export interface HelpdeskMyListParams {
   /** Только активные (new/open/pending) — закрытые скрыты (они в архиве
    *  заявителя). Игнорируется, если задан ``status`` (он точнее). */
   activeOnly?: boolean
+  /** Поле серверной сортировки (number/status/requester/assignee/created_at/last_activity_at). */
+  sort?: string
+  /** Направление сортировки. */
+  order?: 'asc' | 'desc'
   limit?: number
   offset?: number
 }
@@ -465,6 +473,40 @@ export function putHelpdeskMaxBot(
 export function testHelpdeskMaxBot(): Promise<HelpdeskMaxBotTestResult> {
   return api<HelpdeskMaxBotTestResult>('/helpdesk/settings/max-bot/test', {
     method: 'POST',
+  })
+}
+
+// ── Daily digest settings ───────────────────────────────────────────────────
+
+export type HelpdeskDigestSchedule = 'weekdays' | 'daily'
+
+export interface HelpdeskDigestSettingsOut {
+  enabled: boolean
+  /** Час срабатывания (0–23) — время UTC воркера (08:00 UTC = 11:00 МСК). */
+  digest_hour: number
+  /** Минута срабатывания (0–59). Должна быть 0 — cron запускается ежечасно в :00. */
+  digest_minute: number
+  digest_schedule: HelpdeskDigestSchedule
+  updated_at: string | null
+}
+
+export interface HelpdeskDigestSettingsIn {
+  enabled: boolean
+  digest_hour: number
+  digest_minute: number
+  digest_schedule: HelpdeskDigestSchedule
+}
+
+export function fetchHelpdeskDigest(): Promise<HelpdeskDigestSettingsOut> {
+  return api<HelpdeskDigestSettingsOut>('/helpdesk/settings/digest')
+}
+
+export function putHelpdeskDigest(
+  dto: HelpdeskDigestSettingsIn,
+): Promise<HelpdeskDigestSettingsOut> {
+  return api<HelpdeskDigestSettingsOut>('/helpdesk/settings/digest', {
+    method: 'PUT',
+    body: dto,
   })
 }
 

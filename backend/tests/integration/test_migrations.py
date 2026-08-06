@@ -151,7 +151,7 @@ def test_migrations_full_lifecycle(migration_env):
         "phone",
         "role",
         "avatar_url",
-        "presence_status",
+        "current_status",
         "notify_email",
         "notify_inapp",
         "lang",

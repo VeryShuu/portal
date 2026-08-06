@@ -34,6 +34,13 @@
 
         <ProfilePasswordCard v-if="isOwn && auth.isLocalUser" />
 
+        <UserAbsencesCard
+          v-if="user.id"
+          :user-id="user.id"
+          :lang="user.lang"
+          class="profile-absences"
+        />
+
         <DepartmentColleagues
           v-if="user.department"
           :department="user.department"
@@ -76,6 +83,7 @@ import ProfileInfoCard from '../components/profile/ProfileInfoCard.vue'
 import ProfileGroupsCard from '../components/profile/ProfileGroupsCard.vue'
 import ProfilePreferencesCard from '../components/profile/ProfilePreferencesCard.vue'
 import ProfilePasswordCard from '../components/profile/ProfilePasswordCard.vue'
+import UserAbsencesCard from '../components/profile/UserAbsencesCard.vue'
 import { useUserQuery, useUserAttributeSchemaQuery, useUserKeycloakGroupsQuery } from '../queries/users'
 
 type DisplayUser = UserMe | UserPublic
@@ -140,6 +148,10 @@ const extraAttributes = computed(() => {
 }
 
 .profile-colleagues {
+  grid-column: 1 / -1;
+}
+
+.profile-absences {
   grid-column: 1 / -1;
 }
 

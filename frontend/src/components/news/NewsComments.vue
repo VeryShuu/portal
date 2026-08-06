@@ -9,14 +9,12 @@
       v-if="auth.isAuthenticated"
       class="news-comments__form"
     >
-      <n-avatar
-        round
+      <UserAvatar
+        v-if="auth.user"
+        :user="auth.user"
         :size="40"
-        :src="auth.user?.avatar_url ?? undefined"
         class="news-comments__avatar"
-      >
-        {{ myInitials }}
-      </n-avatar>
+      />
       <div class="news-comments__form-body">
         <n-input
           v-model:value="newComment"
@@ -60,12 +58,13 @@
 </template>
 
 <script setup lang="ts">
-import { computed, toRef } from 'vue'
+import { toRef } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { NAvatar, NButton, NInput, useDialog } from 'naive-ui'
+import { NButton, NInput, useDialog } from 'naive-ui'
 import { useAuthStore } from '../../stores/auth'
 import { useNewsComments } from '../../composables/useNewsComments'
 import NewsCommentItem from './NewsCommentItem.vue'
+import UserAvatar from '../UserAvatar.vue'
 
 const props = defineProps<{ newsId: string }>()
 
@@ -76,16 +75,6 @@ const dialog = useDialog()
 const { comments, total, submitting, newComment, submit, edit, remove } = useNewsComments(
   toRef(props, 'newsId'),
 )
-
-const myInitials = computed(() => {
-  const name = auth.user?.full_name?.trim()
-  if (!name) return '—'
-  return name
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((p) => p[0]?.toUpperCase() ?? '')
-    .join('')
-})
 
 function onRemove(commentId: string) {
   dialog.warning({
