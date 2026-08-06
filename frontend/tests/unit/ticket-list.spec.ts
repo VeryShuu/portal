@@ -1,3 +1,16 @@
+/**
+ * Characterization-тесты для ``TicketList`` / ``TicketListItem`` (helpdesk).
+ *
+ * После рефакторинга на config-driven колонки (``useHelpdeskInboxColumns``):
+ *  - ``TicketList`` рендерит шапку из ``visibleColumns`` composable (по пресету
+ *    ``mode``) и прокидывает колонки + ``gridTemplate`` в строки через props.
+ *  - ``TicketListItem`` — чисто презентационный: рендерит ячейки по
+ *    ``visibleColumns`` prop, не дёргает composable сам (однонаправленный поток).
+ *
+ * Здесь покрываем интеграцию шапка↔строка и поведения, не зависящие от DnD
+ * (сортировка заголовков — отдельная будущая задача). Глубокие тесты composable
+ * (персистенция, forward-compat, FIXED-колонки) — в ``helpdesk-inbox-columns.spec.ts``.
+ */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { defineComponent } from 'vue'
@@ -19,6 +32,16 @@ vi.mock('naive-ui', () => ({
     template:
       '<button class="n-button" :data-size="size" :data-type="type" :data-loading="loading" :disabled="disabled" @click="$emit(\'click\', $event)"><slot /></button>',
   },
+  // NPopover/NIcon/NCheckbox не используются в user-режиме и не нужны для
+  // большинства кейсов; безопасные заглушки, чтобы mount не падал.
+  NPopover: { name: 'NPopover', template: '<div class="n-popover"><slot /></div>' },
+  NIcon: { name: 'NIcon', template: '<i class="n-icon"><slot /></i>' },
+  NCheckbox: {
+    name: 'NCheckbox',
+    props: ['checked'],
+    emits: ['update:checked'],
+    template: '<input type="checkbox" class="n-checkbox" :checked="checked" />',
+  },
 }))
 
 const TicketStatusBadgeStub = defineComponent({
@@ -29,8 +52,13 @@ const TicketStatusBadgeStub = defineComponent({
 
 import TicketList from '../../src/components/helpdesk/TicketList.vue'
 import TicketListItem from '../../src/components/helpdesk/TicketListItem.vue'
+import {
+  COLUMN_META,
+  useHelpdeskInboxColumns,
+  type HelpdeskColumnMeta,
+} from '../../src/composables/useHelpdeskInboxColumns'
 
-function makeTicket(over: Partial<any> = {}) {
+function makeTicket(over: Partial<Record<string, unknown>> = {}) {
   return {
     id: 't1',
     number: 42,
@@ -53,51 +81,135 @@ const globalOptions = {
   stubs: { TicketStatusBadge: TicketStatusBadgeStub },
 }
 
+/** Видимые колонки пресета ``agent`` в порядке по умолчанию. */
+const AGENT_VISIBLE: HelpdeskColumnMeta[] = useHelpdeskInboxColumns('agent').visibleColumns.value
+/** Видимые колонки пресета ``user`` (без requester/age). */
+const USER_VISIBLE: HelpdeskColumnMeta[] = useHelpdeskInboxColumns('user').visibleColumns.value
+const AGENT_GRID = useHelpdeskInboxColumns('agent').gridTemplate.value
+const USER_GRID = useHelpdeskInboxColumns('user').gridTemplate.value
+
 describe('TicketList.vue', () => {
   beforeEach(() => {
+    localStorage.clear()
     vi.clearAllMocks()
   })
 
-  it('renders an empty body without items and exposes the header labels', () => {
+  it('рендерит шапку из метаданных колонок (agent-пресет содержит age/requester)', () => {
     const wrapper = mount(TicketList, {
       global: globalOptions,
-      props: { items: [] },
+      props: { items: [], mode: 'agent' },
     })
     const head = wrapper.find('.ticket-table__head')
     expect(head.exists()).toBe(true)
-    expect(head.text()).toContain('helpdesk.columnNumber')
-    expect(head.text()).toContain('helpdesk.columnSubject')
-    expect(wrapper.findAllComponents(TicketListItem as any)).toHaveLength(0)
+    // t() с пустым словарём возвращает сам ключ (без неймспейса helpdesk.)
+    expect(head.text()).toContain('columnNumber')
+    expect(head.text()).toContain('columnSubject')
+    expect(head.text()).toContain('columnAge')
+    expect(head.text()).toContain('columnRequester')
+    // agent-режим → есть ячейка «шестерёнки»
+    expect(wrapper.find('.ticket-table__settings').exists()).toBe(true)
   })
 
-  it('renders one TicketListItem per item and forwards takingId as taking prop', () => {
+  it('user-пресет: шапка без age/requester и без «шестерёнки»', () => {
+    const wrapper = mount(TicketList, {
+      global: globalOptions,
+      props: { items: [], mode: 'user' },
+    })
+    const head = wrapper.find('.ticket-table__head')
+    expect(head.text()).toContain('columnNumber')
+    expect(head.text()).not.toContain('columnAge')
+    expect(head.text()).not.toContain('columnRequester')
+    expect(wrapper.find('.ticket-table__settings').exists()).toBe(false)
+  })
+
+  it('рендерит одну TicketListItem на элемент и пробрасывает takingId/taking', () => {
     const items = [makeTicket({ id: 'a' }), makeTicket({ id: 'b' })]
     const wrapper = mount(TicketList, {
       global: globalOptions,
-      props: { items, takingId: 'b' },
+      props: { items, takingId: 'b', mode: 'agent' },
     })
 
-    const rows = wrapper.findAllComponents(TicketListItem as any)
+    const rows = wrapper.findAllComponents(TicketListItem as never)
     expect(rows).toHaveLength(2)
     expect(rows[0].props('taking')).toBe(false)
     expect(rows[1].props('taking')).toBe(true)
+    // agent-режим → agentMode=true в строках
     expect(rows[0].props('agentMode')).toBe(true)
+    // колонки прокинуты через props
+    expect(rows[0].props('visibleColumns')).toEqual(AGENT_VISIBLE)
+    expect(rows[0].props('gridTemplate')).toBe(AGENT_GRID)
   })
 
-  it('relays open and take events up from the child rows', async () => {
+  it('пробрасывает open/take события от строк наверх', async () => {
     const items = [makeTicket({ id: 'a' })]
     const wrapper = mount(TicketList, {
       global: globalOptions,
-      props: { items },
+      props: { items, mode: 'agent' },
     })
 
-    const row = wrapper.findComponent(TicketListItem as any)
+    const row = wrapper.findComponent(TicketListItem as never)
     row.vm.$emit('open', 'a')
     row.vm.$emit('take', 'a')
     await wrapper.vm.$nextTick()
 
     expect(wrapper.emitted('open')).toEqual([['a']])
     expect(wrapper.emitted('take')).toEqual([['a']])
+  })
+
+  // ── Сортировка ────────────────────────────────────────────────────────────
+  it('клик по сортируемому заголовку эмитит sort', async () => {
+    const wrapper = mount(TicketList, {
+      global: globalOptions,
+      props: { items: [], mode: 'agent' },
+    })
+    // number — sortable. data-column-id используется как селектор.
+    const numHeader = wrapper.find('[data-column-id="number"]')
+    await numHeader.trigger('click')
+    expect(wrapper.emitted('sort')).toEqual([['number']])
+  })
+
+  it('клик по subject (не sortable) не эмитит sort', async () => {
+    const wrapper = mount(TicketList, {
+      global: globalOptions,
+      props: { items: [], mode: 'agent' },
+    })
+    await wrapper.find('[data-column-id="subject"]').trigger('click')
+    expect(wrapper.emitted('sort')).toBeUndefined()
+  })
+
+  it('индикатор сортировки показывает направление активной колонки', () => {
+    const wrapper = mount(TicketList, {
+      global: globalOptions,
+      props: { items: [], mode: 'agent', sortColumn: 'updated', sortOrder: 'desc' },
+    })
+    const updatedHeader = wrapper.find('[data-column-id="updated"]')
+    expect(updatedHeader.classes()).toContain('ticket-table__th--active')
+    expect(updatedHeader.find('.ticket-table__sort-indicator--desc').exists()).toBe(true)
+    // другие колонки — без active
+    expect(wrapper.find('[data-column-id="number"]').classes()).not.toContain('ticket-table__th--active')
+  })
+
+  it('все колонки выровнены по левому краю единообразно (как в OTRS)', () => {
+    const wrapper = mount(TicketList, {
+      global: globalOptions,
+      props: { items: [], mode: 'agent' },
+    })
+    // Ни у одной колонки нет класса end-выравнивания (раньше у updated был).
+    const headers = wrapper.findAll('[data-column-id]')
+    for (const h of headers) {
+      expect(h.classes()).not.toContain('ticket-table__th--end')
+    }
+  })
+
+  it('Enter/Space на сортируемом заголовке эмитит sort', async () => {
+    const wrapper = mount(TicketList, {
+      global: globalOptions,
+      props: { items: [], mode: 'agent' },
+    })
+    const statusHeader = wrapper.find('[data-column-id="status"]')
+    await statusHeader.trigger('keydown', { key: 'Enter' })
+    await statusHeader.trigger('keydown', { key: ' ' })
+    expect(wrapper.emitted('sort')).toEqual([['status'], ['status']])
   })
 })
 
@@ -106,10 +218,10 @@ describe('TicketListItem.vue', () => {
     vi.clearAllMocks()
   })
 
-  it('emits open on click, enter and space (with prevent on space)', async () => {
+  it('эмитит open по click, enter и space (с prevent на space)', async () => {
     const wrapper = mount(TicketListItem, {
       global: globalOptions,
-      props: { ticket: makeTicket({ id: 't1' }) },
+      props: { ticket: makeTicket({ id: 't1' }), visibleColumns: USER_VISIBLE, gridTemplate: USER_GRID },
     })
 
     await wrapper.find('.ticket-row').trigger('click')
@@ -122,81 +234,97 @@ describe('TicketListItem.vue', () => {
     expect(wrapper.emitted('open')).toEqual([['t1'], ['t1'], ['t1']])
   })
 
-  it('renders unread dot and unread classes only when ticket.unread is true', () => {
+  it('показывает индикатор непрочитанного только при ticket.unread=true', () => {
     const read = mount(TicketListItem, {
       global: globalOptions,
-      props: { ticket: makeTicket({ unread: false }) },
+      props: { ticket: makeTicket({ unread: false }), visibleColumns: USER_VISIBLE, gridTemplate: USER_GRID },
     })
     expect(read.find('.ticket-row--unread').exists()).toBe(false)
     expect(read.find('.ticket-row__unread-dot').exists()).toBe(false)
 
     const unread = mount(TicketListItem, {
       global: globalOptions,
-      props: { ticket: makeTicket({ unread: true }) },
+      props: { ticket: makeTicket({ unread: true }), visibleColumns: USER_VISIBLE, gridTemplate: USER_GRID },
     })
     expect(unread.find('.ticket-row--unread').exists()).toBe(true)
     expect(unread.find('.ticket-row__unread-dot').exists()).toBe(true)
     expect(unread.find('.ticket-row').attributes('title')).toContain('helpdesk.hasUnread')
   })
 
-  it('hides requester column when not in agent mode', () => {
-    const wrapper = mount(TicketListItem, {
-      global: globalOptions,
-      props: { ticket: makeTicket(), agentMode: false },
-    })
-
-    expect(wrapper.find('.ticket-row--agent').exists()).toBe(false)
-    expect(wrapper.find('.ticket-row__requester').exists()).toBe(false)
-  })
-
-  it('shows requester column in agent mode with name falling back to email', () => {
-    const withName = mount(TicketListItem, {
+  it('колонка requester рендерится только если она в visibleColumns', () => {
+    // user-пресет — requester отсутствует
+    const userRow = mount(TicketListItem, {
       global: globalOptions,
       props: {
         ticket: makeTicket({ requester_name: 'Alice', requester_email: 'a@x.com' }),
+        visibleColumns: USER_VISIBLE,
+        gridTemplate: USER_GRID,
+        agentMode: false,
+      },
+    })
+    expect(userRow.find('.ticket-row__requester').exists()).toBe(false)
+
+    // agent-пресет — requester есть
+    const agentRow = mount(TicketListItem, {
+      global: globalOptions,
+      props: {
+        ticket: makeTicket({ requester_name: 'Alice', requester_email: 'a@x.com' }),
+        visibleColumns: AGENT_VISIBLE,
+        gridTemplate: AGENT_GRID,
         agentMode: true,
       },
     })
-    expect(withName.find('.ticket-row__requester').text()).toContain('Alice')
+    expect(agentRow.find('.ticket-row__requester').text()).toContain('Alice')
+  })
 
-    const withoutName = mount(TicketListItem, {
+  it('requester показывает email, если name = null', () => {
+    const wrapper = mount(TicketListItem, {
       global: globalOptions,
       props: {
         ticket: makeTicket({ requester_name: null, requester_email: 'a@x.com' }),
+        visibleColumns: AGENT_VISIBLE,
+        gridTemplate: AGENT_GRID,
         agentMode: true,
       },
     })
-    expect(withoutName.find('.ticket-row__requester').text()).toContain('a@x.com')
+    expect(wrapper.find('.ticket-row__requester').text()).toContain('a@x.com')
   })
 
-  it('renders assignee name when assignee_name is set', () => {
+  it('assignee: имя, если assignee_name задан', () => {
     const wrapper = mount(TicketListItem, {
       global: globalOptions,
       props: {
         ticket: makeTicket({ assignee_name: 'Bob' }),
+        visibleColumns: USER_VISIBLE,
+        gridTemplate: USER_GRID,
         agentMode: false,
       },
     })
-
     expect(wrapper.find('.ticket-row__assignee').text()).toContain('Bob')
     expect(wrapper.find('.n-button').exists()).toBe(false)
   })
 
-  it('shows a muted dash placeholder when no assignee and not in agent mode', () => {
+  it('assignee: заглушка «—», если нет исполнителя и не агентский режим', () => {
     const wrapper = mount(TicketListItem, {
       global: globalOptions,
-      props: { ticket: makeTicket({ assignee_name: null }), agentMode: false },
+      props: {
+        ticket: makeTicket({ assignee_name: null }),
+        visibleColumns: USER_VISIBLE,
+        gridTemplate: USER_GRID,
+        agentMode: false,
+      },
     })
-
     expect(wrapper.find('.ticket-row__muted').exists()).toBe(true)
     expect(wrapper.find('.ticket-row__muted').text()).toBe('—')
   })
 
-  it('shows take button in agent mode when no assignee, and emits take with stopPropagation', async () => {
+  it('assignee: кнопка «Взять» в агентском режиме без исполнителя — эмит take с stopPropagation', async () => {
     const wrapper = mount(TicketListItem, {
       global: globalOptions,
       props: {
         ticket: makeTicket({ id: 't9', assignee_name: null }),
+        visibleColumns: AGENT_VISIBLE,
+        gridTemplate: AGENT_GRID,
         agentMode: true,
         taking: true,
       },
@@ -210,10 +338,31 @@ describe('TicketListItem.vue', () => {
     expect(wrapper.emitted('take')).toEqual([['t9']])
   })
 
-  it('formats last_activity_at as DD.MM HH:MM', () => {
+  it('колонка age: возраст считается от created_at', () => {
+    // created_at ~14 месяцев назад от 2026-08-04 → сотни дней
     const wrapper = mount(TicketListItem, {
       global: globalOptions,
-      props: { ticket: makeTicket({ last_activity_at: '2025-03-04T05:06:07' }) },
+      props: {
+        ticket: makeTicket({ created_at: '2025-01-01T00:00:00Z' }),
+        visibleColumns: [COLUMN_META.age],
+        gridTemplate: '80px',
+        agentMode: true,
+      },
+    })
+    const ageCell = wrapper.find('.ticket-row__age')
+    expect(ageCell.exists()).toBe(true)
+    // i18n пустой → вернёт ключ как есть; проверяем что ячейка непустая
+    expect(ageCell.text().length).toBeGreaterThan(0)
+  })
+
+  it('форматирует last_activity_at как DD.MM HH:MM', () => {
+    const wrapper = mount(TicketListItem, {
+      global: globalOptions,
+      props: {
+        ticket: makeTicket({ last_activity_at: '2025-03-04T05:06:07' }),
+        visibleColumns: [COLUMN_META.updated],
+        gridTemplate: '104px',
+      },
     })
 
     // Using local timezone since the component relies on Date getters.

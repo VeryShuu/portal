@@ -7,14 +7,11 @@
     @keydown.enter="goToProfile"
   >
     <div class="staff-card__head">
-      <n-avatar
-        round
+      <UserAvatar
+        :user="user"
         :size="48"
-        :src="user.avatar_url ?? undefined"
         class="staff-card__avatar"
-      >
-        {{ initials }}
-      </n-avatar>
+      />
       <div class="staff-card__main">
         <div
           class="staff-card__name"
@@ -156,7 +153,8 @@
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { NAvatar, NIcon, NTag, useMessage } from 'naive-ui'
+import { NIcon, NTag, useMessage } from 'naive-ui'
+import UserAvatar from './UserAvatar.vue'
 import {
   CalendarOutline,
   CallOutline,
@@ -184,15 +182,6 @@ const router = useRouter()
 const { t } = useI18n()
 const message = useMessage()
 const { formatPhone } = usePhoneFormat()
-
-const initials = computed(() => {
-  const name = props.user.full_name?.trim() ?? ''
-  if (!name) return '?'
-  const parts = name.split(/\s+/).filter(Boolean)
-  const a = parts[0]?.[0] ?? ''
-  const b = parts[1]?.[0] ?? ''
-  return (a + b).toUpperCase() || '?'
-})
 
 const mobilePhone = computed(() => {
   const v = props.user.attributes?.mobile

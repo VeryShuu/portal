@@ -44,7 +44,7 @@ async def _seed_user(session, *, full_name: str, email: str) -> User:
         role="admin",  # admin — чтобы получить уведомление
         auth_source="local",
         password_hash="x",
-        presence_status="office",
+        current_status="working",
         notify_email=True,
         notify_inapp=True,
         lang="ru",

@@ -25,14 +25,17 @@
 
 from __future__ import annotations
 
-import csv
-import io
 import re
 from dataclasses import dataclass, field
 from datetime import date
 from typing import Any, Literal
 
 from app.core.logging import get_logger
+from app.services.erp_sync.parser_utils import (
+    extract_text_records,
+    extract_xls_records,
+    extract_xlsx_records,
+)
 
 logger = get_logger(__name__)
 
@@ -200,57 +203,6 @@ def _looks_like_header(raw_date_col: str, raw_gender_col: str) -> bool:
     return date_col_is_header and gender_col_is_header
 
 
-# ── Декодирование текста ─────────────────────────────────────────────────────
-
-
-def _decode_text(data: bytes) -> str:
-    """Декодировать bytes в str с авто-определением кодировки.
-
-    Порядок: BOM-маркер → ``charset_normalizer`` (если установлен) → cp1251
-    fallback. Один из приложенных файлов был cp1251 (Windows-1251), и хардкод
-    utf-8 сломался бы молча (кракозябры → все строки в errors).
-    """
-    if data[:3] == b"\xef\xbb\xbf":
-        return data[3:].decode("utf-8", errors="replace")
-    if data[:2] in (b"\xff\xfe", b"\xfe\xff"):
-        # UTF-16 LE/BE с BOM
-        return data.decode("utf-16", errors="replace")
-    try:
-        return data.decode("utf-8")
-    except UnicodeDecodeError:
-        pass
-    # Fallback: попытка определить кодировку.
-    try:
-        from charset_normalizer import from_bytes
-
-        result = from_bytes(data).best()
-        if result is not None:
-            return str(result)
-    except Exception:
-        pass
-    # Последний рубеж: cp1251 (типично для 1С-выгрузок на Windows).
-    return data.decode("cp1251", errors="replace")
-
-
-def _detect_delimiter(sample: str) -> str:
-    """Угадать разделитель (tab / ; / ,) по первой непустой строке-данным.
-
-    1С чаще всего использует tab; ручной экспорт в CSV — `,` или `;`.
-    """
-    for line in sample.splitlines():
-        stripped = line.strip()
-        if not stripped:
-            continue
-        if "\t" in line:
-            return "\t"
-        if ";" in line:
-            return ";"
-        if "," in line:
-            return ","
-        return "\t"  # один столбец — всё равно tab, парсер вернёт ошибку формата
-    return "\t"
-
-
 # ── Основной entry-point ─────────────────────────────────────────────────────
 
 
@@ -291,52 +243,22 @@ def parse_attachment(*, filename: str, data: bytes) -> ParsedFile:
 
 
 def _extract_records(fmt: Format, data: bytes) -> list[list[str]]:
-    """Извлечь «сырые» строковые записи (по 3 колонки) из файла любого формата.
+    """Извлечь «сырые» строковые записи из файла любого формата.
 
     Возвращает список списков ячеек (как есть, без валидации). Служебные строки
     (заголовок «Параметры:», пустые) отсеиваются позже в ``_normalize_and_dedup``.
+
+    Декодирование/разделители/xlsx/xls-логика общая с потоком отсутствий —
+    вынесена в :mod:`parser_utils`.
     """
     if fmt in ("txt", "csv"):
-        text = _decode_text(data)
-        delim = _detect_delimiter(text)
-        reader = csv.reader(io.StringIO(text), delimiter=delim)
-        return [row for row in reader if any((c or "").strip() for c in row)]
+        return extract_text_records(data)
     if fmt == "xlsx":
-        return _extract_xlsx(data)
+        return extract_xlsx_records(data)
     if fmt == "xls":
-        return _extract_xls(data)
+        return extract_xls_records(data)
     # fmt гарантирует Literal, но для mypy — явный unreachable.
     raise ValueError(f"Unsupported format: {fmt}")
-
-
-def _extract_xlsx(data: bytes) -> list[list[str]]:
-    """Извлечь записи из .xlsx через openpyxl (режим read-only, без формул)."""
-    import openpyxl
-
-    wb = openpyxl.load_workbook(io.BytesIO(data), read_only=True, data_only=True)
-    records: list[list[str]] = []
-    for ws in wb.worksheets:
-        for row in ws.iter_rows(values_only=True):
-            cells = ["" if c is None else str(c) for c in row]
-            if any((c or "").strip() for c in cells):
-                records.append(cells)
-    wb.close()
-    return records
-
-
-def _extract_xls(data: bytes) -> list[list[str]]:
-    """Извлечь записи из legacy .xls (OLE2) через xlrd 2.0.1."""
-    import xlrd
-
-    book = xlrd.open_workbook(file_contents=data)
-    records: list[list[str]] = []
-    for sheet in book.sheets():
-        for r in range(sheet.nrows):
-            cells = ["" if c == "" else str(c) for c in sheet.row_values(r)]
-            if any((c or "").strip() for c in cells):
-                records.append(cells)
-    book.release_resources()
-    return records
 
 
 def _normalize_and_dedup(records: list[list[str]]) -> ParsedFile:

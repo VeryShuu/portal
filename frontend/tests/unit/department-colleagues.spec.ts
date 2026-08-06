@@ -43,7 +43,7 @@ function makeUser(overrides: Partial<UserPublic> & { id: string; full_name: stri
     phone: null,
     role: 'reader',
     avatar_url: null,
-    presence_status: 'office',
+    current_status: 'working', current_status_until: null,
     lang: 'ru',
     created_at: '2024-01-01T00:00:00Z',
     auth_source: 'local',

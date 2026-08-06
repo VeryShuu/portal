@@ -141,10 +141,14 @@ export const queryKeys = {
     agentTicket: (id: string) => ['helpdesk', 'agent-ticket', id] as const,
     agentTicketCounts: () => ['helpdesk', 'agent-ticket-counts'] as const,
     maxBot: () => ['helpdesk', 'max-bot'] as const,
+    // Singleton расписания сводки (как mailbox/maxBot — без params).
+    digest: () => ['helpdesk', 'digest'] as const,
   },
   erpSync: {
     all: ['erp-sync'] as const,
     settings: () => ['erp-sync', 'settings'] as const,
     runs: (params?: Record<string, unknown>) => ['erp-sync', 'runs', params ?? {}] as const,
+    absencesRuns: (params?: Record<string, unknown>) =>
+      ['erp-sync', 'absences-runs', params ?? {}] as const,
   },
 } as const

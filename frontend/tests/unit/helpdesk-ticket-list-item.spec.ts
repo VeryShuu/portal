@@ -3,6 +3,7 @@ import { mount } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
 
 import TicketListItem from '../../src/components/helpdesk/TicketListItem.vue'
+import { useHelpdeskInboxColumns } from '../../src/composables/useHelpdeskInboxColumns'
 import type { HelpdeskTicketListItem } from '../../src/api/helpdesk'
 
 // Минимальный словарь i18n — только то, что использует TicketListItem.
@@ -53,9 +54,20 @@ const baseTicket: HelpdeskTicketListItem = {
   created_at: '2026-07-18T09:00:00Z',
 }
 
+// После рефакторинга на config-driven колонки TicketListItem — презентационный:
+// колонки + gridTemplate приходят через props (от TicketList). Здесь монтируем с
+// дефолтным agent-пресетом, чтобы проверять поведение рендера без DnD-логики.
+const agentCols = useHelpdeskInboxColumns('agent')
+
 function mountItem(props: Partial<typeof TicketListItem.props & { ticket: HelpdeskTicketListItem }> & Record<string, unknown> = {}) {
   return mount(TicketListItem, {
-    props: { ticket: baseTicket, agentMode: true, ...props } as never,
+    props: {
+      ticket: baseTicket,
+      visibleColumns: agentCols.visibleColumns.value,
+      gridTemplate: agentCols.gridTemplate.value,
+      agentMode: true,
+      ...props,
+    } as never,
     global: { plugins: [i18n] },
   })
 }

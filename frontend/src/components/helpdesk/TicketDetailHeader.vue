@@ -2,7 +2,9 @@
   <n-card class="ticket-header">
     <div class="ticket-header__row">
       <span class="ticket-header__num">#{{ ticket.number }}</span>
-      <h1 class="ticket-header__subject">{{ ticket.subject }}</h1>
+      <h1 class="ticket-header__subject">
+        {{ ticket.subject }}
+      </h1>
       <div class="ticket-header__actions">
         <slot name="actions" />
       </div>

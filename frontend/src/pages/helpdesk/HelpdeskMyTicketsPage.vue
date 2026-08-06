@@ -1,5 +1,5 @@
 <template>
-  <div class="u-page-wrap u-page-wrap--narrow">
+  <div class="u-page-wrap u-page-wrap--standard">
     <header class="page-head">
       <h1 class="u-page-head__title">
         {{ t('helpdesk.myTitle') }}
@@ -41,26 +41,15 @@
           :description="t('helpdesk.noTickets')"
           style="margin: 24px 0"
         />
-        <div
+        <TicketList
           v-else
-          class="ticket-table"
-        >
-          <div class="ticket-table__head">
-            <span>{{ t('helpdesk.columnNumber') }}</span>
-            <span>{{ t('helpdesk.columnState') }}</span>
-            <span>{{ t('helpdesk.columnSubject') }}</span>
-            <span>{{ t('helpdesk.columnAssignee') }}</span>
-            <span>{{ t('helpdesk.columnUpdated') }}</span>
-          </div>
-          <div class="ticket-table__body">
-            <TicketListItem
-              v-for="ticket in waitingItems"
-              :key="ticket.id"
-              :ticket="ticket"
-              @open="goToTicket"
-            />
-          </div>
-        </div>
+          :items="waitingItems"
+          mode="user"
+          :sort-column="sortColumn"
+          :sort-order="sortOrder"
+          @open="goToTicket"
+          @sort="onSortToggle"
+        />
       </n-spin>
       <div
         v-if="waitingTotal > waitingLimit"
@@ -92,26 +81,15 @@
           :description="t('helpdesk.noTickets')"
           style="margin: 24px 0"
         />
-        <div
+        <TicketList
           v-else
-          class="ticket-table"
-        >
-          <div class="ticket-table__head">
-            <span>{{ t('helpdesk.columnNumber') }}</span>
-            <span>{{ t('helpdesk.columnState') }}</span>
-            <span>{{ t('helpdesk.columnSubject') }}</span>
-            <span>{{ t('helpdesk.columnAssignee') }}</span>
-            <span>{{ t('helpdesk.columnUpdated') }}</span>
-          </div>
-          <div class="ticket-table__body">
-            <TicketListItem
-              v-for="ticket in inWorkItems"
-              :key="ticket.id"
-              :ticket="ticket"
-              @open="goToTicket"
-            />
-          </div>
-        </div>
+          :items="inWorkItems"
+          mode="user"
+          :sort-column="sortColumn"
+          :sort-order="sortOrder"
+          @open="goToTicket"
+          @sort="onSortToggle"
+        />
       </n-spin>
       <div
         v-if="inWorkTotal > inWorkLimit"
@@ -139,9 +117,10 @@ import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { NSpin, NEmpty, NPagination, NButton, NIcon, useMessage } from 'naive-ui'
 import { AddOutline } from '@vicons/ionicons5'
-import TicketListItem from '../../components/helpdesk/TicketListItem.vue'
+import TicketList from '../../components/helpdesk/TicketList.vue'
 import TicketCreateModal from '../../components/helpdesk/TicketCreateModal.vue'
 import { fetchMyTickets, type HelpdeskTicketListItem } from '../../api/helpdesk'
+import { useHelpdeskTicketSort } from '../../composables/useHelpdeskTicketSort'
 import { parseApiError } from '../../utils/parseApiError'
 
 const { t } = useI18n()
@@ -166,12 +145,23 @@ const inWorkLoading = ref(false)
 
 const showCreate = ref(false)
 
+// Серверная сортировка своих заявок (общая для обоих блоков).
+const { sortColumn, sortOrder, apiParams: sortApiParams, toggle: toggleSort } = useHelpdeskTicketSort()
+
+function onSortToggle(id: Parameters<typeof toggleSort>[0]): void {
+  toggleSort(id)
+  waitingPage.value = 1
+  inWorkPage.value = 1
+  loadAll()
+}
+
 async function loadWaiting() {
   waitingLoading.value = true
   try {
     const res = await fetchMyTickets({
       unassigned: true,
       activeOnly: true,
+      ...sortApiParams.value,
       limit: waitingLimit,
       offset: (waitingPage.value - 1) * waitingLimit,
     })
@@ -190,6 +180,7 @@ async function loadInWork() {
     const res = await fetchMyTickets({
       assigned: true,
       activeOnly: true,
+      ...sortApiParams.value,
       limit: inWorkLimit,
       offset: (inWorkPage.value - 1) * inWorkLimit,
     })
@@ -268,31 +259,6 @@ loadAll()
 }
 [data-theme='dark'] .inbox-section__count {
   background: rgba(255, 255, 255, 0.1);
-}
-.ticket-table {
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  overflow: hidden;
-  background: var(--color-surface);
-}
-.ticket-table__head {
-  display: grid;
-  grid-template-columns: 56px 92px minmax(0, 1fr) 150px 104px;
-  gap: 12px;
-  padding: 8px 14px;
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--color-text-muted);
-  background: var(--color-bg-muted);
-  border-bottom: 1px solid var(--color-border);
-}
-.ticket-table__head span:last-child {
-  text-align: right;
-}
-.ticket-table__body :deep(.ticket-row:last-child) {
-  border-bottom: none;
 }
 .helpdesk-pagination {
   margin-top: 16px;

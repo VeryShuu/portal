@@ -45,6 +45,14 @@
   --color-danger-soft: #fff1f3;
   --color-info: var(--color-brand-sky);
 
+  /* Presence ring (вокруг аватарки) — вычисляемый статус из ERP (миграция 093).
+     working — нет отсутствия (ring опционален, тонкий); vacation — отпуск/отгул;
+     sick — больничный; business_trip — командировка. */
+  --presence-ring-working: var(--color-success);
+  --presence-ring-vacation: var(--color-warning);
+  --presence-ring-sick: var(--color-danger);
+  --presence-ring-business_trip: #8b5cf6;
+
   /* Category badges (pastel) */
   --badge-hr-bg: #ffe4e1;
   --badge-hr-fg: #a8322a;
@@ -126,6 +134,10 @@
   --color-danger-hover: #fb7185;
   --color-danger-pressed: #e11d48;
   --color-danger-soft: #3a1420;
+
+  /* Presence ring (dark) — осветляем фиолетовый для контраста на тёмном.
+     success/warning/danger уже переопределены выше или наследуются. */
+  --presence-ring-business_trip: #a78bfa;
 
   --color-brand-ice: #152a44;
 

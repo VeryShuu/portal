@@ -28,15 +28,22 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.constants import HELPDESK_REOPEN_WINDOW_DAYS
 from app.core.logging import get_logger
 from app.core.sanitize import sanitize_html
-from app.models.helpdesk import HelpdeskAgent, HelpdeskMaxBotSettings, HelpdeskTicket
+from app.models.helpdesk import (
+    HelpdeskAgent,
+    HelpdeskMaxBotSettings,
+    HelpdeskMessage,
+    HelpdeskTicket,
+)
 from app.models.user import User
 from app.services.email_outbox import KIND_GENERIC, enqueue_outbox_email
 from app.services.helpdesk.email_quote import html_to_plain
 from app.services.helpdesk.email_signature import strip_email_signature
 from app.services.helpdesk.email_template import (
     render_new_ticket_agent_email,
+    render_requester_reply_agent_email,
     render_system_email,
 )
+from app.services.helpdesk.email_thread import build_thread_history
 from app.services.messenger_outbox import PROVIDER_MAX, enqueue_messenger_message
 from app.services.notifications import create_notification
 
@@ -320,6 +327,16 @@ def build_new_ticket_agent_subject(ticket: HelpdeskTicket) -> str:
     return f"[#TKT-{ticket.number}] Новая заявка: {ticket.subject}"
 
 
+def build_requester_reply_agent_subject(ticket: HelpdeskTicket) -> str:
+    """Тема письма-уведомления агенту о новом сообщении от заявителя.
+
+    Симметрично ``build_new_ticket_agent_subject``: тикет-токен ``[#TKT-{number}]``
+    + краткое описание события. Email — ``kind=generic`` (не входит в email-тред
+    тикета с заявителем), но токен даёт агенту быструю идентификацию заявки в почте.
+    """
+    return f"[#TKT-{ticket.number}] Новое сообщение: {ticket.subject}"
+
+
 async def _load_agents_for_email(db: AsyncSession) -> list[User]:
     """Все активные helpdesk-агенты, которым слать email о новых заявках.
 
@@ -415,6 +432,154 @@ async def notify_ticket_created_email(
     await db.commit()
     sent = len(agents)
     logger.info("helpdesk.notify_created_email_sent", ticket_id=str(ticket.id), sent=sent)
+    return sent
+
+
+async def _load_ticket_messages_with_attachments(
+    db: AsyncSession, *, ticket_id: uuid.UUID
+) -> list[HelpdeskMessage]:
+    """Загрузить сообщения тикета (с вложениями) для сборки истории письма.
+
+    Сортировка по ``created_at`` — ``build_thread_history`` ожидает список и
+    сама берёт хвост/реверс. ``selectinload(HelpdeskMessage.attachments)`` нужен,
+    чтобы блок вложений истории рендерился в ``_attachments_html`` (иначе
+    ``getattr(msg, "attachments", None)`` → ``None`` → пустой блок, graceful, но
+    визуально потеряем вложения предшествующих сообщений).
+
+    Явный запрос (а не ``ticket.messages`` relationship): в ingress-пути тикет
+    приходит из ``_match_ticket`` без ``selectinload(messages)`` → обращение к
+    relationship в async-сессии роняет ``MissingGreenlet``. В роутере же
+    ``fetch_ticket_for_user`` уже подгрузил сообщения, но перезапрос одним
+    SELECT дешевле поддержки двух путей (и страхует от будущих call-сайтов).
+    Паттерн — как ``collect_ticket_references`` в ``outbound.py``.
+    """
+    from sqlalchemy.orm import selectinload
+
+    res = await db.execute(
+        select(HelpdeskMessage)
+        .where(HelpdeskMessage.ticket_id == ticket_id)
+        .options(selectinload(HelpdeskMessage.attachments))
+        .order_by(HelpdeskMessage.created_at)
+    )
+    return list(res.scalars().unique().all())
+
+
+async def notify_requester_reply_email(
+    db: AsyncSession,
+    *,
+    ticket: HelpdeskTicket,
+    message: HelpdeskMessage,
+) -> int:
+    """Отправить email-уведомление агенту о новом сообщении от заявителя.
+
+    Симметрично in-app ``notify_requester_reply`` (зеркало по получателям), но
+    email-каналом. Получатель:
+    * если тикет назначен — ответственный агент (``assignee``);
+    * иначе — все активные helpdesk-агенты (через ``_load_agents_for_email``).
+
+    Письмо несёт **историю переписки** после нового ответа заявителя —
+    симметрично ``enqueue_reply_outbound`` (ответ агента инициатору): агент видит
+    в почте тот же диалог, что и инициатор. История собирается через
+    ``build_thread_history`` (``exclude_id=message.id``) теми же таймлайн-блоками,
+    что и письмо инициатору. Сообщения для истории грузятся явным запросом
+    ``_load_ticket_messages_with_attachments`` — в ingress-пути тикет приходит
+    без подгруженных ``messages`` (в отличие от роутера, где ``selectinload``
+    уже отработал), поэтому нельзя полагаться на relationship (``MissingGreenlet``
+    в async). Паттерн — как ``collect_ticket_references`` в ``outbound.py``.
+
+    Гейт согласия: получатель с ``User.notify_email=False`` письмо не получает
+    (для assignee проверяется явно; ``_load_agents_for_email`` уже фильтрует по
+    ``notify_email`` + ``notify_new``). Это уважает consent пользователя — как
+    in-app уважает ``notify_inapp``.
+
+    Использует outbox ``kind=generic`` (как ``notify_ticket_created_email``):
+    письмо не входит в email-тред тикета с заявителем (нет threading-заголовков
+    ``Message-ID``/``References``), не требует настроенного
+    ``helpdesk_mailbox_settings`` для формирования (SMTP-настройки — собственный
+    контур helpdesk через маркер ``payload.smtp_source=helpdesk`` или fallback
+    на общий SMTP портала). Маркер ``ticket_number`` в payload обязателен —
+    воркер ``_embed_helpdesk_images_into_generic`` по нему встраивает inline-картинки
+    ответа заявителя (TipTap rich-редактор) как ``cid:``, иначе почтовый клиент
+    без cookie получит 401 на ``/attachments/{id}``.
+
+    По образцу ``send_digests``/``notify_ticket_created_email``: для каждого
+    получателя — отдельная outbox-запись (персональный ``to_email``), единый
+    ``db.commit`` в конце. Возвращает кол-во поставленных в outbox писем.
+
+    Best-effort: вызывается из роутера/ingress **после** commit бизнес-операции
+    (как ``notify_ticket_created_email``). Сам делает ``db.commit()``.
+    """
+    # Получатели: assignee (один) или все агенты (если не назначен).
+    if ticket.assignee_user_id is not None:
+        from app.services.helpdesk.outbound import load_user
+
+        assignee = await load_user(db, ticket.assignee_user_id)
+        # Уважаем consent: если assignee отключил email-уведомления — не шлём.
+        if assignee is None or not (assignee.notify_email or False):
+            return 0
+        recipients: list[User] = [assignee]
+    else:
+        recipients = await _load_agents_for_email(db)
+
+    if not recipients:
+        return 0
+
+    # Резолвим пользователя-заявителя для блока контактов (ФИО/телефоны из модели
+    # User, как в карточке тикета и уведомлении о новой заявке). Гость без
+    # аккаунта → None → шаблон берёт имя/email из снимка тикета.
+    from app.services.helpdesk.tickets import resolve_requester_user
+
+    requester = await resolve_requester_user(db, ticket=ticket)
+
+    # История переписки (симметрично ``enqueue_reply_outbound`` для инициатора):
+    # агент видит в письме тот же диалог — новый ответ заявителя + предшествующая
+    # переписка теми же таймлайн-блоками. Сообщения грузим явно (см.
+    # ``_load_ticket_messages_with_attachments``): в ingress-пути relationship
+    # ``ticket.messages`` не подгружен.
+    messages = await _load_ticket_messages_with_attachments(db, ticket_id=ticket.id)
+    # Деструктуризация ``(plain, html)`` — порядок строго как возвращает
+    # ``build_thread_history`` (см. ``outbound.py:192``: ``history_plain, history_html = ...``).
+    # Перепутать местами → HTML-блоки уйдут в plain-часть письма, а email-цитатник
+    # с ``>`` строками — в HTML (ломает вёрстку истории, как было в #77 v1).
+    history_plain, history_html = build_thread_history(
+        messages,
+        exclude_id=message.id,
+        ticket_number=ticket.number,
+        assignee_user_id=getattr(ticket, "assignee_user_id", None),
+    )
+
+    html_body, plain_body = render_requester_reply_agent_email(
+        ticket=ticket,
+        message=message,
+        requester=requester,
+        history_html=history_html,
+        history_plain=history_plain,
+    )
+    subject = build_requester_reply_agent_subject(ticket)
+
+    for agent in recipients:
+        await enqueue_outbox_email(
+            db,
+            kind=KIND_GENERIC,
+            to_email=agent.email,
+            subject=subject,
+            body_html=html_body,
+            body_text=plain_body,
+            # ``ticket_number`` — маркер для воркера: встраивает inline-картинки
+            # ответа заявителя как ``cid:`` (см. ``_embed_helpdesk_images_into_generic``).
+            payload={"smtp_source": "helpdesk", "ticket_number": ticket.number},
+            related_resource_type="helpdesk_ticket",
+            related_resource_id=ticket.id,
+            created_by_user_id=agent.id,
+        )
+
+    await db.commit()
+    sent = len(recipients)
+    logger.info(
+        "helpdesk.notify_requester_reply_email_sent",
+        ticket_id=str(ticket.id),
+        sent=sent,
+    )
     return sent
 
 

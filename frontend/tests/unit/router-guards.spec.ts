@@ -17,7 +17,7 @@ describe('useAuthStore — role helpers', () => {
     vi.mocked(fetchMe).mockResolvedValueOnce({
       id: '1', email: 'a@x.local', full_name: 'A', department: null,
       position: null, phone: null, role: 'admin', avatar_url: null,
-      presence_status: 'office', notify_email: true, notify_inapp: true,
+      current_status: 'working', current_status_until: null, notify_email: true, notify_inapp: true,
       lang: 'ru', preferences: {}, auth_source: 'local',
     } as any)
     const { useAuthStore } = await import('../../src/stores/auth')
@@ -31,7 +31,7 @@ describe('useAuthStore — role helpers', () => {
     vi.mocked(fetchMe).mockResolvedValueOnce({
       id: '2', email: 'b@x.local', full_name: 'B', department: null,
       position: null, phone: null, role: 'admin', avatar_url: null,
-      presence_status: 'office', notify_email: true, notify_inapp: true,
+      current_status: 'working', current_status_until: null, notify_email: true, notify_inapp: true,
       lang: 'ru', preferences: {}, auth_source: 'keycloak',
     } as any)
     const { useAuthStore } = await import('../../src/stores/auth')

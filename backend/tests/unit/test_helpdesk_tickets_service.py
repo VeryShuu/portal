@@ -23,7 +23,9 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from sqlalchemy import select
 
+from app.models.helpdesk import HelpdeskTicket
 from app.services.helpdesk import tickets as svc
 from app.services.helpdesk.lifecycle import IllegalTransitionError
 
@@ -674,6 +676,65 @@ class TestMenuBadgeCounts:
 
 
 # ── count_agent_tickets / list_agent_tickets / fetch_ticket_for_agent ───────
+
+
+class TestApplySort:
+    """``_apply_sort`` — серверная сортировка списка заявок (whitelist + direction).
+
+    Чистая функция: строит SQLAlchemy-stmt, не требует БД. Проверяем структуру
+    ORDER BY через компиляцию в SQL-строку (детерминированно, без подключения).
+    """
+
+    def _stmt_sql(self, sort: str | None, order: str) -> str:
+        stmt = select(HelpdeskTicket)
+        result, _ = svc._apply_sort(stmt, sort=sort, order=order)
+        return str(result.compile(compile_kwargs={"literal_binds": True}))
+
+    def test_sort_none_returns_applied_false(self):
+        stmt = select(HelpdeskTicket)
+        result, applied = svc._apply_sort(stmt, sort=None, order="desc")
+        assert applied is False
+        # stmt без order_by
+        assert "ORDER BY" not in str(result.compile())
+
+    def test_unknown_field_returns_applied_false(self):
+        stmt = select(HelpdeskTicket)
+        _, applied = svc._apply_sort(stmt, sort="evil_column", order="asc")
+        assert applied is False
+
+    def test_native_column_desc(self):
+        sql = self._stmt_sql("number", "desc")
+        assert "ORDER BY" in sql
+        assert "helpdesk_tickets.number DESC" in sql
+
+    def test_native_column_asc(self):
+        sql = self._stmt_sql("created_at", "asc")
+        assert "helpdesk_tickets.created_at ASC" in sql
+
+    def test_status_sortable(self):
+        sql = self._stmt_sql("status", "asc")
+        assert "helpdesk_tickets.status ASC" in sql
+
+    def test_requester_join_to_users_full_name(self):
+        sql = self._stmt_sql("requester", "asc")
+        # LEFT JOIN к users + ORDER BY full_name
+        assert "JOIN" in sql
+        assert "full_name ASC" in sql
+
+    def test_assignee_join_to_users_full_name(self):
+        sql = self._stmt_sql("assignee", "desc")
+        assert "JOIN" in sql
+        assert "full_name DESC" in sql
+
+    def test_order_case_insensitive(self):
+        # "ASC" uppercase тоже работает
+        sql = self._stmt_sql("number", "ASC")
+        assert "number ASC" in sql
+
+    @pytest.mark.parametrize("bad_order", ["", "random", "ASCENDING"])
+    def test_invalid_order_defaults_to_desc(self, bad_order: str):
+        sql = self._stmt_sql("number", bad_order)
+        assert "number DESC" in sql
 
 
 class TestAgentTickets:

@@ -41,16 +41,12 @@
 
     <div class="profile-hero__inner">
       <div class="profile-avatar-wrap">
-        <n-avatar
-          round
+        <UserAvatar
+          :user="user"
           :size="96"
-          :src="user.avatar_url ?? undefined"
+          :show-working-ring="true"
           class="profile-avatar"
-        >
-          <template v-if="!user.avatar_url">
-            {{ initials }}
-          </template>
-        </n-avatar>
+        />
         <n-upload
           v-if="isOwn"
           accept="image/jpeg,image/png,image/webp"
@@ -84,11 +80,15 @@
         </div>
         <div class="profile-hero__badges">
           <span
+            v-if="user.current_status && user.current_status !== 'working'"
             class="profile-badge"
-            :class="`profile-badge--${user.presence_status}`"
+            :class="`profile-badge--${user.current_status}`"
           >
             <span class="profile-badge__dot" />
-            {{ t(`users.profile.status.${user.presence_status}`) }}
+            {{ t(`users.presence.${user.current_status}`) }}
+            <template v-if="user.current_status_until">
+              · {{ t('users.presence.until', { date: untilLabel }) }}
+            </template>
           </span>
           <template v-if="isOwn">
             <span class="profile-badge profile-badge--role">
@@ -109,12 +109,14 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { NAvatar, NUpload, NIcon, useMessage, type UploadCustomRequestOptions } from 'naive-ui'
+import { NUpload, NIcon, useMessage, type UploadCustomRequestOptions } from 'naive-ui'
 import { CameraOutline, ShieldOutline, KeyOutline } from '@vicons/ionicons5'
 import { useAuthStore } from '../../stores/auth'
 import { uploadAvatar, type UserPublic } from '../../api/users'
 import type { UserMe } from '../../api/auth'
 import { parseApiError } from '../../utils/parseApiError'
+import { formatDateShort } from '../../utils/formatDate'
+import UserAvatar from '../UserAvatar.vue'
 
 type DisplayUser = UserMe | UserPublic
 
@@ -123,14 +125,15 @@ const props = defineProps<{
   isOwn: boolean
 }>()
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const auth = useAuthStore()
 const message = useMessage()
 
-const initials = computed(() => {
-  const name = props.user.full_name ?? ''
-  return name.split(' ').slice(0, 2).map((w: string) => w[0]).join('').toUpperCase()
-})
+const untilLabel = computed(() =>
+  props.user.current_status_until
+    ? formatDateShort(props.user.current_status_until, locale.value)
+    : '',
+)
 
 const roleLabel = computed(() => {
   if (!auth.user) return ''
@@ -258,9 +261,9 @@ async function handleAvatarUpload({ file, onFinish, onError }: UploadCustomReque
   border-radius: 50%;
   background: currentColor;
 }
-.profile-badge--office { color: #86efac; }
-.profile-badge--remote { color: #fcd34d; }
-.profile-badge--vacation { color: #fca5a5; }
+.profile-badge--vacation { color: var(--presence-ring-vacation); }
+.profile-badge--sick { color: var(--presence-ring-sick); }
+.profile-badge--business_trip { color: var(--presence-ring-business_trip); }
 
 @media (max-width: 640px) {
   .profile-hero__inner { flex-direction: column; align-items: flex-start; padding: 22px; }

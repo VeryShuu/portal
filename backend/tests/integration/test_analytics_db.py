@@ -74,12 +74,12 @@ async def test_analytics_counts_reflect_seeded_users(db):
         text(
             """
             INSERT INTO users
-                (id, email, full_name, auth_source, role, presence_status,
+                (id, email, full_name, auth_source, role,
                  notify_email, notify_inapp, lang, preferences, keycloak_groups,
                  attributes, created_at, updated_at)
             VALUES
                 (gen_random_uuid(), :email, 'Analytics Test User',
-                 'local', 'reader', 'office', true, true, 'ru',
+                 'local', 'reader', true, true, 'ru',
                  '{}'::jsonb, '{}'::text[], '{}'::jsonb, NOW(), NOW())
             """
         ),
@@ -111,12 +111,12 @@ async def test_analytics_new_users_30d(db):
         text(
             """
             INSERT INTO users
-                (id, email, full_name, auth_source, role, presence_status,
+                (id, email, full_name, auth_source, role,
                  notify_email, notify_inapp, lang, preferences, keycloak_groups,
                  attributes, created_at, updated_at)
             VALUES
                 (gen_random_uuid(), :email, 'New User 30d',
-                 'local', 'reader', 'office', true, true, 'ru',
+                 'local', 'reader', true, true, 'ru',
                  '{}'::jsonb, '{}'::text[], '{}'::jsonb,
                  NOW() - INTERVAL '10 days', NOW())
             """
@@ -129,12 +129,12 @@ async def test_analytics_new_users_30d(db):
         text(
             """
             INSERT INTO users
-                (id, email, full_name, auth_source, role, presence_status,
+                (id, email, full_name, auth_source, role,
                  notify_email, notify_inapp, lang, preferences, keycloak_groups,
                  attributes, created_at, updated_at)
             VALUES
                 (gen_random_uuid(), :email, 'Old User 60d',
-                 'local', 'reader', 'office', true, true, 'ru',
+                 'local', 'reader', true, true, 'ru',
                  '{}'::jsonb, '{}'::text[], '{}'::jsonb,
                  NOW() - INTERVAL '60 days', NOW())
             """

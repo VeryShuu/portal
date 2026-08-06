@@ -24,10 +24,6 @@ class User(Base):
     __tablename__ = "users"
     __table_args__ = (
         CheckConstraint("role IN ('reader', 'editor', 'admin')", name="ck_users_role"),
-        CheckConstraint(
-            "presence_status IN ('office', 'remote', 'vacation')",
-            name="ck_users_presence_status",
-        ),
         CheckConstraint("lang IN ('ru', 'en')", name="ck_users_lang"),
         CheckConstraint(
             "auth_source IN ('keycloak', 'local')",
@@ -35,6 +31,13 @@ class User(Base):
         ),
         # ERP-синхронизация (миграция 087): пол сотрудника из ERP-выгрузки.
         CheckConstraint("gender IS NULL OR gender IN ('male', 'female')", name="ck_users_gender"),
+        # ERP-синхронизация (миграция 093): вычисляемый статус присутствия из
+        # отсутствий (erp_absences). Источник истины — только ERP; ручной выбор
+        # убран. См. app/services/erp_sync/absences_status.py.
+        CheckConstraint(
+            "current_status IN ('working', 'vacation', 'sick', 'business_trip')",
+            name="ck_users_current_status",
+        ),
         UniqueConstraint("keycloak_id", name="uq_users_keycloak_id"),
         # Уникальность email на уровне БД — case-insensitive и только для
         # активных (не soft-deleted) пользователей (миграции 030/037).
@@ -68,7 +71,12 @@ class User(Base):
     phone: Mapped[str | None] = mapped_column(String(50))
     role: Mapped[str] = mapped_column(String(20), nullable=False, default="reader")
     avatar_url: Mapped[str | None] = mapped_column(String(512))
-    presence_status: Mapped[str] = mapped_column(String(20), nullable=False, default="office")
+    # Вычисляемый статус присутствия (миграция 093): working/vacation/sick/
+    # business_trip. Пересчитывается импортёром erp_absences и ежедневным cron'ом.
+    current_status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="working", server_default=text("'working'")
+    )
+    current_status_until: Mapped[date | None] = mapped_column(Date, nullable=True)
     notify_email: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     notify_inapp: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     lang: Mapped[str] = mapped_column(String(5), nullable=False, default="ru")

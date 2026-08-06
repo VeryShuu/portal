@@ -15,10 +15,12 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
 from sqlalchemy import text
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import get_logger
+from app.models.email_outbox import EmailOutbox
 from app.worker.tasks.email_utils import OUTBOX_MAX_ATTEMPTS, compute_retry_defer
 
 logger = get_logger(__name__)
@@ -121,45 +123,41 @@ async def enqueue_outbox_email_batch(
     критично для крупных встреч/серий (20 участников × 10 инстансов = 200 строк).
     Outbox-инвариант сохранён: commit по-прежнему на caller'е, INSERT идёт в той
     же сессии/транзакции. Пустой список → no-op (возвращает []).
+
+    Реализовано через SQLAlchemy Core ``insert().values([...])`` (multi-row).
+    Ранее использовался raw-SQL ``unnest($1, ..., $10) AS i(...)``, но на
+    PostgreSQL 16 + asyncpg он падает с ``AmbiguousFunctionError: function
+    pg_catalog.unnest(unknown) is not unique``: при ``body_text=None`` (и
+    ``related_resource_*``/``created_by_user_id`` равных ``None``) asyncpg
+    отправляет массивы как ``unknown[]``, и PG не может разрешить перегрузку
+    ``unnest(anyarray | anymultirange)``. Это молча откатывало всю транзакцию
+    создания встречи с участниками (встреча не сохранялась, FastAPI возвращал
+    201). Core insert убирает ``unnest`` целиком и типизирует колонки по ORM.
     """
     if not items:
         return []
-    rows = await session.execute(
-        text(
-            """
-            INSERT INTO email_outbox (
-                kind, to_email, subject, body_html, body_text, payload,
-                related_resource_type, related_resource_id, created_by_user_id,
-                max_attempts
-            )
-            SELECT
-                i.kind, i.to_email, i.subject, i.body_html, i.body_text,
-                CAST(i.payload AS JSONB),
-                i.rtype, i.rid, i.uid, i.max_attempts
-            FROM unnest(
-                :kinds, :emails, :subjects, :htmls, :texts, :payloads,
-                :rtypes, :rids, :uids, :max_attempts
-            ) AS i(
-                kind text, to_email text, subject text, body_html text,
-                body_text text, payload text, rtype text, rid uuid, uid uuid,
-                max_attempts int
-            )
-            RETURNING id
-            """
-        ),
-        {
-            "kinds": [it.kind for it in items],
-            "emails": [it.to_email for it in items],
-            "subjects": [it.subject for it in items],
-            "htmls": [it.body_html for it in items],
-            "texts": [it.body_text for it in items],
-            "payloads": [_json_dumps(it.payload or {}) for it in items],
-            "rtypes": [it.related_resource_type for it in items],
-            "rids": [it.related_resource_id for it in items],
-            "uids": [it.created_by_user_id for it in items],
-            "max_attempts": [it.max_attempts for it in items],
-        },
+    stmt = (
+        pg_insert(EmailOutbox)
+        .values(
+            [
+                {
+                    "kind": it.kind,
+                    "to_email": it.to_email,
+                    "subject": it.subject,
+                    "body_html": it.body_html,
+                    "body_text": it.body_text,
+                    "payload": it.payload or {},
+                    "related_resource_type": it.related_resource_type,
+                    "related_resource_id": it.related_resource_id,
+                    "created_by_user_id": it.created_by_user_id,
+                    "max_attempts": it.max_attempts,
+                }
+                for it in items
+            ]
+        )
+        .returning(EmailOutbox.id)
     )
+    rows = await session.execute(stmt)
     ids = [r for r in rows.scalars().all()]
     logger.info(
         "email_outbox.enqueued_batch",

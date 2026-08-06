@@ -23,7 +23,10 @@ class UserPublic(BaseModel):
     phone: str | None
     role: str
     avatar_url: str | None
-    presence_status: str
+    # Вычисляемый статус присутствия (миграция 093): working/vacation/sick/
+    # business_trip. Источник — ERP (erp_absences), ручной выбор убран.
+    current_status: str
+    current_status_until: date | None = None
     lang: str
     created_at: datetime
     auth_source: str
@@ -63,6 +66,9 @@ class BirthdayOut(BaseModel):
     full_name: str
     birth_date: date
     avatar_url: str | None = None
+    # Статус присутствия — для кольца аватарки в виджете (отпуск/больничный/...).
+    current_status: str = "working"
+    current_status_until: date | None = None
 
 
 class BirthdayList(BaseModel):
@@ -70,8 +76,36 @@ class BirthdayList(BaseModel):
     total: int
 
 
+class ErpAbsenceOut(BaseModel):
+    """Одно отсутствие сотрудника для отображения в профиле (дата — причина).
+
+    Источник — ERP-синхронизация (``erp_absences``). Виден всем авторизованным
+    (как и дни рождения в ``/staff``): коллегам важно знать, кто в отпуске/на
+    больничном. ``kind`` — canonical enum (см. ``ABSENCE_KIND_VALUES`` в
+    ``models/erp_sync.py``); человекочитаемую метку формирует фронтенд через i18n.
+
+    Показываем только актуальные и будущие периоды (``end_date >= today``) —
+    прошлогодние отпуска в профиле неинтересны.
+    """
+
+    kind: str
+    position: str | None = None
+    department: str | None = None
+    start_date: date
+    end_date: date
+
+
+class ErpAbsenceList(BaseModel):
+    """Список отсутствий сотрудника (``GET /users/{id}/absences``).
+
+    Сортировка — по ``start_date`` ASC (ближайшие отсутствия первыми).
+    """
+
+    items: list[ErpAbsenceOut]
+    total: int
+
+
 class PatchProfileRequest(BaseModel):
-    presence_status: str | None = None
     lang: str | None = None
     notify_email: bool | None = None
     notify_inapp: bool | None = None

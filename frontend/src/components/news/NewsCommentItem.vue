@@ -1,12 +1,18 @@
 <template>
   <div class="news-comment">
+    <UserAvatar
+      v-if="comment.author"
+      :user="comment.author"
+      :size="40"
+      class="news-comment__avatar"
+    />
     <n-avatar
+      v-else
       round
       :size="40"
-      :src="comment.author?.avatar_url ?? undefined"
       class="news-comment__avatar"
     >
-      {{ initials }}
+      —
     </n-avatar>
 
     <div class="news-comment__body">
@@ -95,6 +101,7 @@ import { NAvatar, NButton, NInput } from 'naive-ui'
 import { formatDate, formatRelativeTime } from '@/utils/formatDate'
 import { useAuthStore } from '../../stores/auth'
 import type { NewsComment } from '../../api/news'
+import UserAvatar from '../UserAvatar.vue'
 
 const props = defineProps<{
   comment: NewsComment
@@ -112,16 +119,6 @@ const draft = ref('')
 const isAuthor = computed(() => props.comment.author?.id === auth.user?.id)
 const canEdit = computed(() => isAuthor.value)
 const canDelete = computed(() => auth.isAdmin || isAuthor.value)
-
-const initials = computed(() => {
-  const name = props.comment.author?.full_name?.trim()
-  if (!name) return '—'
-  return name
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((p) => p[0]?.toUpperCase() ?? '')
-    .join('')
-})
 
 const relativeTime = computed(() => formatRelativeTime(props.comment.created_at, locale.value))
 const absoluteTime = computed(() => formatDate(props.comment.created_at, locale.value))

@@ -22,7 +22,7 @@ describe('useAuthStore', () => {
     vi.mocked(fetchMe).mockResolvedValueOnce({
       id: '1', email: 'test@x.local', full_name: 'Test', department: null,
       position: null, phone: null, role: 'reader', avatar_url: null,
-      presence_status: 'office', notify_email: true, notify_inapp: true,
+      current_status: 'working', current_status_until: null, notify_email: true, notify_inapp: true,
       lang: 'ru', preferences: {},
     })
     const auth = useAuthStore()
@@ -36,7 +36,7 @@ describe('useAuthStore', () => {
     vi.mocked(fetchMe).mockResolvedValueOnce({
       id: '2', email: 'ed@x.local', full_name: 'Editor', department: 'IT',
       position: null, phone: null, role: 'editor', avatar_url: null,
-      presence_status: 'office', notify_email: true, notify_inapp: true,
+      current_status: 'working', current_status_until: null, notify_email: true, notify_inapp: true,
       lang: 'ru', preferences: {},
     })
     const auth = useAuthStore()
@@ -50,7 +50,7 @@ describe('useAuthStore', () => {
     vi.mocked(fetchMe).mockResolvedValueOnce({
       id: '3', email: 'admin@x.local', full_name: 'Admin', department: null,
       position: null, phone: null, role: 'admin', avatar_url: null,
-      presence_status: 'office', notify_email: true, notify_inapp: true,
+      current_status: 'working', current_status_until: null, notify_email: true, notify_inapp: true,
       lang: 'ru', preferences: {},
     })
     const auth = useAuthStore()

@@ -8,16 +8,12 @@
       class="user-pill"
       type="button"
     >
-      <n-avatar
-        round
+      <UserAvatar
+        v-if="auth.user"
+        :user="auth.user"
         :size="30"
-        :src="auth.user?.avatar_url ?? undefined"
-        color="#d8262c"
-      >
-        <template v-if="!auth.user?.avatar_url">
-          {{ initials }}
-        </template>
-      </n-avatar>
+        class="user-pill__avatar"
+      />
       <span class="user-pill__name">{{ auth.user?.full_name }}</span>
       <n-icon
         size="14"
@@ -33,9 +29,10 @@
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { NAvatar, NDropdown, NIcon } from 'naive-ui'
+import { NDropdown, NIcon } from 'naive-ui'
 import { ChevronDownOutline } from '@vicons/ionicons5'
 import { useAuthStore } from '../../stores/auth'
+import UserAvatar from '../UserAvatar.vue'
 
 const props = defineProps<{
   onAbout: () => void
@@ -44,11 +41,6 @@ const props = defineProps<{
 const { t } = useI18n()
 const auth = useAuthStore()
 const router = useRouter()
-
-const initials = computed(() => {
-  const name = auth.user?.full_name ?? ''
-  return name.split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase()
-})
 
 const userMenuOptions = computed(() => [
   { label: t('nav.profile'), key: 'profile' },

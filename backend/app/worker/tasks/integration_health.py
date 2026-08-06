@@ -141,6 +141,18 @@ async def _probe_erp_sync() -> bool | None:
     return await probe_erp_sync()
 
 
+async def _probe_erp_absences() -> bool | None:
+    """Свежесть потока отсутствий ERP (отпуска/отгулы/болезни).
+
+    Делегирует в :func:`erp_absences_sync.probe_erp_absences`. ``None`` —
+    модуль или absence-поллинг выключены; ``True`` — свежий импорт; ``False`` —
+    протух/ошибок/не было.
+    """
+    from app.worker.tasks.erp_absences_sync import probe_erp_absences
+
+    return await probe_erp_absences()
+
+
 async def probe_integrations(ctx: dict) -> dict[str, int]:
     """Run all integration probes and persist results to Redis.
 
@@ -156,6 +168,7 @@ async def probe_integrations(ctx: dict) -> dict[str, int]:
         "smtp": _probe_smtp,
         "collabora": _probe_collabora,
         "erp_sync": _probe_erp_sync,
+        "erp_absences": _probe_erp_absences,
     }
 
     results: dict[str, int] = {}
