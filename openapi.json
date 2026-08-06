@@ -541,6 +541,23 @@
             "title": "Birth Date",
             "type": "string"
           },
+          "current_status": {
+            "default": "working",
+            "title": "Current Status",
+            "type": "string"
+          },
+          "current_status_until": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Status Until"
+          },
           "full_name": {
             "title": "Full Name",
             "type": "string"
@@ -7987,6 +8004,23 @@
             ],
             "title": "Avatar Url"
           },
+          "current_status": {
+            "default": "working",
+            "title": "Current Status",
+            "type": "string"
+          },
+          "current_status_until": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Status Until"
+          },
           "department": {
             "anyOf": [
               {
@@ -9517,17 +9551,6 @@
               }
             ],
             "title": "Notify Inapp"
-          },
-          "presence_status": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Presence Status"
           }
         },
         "title": "PatchProfileRequest",
@@ -14653,6 +14676,22 @@
             "title": "Created At",
             "type": "string"
           },
+          "current_status": {
+            "title": "Current Status",
+            "type": "string"
+          },
+          "current_status_until": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Status Until"
+          },
           "department": {
             "anyOf": [
               {
@@ -14739,10 +14778,6 @@
             "title": "Preferences",
             "type": "object"
           },
-          "presence_status": {
-            "title": "Presence Status",
-            "type": "string"
-          },
           "role": {
             "title": "Role",
             "type": "string"
@@ -14773,7 +14808,7 @@
           "phone",
           "role",
           "avatar_url",
-          "presence_status",
+          "current_status",
           "lang",
           "created_at",
           "auth_source",
@@ -14823,6 +14858,22 @@
             "format": "date-time",
             "title": "Created At",
             "type": "string"
+          },
+          "current_status": {
+            "title": "Current Status",
+            "type": "string"
+          },
+          "current_status_until": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Status Until"
           },
           "department": {
             "anyOf": [
@@ -14897,10 +14948,6 @@
             ],
             "title": "Position"
           },
-          "presence_status": {
-            "title": "Presence Status",
-            "type": "string"
-          },
           "role": {
             "title": "Role",
             "type": "string"
@@ -14931,7 +14978,7 @@
           "phone",
           "role",
           "avatar_url",
-          "presence_status",
+          "current_status",
           "lang",
           "created_at",
           "auth_source"

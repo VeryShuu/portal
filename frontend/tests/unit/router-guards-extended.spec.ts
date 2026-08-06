@@ -75,7 +75,7 @@ describe('requireAuth guard', () => {
       user: {
         id: '1', email: 'u@x.local', full_name: 'User', department: null,
         position: null, phone: null, role: 'reader', avatar_url: null,
-        presence_status: 'office', notify_email: true, notify_inapp: true,
+        current_status: 'working', current_status_until: null, notify_email: true, notify_inapp: true,
         lang: 'ru', preferences: {}, auth_source: 'keycloak',
       },
     } as any)
@@ -118,7 +118,7 @@ describe('requireAuth guard', () => {
     vi.mocked(fetchMe).mockResolvedValueOnce({
       id: '2', email: 'b@x.local', full_name: 'Admin', department: null,
       position: null, phone: null, role: 'admin', avatar_url: null,
-      presence_status: 'office', notify_email: true, notify_inapp: true,
+      current_status: 'working', current_status_until: null, notify_email: true, notify_inapp: true,
       lang: 'ru', preferences: {}, auth_source: 'local',
     } as any)
 
@@ -140,7 +140,7 @@ describe('requireRole guard (via store)', () => {
     vi.mocked(fetchMe).mockResolvedValueOnce({
       id: '1', email: 'r@x.local', full_name: 'Reader', department: null,
       position: null, phone: null, role: 'reader', avatar_url: null,
-      presence_status: 'office', notify_email: true, notify_inapp: true,
+      current_status: 'working', current_status_until: null, notify_email: true, notify_inapp: true,
       lang: 'ru', preferences: {}, auth_source: 'keycloak',
     } as any)
 
@@ -157,7 +157,7 @@ describe('requireRole guard (via store)', () => {
     vi.mocked(fetchMe).mockResolvedValueOnce({
       id: '2', email: 'e@x.local', full_name: 'Editor', department: null,
       position: null, phone: null, role: 'editor', avatar_url: null,
-      presence_status: 'office', notify_email: true, notify_inapp: true,
+      current_status: 'working', current_status_until: null, notify_email: true, notify_inapp: true,
       lang: 'ru', preferences: {}, auth_source: 'keycloak',
     } as any)
 
@@ -174,7 +174,7 @@ describe('requireRole guard (via store)', () => {
     vi.mocked(fetchMe).mockResolvedValueOnce({
       id: '3', email: 'a@x.local', full_name: 'Admin', department: null,
       position: null, phone: null, role: 'admin', avatar_url: null,
-      presence_status: 'office', notify_email: true, notify_inapp: true,
+      current_status: 'working', current_status_until: null, notify_email: true, notify_inapp: true,
       lang: 'ru', preferences: {}, auth_source: 'local',
     } as any)
 

@@ -49,10 +49,10 @@ async def _user_id(_engine):
             text(
                 """
                 INSERT INTO users
-                    (id, email, full_name, role, auth_source, presence_status,
+                    (id, email, full_name, role, auth_source,
                      notify_email, notify_inapp, lang, preferences, updated_at)
                 VALUES
-                    (:id, :email, 'Race Test User', 'reader', 'local', 'office',
+                    (:id, :email, 'Race Test User', 'reader', 'local',
                      true, true, 'ru', '{}', :now)
                 """
             ),

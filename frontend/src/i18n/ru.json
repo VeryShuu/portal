@@ -445,6 +445,13 @@
   "users": {
     "title": "Сотрудники",
     "notFound": "Сотрудник не найден",
+    "presence": {
+      "working": "Работает",
+      "vacation": "Отпуск / отгул",
+      "sick": "Болезнь",
+      "business_trip": "Командировка",
+      "until": "до {date}"
+    },
     "profile": {
       "title": "Профиль",
       "edit": "Редактировать профиль",
@@ -480,12 +487,6 @@
       "authSource": {
         "keycloak": "Keycloak SSO",
         "local": "Локальная учётная запись"
-      },
-      "status": {
-        "label": "Статус",
-        "office": "В офисе",
-        "remote": "Удалённо",
-        "vacation": "В отпуске"
       }
     },
     "fields": {

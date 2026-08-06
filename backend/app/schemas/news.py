@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -13,6 +13,9 @@ class NewsAuthor(BaseModel):
     full_name: str
     department: str | None
     avatar_url: str | None
+    # Статус присутствия — для кольца аватарки автора комментария (отпуск/...).
+    current_status: str = "working"
+    current_status_until: date | None = None
 
     model_config = {"from_attributes": True}
 

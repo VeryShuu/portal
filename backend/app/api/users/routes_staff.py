@@ -108,6 +108,8 @@ async def list_birthdays_route(
                 full_name=u.full_name,
                 birth_date=u.birth_date,  # type: ignore[arg-type]
                 avatar_url=u.avatar_url,
+                current_status=u.current_status,
+                current_status_until=u.current_status_until,
             )
             for u in items
         ],

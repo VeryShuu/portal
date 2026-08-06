@@ -30,14 +30,11 @@
           class="birthday-card"
           @click="openProfile(b.id)"
         >
-          <n-avatar
-            round
+          <UserAvatar
+            :user="b"
             :size="48"
-            :src="b.avatar_url ?? undefined"
             class="birthday-card__avatar"
-          >
-            {{ initials(b.full_name) }}
-          </n-avatar>
+          />
           <div class="birthday-card__body">
             <span class="birthday-card__name">{{ displayName(b.full_name) }}</span>
             <span class="birthday-card__date">{{ formatDate(b.birth_date) }}</span>
@@ -79,11 +76,12 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { NAvatar, NIcon } from 'naive-ui'
+import { NIcon } from 'naive-ui'
 import { ChevronBackOutline, ChevronForwardOutline } from '@vicons/ionicons5'
 import { useRouter } from 'vue-router'
 import { useBirthdaysQuery } from '../../queries/users'
 import type { Birthday } from '../../api/users'
+import UserAvatar from '../UserAvatar.vue'
 
 const { t, locale } = useI18n()
 const router = useRouter()
@@ -129,15 +127,7 @@ function displayName(fullName: string): string {
   return fullName.trim().split(/\s+/).slice(0, 2).join(' ')
 }
 
-// Фоллбэк аватара: инициалы из первых букв слов ФИО (до 2 символов).
-function initials(fullName: string): string {
-  return fullName
-    .trim()
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((w) => w.charAt(0).toUpperCase())
-    .join('')
-}
+// Фоллбэк аватара (инициалы) и кольцо статуса — внутри UserAvatar.
 
 function openProfile(id: string): void {
   router.push(`/users/${id}`)

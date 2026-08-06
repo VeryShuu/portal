@@ -282,7 +282,7 @@ describe('src/api/users (extended)', () => {
 
   it('patchMyProfile calls api with PATCH', async () => {
     const { patchMyProfile } = await import('../../src/api/users')
-    const dto = { presence_status: 'remote' as const }
+    const dto = { lang: 'en' as const }
     mockApi.mockResolvedValueOnce({ id: 'me' })
     await patchMyProfile(dto)
     expect(mockApi).toHaveBeenCalledWith('/users/me/profile', { method: 'PATCH', body: dto })

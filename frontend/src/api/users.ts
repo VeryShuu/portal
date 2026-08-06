@@ -1,6 +1,13 @@
 import { api, apiUpload, BASE_URL, type PaginatedResponse } from './index'
 import type { UserMe } from './auth'
 
+/**
+ * Категория статуса присутствия — синхронизирована с CHECK
+ * ck_users_current_status (миграция 093) и ABSENCE_CATEGORY_VALUES в backend.
+ * Источник — только ERP (erp_absences); ручной выбор убран.
+ */
+export type UserStatusCategory = 'working' | 'vacation' | 'sick' | 'business_trip'
+
 export interface UserPublic {
   id: string
   email: string
@@ -10,7 +17,10 @@ export interface UserPublic {
   phone: string | null
   role: 'reader' | 'editor' | 'admin'
   avatar_url: string | null
-  presence_status: 'office' | 'remote' | 'vacation'
+  // Вычисляемый статус присутствия (миграция 093): working/vacation/sick/
+  // business_trip. Источник — ERP (erp_absences), ручной выбор убран.
+  current_status: UserStatusCategory
+  current_status_until: string | null // ISO date (YYYY-MM-DD) или null
   lang: 'ru' | 'en'
   created_at: string
   auth_source: 'local' | 'keycloak'
@@ -24,7 +34,6 @@ export interface UserPublic {
 }
 
 export interface PatchProfileDto {
-  presence_status?: 'office' | 'remote' | 'vacation'
   lang?: 'ru' | 'en'
   notify_email?: boolean
   notify_inapp?: boolean
@@ -164,6 +173,9 @@ export interface Birthday {
   full_name: string
   birth_date: string // ISO date — день месяца берётся локально (new Date(iso).getDate())
   avatar_url: string | null
+  // Статус присутствия — для кольца аватарки в виджете (отпуск/больничный/...).
+  current_status: UserStatusCategory
+  current_status_until: string | null
 }
 
 export interface BirthdayListResponse {

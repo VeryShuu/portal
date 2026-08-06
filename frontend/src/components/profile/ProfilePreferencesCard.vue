@@ -9,12 +9,6 @@
       :model="form"
       label-placement="top"
     >
-      <n-form-item :label="t('users.profile.status.label')">
-        <n-select
-          v-model:value="form.presence_status"
-          :options="statusOptions"
-        />
-      </n-form-item>
       <div class="pref-row">
         <div class="pref-row__text">
           <div class="pref-row__label">
@@ -45,11 +39,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import {
-  NForm, NFormItem, NSelect, NSwitch, NButton, useMessage,
-} from 'naive-ui'
+import { NForm, NSwitch, NButton, useMessage } from 'naive-ui'
 import { useAuthStore } from '../../stores/auth'
 import { patchMyProfile } from '../../api/users'
 import { parseApiError } from '../../utils/parseApiError'
@@ -59,22 +51,14 @@ const auth = useAuthStore()
 const message = useMessage()
 
 const form = ref({
-  presence_status: (auth.user?.presence_status ?? 'office') as 'office' | 'remote' | 'vacation',
   notify_email: auth.user?.notify_email ?? true,
   notify_inapp: auth.user?.notify_inapp ?? true,
 })
 
 const saving = ref(false)
 
-const statusOptions = computed(() => [
-  { label: t('users.profile.status.office'), value: 'office' },
-  { label: t('users.profile.status.remote'), value: 'remote' },
-  { label: t('users.profile.status.vacation'), value: 'vacation' },
-])
-
 watch(() => auth.user, (u) => {
   if (u) {
-    form.value.presence_status = u.presence_status
     form.value.notify_email = u.notify_email
     form.value.notify_inapp = u.notify_inapp
   }

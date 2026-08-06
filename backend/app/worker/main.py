@@ -54,6 +54,7 @@ from app.worker.tasks.photos import (
     import_scan_run,
     process_photo_upload,
 )
+from app.worker.tasks.presence_status import recompute_daily_presence_status
 
 settings = get_settings()
 from app.core.system_config import (
@@ -205,6 +206,7 @@ class WorkerSettings:
         track_arq_job(erp_sync_watchdog),
         track_arq_job(run_erp_absences_sync),
         track_arq_job(erp_absences_watchdog),
+        track_arq_job(recompute_daily_presence_status),
         track_arq_job(process_messenger_outbox),
         track_arq_job(cleanup_messenger_outbox),
     ]
@@ -412,6 +414,16 @@ class WorkerSettings:
         cron(
             "app.worker.tasks.erp_absences_sync.erp_absences_watchdog",
             hour=9,
+            minute=5,
+            second=0,
+        ),
+        # ── Пересчёт users.current_status (переход дат отсутствий) ───────────
+        # Раз в сутки ночью: отпуск кончился вчера → сегодня user уже 'working';
+        # больничный начался сегодня → 'sick'. Гейтинг — modules.erp_sync.enabled
+        # (проверяется в задаче). 00:05 — после смены даты, до начала рабочего дня.
+        cron(
+            "app.worker.tasks.presence_status.recompute_daily_presence_status",
+            hour=0,
             minute=5,
             second=0,
         ),

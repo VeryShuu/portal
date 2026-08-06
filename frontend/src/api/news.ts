@@ -1,4 +1,5 @@
 import { api, apiUpload, type PaginatedResponse } from './index'
+import type { UserStatusCategory } from './users'
 
 export interface News {
   id: string
@@ -249,6 +250,9 @@ export interface NewsAuthorPublic {
   full_name: string
   department: string | null
   avatar_url: string | null
+  // Статус присутствия — для кольца аватарки автора (отпуск/больничный/...).
+  current_status: UserStatusCategory
+  current_status_until: string | null
 }
 
 export interface NewsTrashItem extends News {

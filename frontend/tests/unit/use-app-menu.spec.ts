@@ -54,7 +54,7 @@ async function setup(opts: {
   auth.user = {
     id: '1', email: 'a@b', full_name: 'A', department: null, position: null,
     phone: null, role: opts.role ?? 'reader', avatar_url: null,
-    presence_status: 'office', notify_email: true, notify_inapp: true,
+    current_status: 'working', current_status_until: null, notify_email: true, notify_inapp: true,
     lang: 'ru', preferences: {}, auth_source: 'local', last_login_at: null,
   } as any
 

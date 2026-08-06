@@ -95,7 +95,7 @@ describe('useAuthStore — SSO loop-protection', () => {
     vi.mocked(fetchMe).mockResolvedValueOnce({
       id: '1', email: 'a@x.local', full_name: 'A', department: null,
       position: null, phone: null, role: 'admin', avatar_url: null,
-      presence_status: 'office', notify_email: true, notify_inapp: true,
+      current_status: 'working', current_status_until: null, notify_email: true, notify_inapp: true,
       lang: 'ru', preferences: {}, auth_source: 'local',
     } as any)
     window.sessionStorage.setItem('sso_attempts', JSON.stringify([Date.now()]))
