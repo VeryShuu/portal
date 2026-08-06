@@ -37,7 +37,7 @@
     "@tanstack/vue-query": "^5.40.0",
     "@tiptap/extension-focus": "^2.27.2",
     "@tiptap/extension-heading": "^2.27.2",
-    "@tiptap/extension-highlight": "^2.27.2",
+    "@tiptap/extension-highlight": "^3.29.2",
     "@tiptap/extension-link": "^2.4.0",
     "@tiptap/extension-paragraph": "^2.27.2",
     "@tiptap/extension-placeholder": "^2.4.0",
