@@ -915,6 +915,48 @@
         "title": "Body_upload_gallery_image_api_v1_news__news_id__gallery_post",
         "type": "object"
       },
+      "Body_upload_hero_bg_day_api_v1_admin_branding_hero_bg_day_post": {
+        "properties": {
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_upload_hero_bg_day_api_v1_admin_branding_hero_bg_day_post",
+        "type": "object"
+      },
+      "Body_upload_hero_bg_evening_api_v1_admin_branding_hero_bg_evening_post": {
+        "properties": {
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_upload_hero_bg_evening_api_v1_admin_branding_hero_bg_evening_post",
+        "type": "object"
+      },
+      "Body_upload_hero_bg_morning_api_v1_admin_branding_hero_bg_morning_post": {
+        "properties": {
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_upload_hero_bg_morning_api_v1_admin_branding_hero_bg_morning_post",
+        "type": "object"
+      },
       "Body_upload_link_icon_api_v1_links__link_id__icon_post": {
         "properties": {
           "file": {
@@ -1539,6 +1581,27 @@
             "title": "Banner Type",
             "type": "string"
           },
+          "hero_day_hour": {
+            "default": 12,
+            "maximum": 23.0,
+            "minimum": 0.0,
+            "title": "Hero Day Hour",
+            "type": "integer"
+          },
+          "hero_evening_hour": {
+            "default": 18,
+            "maximum": 23.0,
+            "minimum": 0.0,
+            "title": "Hero Evening Hour",
+            "type": "integer"
+          },
+          "hero_morning_hour": {
+            "default": 6,
+            "maximum": 23.0,
+            "minimum": 0.0,
+            "title": "Hero Morning Hour",
+            "type": "integer"
+          },
           "logo_hidden": {
             "default": false,
             "title": "Logo Hidden",
@@ -1615,6 +1678,21 @@
             "title": "Has Favicon",
             "type": "boolean"
           },
+          "has_hero_bg_day": {
+            "default": false,
+            "title": "Has Hero Bg Day",
+            "type": "boolean"
+          },
+          "has_hero_bg_evening": {
+            "default": false,
+            "title": "Has Hero Bg Evening",
+            "type": "boolean"
+          },
+          "has_hero_bg_morning": {
+            "default": false,
+            "title": "Has Hero Bg Morning",
+            "type": "boolean"
+          },
           "has_login_bg": {
             "default": false,
             "title": "Has Login Bg",
@@ -1624,6 +1702,27 @@
             "default": false,
             "title": "Has Logo",
             "type": "boolean"
+          },
+          "hero_day_hour": {
+            "default": 12,
+            "maximum": 23.0,
+            "minimum": 0.0,
+            "title": "Hero Day Hour",
+            "type": "integer"
+          },
+          "hero_evening_hour": {
+            "default": 18,
+            "maximum": 23.0,
+            "minimum": 0.0,
+            "title": "Hero Evening Hour",
+            "type": "integer"
+          },
+          "hero_morning_hour": {
+            "default": 6,
+            "maximum": 23.0,
+            "minimum": 0.0,
+            "title": "Hero Morning Hour",
+            "type": "integer"
           },
           "logo_hidden": {
             "default": false,
@@ -15746,6 +15845,336 @@
         ]
       }
     },
+    "/api/v1/admin/branding/hero-bg-day": {
+      "delete": {
+        "operationId": "reset_hero_bg_day_api_v1_admin_branding_hero_bg_day_delete",
+        "parameters": [
+          {
+            "in": "cookie",
+            "name": "portal_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Portal Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Reset Hero Bg Day Api V1 Admin Branding Hero Bg Day Delete",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Сбросить фон Hero (день)",
+        "tags": [
+          "branding"
+        ]
+      },
+      "post": {
+        "operationId": "upload_hero_bg_day_api_v1_admin_branding_hero_bg_day_post",
+        "parameters": [
+          {
+            "in": "cookie",
+            "name": "portal_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Portal Session"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_hero_bg_day_api_v1_admin_branding_hero_bg_day_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Upload Hero Bg Day Api V1 Admin Branding Hero Bg Day Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Загрузить фон Hero (день)",
+        "tags": [
+          "branding"
+        ]
+      }
+    },
+    "/api/v1/admin/branding/hero-bg-evening": {
+      "delete": {
+        "operationId": "reset_hero_bg_evening_api_v1_admin_branding_hero_bg_evening_delete",
+        "parameters": [
+          {
+            "in": "cookie",
+            "name": "portal_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Portal Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Reset Hero Bg Evening Api V1 Admin Branding Hero Bg Evening Delete",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Сбросить фон Hero (вечер)",
+        "tags": [
+          "branding"
+        ]
+      },
+      "post": {
+        "operationId": "upload_hero_bg_evening_api_v1_admin_branding_hero_bg_evening_post",
+        "parameters": [
+          {
+            "in": "cookie",
+            "name": "portal_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Portal Session"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_hero_bg_evening_api_v1_admin_branding_hero_bg_evening_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Upload Hero Bg Evening Api V1 Admin Branding Hero Bg Evening Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Загрузить фон Hero (вечер)",
+        "tags": [
+          "branding"
+        ]
+      }
+    },
+    "/api/v1/admin/branding/hero-bg-morning": {
+      "delete": {
+        "operationId": "reset_hero_bg_morning_api_v1_admin_branding_hero_bg_morning_delete",
+        "parameters": [
+          {
+            "in": "cookie",
+            "name": "portal_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Portal Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Reset Hero Bg Morning Api V1 Admin Branding Hero Bg Morning Delete",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Сбросить фон Hero (утро)",
+        "tags": [
+          "branding"
+        ]
+      },
+      "post": {
+        "operationId": "upload_hero_bg_morning_api_v1_admin_branding_hero_bg_morning_post",
+        "parameters": [
+          {
+            "in": "cookie",
+            "name": "portal_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Portal Session"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_hero_bg_morning_api_v1_admin_branding_hero_bg_morning_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Upload Hero Bg Morning Api V1 Admin Branding Hero Bg Morning Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Загрузить фон Hero (утро)",
+        "tags": [
+          "branding"
+        ]
+      }
+    },
     "/api/v1/admin/branding/login-bg": {
       "delete": {
         "operationId": "reset_login_bg_api_v1_admin_branding_login_bg_delete",
@@ -20159,6 +20588,63 @@
           }
         },
         "summary": "Получить favicon портала",
+        "tags": [
+          "branding"
+        ]
+      }
+    },
+    "/api/v1/branding/hero-bg-day": {
+      "get": {
+        "operationId": "get_hero_bg_day_api_v1_branding_hero_bg_day_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Фон Hero (день)",
+        "tags": [
+          "branding"
+        ]
+      }
+    },
+    "/api/v1/branding/hero-bg-evening": {
+      "get": {
+        "operationId": "get_hero_bg_evening_api_v1_branding_hero_bg_evening_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Фон Hero (вечер)",
+        "tags": [
+          "branding"
+        ]
+      }
+    },
+    "/api/v1/branding/hero-bg-morning": {
+      "get": {
+        "operationId": "get_hero_bg_morning_api_v1_branding_hero_bg_morning_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Фон Hero (утро)",
         "tags": [
           "branding"
         ]
