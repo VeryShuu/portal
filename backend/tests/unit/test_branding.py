@@ -75,6 +75,42 @@ class TestHeroHourValidation:
         s = BrandingSettings()
         assert (s.hero_morning_hour, s.hero_day_hour, s.hero_evening_hour) == (6, 12, 18)
 
+    def test_hero_subtitle_mode_defaults_auto(self):
+        from app.api.branding import BrandingSettings
+
+        assert BrandingSettings().hero_subtitle_mode == "auto"
+
+    @pytest.mark.parametrize("mode", ["auto", "custom", "hidden"])
+    def test_hero_subtitle_mode_valid_values_accepted(self, mode):
+        from app.api.branding import BrandingSettings
+
+        assert BrandingSettings(hero_subtitle_mode=mode).hero_subtitle_mode == mode
+
+    @pytest.mark.parametrize("bad", ["", "off", "none", "AUTO"])
+    def test_hero_subtitle_mode_invalid_rejected(self, bad):
+        from pydantic import ValidationError
+
+        from app.api.branding import BrandingSettings
+
+        with pytest.raises(ValidationError):
+            BrandingSettings(hero_subtitle_mode=bad)  # type: ignore[arg-type]
+
+    def test_hero_subtitle_mode_roundtrip_through_save_load(self, tmp_path):
+        """save→load сохраняет hero_subtitle_mode (JSON round-trip)."""
+        from app.services.branding_assets import (
+            BrandingSettings,
+            load_settings,
+            save_settings,
+        )
+
+        settings_file = tmp_path / "settings.json"
+        with (
+            patch("app.services.branding_assets.SETTINGS_FILE", settings_file),
+            patch("app.services.branding_assets.BRANDING_DIR", tmp_path),
+        ):
+            save_settings(BrandingSettings(hero_subtitle_mode="hidden"))
+            assert load_settings().hero_subtitle_mode == "hidden"
+
     @pytest.mark.parametrize("bad", [-1, 24, 100])
     def test_hero_morning_hour_out_of_range_rejected(self, bad):
         from pydantic import ValidationError

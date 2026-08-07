@@ -295,6 +295,17 @@
           </div>
         </n-form-item>
         <n-form-item
+          :label="t('admin.branding.heroSubtitleMode')"
+          style="margin-bottom:0"
+        >
+          <n-select
+            v-model:value="brandingForm.hero_subtitle_mode"
+            :options="heroSubtitleModeOptions"
+            style="width:240px"
+          />
+        </n-form-item>
+        <n-form-item
+          v-if="brandingForm.hero_subtitle_mode === 'custom'"
           :label="t('admin.branding.welcomeSubtitle')"
           style="margin-bottom:0"
         >
@@ -445,6 +456,12 @@ const bannerTypeOptions = computed(() => [
   { label: t('admin.branding.bannerTypeWarning'), value: 'warning' },
   { label: t('admin.branding.bannerTypeError'), value: 'error' },
   { label: t('admin.branding.bannerTypeSuccess'), value: 'success' },
+])
+
+const heroSubtitleModeOptions = computed(() => [
+  { label: t('admin.branding.heroSubtitleModeAuto'), value: 'auto' },
+  { label: t('admin.branding.heroSubtitleModeCustom'), value: 'custom' },
+  { label: t('admin.branding.heroSubtitleModeHidden'), value: 'hidden' },
 ])
 
 async function loadBrandingForm() {

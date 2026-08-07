@@ -6,7 +6,8 @@ import type { News } from '../api/news'
 export function useHomeNews() {
   const router = useRouter()
 
-  const newsQuery = useNewsListQuery({ page: 1, page_size: 5 })
+  // page_size 7: достаточно для 6 regular + возможный pinned (filter исключит pinned).
+  const newsQuery = useNewsListQuery({ page: 1, page_size: 7 })
   const categoriesQuery = useNewsCategoriesQuery()
 
   const loadingNews = computed(() => newsQuery.isLoading.value)
@@ -14,9 +15,8 @@ export function useHomeNews() {
   const totalNews = computed(() => newsQuery.data.value?.total ?? 0)
 
   const pinned = computed(() => news.value.filter(n => n.is_pinned).slice(0, 1))
-  // 3 карточки = один полный ряд сетки 3×N. Раньше было 4 → второй ряд с 1
-  // карточкой и 2 пустыми слотами (+278px высоты дашборда впустую).
-  const regular = computed(() => news.value.filter(n => !n.is_pinned).slice(0, 3))
+  // 5 новостей + 6-я плитка «Смотреть все» = два полных ряда сетки 3×N (6 ячеек).
+  const regular = computed(() => news.value.filter(n => !n.is_pinned).slice(0, 5))
   const categoriesMap = computed<Record<string, string>>(() =>
     Object.fromEntries((categoriesQuery.data.value ?? []).map(c => [c.name, c.color]))
   )

@@ -1061,6 +1061,15 @@ tests/unit/test_branding.py::TestHeroHourValidation::test_hero_hour_roundtrip_th
 tests/unit/test_branding.py::TestHeroHourValidation::test_hero_morning_hour_out_of_range_rejected[-1]
 tests/unit/test_branding.py::TestHeroHourValidation::test_hero_morning_hour_out_of_range_rejected[100]
 tests/unit/test_branding.py::TestHeroHourValidation::test_hero_morning_hour_out_of_range_rejected[24]
+tests/unit/test_branding.py::TestHeroHourValidation::test_hero_subtitle_mode_defaults_auto
+tests/unit/test_branding.py::TestHeroHourValidation::test_hero_subtitle_mode_invalid_rejected[AUTO]
+tests/unit/test_branding.py::TestHeroHourValidation::test_hero_subtitle_mode_invalid_rejected[]
+tests/unit/test_branding.py::TestHeroHourValidation::test_hero_subtitle_mode_invalid_rejected[none]
+tests/unit/test_branding.py::TestHeroHourValidation::test_hero_subtitle_mode_invalid_rejected[off]
+tests/unit/test_branding.py::TestHeroHourValidation::test_hero_subtitle_mode_roundtrip_through_save_load
+tests/unit/test_branding.py::TestHeroHourValidation::test_hero_subtitle_mode_valid_values_accepted[auto]
+tests/unit/test_branding.py::TestHeroHourValidation::test_hero_subtitle_mode_valid_values_accepted[custom]
+tests/unit/test_branding.py::TestHeroHourValidation::test_hero_subtitle_mode_valid_values_accepted[hidden]
 tests/unit/test_branding.py::TestLoadEmailSettingsCorrupted::test_fallback_on_bad_schema
 tests/unit/test_branding.py::TestLoadSaveEmailSettings::test_load_email_defaults_when_missing
 tests/unit/test_branding.py::TestLoadSaveEmailSettings::test_save_and_reload_email_settings

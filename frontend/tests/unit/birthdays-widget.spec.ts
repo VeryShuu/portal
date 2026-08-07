@@ -7,10 +7,11 @@ import { ref } from 'vue'
 /**
  * Характеризующий тест виджета «Ближайшие дни рождения сотрудников».
  *
- * Контракты:
- * - рендерит список (ФИО + день месяца) когда есть именинники
- * - скрывается целиком (v-if на корне) когда список пуст
- * - день месяца извлекается из ISO birth_date (без месяца/года)
+ * Контракты (карусель со слайдером, восстановлено по запросу):
+ * - рендерит фамилию+имя (без отчества) и дату (день + месяц) в карточках
+ * - карусель: 6 карточек на слайд (3×2), стрелки и точки-индикаторы
+ * - клик по карточке открывает профиль /users/:id
+ * - скрыт целиком (v-if на корне) когда список пуст
  */
 const i18n = createI18n({
   legacy: false,
@@ -51,7 +52,7 @@ describe('BirthdaysWidget', () => {
     mockData = ref(undefined)
   })
 
-  it('рендерит фамилию+имя (без отчества) и дату (день + месяц) списком', async () => {
+  it('рендерит фамилию+имя (без отчества) и дату (день + месяц) в карточках', async () => {
     mockData = ref({
       items: [
         { id: 'u1', full_name: 'Иванов Иван Петрович', birth_date: '1990-03-12', avatar_url: null },
@@ -64,16 +65,16 @@ describe('BirthdaysWidget', () => {
     const wrapper = mount(BirthdaysWidget, { global: { plugins: [i18n] } })
     await flushPromises()
 
-    const names = wrapper.findAll('.birthday-row__name').map((el) => el.text())
-    const dates = wrapper.findAll('.birthday-row__date').map((el) => el.text())
+    const names = wrapper.findAll('.birthday-card__name').map((el) => el.text())
+    const dates = wrapper.findAll('.birthday-card__date').map((el) => el.text())
 
-    // Отчество отсекается — только фамилия + имя; рендерится списком (ТЗ п.8)
+    // Отчество отсекается — только фамилия + имя
     expect(names).toEqual(['Иванов Иван', 'Петрова Анна'])
     // ru-локаль: «день + месяц» (1990-03-12 → «12 марта», 1985-03-15 → «15 марта»)
     expect(dates).toEqual(['12 марта', '15 марта'])
   })
 
-  it('клик по строке открывает профиль /users/:id', async () => {
+  it('клик по карточке открывает профиль /users/:id', async () => {
     mockData = ref({
       items: [{ id: 'user-42', full_name: 'Сидоров Пётр', birth_date: '1990-03-12', avatar_url: null }],
       total: 1,
@@ -83,13 +84,13 @@ describe('BirthdaysWidget', () => {
     const wrapper = mount(BirthdaysWidget, { global: { plugins: [i18n] } })
     await flushPromises()
 
-    await wrapper.find('.birthday-row__btn').trigger('click')
+    await wrapper.find('.birthday-card').trigger('click')
     await flushPromises()
     expect(mockRouterPush).toHaveBeenCalledWith('/users/user-42')
   })
 
-  it('ограничивает список VISIBLE_LIMIT и не рендерит карусель/paging', async () => {
-    // 8 именинников, VISIBLE_LIMIT=4 → рендерятся 4, paging/dots/arrows отсутствуют
+  it('карусель: 6 карточек на слайд + стрелки + точки-индикаторы (>1 слайда)', async () => {
+    // 8 именинников: PER_SLIDE=6 → 2 слайда, стрелки и точки активны.
     const items = Array.from({ length: 8 }, (_, i) => ({
       id: `u${i}`,
       full_name: `Фамилия${i} Имя${i}`,
@@ -102,10 +103,11 @@ describe('BirthdaysWidget', () => {
     const wrapper = mount(BirthdaysWidget, { global: { plugins: [i18n] } })
     await flushPromises()
 
-    expect(wrapper.findAll('.birthday-row')).toHaveLength(4)
-    // Карусель убрана (ТЗ п.8): нет стрелок и точек-индикаторов
-    expect(wrapper.find('.nav-arrow').exists()).toBe(false)
-    expect(wrapper.find('.dots').exists()).toBe(false)
+    // На текущей странице — 6 карточек
+    expect(wrapper.findAll('.birthday-card')).toHaveLength(6)
+    // Карусель: есть стрелки навигации и точки-индикаторы
+    expect(wrapper.findAll('.nav-arrow').length).toBeGreaterThan(0)
+    expect(wrapper.find('.dots').exists()).toBe(true)
   })
 
   it('скрыт (нет .widget), когда список именинников пуст', async () => {
@@ -116,7 +118,7 @@ describe('BirthdaysWidget', () => {
     await flushPromises()
 
     expect(wrapper.find('.widget').exists()).toBe(false)
-    expect(wrapper.findAll('.birthday-row')).toHaveLength(0)
+    expect(wrapper.findAll('.birthday-card')).toHaveLength(0)
   })
 
   it('скрыт, пока данные не загружены (undefined)', async () => {

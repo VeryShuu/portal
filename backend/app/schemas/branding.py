@@ -17,6 +17,9 @@ class BrandingSettings(BaseModel):
     portal_tagline: str = ""
     accent_color: str = "#d8262c"
     welcome_subtitle: str = ""
+    # Режим подзаголовка Hero на главной: auto (по времени суток) / custom
+    # (welcome_subtitle как фиксированный текст) / hidden (не показывать).
+    hero_subtitle_mode: Literal["auto", "custom", "hidden"] = "auto"
     banner_enabled: bool = False
     banner_text: str = ""
     banner_type: Literal["info", "warning", "error", "success"] = "info"

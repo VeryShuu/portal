@@ -209,11 +209,19 @@ function badgeStyle(cat: string): Record<string, string> {
   box-shadow: var(--shadow-soft, var(--shadow-sm)); /* минимальная тень редизайна */
   outline: none;
 }
-.news-card:hover,
+.news-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+  border-color: var(--color-brand-sky);
+}
+/* Явный outline для клавиатурной навигации (п.3 UX-аудита): lift+border при
+   быстром Tab легко не заметить, outline гарантирует видимость фокуса. */
 .news-card:focus-visible {
   transform: translateY(-2px);
   box-shadow: var(--shadow-md);
   border-color: var(--color-brand-sky);
+  outline: 2px solid var(--color-mage-secondary, #2f6cb5);
+  outline-offset: 2px;
 }
 .news-card--pinned {
   border-color: var(--color-brand-red);

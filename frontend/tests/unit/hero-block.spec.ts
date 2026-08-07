@@ -2,7 +2,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
 import { setActivePinia, createPinia } from 'pinia'
-import { ref } from 'vue'
 
 const i18n = createI18n({
   legacy: false,
@@ -25,13 +24,6 @@ const i18n = createI18n({
           night: 'Доброй ночи.',
         },
         greetingAnonymous: 'Коллега',
-        viewNews: 'Посмотреть новости',
-        statsToday: 'Сегодня',
-        stats: {
-          newsCount: 'Новости компании',
-          meetingsToday: 'Встречи',
-          myTasks: 'Мои задачи',
-        },
       },
     },
     en: {},
@@ -52,48 +44,17 @@ const MOCK_USER = {
   attributes: { mobile: '+7 (888) 000-00-00', city: 'Москва' },
 }
 
-// Hero теперь использует router (кнопка «Посмотреть новости») и тянет stats
-// через useHeroStats → замокаем на уровне модулей.
-const mockRouterPush = vi.fn()
-vi.mock('vue-router', () => ({
-  useRouter: () => ({ push: mockRouterPush }),
-}))
-
-vi.mock('naive-ui', () => ({
-  NButton: { template: '<button class="n-button"><slot /></button>' },
-  NIcon: { template: '<span class="n-icon"><slot /></span>', props: ['size'] },
-}))
-
-vi.mock('@vicons/ionicons5', () => ({
-  NewspaperOutline: { template: '<span />' },
-  CalendarOutline: { template: '<span />' },
-  CheckboxOutline: { template: '<span />' },
-}))
-
-// Мокаем useHeroStats — возвращаем управляемый ref (настоящий ref, чтобы Vue
-// auto-unwrapped его в template; getter-объект не подходит — v-if не сработает).
-let mockStats = ref<any>({ newsCount: 12, meetingsToday: 3, myTasks: 7, showTasks: true, loading: false })
-vi.mock('../../src/composables/useHeroStats', () => ({
-  useHeroStats: () => ({ stats: mockStats }),
-}))
-
-// Мокаем modules: meetings/helpdesk включены по умолчанию.
-let mockMeetingsEnabled = true
-let mockHelpdeskEnabled = true
-vi.mock('../../src/stores/modules', () => ({
-  useModulesStore: () => ({
-    isEnabled: (name: string) =>
-      name === 'meetings' ? mockMeetingsEnabled : name === 'helpdesk' ? mockHelpdeskEnabled : false,
-  }),
+// Hero больше не использует router/NButton/useHeroStats/modules — только
+// HeroWorldClock как дочерний компонент. Мокаем его целиком, чтобы не тянуть
+// composables world-clock в изоляционном тесте Hero.
+vi.mock('../../src/components/widgets/HeroWorldClock.vue', () => ({
+  default: { name: 'HeroWorldClock', template: '<div class="hero-clock-stub" />' },
 }))
 
 describe('HeroBlock.vue', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
-    mockStats.value = { newsCount: 12, meetingsToday: 3, myTasks: 7, showTasks: true, loading: false }
-    mockMeetingsEnabled = true
-    mockHelpdeskEnabled = true
   })
 
   it('renders without errors', async () => {
@@ -126,57 +87,13 @@ describe('HeroBlock.vue', () => {
     expect(wrapper.exists()).toBe(true)
   })
 
-  // ── Редизайн v2: кнопка CTA + карточка stats ──────────────────────────────
+  // ── Подзаголовок по режиму hero_subtitle_mode (админка) ────────────────────
 
-  it('renders «Посмотреть новости» CTA button', async () => {
+  it('renders HeroWorldClock (часы в правом верхнем углу)', async () => {
     const HeroBlock = (await import('../../src/components/HeroBlock.vue')).default
     const wrapper = mount(HeroBlock, { global: { plugins: [i18n] } })
-    const cta = wrapper.find('.hero__cta')
-    expect(cta.exists()).toBe(true)
-    expect(cta.text()).toContain('Посмотреть новости')
+    expect(wrapper.find('.hero-clock-stub').exists()).toBe(true)
   })
-
-  it('CTA click navigates to /news', async () => {
-    const HeroBlock = (await import('../../src/components/HeroBlock.vue')).default
-    const wrapper = mount(HeroBlock, { global: { plugins: [i18n] } })
-    await wrapper.find('.hero__cta').trigger('click')
-    expect(mockRouterPush).toHaveBeenCalledWith('/news')
-  })
-
-  it('renders stats card with news/meetings/tasks rows', async () => {
-    const HeroBlock = (await import('../../src/components/HeroBlock.vue')).default
-    const wrapper = mount(HeroBlock, { global: { plugins: [i18n] } })
-    expect(wrapper.find('.hero__stats').exists()).toBe(true)
-    const rows = wrapper.findAll('.hero__stats-row')
-    // Все три строки: новости + встречи + задачи
-    expect(rows).toHaveLength(3)
-    expect(wrapper.text()).toContain('12')
-    expect(wrapper.text()).toContain('3')
-    expect(wrapper.text()).toContain('7')
-  })
-
-  it('hides meetings row when meetings module disabled', async () => {
-    mockMeetingsEnabled = false
-    const HeroBlock = (await import('../../src/components/HeroBlock.vue')).default
-    const wrapper = mount(HeroBlock, { global: { plugins: [i18n] } })
-    const rows = wrapper.findAll('.hero__stats-row')
-    // Только новости + задачи (встречи скрыты)
-    expect(rows).toHaveLength(2)
-  })
-
-  it('hides tasks row when helpdesk module disabled', async () => {
-    mockHelpdeskEnabled = false
-    // useHeroStats замокан: синхронизируем showTasks с флагом модуля (как сделал бы
-    // реальный composable — без новых API он читает modules.isEnabled('helpdesk')).
-    mockStats.value = { ...mockStats.value, showTasks: false }
-    const HeroBlock = (await import('../../src/components/HeroBlock.vue')).default
-    const wrapper = mount(HeroBlock, { global: { plugins: [i18n] } })
-    const rows = wrapper.findAll('.hero__stats-row')
-    // Новости + встречи (задачи скрыты)
-    expect(rows).toHaveLength(2)
-  })
-
-  // ── heroSlot + per-time subtitle + фото фон ───────────────────────────────
 
   it('applies hero--<slot> class based on current hour', async () => {
     const HeroBlock = (await import('../../src/components/HeroBlock.vue')).default
@@ -186,7 +103,7 @@ describe('HeroBlock.vue', () => {
     expect(wrapper.find('section.hero').classes()).toContain(`hero--${expected}`)
   })
 
-  it('shows per-time subtitle when no branding welcome_subtitle override', async () => {
+  it('shows per-time subtitle in auto mode (default)', async () => {
     const HeroBlock = (await import('../../src/components/HeroBlock.vue')).default
     const wrapper = mount(HeroBlock, { global: { plugins: [i18n] } })
     const hour = new Date().getHours()
@@ -194,13 +111,23 @@ describe('HeroBlock.vue', () => {
     expect(wrapper.text()).toContain(i18n.global.t(`home.heroSubs.${expected}`))
   })
 
-  it('branding welcome_subtitle overrides per-time subtitle', async () => {
+  it('shows custom welcome_subtitle when mode is "custom"', async () => {
     const HeroBlock = (await import('../../src/components/HeroBlock.vue')).default
     const { useBrandingStore } = await import('../../src/stores/branding')
     const branding = useBrandingStore()
+    branding.settings.hero_subtitle_mode = 'custom'
     branding.settings.welcome_subtitle = 'Добро пожаловать!'
     const wrapper = mount(HeroBlock, { global: { plugins: [i18n] } })
     expect(wrapper.text()).toContain('Добро пожаловать!')
+  })
+
+  it('hides subtitle element entirely when mode is "hidden"', async () => {
+    const HeroBlock = (await import('../../src/components/HeroBlock.vue')).default
+    const { useBrandingStore } = await import('../../src/stores/branding')
+    const branding = useBrandingStore()
+    branding.settings.hero_subtitle_mode = 'hidden'
+    const wrapper = mount(HeroBlock, { global: { plugins: [i18n] } })
+    expect(wrapper.find('.hero__sub').exists()).toBe(false)
   })
 
   it('respects custom hero hour boundaries from branding settings', async () => {

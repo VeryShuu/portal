@@ -218,8 +218,8 @@ function isWeekend(tz: string): boolean {
 .clock-cube {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 10px 12px;
+  gap: 2px;
+  padding: 7px 10px;
   background: var(--color-bg-muted);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
@@ -275,7 +275,7 @@ function isWeekend(tz: string): boolean {
 }
 .clock-cube__hm {
   font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 22px;
+  font-size: 18px;
   font-weight: 700;
   color: var(--color-text);
   letter-spacing: -0.02em;

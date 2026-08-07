@@ -109,8 +109,8 @@ onMounted(() => {
 }
 .widget__link:hover { text-decoration: underline; }
 
-/* Сетка 2×2 миниатюр. Aspect 4/3 (а не квадрат 1:1) — экономит ~60px высоты
-   виджета в сайдбаре (раньше 387px). */
+/* Сетка 2×2 миниатюр. Aspect 16/10 (шире, ниже) — компактно в сайдбаре.
+   Квадрат давал 387px, 4/3 — 295px, 16/10 — ~225px. */
 .photos-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
@@ -119,7 +119,7 @@ onMounted(() => {
 }
 .photo-tile {
   display: block;
-  aspect-ratio: 4 / 3;
+  aspect-ratio: 16 / 10;
   overflow: hidden;
   border-radius: var(--radius-md);
   background: var(--color-bg-muted);
@@ -133,7 +133,7 @@ onMounted(() => {
 .photo-tile:hover .photo-tile__img { transform: scale(1.06); }
 
 .photo-skeleton {
-  aspect-ratio: 4 / 3;
+  aspect-ratio: 16 / 10;
   border-radius: var(--radius-sm);
   background: linear-gradient(90deg, var(--color-bg-muted) 25%, var(--color-border) 50%, var(--color-bg-muted) 75%);
   background-size: 200% 100%;

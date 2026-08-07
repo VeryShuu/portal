@@ -17,6 +17,7 @@ export interface BrandingSettings {
   portal_tagline: string
   accent_color: string
   welcome_subtitle: string
+  hero_subtitle_mode?: 'auto' | 'custom' | 'hidden'
   banner_enabled: boolean
   banner_text: string
   banner_type: 'info' | 'warning' | 'error' | 'success'
@@ -40,6 +41,7 @@ const DEFAULTS: BrandingSettings = {
   portal_tagline: '',
   accent_color: '#d8262c',
   welcome_subtitle: '',
+  hero_subtitle_mode: 'auto',
   banner_enabled: false,
   banner_text: '',
   banner_type: 'info',

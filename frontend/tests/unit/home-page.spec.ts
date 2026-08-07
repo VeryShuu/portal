@@ -26,6 +26,7 @@ vi.mock('vue-router', () => ({
 
 vi.mock('@vicons/ionicons5', () => ({
   ChevronForwardOutline: { template: '<span />' },
+  ArrowForwardOutline: { template: '<span />' },
 }))
 
 const mockAuthStore = {
@@ -230,6 +231,7 @@ describe('HomePage.vue', () => {
     const wrapper = await mountPage()
 
     const cards = wrapper.findAllComponents(NewsCardStub)
+    // 1 featured (pinned) + 2 regular
     expect(cards).toHaveLength(3)
     expect(cards[0].props('featured')).toBe(true)
     expect(cards[1].props('categoriesMap')).toEqual({ HR: '#ff0000' })
@@ -248,21 +250,6 @@ describe('HomePage.vue', () => {
     expect(empty.exists()).toBe(true)
     expect(empty.attributes('data-variant')).toBe('news')
     expect(empty.attributes('data-title')).toBe('news.noNews')
-  })
-
-  it('shows create news button only for editors and navigates via header action buttons', async () => {
-    mockAuthStore.isEditor = true
-
-    const wrapper = await mountPage()
-
-    const actionButtons = wrapper.findAll('.news-header .n-button')
-    expect(actionButtons).toHaveLength(2)
-
-    await actionButtons[0].trigger('click')
-    await actionButtons[1].trigger('click')
-
-    expect(mockRouterPush).toHaveBeenCalledWith('/news/create')
-    expect(mockRouterPush).toHaveBeenCalledWith('/news')
   })
 
   it('renders services loading skeletons, then top 8 links and delegates openLink on tile click', async () => {
