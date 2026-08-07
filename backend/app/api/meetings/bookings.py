@@ -8,6 +8,7 @@ from fastapi import APIRouter, Body, HTTPException, Query, Request, status
 from app.api.deps import CurrentUser, DbDep, RedisDep
 from app.api.meetings import MeetingsGuard
 from app.api.meetings._mappers import booking_to_out as _booking_to_out
+from app.api.meetings._mappers import bookings_to_out as _bookings_to_out
 from app.core.logging import get_logger
 from app.schemas.meetings import (
     BookingConflictOut,
@@ -77,7 +78,7 @@ async def list_my(
     limit: int = Query(default=5, ge=1, le=MY_BOOKINGS_LIMIT_MAX),
 ) -> list[BookingOut]:
     bookings = await list_my_bookings(db, user_id=user.id, start_date=start_date, limit=limit)
-    return [_booking_to_out(b) for b in bookings]
+    return await _bookings_to_out(db, bookings)
 
 
 @router.get("", response_model=list[BookingOut])
@@ -107,7 +108,7 @@ async def list_bookings_endpoint(
         limit=limit,
         offset=offset,
     )
-    return [_booking_to_out(b) for b in bookings]
+    return await _bookings_to_out(db, bookings)
 
 
 @router.post("", response_model=BookingOut, status_code=status.HTTP_201_CREATED)
@@ -162,7 +163,7 @@ async def create_booking_endpoint(
             count=len(bookings),
             user=str(user.id),
         )
-        return _booking_to_out(first)
+        return await _booking_to_out(db, first)
 
     try:
         booking = await svc_create_booking(db, payload=payload, user=user)
@@ -190,7 +191,7 @@ async def create_booking_endpoint(
     )
 
     logger.info("meetings.booking.created", booking_id=str(booking.id), user=str(user.id))
-    return _booking_to_out(booking)
+    return await _booking_to_out(db, booking)
 
 
 @router.get("/{booking_id}", response_model=BookingOut)
@@ -202,7 +203,7 @@ async def get_booking_endpoint(
     booking = await get_booking(db, booking_id)
     if not booking:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
-    return _booking_to_out(booking)
+    return await _booking_to_out(db, booking)
 
 
 @router.put("/{booking_id}", response_model=BookingOut)
@@ -267,7 +268,7 @@ async def update_booking_endpoint(
 
         # Return the originally addressed booking, refreshed.
         target = next((b for b in bookings if b.id == booking_id), first)
-        return _booking_to_out(target)
+        return await _booking_to_out(db, target)
 
     try:
         booking, diff = await update_booking(db, booking_id=booking_id, payload=payload, user=user)
@@ -295,7 +296,7 @@ async def update_booking_endpoint(
     )
 
     logger.info("meetings.booking.updated", booking_id=str(booking.id), user=str(user.id))
-    return _booking_to_out(booking)
+    return await _booking_to_out(db, booking)
 
 
 @router.delete("/{booking_id}", status_code=status.HTTP_204_NO_CONTENT)

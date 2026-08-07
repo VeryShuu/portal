@@ -13,11 +13,26 @@ export interface MeetingRoom {
   sort_order: number
 }
 
+export type AbsenceCategory = 'vacation' | 'sick' | 'business_trip'
+
+export interface InvitedAbsence {
+  /** Категория отсутствия (4-я coarse-категория `working` сюда не попадает). */
+  category: AbsenceCategory
+  /** ISO-дата. Для absence на дату встречи — реальный диапазон; для live-поиска
+   *  `start_date == end_date == current_status_until`. */
+  start_date: string
+  end_date: string
+}
+
 export interface InvitedUser {
   user_id: string
   full_name: string
   email: string
   source?: 'keycloak' | 'external'
+  /** Информационная подпись отсутствия (отпуск/болезнь/командировка). Заполняется
+   *  только в выдаче (booking_to_out / participants search / resolve) — на лету,
+   *  не персистится в JSONB. `null`/`undefined` = сотрудник работает. */
+  absence?: InvitedAbsence | null
 }
 
 export interface BookingOut {

@@ -1,6 +1,37 @@
 {
   "components": {
     "schemas": {
+      "AbsenceInfo": {
+        "description": "Информационная подпись отсутствия сотрудника (отпуск/отгул/болезнь/командировка).\n\nНе хранится в ``invited_users`` JSONB — обогащается на лету (см.\n:mod:`app.services.meetings.absence_enrichment`), т.к. статус пересчитывается\nежедневно из ERP и запечённый в слепок устарел бы за сутки.\n\n``category`` — одна из 4 coarse-категорий (см. ``absences_status.py``), но\n``working`` сюда не попадает (отсутствие = всё, что не ``working``).\n``start_date``/``end_date`` — диапазон отсутствия, на которое попала встреча\n(или текущее отсутствие для live-поиска).",
+        "properties": {
+          "category": {
+            "enum": [
+              "vacation",
+              "sick",
+              "business_trip"
+            ],
+            "title": "Category",
+            "type": "string"
+          },
+          "end_date": {
+            "format": "date",
+            "title": "End Date",
+            "type": "string"
+          },
+          "start_date": {
+            "format": "date",
+            "title": "Start Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "category",
+          "start_date",
+          "end_date"
+        ],
+        "title": "AbsenceInfo",
+        "type": "object"
+      },
       "AdminFileShare": {
         "properties": {
           "created_at": {
@@ -6330,6 +6361,16 @@
       },
       "InvitedUser": {
         "properties": {
+          "absence": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AbsenceInfo"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "email": {
             "format": "email",
             "title": "Email",

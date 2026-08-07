@@ -70,6 +70,11 @@
                   :href="`mailto:${u.email}`"
                 >{{ u.email }}</a>
               </template>
+              <span
+                v-if="u.absence"
+                class="booking-detail__participant-presence"
+                :class="presenceClass(u.absence)"
+              >{{ presenceLabel(u.absence) }}</span>
             </div>
             <n-button
               size="tiny"
@@ -113,6 +118,7 @@ import { useI18n } from 'vue-i18n'
 import { NModal, NSpace, NTag, NIcon, NTooltip, NButton } from 'naive-ui'
 import { VideocamOutline, LocationOutline } from '@vicons/ionicons5'
 import type { BookingOut } from '../../api/meetings'
+import { usePresenceLabel } from '../../composables/usePresenceLabel'
 
 const props = defineProps<{
   show: boolean
@@ -127,6 +133,7 @@ const emit = defineEmits<{
 }>()
 
 const { t, locale } = useI18n()
+const { presenceLabel, presenceClass } = usePresenceLabel()
 
 const showEmails = ref(false)
 
@@ -191,6 +198,29 @@ function formatTime(iso: string): string {
 }
 .booking-detail__participant-email:hover {
   text-decoration: underline;
+}
+/* Информационная подпись отсутствия участника (отпуск/болезнь/командировка). */
+.booking-detail__participant-presence {
+  align-self: flex-start;
+  margin-top: 2px;
+  padding: 1px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 999px;
+  color: var(--color-text-muted);
+  background: rgba(0, 0, 0, 0.05);
+}
+.booking-detail__participant-presence.presence--vacation {
+  color: var(--presence-ring-vacation);
+  background: rgba(245, 158, 11, 0.12);
+}
+.booking-detail__participant-presence.presence--sick {
+  color: var(--presence-ring-sick);
+  background: rgba(190, 18, 60, 0.1);
+}
+.booking-detail__participant-presence.presence--business_trip {
+  color: var(--presence-ring-business_trip);
+  background: rgba(139, 92, 246, 0.12);
 }
 .booking-detail__toggle-emails {
   align-self: flex-start;
