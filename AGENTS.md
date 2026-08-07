@@ -60,6 +60,7 @@
 | **postgres** | workspace | Read-only доступ к PostgreSQL (`--access-mode restricted`) | Инспекция схем/индексов/FTS, отладка outbox/audit, проверка миграций. Доступ через сеть `portal_internal`, пароль из `.env` |
 | **github** | workspace | Read-only GitHub API (через `gh auth token`) | Чтение CI/PR/issues репо `VeryShuu/portal`, без прав на запись |
 | **docker** | workspace | Управление контейнерами `portal-*` (`ps`, `logs`, `restart`, `exec`) | Логи контейнеров, рестарт после правок, exec без переключения контекста |
+| **context7** | workspace | Актуальные version-specific доки библиотек в контексте (MIT, free) | Когда используешь FastAPI/SQLAlchemy/Vue 3/Naive UI/TanStack Query/TipTap/ARQ и не уверен в точной сигнатуре API своей версии — вместо догадок. Решает проблему устаревших знаний модели о конкретных версиях |
 
 > **Удалено (2026-07-20):** `sequential-thinking`, `zen-cli`, `zencoder-rag-mcp`, `zencoder-server` — не подключены и избыточны (рассуждения и субагенты встроены в модель; поиск по коду закрыт `codebase-memory` + встроенный grep; веб-поиск — встроенный `WebSearch`/`WebFetch`; LSP-диагностика — через `npm run typecheck`/`mypy app`).
 
@@ -180,6 +181,9 @@ cd backend && ./scripts/ci_lint.sh
    - Спорное архитектурное решение → `docs/adr.md` (ADR-001–047)
    - Production-деплой/релиз → `docs/deploy.md` (ADR-045/046/047 — registry-pull, deploy-bundle, semver-lock)
 4. Не меняй API-контракты без явного подтверждения
+5. **Exploration-фаза сложных задач → скилл `/research`** (субагент-исследователь).
+   Не лезь читать файлы руками для широкого поиска — делегируй exploration, это
+   дешевле по контексту. Прямой `Read` — только когда заранее знаешь конкретный файл/символ.
 
 ---
 
@@ -222,6 +226,10 @@ cd backend && ./scripts/ci_lint.sh
   `docs/tests.generated.md` (`bash scripts/list_tests.sh`), иначе drift-check упадёт
   и заблокирует мёрдж. То же для `openapi.json` (`python scripts/export_openapi.py`)
   и `frontend/src/api/types.gen.d.ts` (`npm run gen:types`).
+- **Единый drift-скрипт (предпочитать):** `./scripts/check-drift.sh` гоняет все три
+  генерации + diff одной командой — до пуша, чтобы не ловить 3 из 16 обязательных
+  чеков на CI. Режимы: `--fix` (по умолчанию, регенерирует + проверяет),
+  `--check` (только проверка, как CI, exit 1 при drift).
 - Рекомендуемый формат сообщения (не жёсткое правило, но сильно повышает ценность git как памяти):
   `<type>(<module>): <что сделано>`, где `type ∈ {feat, fix, refactor, docs, test, chore}`.
   Плохо: `fix`, `ашч`. Хорошо: `feat(meetings): добавить лимит max_invitees в валидацию`.
@@ -230,7 +238,7 @@ cd backend && ./scripts/ci_lint.sh
 
 - Хранится **в репозитории (под git)**: `docs/wip/<feature>.md`. Виден следующей сессии и переносится через GitHub.
 - Удаляется при завершении фичи (после мёржа задачи), чтобы `docs/wip/` отражал только активную работу.
-- Создаётся, как только ясно, что задача не закроется за одну сессию. Минимальная структура:
+- Создаётся, **как только ясно, что задача не закроется за одну сессию** (не затягивать до середины задачи — это единственный носитель состояния между сессиями, всё незаписанное теряется). Минимальная структура:
   ```markdown
   # Фича: <название>
   ## Цель
@@ -418,7 +426,7 @@ portal/
 ├── backend/certs/             ← russian_trusted_root_ca.crt (Минцифры — для TLS к российским endpoint'ам; вкомпилируется в образ)
 ├── backend/scripts/           ← export_openapi, generate_{db_schema,api_contracts}_doc, create_audit_partitions,
 │                              ← ci_lint (локальный CI-эквивалент), migrate.sh (entrypoint), create_admin, backfill_news_covers
-├── scripts/                   ← release.sh (semver-релиз, ADR-047), mcp/ (wrapper'ы с секретами), test-integration.sh (DSN-stack), run-testcontainers-tests.sh (testcontainers-тесты), ...
+├── scripts/                   ← release.sh (semver-релиз, ADR-047), mcp/ (wrapper'ы с секретами), test-integration.sh (DSN-stack), run-testcontainers-tests.sh (testcontainers-тесты), check-drift.sh (единая проверка openapi/types/tests drift), list_tests.sh (генерация tests.generated.md), ...
 ├── backend/migrations/        ← init.sql (hunspell + FTS) + versions/ (001..084)
 ├── screenshot-service/        ← aiohttp + Playwright/Chromium (PDF/screenshot; main.py + cookie_utils.py)
 ├── nginx/                     ← Dockerfile, Dockerfile.config (sidecar), templates/, render-config.sh

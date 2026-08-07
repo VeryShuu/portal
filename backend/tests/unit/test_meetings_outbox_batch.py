@@ -87,6 +87,10 @@ class TestBatchInsertOnCreated:
                 "app.services.meetings.notifications._load_organizer",
                 AsyncMock(return_value=None),
             ),
+            patch(
+                "app.services.meetings.absence_enrichment.enrich_absences_for_invited",
+                AsyncMock(return_value={}),
+            ),
         ):
             yield
 
