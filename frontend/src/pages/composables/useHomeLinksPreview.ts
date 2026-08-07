@@ -7,7 +7,8 @@ export function useHomeLinksPreview() {
   const topLinks = computed(() => {
     const featured = linksStore.links.filter((link) => link.show_on_home)
     const source = featured.length ? featured : linksStore.links
-    return source.slice(0, 6)
+    // Концепт редизайна: сетка 4×2 = 8 плиток корп. сервисов.
+    return source.slice(0, 8)
   })
 
   onMounted(() => {

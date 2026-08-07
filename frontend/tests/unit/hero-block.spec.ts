@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
 import { setActivePinia, createPinia } from 'pinia'
+import { ref } from 'vue'
 
 const i18n = createI18n({
   legacy: false,
@@ -24,6 +25,13 @@ const i18n = createI18n({
           night: 'Доброй ночи.',
         },
         greetingAnonymous: 'Коллега',
+        viewNews: 'Посмотреть новости',
+        statsToday: 'Сегодня',
+        stats: {
+          newsCount: 'Новости компании',
+          meetingsToday: 'Встречи',
+          myTasks: 'Мои задачи',
+        },
       },
     },
     en: {},
@@ -44,10 +52,48 @@ const MOCK_USER = {
   attributes: { mobile: '+7 (888) 000-00-00', city: 'Москва' },
 }
 
+// Hero теперь использует router (кнопка «Посмотреть новости») и тянет stats
+// через useHeroStats → замокаем на уровне модулей.
+const mockRouterPush = vi.fn()
+vi.mock('vue-router', () => ({
+  useRouter: () => ({ push: mockRouterPush }),
+}))
+
+vi.mock('naive-ui', () => ({
+  NButton: { template: '<button class="n-button"><slot /></button>' },
+  NIcon: { template: '<span class="n-icon"><slot /></span>', props: ['size'] },
+}))
+
+vi.mock('@vicons/ionicons5', () => ({
+  NewspaperOutline: { template: '<span />' },
+  CalendarOutline: { template: '<span />' },
+  CheckboxOutline: { template: '<span />' },
+}))
+
+// Мокаем useHeroStats — возвращаем управляемый ref (настоящий ref, чтобы Vue
+// auto-unwrapped его в template; getter-объект не подходит — v-if не сработает).
+let mockStats = ref<any>({ newsCount: 12, meetingsToday: 3, myTasks: 7, showTasks: true, loading: false })
+vi.mock('../../src/composables/useHeroStats', () => ({
+  useHeroStats: () => ({ stats: mockStats }),
+}))
+
+// Мокаем modules: meetings/helpdesk включены по умолчанию.
+let mockMeetingsEnabled = true
+let mockHelpdeskEnabled = true
+vi.mock('../../src/stores/modules', () => ({
+  useModulesStore: () => ({
+    isEnabled: (name: string) =>
+      name === 'meetings' ? mockMeetingsEnabled : name === 'helpdesk' ? mockHelpdeskEnabled : false,
+  }),
+}))
+
 describe('HeroBlock.vue', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
+    mockStats.value = { newsCount: 12, meetingsToday: 3, myTasks: 7, showTasks: true, loading: false }
+    mockMeetingsEnabled = true
+    mockHelpdeskEnabled = true
   })
 
   it('renders without errors', async () => {
@@ -80,15 +126,64 @@ describe('HeroBlock.vue', () => {
     expect(wrapper.exists()).toBe(true)
   })
 
-  // ── Редизайн: heroSlot + per-time subtitle + фото фон ──────────────────────
+  // ── Редизайн v2: кнопка CTA + карточка stats ──────────────────────────────
+
+  it('renders «Посмотреть новости» CTA button', async () => {
+    const HeroBlock = (await import('../../src/components/HeroBlock.vue')).default
+    const wrapper = mount(HeroBlock, { global: { plugins: [i18n] } })
+    const cta = wrapper.find('.hero__cta')
+    expect(cta.exists()).toBe(true)
+    expect(cta.text()).toContain('Посмотреть новости')
+  })
+
+  it('CTA click navigates to /news', async () => {
+    const HeroBlock = (await import('../../src/components/HeroBlock.vue')).default
+    const wrapper = mount(HeroBlock, { global: { plugins: [i18n] } })
+    await wrapper.find('.hero__cta').trigger('click')
+    expect(mockRouterPush).toHaveBeenCalledWith('/news')
+  })
+
+  it('renders stats card with news/meetings/tasks rows', async () => {
+    const HeroBlock = (await import('../../src/components/HeroBlock.vue')).default
+    const wrapper = mount(HeroBlock, { global: { plugins: [i18n] } })
+    expect(wrapper.find('.hero__stats').exists()).toBe(true)
+    const rows = wrapper.findAll('.hero__stats-row')
+    // Все три строки: новости + встречи + задачи
+    expect(rows).toHaveLength(3)
+    expect(wrapper.text()).toContain('12')
+    expect(wrapper.text()).toContain('3')
+    expect(wrapper.text()).toContain('7')
+  })
+
+  it('hides meetings row when meetings module disabled', async () => {
+    mockMeetingsEnabled = false
+    const HeroBlock = (await import('../../src/components/HeroBlock.vue')).default
+    const wrapper = mount(HeroBlock, { global: { plugins: [i18n] } })
+    const rows = wrapper.findAll('.hero__stats-row')
+    // Только новости + задачи (встречи скрыты)
+    expect(rows).toHaveLength(2)
+  })
+
+  it('hides tasks row when helpdesk module disabled', async () => {
+    mockHelpdeskEnabled = false
+    // useHeroStats замокан: синхронизируем showTasks с флагом модуля (как сделал бы
+    // реальный composable — без новых API он читает modules.isEnabled('helpdesk')).
+    mockStats.value = { ...mockStats.value, showTasks: false }
+    const HeroBlock = (await import('../../src/components/HeroBlock.vue')).default
+    const wrapper = mount(HeroBlock, { global: { plugins: [i18n] } })
+    const rows = wrapper.findAll('.hero__stats-row')
+    // Новости + встречи (задачи скрыты)
+    expect(rows).toHaveLength(2)
+  })
+
+  // ── heroSlot + per-time subtitle + фото фон ───────────────────────────────
 
   it('applies hero--<slot> class based on current hour', async () => {
     const HeroBlock = (await import('../../src/components/HeroBlock.vue')).default
     const hour = new Date().getHours()
     const expected = hour < 6 || hour >= 18 ? 'evening' : hour < 12 ? 'morning' : 'day'
     const wrapper = mount(HeroBlock, { global: { plugins: [i18n] } })
-    const hero = wrapper.find('section.hero')
-    expect(hero.classes()).toContain(`hero--${expected}`)
+    expect(wrapper.find('section.hero').classes()).toContain(`hero--${expected}`)
   })
 
   it('shows per-time subtitle when no branding welcome_subtitle override', async () => {
@@ -112,7 +207,6 @@ describe('HeroBlock.vue', () => {
     const HeroBlock = (await import('../../src/components/HeroBlock.vue')).default
     const { useBrandingStore } = await import('../../src/stores/branding')
     const branding = useBrandingStore()
-    // Сдвигаем границы: утро 0-9, день 9-17, вечер 17-24
     branding.settings.hero_morning_hour = 0
     branding.settings.hero_day_hour = 9
     branding.settings.hero_evening_hour = 17
@@ -126,7 +220,6 @@ describe('HeroBlock.vue', () => {
     const HeroBlock = (await import('../../src/components/HeroBlock.vue')).default
     const { useBrandingStore } = await import('../../src/stores/branding')
     const branding = useBrandingStore()
-    // Активируем все три слота — текущий отрендерит фото
     branding.settings.has_hero_bg_morning = true
     branding.settings.has_hero_bg_day = true
     branding.settings.has_hero_bg_evening = true

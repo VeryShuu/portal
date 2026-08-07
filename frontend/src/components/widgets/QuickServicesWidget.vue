@@ -17,7 +17,7 @@
       class="widget__body widget__body--loading"
     >
       <div
-        v-for="i in 6"
+        v-for="i in 8"
         :key="`qsk-${i}`"
         class="quick-skeleton"
       />
@@ -105,7 +105,8 @@ const { linksStore, topLinks } = useHomeLinksPreview()
 /* Плитки сервисов (ТЗ п.5): 80×80, иконка сверху, название снизу, navy hover */
 .quick-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  /* Концепт: 2 ряда × 4 плитки (~90×90 каждая). */
+  grid-template-columns: repeat(4, 1fr);
   gap: 10px;
 }
 .quick-tile {

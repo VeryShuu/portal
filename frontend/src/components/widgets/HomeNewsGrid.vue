@@ -49,9 +49,18 @@ const { t } = useI18n()
 </script>
 
 <style scoped>
+/* Сетка новостей 3×N (концепт). Это единственный grid внутри main; правая
+   колонка страницы — отдельный <aside>, в этой сетке не участвует. */
 .news-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-card-gap, 20px);
+}
+@media (max-width: 900px) {
+  /* На узком main (мобильный/планшет после коллапса aside) — 2 колонки, потом 1 */
+  .news-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 600px) {
+  .news-grid { grid-template-columns: 1fr; }
 }
 </style>

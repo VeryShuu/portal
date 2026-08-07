@@ -44,6 +44,22 @@
         </a>
       </li>
     </ul>
+
+    <!-- Декоративный полупрозрачный силуэт исследовательского судна (концепт).
+         Не интерактивный, чисто фоновая арктическая атрибутика МАГЭ. -->
+    <svg
+      class="quick-links-decor"
+      viewBox="0 0 120 40"
+      aria-hidden="true"
+    >
+      <path
+        d="M5 28 L95 28 L88 36 L12 36 Z M30 28 L30 18 L75 18 L82 28 Z M40 18 L40 8 L55 8 L55 18"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.5"
+        stroke-linejoin="round"
+      />
+    </svg>
   </section>
 </template>
 
@@ -90,6 +106,8 @@ onMounted(() => {
 
 <style scoped>
 .widget {
+  position: relative;
+  overflow: hidden;
   background: var(--color-mage-card, var(--color-surface));
   border: 1px solid var(--color-mage-border, var(--color-border));
   border-radius: var(--radius-card, var(--radius-lg));
@@ -157,5 +175,16 @@ onMounted(() => {
 }
 .quick-link:hover .quick-link__arrow {
   opacity: 1;
+}
+/* Декоративный силуэт судна в правом нижнем углу (концепт) */
+.quick-links-decor {
+  position: absolute;
+  right: 10px;
+  bottom: 6px;
+  width: 100px;
+  height: 34px;
+  color: var(--color-mage-secondary, #2f6cb5);
+  opacity: 0.08;
+  pointer-events: none;
 }
 </style>

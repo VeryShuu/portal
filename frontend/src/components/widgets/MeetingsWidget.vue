@@ -59,6 +59,17 @@
       <p class="meetings-widget__empty-hint">
         {{ t('home.meetings.noMeetingsHint') }}
       </p>
+      <!-- Декоративный силуэт арктических гор (концепт) -->
+      <svg
+        class="meetings-widget__empty-decor"
+        viewBox="0 0 100 24"
+        aria-hidden="true"
+      >
+        <path
+          d="M0 24 L12 10 L20 16 L32 4 L44 14 L58 8 L70 18 L82 6 L94 16 L100 12 L100 24 Z"
+          fill="currentColor"
+        />
+      </svg>
     </div>
   </section>
 </template>
@@ -196,6 +207,15 @@ onBeforeUnmount(() => {
   margin: 4px 0 0;
   font-size: 12px;
   color: var(--color-mage-text-secondary, var(--color-text-muted));
+}
+/* Декоративные арктические горы под empty-сообщением (концепт) */
+.meetings-widget__empty-decor {
+  display: block;
+  margin: 12px auto 0;
+  width: 90px;
+  height: 22px;
+  color: var(--color-mage-secondary, #2f6cb5);
+  opacity: 0.12;
 }
 .meetings-widget__skeleton {
   display: flex;

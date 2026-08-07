@@ -26,10 +26,15 @@
       "evening": "The workday is winding down. Everything important is gathered here.",
       "night": "Good night. Rest up — tomorrow is a new workday."
     },
+    "viewNews": "View news",
+    "statsToday": "Today",
     "stats": {
       "news": "News",
       "articles": "Articles",
-      "services": "Services"
+      "services": "Services",
+      "newsCount": "Company news",
+      "meetingsToday": "Meetings",
+      "myTasks": "My tasks"
     },
     "sections": {
       "featured": "Featured",

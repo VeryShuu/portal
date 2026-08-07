@@ -124,19 +124,27 @@
      Палитра зафиксирована ТЗ редизайна (фирменный стиль МАГЭ). */
   --color-mage-primary: #1f4e8c;        /* navy — декоративный primary редизайна */
   --color-mage-secondary: #2f6cb5;      /* светлее, hover/акценты */
-  --color-mage-bg: #f5f8fc;             /* фон страницы редизайна */
+  --color-mage-bg: #f6f8fc;             /* фон страницы редизайна (концепт) */
   --color-mage-card: #ffffff;           /* фон карточек */
-  --color-mage-border: #e7edf5;         /* границы */
+  --color-mage-border: #e6edf5;         /* границы (концепт) */
   --color-mage-text: #1f2937;           /* основной текст */
   --color-mage-text-secondary: #6b7280; /* вторичный текст */
 
-  /* Радиусы редизайна (ТЗ: карточки 16 / кнопки 10 / Hero 20) */
+  /* Радиусы редизайна (концепт: Hero 20 / карточки 16 / кнопки 10 / мини-карточки 12) */
   --radius-card: 16px;
   --radius-button: 10px;
   --radius-hero: 20px;
+  --radius-mini: 12px;
 
-  /* Минимальная тень редизайна (flat UI, без тяжёлых теней) */
-  --shadow-soft: 0 6px 18px rgba(25, 40, 70, 0.06);
+  /* Минимальная тень редизайна (концепт: 0 6px 18px rgba(31,78,140,.06)) */
+  --shadow-soft: 0 6px 18px rgba(31, 78, 140, 0.06);
+
+  /* Типографическая шкала редизайна (концепт: hero 42 / section 28 / card 20 / body 16) */
+  --fs-hero-title: 42px;
+  --fs-section-title: 28px;
+  --fs-card-title: 20px;
+  --fs-body: 16px;
+  --fs-meta: 13px;
 
   /* Сетка отступов редизайна: внешние 24 / между карточками 20 / внутри 20 */
   --space-outer: 24px;

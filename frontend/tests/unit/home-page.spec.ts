@@ -265,10 +265,10 @@ describe('HomePage.vue', () => {
     expect(mockRouterPush).toHaveBeenCalledWith('/news')
   })
 
-  it('renders services loading skeletons, then top 6 links and delegates openLink on tile click', async () => {
+  it('renders services loading skeletons, then top 8 links and delegates openLink on tile click', async () => {
     mockLinksStore.loadingLinks = true
     const loadingWrapper = await mountPage()
-    expect(loadingWrapper.findAll('.quick-skeleton')).toHaveLength(6)
+    expect(loadingWrapper.findAll('.quick-skeleton')).toHaveLength(8)
 
     mockLinksStore.loadingLinks = false
     mockLinksStore.links = [
@@ -278,13 +278,15 @@ describe('HomePage.vue', () => {
       { id: 'l4', title: 'git', icon_url: null },
       { id: 'l5', title: 'mail', icon_url: null },
       { id: 'l6', title: 'vpn', icon_url: null },
-      { id: 'l7', title: 'extra', icon_url: null },
+      { id: 'l7', title: 'extra1', icon_url: null },
+      { id: 'l8', title: 'extra2', icon_url: null },
+      { id: 'l9', title: 'extra3', icon_url: null },
     ]
 
     const wrapper = await mountPage()
 
     const tiles = wrapper.findAll('.quick-grid .quick-tile')
-    expect(tiles).toHaveLength(6)
+    expect(tiles).toHaveLength(8)
     expect(wrapper.find('.quick-tile__icon img').exists()).toBe(true)
     expect(wrapper.find('.quick-tile__letter').text()).toBe('C')
 

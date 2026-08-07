@@ -65,17 +65,17 @@ describe('useHomeLinksPreview.topLinks', () => {
     expect(api.topLinks.value.map((l) => l.id)).toEqual(['2', '4'])
   })
 
-  it('caps featured links at 6', async () => {
-    const links = Array.from({ length: 8 }, (_, i) => makeLink(i, true))
+  it('caps featured links at 8 (сетка 4×2 концепта)', async () => {
+    const links = Array.from({ length: 10 }, (_, i) => makeLink(i, true))
     const api = await mountWithLinks(links)
-    expect(api.topLinks.value).toHaveLength(6)
-    expect(api.topLinks.value.map((l) => l.id)).toEqual(['0', '1', '2', '3', '4', '5'])
+    expect(api.topLinks.value).toHaveLength(8)
+    expect(api.topLinks.value.map((l) => l.id)).toEqual(['0', '1', '2', '3', '4', '5', '6', '7'])
   })
 
-  it('falls back to first 6 links when none are flagged', async () => {
-    const links = Array.from({ length: 8 }, (_, i) => makeLink(i, false))
+  it('falls back to first 8 links when none are flagged', async () => {
+    const links = Array.from({ length: 10 }, (_, i) => makeLink(i, false))
     const api = await mountWithLinks(links)
-    expect(api.topLinks.value).toHaveLength(6)
-    expect(api.topLinks.value.map((l) => l.id)).toEqual(['0', '1', '2', '3', '4', '5'])
+    expect(api.topLinks.value).toHaveLength(8)
+    expect(api.topLinks.value.map((l) => l.id)).toEqual(['0', '1', '2', '3', '4', '5', '6', '7'])
   })
 })
