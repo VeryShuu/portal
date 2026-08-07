@@ -65,6 +65,74 @@ class TestBrandingSettingsModel:
             BrandingSettings(banner_type="invalid")
 
 
+# ── Hero hour validation (BrandingSettings.hero_*_hour, 0..23) ────────────────
+
+
+class TestHeroHourValidation:
+    def test_hero_hour_defaults(self):
+        from app.api.branding import BrandingSettings
+
+        s = BrandingSettings()
+        assert (s.hero_morning_hour, s.hero_day_hour, s.hero_evening_hour) == (6, 12, 18)
+
+    @pytest.mark.parametrize("bad", [-1, 24, 100])
+    def test_hero_morning_hour_out_of_range_rejected(self, bad):
+        from pydantic import ValidationError
+
+        from app.api.branding import BrandingSettings
+
+        with pytest.raises(ValidationError):
+            BrandingSettings(hero_morning_hour=bad)
+
+    @pytest.mark.parametrize("bad", [-1, 24])
+    def test_hero_day_hour_out_of_range_rejected(self, bad):
+        from pydantic import ValidationError
+
+        from app.api.branding import BrandingSettings
+
+        with pytest.raises(ValidationError):
+            BrandingSettings(hero_day_hour=bad)
+
+    @pytest.mark.parametrize("bad", [-1, 24])
+    def test_hero_evening_hour_out_of_range_rejected(self, bad):
+        from pydantic import ValidationError
+
+        from app.api.branding import BrandingSettings
+
+        with pytest.raises(ValidationError):
+            BrandingSettings(hero_evening_hour=bad)
+
+    @pytest.mark.parametrize("ok", [0, 12, 23])
+    def test_hero_hour_boundary_values_accepted(self, ok):
+        from app.api.branding import BrandingSettings
+
+        s = BrandingSettings(hero_morning_hour=ok, hero_day_hour=ok, hero_evening_hour=ok)
+        assert (s.hero_morning_hour, s.hero_day_hour, s.hero_evening_hour) == (ok, ok, ok)
+
+    def test_hero_hour_roundtrip_through_save_load(self, tmp_path):
+        """save_settings→load_settings сохраняет кастомные час-границы (JSON round-trip)."""
+        from app.services.branding_assets import (
+            BrandingSettings,
+            load_settings,
+            save_settings,
+        )
+
+        settings_file = tmp_path / "settings.json"
+        with (
+            patch("app.services.branding_assets.SETTINGS_FILE", settings_file),
+            patch("app.services.branding_assets.BRANDING_DIR", tmp_path),
+        ):
+            save_settings(
+                BrandingSettings(hero_morning_hour=7, hero_day_hour=13, hero_evening_hour=20)
+            )
+            loaded = load_settings()
+        assert (loaded.hero_morning_hour, loaded.hero_day_hour, loaded.hero_evening_hour) == (
+            7,
+            13,
+            20,
+        )
+
+
 # ── EmailSettings models ──────────────────────────────────────────────────────
 
 
@@ -399,6 +467,58 @@ class TestGetBrandingSettings:
         assert body["has_favicon"] is True
         assert body["has_login_bg"] is True
 
+    async def test_has_hero_bg_flags_reflect_files(self, client):
+        """has_hero_bg_morning/day/evening вычисляются из наличия файлов на диске."""
+        fake_path = MagicMock()
+        fake_path.__bool__ = lambda self: True
+
+        def _mock_find(prefix, exts):
+            if prefix in ("hero-bg-morning", "hero-bg-day", "hero-bg-evening"):
+                return fake_path
+            return None
+
+        with (
+            patch("app.services.branding_assets.find_file", side_effect=_mock_find),
+            patch(
+                "app.api.branding.load_system_settings",
+                return_value=MagicMock(video_gallery_url=None),
+            ),
+            patch(
+                "app.services.branding_assets.load_settings",
+                return_value=__import__(
+                    "app.api.branding", fromlist=["BrandingSettings"]
+                ).BrandingSettings(),
+            ),
+        ):
+            r = await client.get("/api/v1/branding/settings")
+        assert r.status_code == 200
+        body = r.json()
+        assert body["has_hero_bg_morning"] is True
+        assert body["has_hero_bg_day"] is True
+        assert body["has_hero_bg_evening"] is True
+
+    async def test_hero_hour_settings_returned_in_response(self, client):
+        """GET /branding/settings возвращает кастомные hero_*_hour в ответе."""
+        from app.api.branding import BrandingSettings
+
+        with (
+            patch("app.services.branding_assets.find_file", return_value=None),
+            patch(
+                "app.api.branding.load_system_settings",
+                return_value=MagicMock(video_gallery_url=None),
+            ),
+            patch(
+                "app.services.branding_assets.load_settings",
+                return_value=BrandingSettings(hero_morning_hour=7, hero_evening_hour=21),
+            ),
+        ):
+            r = await client.get("/api/v1/branding/settings")
+        assert r.status_code == 200
+        body = r.json()
+        assert body["hero_morning_hour"] == 7
+        assert body["hero_day_hour"] == 12  # default
+        assert body["hero_evening_hour"] == 21
+
 
 class TestPutBrandingSettings:
     async def test_non_admin_gets_403(self, authed_client_factory):
@@ -421,6 +541,32 @@ class TestPutBrandingSettings:
             )
         assert r.status_code == 200
         assert r.json()["portal_name"] == "Новый Портал"
+
+    async def test_admin_saves_hero_hours(self, authed_client_factory):
+        """PUT /admin/branding/settings принимает и возвращает hero_*_hour."""
+        ac, _ = authed_client_factory(role="admin")
+        with (
+            patch("app.services.branding_assets.save_settings"),
+            patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
+        ):
+            r = await ac.put(
+                "/api/v1/admin/branding/settings",
+                json={"hero_morning_hour": 7, "hero_day_hour": 13, "hero_evening_hour": 20},
+            )
+        assert r.status_code == 200
+        body = r.json()
+        assert body["hero_morning_hour"] == 7
+        assert body["hero_day_hour"] == 13
+        assert body["hero_evening_hour"] == 20
+
+    async def test_admin_rejects_invalid_hero_hour(self, authed_client_factory):
+        """PUT с hero_*_hour вне 0..23 → 422."""
+        ac, _ = authed_client_factory(role="admin")
+        r = await ac.put(
+            "/api/v1/admin/branding/settings",
+            json={"hero_morning_hour": 24},
+        )
+        assert r.status_code == 422
 
 
 class TestDeleteBrandingFiles:
@@ -908,6 +1054,117 @@ class TestUploadLoginBg:
             r = await ac.post("/api/v1/admin/branding/login-bg", files=files)
         assert r.status_code == 200
         assert r.json()["url"] == "/api/v1/branding/login-bg"
+
+
+# ── POST/GET/DELETE /admin/branding/hero-bg-{morning,day,evening} ────────────
+
+
+# Hero-фоны повторяют механизм login-bg. Тест параметризован по трём слотам.
+_HERO_BG_KINDS = ["morning", "day", "evening"]
+
+
+class TestHeroBgEndpoints:
+    @pytest.mark.parametrize("slot", _HERO_BG_KINDS)
+    async def test_get_404_when_missing(self, client, slot):
+        with patch("app.services.branding_assets.find_file", return_value=None):
+            r = await client.get(f"/api/v1/branding/hero-bg-{slot}")
+        assert r.status_code == 404
+
+    @pytest.mark.parametrize("slot", _HERO_BG_KINDS)
+    async def test_head_returns_cache_headers_when_present(self, client, slot):
+        fake_bg = MagicMock()
+        fake_bg.suffix = ".jpg"
+        with patch("app.services.branding_assets.find_file", return_value=fake_bg):
+            r = await client.head(f"/api/v1/branding/hero-bg-{slot}")
+        assert r.status_code == 200
+        assert "Cache-Control" in r.headers
+
+    @pytest.mark.parametrize("slot", _HERO_BG_KINDS)
+    async def test_upload_invalid_mime_returns_422(self, authed_client_factory, slot):
+        ac, _ = authed_client_factory(role="admin")
+        files = {"file": (f"hero-{slot}.bmp", b"fakebmp", "image/bmp")}
+        r = await ac.post(f"/api/v1/admin/branding/hero-bg-{slot}", files=files)
+        assert r.status_code == 422
+
+    @pytest.mark.parametrize("slot", _HERO_BG_KINDS)
+    async def test_upload_jpeg_success_returns_url(self, authed_client_factory, tmp_path, slot):
+        ac, _ = authed_client_factory(role="admin")
+        with (
+            patch("app.services.branding_assets.BRANDING_DIR", tmp_path),
+            patch(
+                "app.services.branding_assets.stream_upload_to_segments",
+                new_callable=AsyncMock,
+                return_value=(1024, "image/jpeg"),
+            ),
+            patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
+        ):
+            files = {"file": (f"hero-{slot}.jpg", b"fakejpg", "image/jpeg")}
+            r = await ac.post(f"/api/v1/admin/branding/hero-bg-{slot}", files=files)
+        assert r.status_code == 200
+        assert r.json()["url"] == f"/api/v1/branding/hero-bg-{slot}"
+
+    @pytest.mark.parametrize("slot", _HERO_BG_KINDS)
+    async def test_upload_webp_success_returns_url(self, authed_client_factory, tmp_path, slot):
+        ac, _ = authed_client_factory(role="admin")
+        with (
+            patch("app.services.branding_assets.BRANDING_DIR", tmp_path),
+            patch(
+                "app.services.branding_assets.stream_upload_to_segments",
+                new_callable=AsyncMock,
+                return_value=(800, "image/webp"),
+            ),
+            patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
+        ):
+            files = {"file": (f"hero-{slot}.webp", b"fakewebp", "image/webp")}
+            r = await ac.post(f"/api/v1/admin/branding/hero-bg-{slot}", files=files)
+        assert r.status_code == 200
+        assert r.json()["url"] == f"/api/v1/branding/hero-bg-{slot}"
+
+    @pytest.mark.parametrize("slot", _HERO_BG_KINDS)
+    async def test_upload_non_editor_gets_403(self, authed_client_factory, slot):
+        ac, _ = authed_client_factory(role="reader")
+        files = {"file": (f"hero-{slot}.jpg", b"fakejpg", "image/jpeg")}
+        r = await ac.post(f"/api/v1/admin/branding/hero-bg-{slot}", files=files)
+        assert r.status_code == 403
+
+    @pytest.mark.parametrize("slot", _HERO_BG_KINDS)
+    async def test_reset_non_admin_403(self, authed_client_factory, slot):
+        ac, _ = authed_client_factory(role="reader")
+        r = await ac.delete(f"/api/v1/admin/branding/hero-bg-{slot}")
+        assert r.status_code == 403
+
+    @pytest.mark.parametrize("slot", _HERO_BG_KINDS)
+    async def test_reset_admin_200(self, authed_client_factory, slot):
+        ac, _ = authed_client_factory(role="admin")
+        with (
+            patch("app.services.branding_assets.delete_files"),
+            patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
+        ):
+            r = await ac.delete(f"/api/v1/admin/branding/hero-bg-{slot}")
+        assert r.status_code == 200
+        assert "detail" in r.json()
+
+    @pytest.mark.parametrize("slot", _HERO_BG_KINDS)
+    async def test_upload_emits_audit(self, authed_client_factory, tmp_path, slot):
+        """Успешная загрузка эмитит audit-событие с target=hero_bg_<slot>."""
+        ac, _ = authed_client_factory(role="admin")
+        audit_mock = AsyncMock()
+        with (
+            patch("app.services.branding_assets.BRANDING_DIR", tmp_path),
+            patch(
+                "app.services.branding_assets.stream_upload_to_segments",
+                new_callable=AsyncMock,
+                return_value=(1024, "image/jpeg"),
+            ),
+            patch("app.services.audit.push_audit_event", new_callable=lambda: audit_mock),
+        ):
+            files = {"file": (f"hero-{slot}.jpg", b"fakejpg", "image/jpeg")}
+            r = await ac.post(f"/api/v1/admin/branding/hero-bg-{slot}", files=files)
+        assert r.status_code == 200
+        audit_mock.assert_awaited_once()
+        # metadata.target = "hero_bg_<slot>"
+        call_kwargs = audit_mock.await_args.kwargs
+        assert call_kwargs.get("metadata", {}).get("target") == f"hero_bg_{slot}"
 
 
 # ── send_test_email: SMTP kwargs / exception path ───────────────────────────

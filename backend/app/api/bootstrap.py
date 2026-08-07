@@ -83,6 +83,12 @@ def _build_branding() -> BrandingSettingsOut:
         has_login_bg=branding_assets.find_file("login-bg", branding_assets.ALL_EXTS) is not None,
         has_logo=branding_assets.find_file("logo", branding_assets.ALL_EXTS) is not None,
         allowed_iframe_origins=iframe_origins,
+        has_hero_bg_morning=branding_assets.find_file("hero-bg-morning", branding_assets.ALL_EXTS)
+        is not None,
+        has_hero_bg_day=branding_assets.find_file("hero-bg-day", branding_assets.ALL_EXTS)
+        is not None,
+        has_hero_bg_evening=branding_assets.find_file("hero-bg-evening", branding_assets.ALL_EXTS)
+        is not None,
     )
 
 
@@ -181,6 +187,9 @@ async def bootstrap(
             has_login_bg=False,
             has_logo=False,
             allowed_iframe_origins=[],
+            has_hero_bg_morning=False,
+            has_hero_bg_day=False,
+            has_hero_bg_evening=False,
         )
 
     return BootstrapOut(
