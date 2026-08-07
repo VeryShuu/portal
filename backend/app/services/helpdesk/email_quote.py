@@ -120,6 +120,19 @@ _HTML_SOGO_HEADER_RE = re.compile(
     re.IGNORECASE,
 )
 
+# HTML Original Message-маркер (Roundcube / Outlook-веб): forward/reply-разделитель
+# «-----Original Message-----» / «----- Исходное сообщение -----» внутри ``<div>``/``<p>``.
+# Roundcube webmail оформляет цитату как ``<div>-------- Исходное сообщение --------</div>``
+# с последующими ``<div>От:</div><div>Дата:</div>...`` (без ``<b>`` и без quote-классов,
+# поэтому ``_HTML_OUTLOOK_HEADER_RE`` и ``_HTML_QUOTE_RE`` её пропускают).
+# HTML-аналог первого ``_QUOTE_PATTERNS`` (plain). Локализации ru/en — те же, что в plain.
+_HTML_ORIGINAL_MESSAGE_RE = re.compile(
+    r"(?:<div\b[^>]*>|<p\b[^>]*>)?\s*-{2,}\s*"
+    r"(?:Original\s+Message|Исходн(?:ого|ое)\s+сообщени[ея]"
+    r"|Оригинал(?:ьного|ьное)\s+сообщени[ея])\s*-{2,}",
+    re.IGNORECASE,
+)
+
 # Наш собственный HTML-маркер. ``REPLY_MARKER_TOKEN`` — это видимый текст
 # инструкции («Ответьте выше этой линии»), а не скрытый машинный токен: скрытые
 # узлы (``font-size:0``/HTML-комментарии) ненадёжно переживают ответ в Outlook
@@ -282,6 +295,14 @@ def strip_quoted_html(html: str, *, keep_forward: bool = False) -> str:
     #     ``<blockquote>`` не трогается (легитимное форматирование) — отрезается
     #     именно по предшествующему разделителю (см. ``_HTML_SOGO_HEADER_RE``).
     m = _HTML_SOGO_HEADER_RE.search(kept)
+    if m:
+        kept = kept[: m.start()].rstrip()
+
+    # 2c. Roundcube / Outlook-веб: forward/reply-маркер «-----Original Message-----»
+    #     / «----- Исходное сообщение -----» в ``<div>``/``<p>`` (HTML-аналог
+    #     первого ``_QUOTE_PATTERNS``). Roundcube оформляет цитату без ``<b>`` и
+    #     без quote-классов — его пропускают шаги 2/2b/3.
+    m = _HTML_ORIGINAL_MESSAGE_RE.search(kept)
     if m:
         kept = kept[: m.start()].rstrip()
 

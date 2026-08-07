@@ -317,6 +317,76 @@ class TestStripQuotedHtmlSogoMailRu:
         assert strip_quoted_html(html) == html
 
 
+# ── strip_quoted_html — Roundcube / Outlook-веб Original Message ────────────
+
+
+class TestStripQuotedHtmlOriginalMessage:
+    """Roundcube webmail оформляет процитированное письмо маркером
+    ``-------- Исходное сообщение --------`` (ru) / ``-------- Original Message --------``
+    (en) внутри ``<div>``/``<p>`` (без ``<b>`` и без quote-классов). Существующие
+    слои ``_HTML_OUTLOOK_HEADER_RE`` (требует ``<b>From:</b>``) и ``_HTML_QUOTE_RE``
+    (требует классы) его пропускали. Регрессия прод-тикета №72: ответы заявителя
+    Баркова через Roundcube сохранялись с неотрезанной историей переписки.
+    HTML-аналог первого ``_QUOTE_PATTERNS`` (plain) — ``_HTML_ORIGINAL_MESSAGE_RE``.
+    """
+
+    def test_roundcube_ru_original_message(self) -> None:
+        # Реальная структура HTML из прод-тикета №72 (Roundcube, ответ Баркова):
+        # «-------- Исходное сообщение --------» в <div> + история #72 ниже.
+        html = (
+            "<div>Так он мне сразу ошибку дает как клацаю на отсутствие</div>"
+            "<div><br></div>"
+            "<div><div>-------- Исходное сообщение --------</div>"
+            "<div>От: it@mage.ru </div>"
+            "<div>Дата: 07.08.2026  12:53  (GMT+03:00) </div>"
+            "<div>Кому: boris.barkov@mage.ru </div>"
+            "<div>Тема: [#TKT-72] СЭД </div></div>"
+            "<div><table><tbody><tr><td><div>#72 — СЭД</div>"
+            "<div><span>Сообщение от — </span>Борзихин</div>"
+            "<div><p>попробуй написать меньше текста</p></div>"
+            "</div></td></tr></tbody></table></div>"
+        )
+        out = strip_quoted_html(html)
+        assert "Так он мне сразу ошибку" in out
+        assert "Исходное сообщение" not in out
+        assert "#72" not in out
+        assert "Борзихин" not in out
+
+    def test_roundcube_en_original_message(self) -> None:
+        html = (
+            "<div>My answer</div>"
+            "<div>-------- Original Message --------</div>"
+            "<div>From: agent@x.test</div>"
+            "<div>history below</div>"
+        )
+        out = strip_quoted_html(html)
+        assert "My answer" in out
+        assert "Original Message" not in out
+        assert "history below" not in out
+
+    def test_legit_text_with_dashes_not_stripped(self) -> None:
+        # Регресс: «---»/«-----» без «Original Message»/«Исходное сообщение» —
+        # легитимный разделитель (например, подпись). Паттерн требует сигнатуру
+        # forward-маркера, а не только дефисы.
+        html = "<p>Обычный текст с --- тире посередине</p>"
+        assert strip_quoted_html(html) == html
+
+    def test_keep_forward_preserves_original_message_block(self) -> None:
+        # ``keep_forward=True`` (новая заявка): forward-блок сохраняется, как и
+        # для Gmail/Outlook/SOGo — для новой заявки forward может быть сутью
+        # обращения (bounce/пересланный контекст проблемы).
+        html = (
+            "<p>Добрый день, не отправляется письмо.</p>"
+            "<div>-------- Исходное сообщение --------</div>"
+            "<div>From: Mailer-Daemon</div>"
+            "<div>message size exceeds limit</div>"
+        )
+        out = strip_quoted_html(html, keep_forward=True)
+        assert "Добрый день" in out
+        assert "-------- Исходное сообщение --------" in out
+        assert "message size exceeds limit" in out
+
+
 # ── Round-trip: письмо с историей → ответ заявителя → чистый текст ────────────
 
 
