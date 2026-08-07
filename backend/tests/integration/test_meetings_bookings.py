@@ -135,8 +135,50 @@ class TestCreateBooking:
         )
         assert b2.id is not None
 
+    async def test_create_with_absence_in_invited_persists(self, real_db_session, real_user, room):
+        """Regression: `absence` (with `date` fields) must not reach JSONB.
 
-class TestUpdateBooking:
+        Фронтенд отправляет участника обратно в POST /bookings вместе с
+        заполненным `absence` (полученным из /participants/search). До фикса
+        `model_dump()` тащил `AbsenceInfo{start_date,end_date: date}` в dict, и
+        SQLAlchemy падал на JSONB-сериализации с
+        `TypeError: Object of type date is not JSON serializable` → 500.
+        Статус отсутствия не персистится — enrich идёт на лету в выдаче/письме.
+        """
+        from datetime import date
+
+        from app.schemas.meetings import AbsenceInfo, BookingCreate, InvitedUser
+        from app.services.meetings.bookings_service import create_booking
+
+        start, end = _slot()
+        b = await create_booking(
+            real_db_session,
+            payload=BookingCreate(
+                title="With absence",
+                start_time=start,
+                end_time=end,
+                room_ids=[room.id],
+                invited_users=[
+                    InvitedUser(
+                        user_id="u1",
+                        full_name="A",
+                        email="a@x.com",
+                        absence=AbsenceInfo(
+                            category="vacation",
+                            start_date=date(2026, 8, 1),
+                            end_date=date(2026, 8, 31),
+                        ),
+                    ),
+                ],
+            ),
+            user=real_user,
+        )
+        # `absence` не должен попасть в персистируемый JSONB-слепок.
+        assert b.invited_users is not None
+        assert len(b.invited_users) == 1
+        assert "absence" not in b.invited_users[0]
+        assert b.invited_users[0]["user_id"] == "u1"
+
     async def test_owner_can_update(self, real_db_session, real_user, room):
         from app.schemas.meetings import BookingCreate, BookingUpdate
         from app.services.meetings.bookings_service import (
@@ -285,6 +327,68 @@ class TestUpdateBooking:
         assert removed_ids == {"u1"}
         assert unchanged_ids == {"u2"}
         assert diff.non_participant_changed is False
+
+    async def test_update_with_absence_in_invited_persists(self, real_db_session, real_user, room):
+        """Regression: PUT /bookings с `absence` в invited_users не падает 500.
+
+        Тот же инвариант, что и в test_create_with_absence_in_invited_persists,
+        но для пути обновления: `update_booking` пишет `new_invited` в JSONB.
+        """
+        from datetime import date
+
+        from app.schemas.meetings import (
+            AbsenceInfo,
+            BookingCreate,
+            BookingUpdate,
+            InvitedUser,
+        )
+        from app.services.meetings.bookings_service import (
+            create_booking,
+            get_booking,
+            update_booking,
+        )
+
+        start, end = _slot()
+        b = await create_booking(
+            real_db_session,
+            payload=BookingCreate(
+                title="x",
+                start_time=start,
+                end_time=end,
+                room_ids=[room.id],
+                invited_users=[
+                    InvitedUser(user_id="u1", full_name="A", email="a@x.com"),
+                ],
+            ),
+            user=real_user,
+        )
+        booking, _ = await update_booking(
+            real_db_session,
+            booking_id=b.id,
+            payload=BookingUpdate(
+                invited_users=[
+                    InvitedUser(
+                        user_id="u1",
+                        full_name="A",
+                        email="a@x.com",
+                        absence=AbsenceInfo(
+                            category="sick",
+                            start_date=date(2026, 8, 5),
+                            end_date=date(2026, 8, 10),
+                        ),
+                    ),
+                ]
+            ),
+            user=real_user,
+        )
+        assert booking.invited_users is not None
+        assert "absence" not in booking.invited_users[0]
+
+        # Перезагрузка из БД подтверждает, что строка действительно сохранена.
+        reloaded = await get_booking(real_db_session, b.id)
+        assert reloaded is not None
+        assert reloaded.invited_users is not None
+        assert "absence" not in reloaded.invited_users[0]
 
 
 class TestDeleteBooking:

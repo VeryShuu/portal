@@ -272,3 +272,52 @@ def test_compute_diff_filters_all_malformed_entries(malformed):
     assert diff.removed_users == []
     assert diff.unchanged_users == []
     assert diff.added_users == []
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# invited_users_to_jsonb — strip `absence` (regression: date не сериализуем в JSONB)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def test_invited_users_to_jsonb_strips_absence():
+    """`absence` не должен попасть в JSONB-слепок.
+
+    Regression (сессия 2026-08-07): фронтенд отправляет участника с заполненным
+    `absence` (от /participants/search), `model_dump()` тащил `AbsenceInfo` с
+    `date`-полями → SQLAlchemy падал на JSONB-сериализации с
+    `TypeError: Object of type date is not JSON serializable`.
+    """
+    import json
+
+    from app.schemas.meetings import AbsenceInfo, InvitedUser
+    from app.services.meetings.bookings_service import invited_users_to_jsonb
+
+    result = invited_users_to_jsonb(
+        [
+            InvitedUser(
+                user_id="u1",
+                full_name="A",
+                email="a@x.com",
+                absence=AbsenceInfo(
+                    category="vacation",
+                    start_date=date(2026, 8, 1),
+                    end_date=date(2026, 8, 31),
+                ),
+            ),
+            InvitedUser(user_id="u2", full_name="B", email="b@x.com"),
+        ]
+    )
+    assert len(result) == 2
+    assert "absence" not in result[0]
+    assert "absence" not in result[1]
+    assert result[0]["user_id"] == "u1"
+    # Главный регрессионный ассерт: результат сериализуем в JSON (как делает
+    # SQLAlchemy для JSONB). До фикса json.dumps падал на `date`.
+    json.dumps(result)
+
+
+def test_invited_users_to_jsonb_empty():
+    """Пустой список → пустой список (edge-case)."""
+    from app.services.meetings.bookings_service import invited_users_to_jsonb
+
+    assert invited_users_to_jsonb([]) == []

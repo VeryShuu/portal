@@ -95,6 +95,30 @@ async def _verify_rooms_active(db: AsyncSession, room_ids: list[uuid.UUID]) -> l
     return rooms
 
 
+def invited_users_to_jsonb(invited: list[InvitedUser]) -> list[dict]:
+    """Дамп списка приглашённых в dict для записи в JSONB ``invited_users``.
+
+    Поле ``absence`` намеренно **выбрасывается**: статус отсутствия
+    (отпуск/болезнь/командировка) не персистится в JSONB-слепок, т.к.
+    пересчитывается cron'ом из ERP и устарел бы за сутки. Он обогащается «на
+    лету» в выдаче (``booking_to_out`` / live-поиск) и в письме-приглашении
+    (см. :mod:`app.services.meetings.absence_enrichment`).
+
+    Без этого.strip'а `model_dump()` оставил бы в dict ``AbsenceInfo`` с
+    ``datetime.date``-полями, а SQLAlchemy при JSONB-сериализации падает с
+    ``TypeError: Object of type date is not JSON serializable`` — ровно это и
+    происходило в проде при отправке фронтендом участника с заполненным
+    ``absence`` (только у отсутствующих сотрудников).
+
+    Args:
+        invited: список приглашённых (входные данные из Pydantic-схемы).
+
+    Returns:
+        Список plain-dict'ов без ``absence``, готовых к записи в JSONB.
+    """
+    return [u.model_dump(exclude={"absence"}) for u in invited]
+
+
 def _compute_diff(
     old_users: list[dict],
     new_users: list[InvitedUser],
