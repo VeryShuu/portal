@@ -71,6 +71,17 @@ class TestRoomEmailDispatch:
             yield mock_mod
 
     @pytest.fixture(autouse=True)
+    def _patch_enrich_absences(self):
+        # Absence-enrichment ходит в БД; в unit-тестах сессия — AsyncMock.
+        # Логика enrich покрыта отдельными unit/integration-тестами, здесь
+        # возвращаем пустой dict (нет отсутствий).
+        with patch(
+            "app.services.meetings.absence_enrichment.enrich_absences_for_invited",
+            AsyncMock(return_value={}),
+        ):
+            yield
+
+    @pytest.fixture(autouse=True)
     def _patch_system_cfg(self):
         cfg = SimpleNamespace(
             portal_base_url="https://portal.local", timezone="Europe/Moscow", log_level="INFO"
@@ -171,6 +182,14 @@ class TestEnqueueMeetingEmailsInSession:
             yield mock_mod
 
     @pytest.fixture(autouse=True)
+    def _patch_enrich_absences(self):
+        with patch(
+            "app.services.meetings.absence_enrichment.enrich_absences_for_invited",
+            AsyncMock(return_value={}),
+        ):
+            yield
+
+    @pytest.fixture(autouse=True)
     def _patch_system_cfg(self):
         cfg = SimpleNamespace(
             portal_base_url="https://portal.local", timezone="Europe/Moscow", log_level="INFO"
@@ -244,6 +263,14 @@ class TestUpdatedWithDiffDispatch:
         mock_mod = _ical_builder_mock()
         with patch.dict(sys.modules, {"app.services.meetings.ical_builder": mock_mod}):
             yield mock_mod
+
+    @pytest.fixture(autouse=True)
+    def _patch_enrich_absences(self):
+        with patch(
+            "app.services.meetings.absence_enrichment.enrich_absences_for_invited",
+            AsyncMock(return_value={}),
+        ):
+            yield
 
     @pytest.fixture(autouse=True)
     def _patch_system_cfg(self):

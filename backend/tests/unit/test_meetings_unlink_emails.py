@@ -90,6 +90,10 @@ def patched_env():
             return_value="portal@x",
         ),
         patch("app.core.database.AsyncSessionLocal", return_value=session),
+        patch(
+            "app.services.meetings.absence_enrichment.enrich_absences_for_invited",
+            AsyncMock(return_value={}),
+        ),
     ):
         yield {"calls": calls, "enqueue": enqueue}
 

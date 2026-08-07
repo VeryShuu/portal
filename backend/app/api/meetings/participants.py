@@ -21,6 +21,7 @@ from app.schemas.meetings import (
     ResolveParticipantsRequest,
     ResolveParticipantsResponse,
 )
+from app.services.meetings.absence_enrichment import current_status_snapshot
 
 router = APIRouter(
     prefix="/meetings/participants",
@@ -44,6 +45,7 @@ _BULK_MAX_TOKENS = 50
 @router.get("/search", response_model=list[InvitedUser])
 async def search_participants(
     user: CurrentUser,
+    db: DbDep,
     q: str = Query(max_length=100),
     limit: int = Query(default=20, le=50),
 ) -> list[InvitedUser]:
@@ -66,6 +68,14 @@ async def search_participants(
         last = u.get("lastName", "") or ""
         full_name = f"{first} {last}".strip() or u.get("username", "")
         out.append(InvitedUser(user_id=u["id"], full_name=full_name, email=email))
+
+    # Enrich текущим статусом отсутствия (на «сегодня») — live-подсказка при
+    # поиске, как в справочнике. Даты встречи здесь ещё нет; после сохранения
+    # бронирования absence считается на дату встречи (booking_to_out).
+    if out:
+        absences = await current_status_snapshot(db, [inv.email for inv in out])
+        for inv in out:
+            inv.absence = absences.get(inv.email.lower())
 
     return out
 
@@ -201,6 +211,12 @@ async def resolve_participants(
             )
         else:
             unresolved.append(token)
+
+    # Enrich текущим статусом отсутствия (на «сегодня»), как в search.
+    if resolved:
+        absences = await current_status_snapshot(db, [u.email for u in resolved])
+        for u in resolved:
+            u.absence = absences.get(u.email.lower())
 
     logger.info(
         "meetings.participants.resolve",

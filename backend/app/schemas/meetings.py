@@ -76,11 +76,33 @@ class RoomOut(BaseModel):
     sort_order: int
 
 
+class AbsenceInfo(BaseModel):
+    """Информационная подпись отсутствия сотрудника (отпуск/отгул/болезнь/командировка).
+
+    Не хранится в ``invited_users`` JSONB — обогащается на лету (см.
+    :mod:`app.services.meetings.absence_enrichment`), т.к. статус пересчитывается
+    ежедневно из ERP и запечённый в слепок устарел бы за сутки.
+
+    ``category`` — одна из 4 coarse-категорий (см. ``absences_status.py``), но
+    ``working`` сюда не попадает (отсутствие = всё, что не ``working``).
+    ``start_date``/``end_date`` — диапазон отсутствия, на которое попала встреча
+    (или текущее отсутствие для live-поиска).
+    """
+
+    category: Literal["vacation", "sick", "business_trip"]
+    start_date: _Date
+    end_date: _Date
+
+
 class InvitedUser(BaseModel):
     user_id: str
     full_name: str
     email: EmailStr
     source: Literal["keycloak", "external"] = "keycloak"
+    # Только для выдачи (booking_to_out / participants search / resolve). При
+    # создании/обновлении бронирования сервис игнорирует это поле — статус
+    # отсутствия не персистится в JSONB-слепок invited_users.
+    absence: AbsenceInfo | None = None
 
 
 class ResolveParticipantsRequest(BaseModel):

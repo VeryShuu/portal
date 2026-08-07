@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException, Request, status
 
 from app.api.deps import CurrentUser, DbDep, RedisDep
 from app.api.meetings import MeetingsGuard
-from app.api.meetings._mappers import booking_to_out as _booking_to_out
+from app.api.meetings._mappers import bookings_to_out as _bookings_to_out
 from app.core.logging import get_logger
 from app.schemas.meetings import (
     BookingConflictOut,
@@ -98,7 +98,7 @@ async def update_series_endpoint(
         )
 
     logger.info("meetings.series.updated", series_id=str(series_id), user=str(user.id))
-    return [_booking_to_out(b) for b in bookings]
+    return await _bookings_to_out(db, bookings)
 
 
 @router.delete("/{series_id}", status_code=status.HTTP_204_NO_CONTENT)
