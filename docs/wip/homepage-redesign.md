@@ -22,27 +22,28 @@
   (`GET /bookmarks`). Пусто → блок скрыт.
 
 ## Чеклист (DoD)
-- [ ] Этап 0: ветка `feat/homepage-redesign` + этот план
-- [ ] Этап 1: Backend branding — `hero_morning/day/evening_hour` (6/12/18) + 3 hero-bg
+- [x] Этап 0: ветка `feat/homepage-redesign` + этот план
+- [x] Этап 1: Backend branding — `hero_morning/day/evening_hour` (6/12/18) + 3 hero-bg
       assets (schema, 9 routes, bootstrap, openapi.json реген)
-- [ ] Этап 1: Backend тесты branding (3 kinds upload/get/delete + hour validation + audit)
-- [ ] Этап 2: Frontend токены МАГЭ (`tokens.css` `--color-mage-*` + `--radius-card/hero` +
+- [x] Этап 1: Backend тесты branding (3 kinds upload/get/delete + hour validation + audit) — 116 pass
+- [x] Этап 2: Frontend токены МАГЭ (`tokens.css` `--color-mage-*` + `--radius-card/hero` +
       `--shadow-soft` + dark overrides)
-- [ ] Этап 3: `HeroBlock.vue` переработка (высота 220-260px, radius 20, фон-фото/градиент
+- [x] Этап 3: `HeroBlock.vue` переработка (высота 240px, radius 20, фон-фото/градиент
       по heroSlot, per-time subtitle)
-- [ ] Этап 4: `stores/branding.ts` (BrandingAsset + ASSET_FLAG) + `BrandingTab.vue`
+- [x] Этап 4: `stores/branding.ts` (BrandingAsset + ASSET_FLAG) + `BrandingTab.vue`
       (3 hero-bg uploads + 3 hour inputs)
-- [ ] Этап 5: `NewsCard.vue` оформление (padding 20, radius 16, cover 200px object-fit
+- [x] Этап 5: `NewsCard.vue` оформление (padding 20, radius 16, cover 200px object-fit
       cover, footer в одну строку, тень --shadow-soft)
-- [ ] Этап 6: Унификация `.widget` (radius 16, padding 20, mage-palette) для всех виджетов
-- [ ] Этап 7: `QuickServicesWidget` (плитки 80-90px), `MeetingsWidget` empty-state компакт,
+- [x] Этап 6: Унификация `.widget` (radius 16, padding 20, mage-palette) для всех виджетов
+- [x] Этап 7: `QuickServicesWidget` (плитки 56px), `MeetingsWidget` empty-state компакт,
       `BirthdaysWidget` список вместо карусели, `PhotosWidget` крупнее, новый
       `QuickLinksWidget` (bookmarks)
-- [ ] Этап 8: Адаптивность 1366/1440/1600 (media queries)
-- [ ] Этап 9: Frontend unit-тесты (Hero/NewsCard/Meetings/Birthdays/QuickLinks) +
-      i18n parity (ru+en, `npm run i18n:check`)
-- [ ] Этап 10: drift-checks (`check-drift.sh --fix`), `ci_lint.sh`, typecheck, build,
-      push ветки + PR, `gh pr checks --watch`. НЕ Merge.
+- [x] Этап 8: Адаптивность 1366/1440/1600 (media queries)
+- [x] Этап 9: Frontend unit-тесты (Hero/NewsCard/Meetings/Birthdays/QuickLinks) — 2278 pass +
+      i18n parity (ru+en, 2311 ключей)
+- [x] Этап 10: drift-checks (`check-drift.sh --check` зелёный), `ci_lint.sh` зелёный,
+      typecheck/build зелёные, push ветки + PR #88 создан.
+      ⏳ Ожидает CI (16 обязательных чеков). НЕ Merge — решение пользователя.
 
 ## Грабли / контекст
 - **16 обязательных CI-чеков** — drift (openapi/types/tests) критичны, гонять
