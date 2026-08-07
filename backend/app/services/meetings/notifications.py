@@ -486,74 +486,15 @@ def _build_html_body(
     absences_by_email: dict[str, Any] | None = None,
 ) -> str:
     import html as _html
-    from datetime import UTC
-    from zoneinfo import ZoneInfo
-
-    from app.core.system_config import load_system_settings
 
     title = _html.escape(booking.title)
     desc = _html.escape(booking.description or "")
     organizer = _html.escape(booking.organizer_name)
-
-    portal_tz = load_system_settings().timezone
-    tz_info = ZoneInfo(portal_tz)
-
-    start_utc = booking.start_time
-    end_utc = booking.end_time
-    if start_utc.tzinfo is None:
-        start_utc = start_utc.replace(tzinfo=UTC)
-    if end_utc.tzinfo is None:
-        end_utc = end_utc.replace(tzinfo=UTC)
-
-    start_local = start_utc.astimezone(tz_info)
-    end_local = end_utc.astimezone(tz_info)
-
-    date_str = f"{start_local.day} {_RU_MONTHS[start_local.month]} {start_local.year}"
-    time_str = f"{start_local.strftime('%H:%M')} – {end_local.strftime('%H:%M')} ({portal_tz})"
-
-    rooms = "; ".join(br.room.name for br in booking.rooms if br.room)
-    rooms_with_links = [
-        (br.room.name, br.room.link) for br in booking.rooms if br.room and br.room.link
-    ]
-
-    # Список участников с информационной подписью отсутствия (отпуск/болезнь/
-    # командировка) для тех, у кого absence действует на дату встречи. HTML общий
-    # для всех получателей письма — подпись относится к участнику из списка, а не
-    # к адресату. absences_by_email ключуется lower(email), см. absence_enrichment.
-    abs_map = absences_by_email or {}
-    invited_items: list[str] = []
-    for u in booking.invited_users or []:
-        name = (
-            u.get("full_name", u.get("email", ""))
-            if isinstance(u, dict)
-            else getattr(u, "full_name", getattr(u, "email", ""))
-        )
-        if not name:
-            continue
-        email_raw = u.get("email", "") if isinstance(u, dict) else getattr(u, "email", "")
-        note_html = ""
-        absence = abs_map.get(str(email_raw).lower()) if email_raw else None
-        if absence is not None:
-            note_html = _absence_note_html(absence)
-        invited_items.append(f"<li>{_html.escape(str(name))}{note_html}</li>")
-
-    if method == "CANCEL":
-        header = "<h2 style='color:#c0392b;text-align:center'>Встреча отменена</h2>"
-    else:
-        header = "<h2 style='color:#143a66;text-align:center'>Приглашение на встречу</h2>"
-
-    rooms_links_html = ""
-    if rooms_with_links:
-        links_items = "".join(
-            f'<li><a href="{_html.escape(link)}">{_html.escape(name)}</a></li>'
-            for name, link in rooms_with_links
-        )
-        rooms_links_html = f'<p><strong>Ссылки на комнаты:</strong><ul style="margin:4px 0 0 0;padding-left:20px">{links_items}</ul></p>'
-
-    invited_html = ""
-    if invited_items:
-        names_items = "".join(invited_items)
-        invited_html = f'<p><strong>Участники:</strong><ul style="margin:4px 0 0 0;padding-left:20px">{names_items}</ul></p>'
+    header = _header_html(method)
+    date_str, time_str, rooms_str = _localized_time_and_rooms_html(booking)
+    rooms_links_html = _rooms_links_html(booking)
+    invited_html = _invited_html(booking, absences_by_email or {})
+    desc_html = f"<p><strong>Описание:</strong> {desc}</p>" if desc else ""
 
     return f"""<!DOCTYPE html>
 <html lang="ru">
@@ -567,14 +508,106 @@ def _build_html_body(
       <p><strong>Организатор:</strong> {organizer}</p>
       <p><strong>Дата:</strong> {date_str}</p>
       <p><strong>Время:</strong> {time_str}</p>
-      <p><strong>Комната:</strong> {_html.escape(rooms)}</p>
+      <p><strong>Комната:</strong> {rooms_str}</p>
       {rooms_links_html}
       {invited_html}
-      {f"<p><strong>Описание:</strong> {desc}</p>" if desc else ""}
+      {desc_html}
     </td></tr>
   </table>
 </body>
 </html>"""
+
+
+def _header_html(method: str) -> str:
+    """Цветной заголовок письма: красный для отмены, синий для приглашения."""
+    if method == "CANCEL":
+        return "<h2 style='color:#c0392b;text-align:center'>Встреча отменена</h2>"
+    return "<h2 style='color:#143a66;text-align:center'>Приглашение на встречу</h2>"
+
+
+def _localized_time_and_rooms_html(booking: MeetingBooking) -> tuple[str, str, str]:
+    """Дата/время в часовом поясе портала + строка имён комнат (HTML-escape).
+
+    Возвращает кортеж (date_str, time_str, rooms_str) для подстановки в шаблон
+    письма. naive-даты трактуются как UTC (защита от записей без tz).
+    """
+    import html as _html
+    from datetime import UTC
+    from zoneinfo import ZoneInfo
+
+    from app.core.system_config import load_system_settings
+
+    portal_tz = load_system_settings().timezone
+    tz_info = ZoneInfo(portal_tz)
+
+    start_utc = booking.start_time
+    end_utc = booking.end_time
+    if start_utc.tzinfo is None:
+        start_utc = start_utc.replace(tzinfo=UTC)
+    if end_utc.tzinfo is None:
+        end_utc = end_utc.replace(tzinfo=UTC)
+
+    start_local = start_utc.astimezone(tz_info)
+    end_local = end_utc.astimezone(tz_info)
+    date_str = f"{start_local.day} {_RU_MONTHS[start_local.month]} {start_local.year}"
+    time_str = f"{start_local.strftime('%H:%M')} – {end_local.strftime('%H:%M')} ({portal_tz})"
+    rooms = "; ".join(br.room.name for br in booking.rooms if br.room)
+    return date_str, time_str, _html.escape(rooms)
+
+
+def _rooms_links_html(booking: MeetingBooking) -> str:
+    """Блок «Ссылки на комнаты» для комнат с заполненным link (пусто если нет)."""
+    import html as _html
+
+    links = [(br.room.name, br.room.link) for br in booking.rooms if br.room and br.room.link]
+    if not links:
+        return ""
+    items = "".join(
+        f'<li><a href="{_html.escape(link)}">{_html.escape(name)}</a></li>' for name, link in links
+    )
+    return f'<p><strong>Ссылки на комнаты:</strong><ul style="margin:4px 0 0 0;padding-left:20px">{items}</ul></p>'
+
+
+def _invited_html(booking: MeetingBooking, absences_by_email: dict[str, Any]) -> str:
+    """Блок «Участники» с информационной подписью отсутствия.
+
+    Подпись absence (отпуск/болезнь/командировка) добавляется под именем для тех,
+    у кого отсутствие действует на дату встречи. HTML письма общий для всех
+    получателей — подпись относится к участнику из списка, а не к адресату.
+    Пусто, если участников нет.
+    """
+    import html as _html
+
+    items: list[str] = []
+    for u in booking.invited_users or []:
+        name = _invited_name(u)
+        if not name:
+            continue
+        email_raw = _invited_email(u)
+        note_html = ""
+        if email_raw:
+            absence = absences_by_email.get(str(email_raw).lower())
+            if absence is not None:
+                note_html = _absence_note_html(absence)
+        items.append(f"<li>{_html.escape(str(name))}{note_html}</li>")
+    if not items:
+        return ""
+    names = "".join(items)
+    return f'<p><strong>Участники:</strong><ul style="margin:4px 0 0 0;padding-left:20px">{names}</ul></p>'
+
+
+def _invited_name(u: Any) -> str:
+    """Имя участника из dict (JSONB) или InvitedUser (fallback на email)."""
+    if isinstance(u, dict):
+        return str(u.get("full_name") or u.get("email") or "")
+    return str(getattr(u, "full_name", "") or getattr(u, "email", "") or "")
+
+
+def _invited_email(u: Any) -> str:
+    """Email участника из dict (JSONB) или InvitedUser (для lookup absence)."""
+    if isinstance(u, dict):
+        return str(u.get("email") or "")
+    return str(getattr(u, "email", "") or "")
 
 
 # Русские подписи категорий отсутствия для письма (i18n в письме не
@@ -606,13 +639,11 @@ def _absence_note_html(absence: Any) -> str:
         return ""
     color = _PRESENCE_COLORS.get(category, "#6b7280")
     end = getattr(absence, "end_date", None)
+    prefix = f'<div style="font-size:11px;color:{color};margin-top:2px">'
     if end is not None:
         until_str = f"{end.day} {_RU_MONTHS.get(end.month, '')}"
-        return (
-            f'<div style="font-size:11px;color:{color};margin-top:2px">'
-            f"{_html_escape(label)} · до {_html_escape(until_str)}</div>"
-        )
-    return f'<div style="font-size:11px;color:{color};margin-top:2px">{_html_escape(label)}</div>'
+        return f"{prefix}{_html_escape(label)} · до {_html_escape(until_str)}</div>"
+    return f"{prefix}{_html_escape(label)}</div>"
 
 
 def _html_escape(s: str) -> str:
