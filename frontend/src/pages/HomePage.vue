@@ -61,6 +61,8 @@
         <MeetingsWidget />
 
         <PhotosWidget />
+
+        <QuickLinksWidget />
       </aside>
     </div>
   </div>
@@ -76,6 +78,7 @@ import BirthdaysWidget from '../components/widgets/BirthdaysWidget.vue'
 import PhotosWidget from '../components/widgets/PhotosWidget.vue'
 import WorldClockWidget from '../components/widgets/WorldClockWidget.vue'
 import MeetingsWidget from '../components/widgets/MeetingsWidget.vue'
+import QuickLinksWidget from '../components/widgets/QuickLinksWidget.vue'
 import PortalBanner from '../components/widgets/PortalBanner.vue'
 import HomeFeaturedNewsSection from '../components/widgets/HomeFeaturedNewsSection.vue'
 import HomeNewsGrid from '../components/widgets/HomeNewsGrid.vue'
@@ -94,15 +97,15 @@ const { loadingNews, pinned, regular, categoriesMap, goToNews } = useHomeNews()
 .home__grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 320px;
-  gap: 24px;
+  gap: var(--space-outer, 24px); /* единая сетка отступов редизайна */
   align-items: flex-start;
 }
 .home__main { min-width: 0; }
-.home__main > * + * { margin-top: 20px; }
+.home__main > * + * { margin-top: var(--space-card-gap, 20px); }
 .home__side {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: var(--space-card-gap, 20px);
   position: sticky;
   top: 16px;
 }
@@ -130,6 +133,14 @@ const { loadingNews, pinned, regular, categoriesMap, goToNews } = useHomeNews()
 }
 
 /* === Responsive === */
+/* Большие десктопы (FullHD 1600+): чуть шире контент, правая колонка стабильна 320px. */
+@media (min-width: 1600px) {
+  .home__grid { grid-template-columns: minmax(0, 1fr) 340px; }
+}
+/* Средние десктопы (1366–1440): правая колонка остаётся фиксированной до 1024px. */
+@media (max-width: 1366px) {
+  .home__grid { gap: 20px; }
+}
 @media (max-width: 1024px) {
   .home__grid { grid-template-columns: 1fr; }
   .home__side { position: static; }

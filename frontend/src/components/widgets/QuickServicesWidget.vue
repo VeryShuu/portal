@@ -76,17 +76,17 @@ const { linksStore, topLinks } = useHomeLinksPreview()
 
 <style scoped>
 .widget {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  padding: 16px 18px 12px;
-  box-shadow: var(--shadow-sm);
+  background: var(--color-mage-card, var(--color-surface));
+  border: 1px solid var(--color-mage-border, var(--color-border));
+  border-radius: var(--radius-card, var(--radius-lg)); /* 16px — единый радиус редизайна */
+  padding: var(--space-card-inner, 16px) var(--space-card-inner, 18px) calc(var(--space-card-inner, 16px) - 4px);
+  box-shadow: var(--shadow-soft, var(--shadow-sm));
 }
 .widget__header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 12px;
+  margin-bottom: 14px;
 }
 .widget__title {
   margin: 0;
@@ -102,17 +102,18 @@ const { linksStore, topLinks } = useHomeLinksPreview()
   gap: 8px;
 }
 
+/* Плитки сервисов (ТЗ п.5): 80×80, иконка сверху, название снизу, navy hover */
 .quick-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
+  gap: 10px;
 }
 .quick-tile {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
-  padding: 10px 6px;
+  gap: 8px;
+  padding: 12px 6px;
   background: transparent;
   border: 1px solid transparent;
   border-radius: var(--radius-md);
@@ -121,16 +122,17 @@ const { linksStore, topLinks } = useHomeLinksPreview()
   transition: background var(--t-fast), border-color var(--t-fast), transform var(--t-fast);
 }
 .quick-tile:hover {
-  background: var(--color-bg-muted);
-  border-color: var(--color-border);
+  /* Лёгкая navy-подсветка при наведении (ТЗ) */
+  background: color-mix(in srgb, var(--color-mage-secondary, #2f6cb5) 10%, transparent);
+  border-color: color-mix(in srgb, var(--color-mage-secondary, #2f6cb5) 30%, transparent);
   transform: translateY(-1px);
 }
 .quick-tile__icon {
-  width: 46px;
-  height: 46px;
+  width: 56px;
+  height: 56px;
   border-radius: var(--radius-lg);
-  background: #fff;
-  border: 1px solid var(--color-border);
+  background: var(--color-mage-card, #fff);
+  border: 1px solid var(--color-mage-border, var(--color-border));
   box-shadow: var(--shadow-sm);
   display: flex;
   align-items: center;
@@ -152,24 +154,24 @@ const { linksStore, topLinks } = useHomeLinksPreview()
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 20px;
+  font-size: 22px;
   font-weight: 700;
   color: #fff;
-  background: linear-gradient(135deg, var(--color-brand-sky), var(--color-brand-navy));
+  background: linear-gradient(135deg, var(--color-mage-secondary, var(--color-brand-sky)), var(--color-mage-primary, var(--color-brand-navy)));
 }
 .quick-tile__name {
   font-size: 11px;
   text-align: center;
-  color: var(--color-text);
+  color: var(--color-mage-text, var(--color-text));
   line-height: 1.2;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
-  max-width: 80px;
+  max-width: 84px;
 }
 .quick-skeleton {
-  height: 68px;
+  height: 90px; /* под увеличенную плитку 80×80 */
   border-radius: var(--radius-md);
   background: var(--color-bg-muted);
   animation: pulse 1.4s ease-in-out infinite;

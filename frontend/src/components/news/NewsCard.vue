@@ -200,13 +200,13 @@ function badgeStyle(cat: string): Record<string, string> {
   position: relative;
   display: flex;
   flex-direction: column;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
+  background: var(--color-mage-card, var(--color-surface));
+  border: 1px solid var(--color-mage-border, var(--color-border));
+  border-radius: var(--radius-card, var(--radius-lg)); /* 16px — единый радиус редизайна */
   overflow: hidden;
   cursor: pointer;
   transition: transform var(--t-base), box-shadow var(--t-base), border-color var(--t-base);
-  box-shadow: var(--shadow-sm);
+  box-shadow: var(--shadow-soft, var(--shadow-sm)); /* минимальная тень редизайна */
   outline: none;
 }
 .news-card:hover,
@@ -217,12 +217,14 @@ function badgeStyle(cat: string): Record<string, string> {
 }
 .news-card--pinned {
   border-color: var(--color-brand-red);
-  box-shadow: 0 0 0 1px var(--color-brand-red), var(--shadow-sm);
+  box-shadow: 0 0 0 1px var(--color-brand-red), var(--shadow-soft, var(--shadow-sm));
 }
 
+/* Обложка: фиксированная высота 200px (ТЗ), object-fit: cover. Featured-режим
+   сохраняет широкое 21:9 для полноширинного hero-блока наверху. */
 .news-card__cover {
   position: relative;
-  aspect-ratio: 16 / 9;
+  height: 200px;
   overflow: hidden;
 }
 .news-card__cover-img {
@@ -290,7 +292,7 @@ function badgeStyle(cat: string): Record<string, string> {
 }
 
 .news-card__body {
-  padding: 16px 18px 8px;
+  padding: 20px 20px 8px; /* единый внутренний отступ редизайна (--space-card-inner) */
   flex: 1;
 }
 .news-card__title {
@@ -316,10 +318,11 @@ function badgeStyle(cat: string): Record<string, string> {
   overflow: hidden;
 }
 .news-card__footer {
-  padding: 10px 18px 14px;
+  padding: 12px 20px 16px;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
   font-size: 12px;
   color: var(--color-text-subtle);
   border-top: 1px solid var(--color-border);

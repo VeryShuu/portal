@@ -25,6 +25,7 @@ vi.mock('naive-ui', () => ({
     template: '<span class="n-avatar"><slot /></span>',
     props: ['round', 'size', 'src'],
   },
+  NButton: { template: '<button class="n-button"><slot /></button>' },
   NIcon: { template: '<span class="n-icon"><slot /></span>', props: ['size'] },
 }))
 
@@ -50,7 +51,7 @@ describe('BirthdaysWidget', () => {
     mockData = ref(undefined)
   })
 
-  it('рендерит фамилию+имя (без отчества) и дату (день + месяц)', async () => {
+  it('рендерит фамилию+имя (без отчества) и дату (день + месяц) списком', async () => {
     mockData = ref({
       items: [
         { id: 'u1', full_name: 'Иванов Иван Петрович', birth_date: '1990-03-12', avatar_url: null },
@@ -63,16 +64,16 @@ describe('BirthdaysWidget', () => {
     const wrapper = mount(BirthdaysWidget, { global: { plugins: [i18n] } })
     await flushPromises()
 
-    const names = wrapper.findAll('.birthday-card__name').map((el) => el.text())
-    const dates = wrapper.findAll('.birthday-card__date').map((el) => el.text())
+    const names = wrapper.findAll('.birthday-row__name').map((el) => el.text())
+    const dates = wrapper.findAll('.birthday-row__date').map((el) => el.text())
 
-    // Отчество отсекается — только фамилия + имя
+    // Отчество отсекается — только фамилия + имя; рендерится списком (ТЗ п.8)
     expect(names).toEqual(['Иванов Иван', 'Петрова Анна'])
     // ru-локаль: «день + месяц» (1990-03-12 → «12 марта», 1985-03-15 → «15 марта»)
     expect(dates).toEqual(['12 марта', '15 марта'])
   })
 
-  it('клик по карточке открывает профиль /users/:id', async () => {
+  it('клик по строке открывает профиль /users/:id', async () => {
     mockData = ref({
       items: [{ id: 'user-42', full_name: 'Сидоров Пётр', birth_date: '1990-03-12', avatar_url: null }],
       total: 1,
@@ -82,9 +83,29 @@ describe('BirthdaysWidget', () => {
     const wrapper = mount(BirthdaysWidget, { global: { plugins: [i18n] } })
     await flushPromises()
 
-    await wrapper.find('.birthday-card').trigger('click')
+    await wrapper.find('.birthday-row__btn').trigger('click')
     await flushPromises()
     expect(mockRouterPush).toHaveBeenCalledWith('/users/user-42')
+  })
+
+  it('ограничивает список VISIBLE_LIMIT и не рендерит карусель/paging', async () => {
+    // 8 именинников, VISIBLE_LIMIT=6 → рендерятся 6, paging/dots/arrows отсутствуют
+    const items = Array.from({ length: 8 }, (_, i) => ({
+      id: `u${i}`,
+      full_name: `Фамилия${i} Имя${i}`,
+      birth_date: '1990-03-12',
+      avatar_url: null,
+    }))
+    mockData = ref({ items, total: 8 })
+
+    const BirthdaysWidget = (await import('../../src/components/widgets/BirthdaysWidget.vue')).default
+    const wrapper = mount(BirthdaysWidget, { global: { plugins: [i18n] } })
+    await flushPromises()
+
+    expect(wrapper.findAll('.birthday-row')).toHaveLength(6)
+    // Карусель убрана (ТЗ п.8): нет стрелок и точек-индикаторов
+    expect(wrapper.find('.nav-arrow').exists()).toBe(false)
+    expect(wrapper.find('.dots').exists()).toBe(false)
   })
 
   it('скрыт (нет .widget), когда список именинников пуст', async () => {

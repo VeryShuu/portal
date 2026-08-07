@@ -116,6 +116,37 @@
   /* Hero gradient */
   --gradient-hero: linear-gradient(135deg, #0b2a4a 0%, #143a66 55%, #1f4e85 100%);
   --gradient-login: linear-gradient(180deg, #ffffff 0%, #e8f1f8 100%);
+
+  /* ── MAGE homepage redesign palette (эксперимент, ветка feat/homepage-redesign) ──
+     Отдельный визуальный слой для редизайна главной. НЕ заменяет brand-red/navy:
+     красный #d8262c остаётся global primary (кнопки, активные пункты меню),
+     navy ниже — декоративный фон Hero и акценты секций главной страницы.
+     Палитра зафиксирована ТЗ редизайна (фирменный стиль МАГЭ). */
+  --color-mage-primary: #1f4e8c;        /* navy — декоративный primary редизайна */
+  --color-mage-secondary: #2f6cb5;      /* светлее, hover/акценты */
+  --color-mage-bg: #f5f8fc;             /* фон страницы редизайна */
+  --color-mage-card: #ffffff;           /* фон карточек */
+  --color-mage-border: #e7edf5;         /* границы */
+  --color-mage-text: #1f2937;           /* основной текст */
+  --color-mage-text-secondary: #6b7280; /* вторичный текст */
+
+  /* Радиусы редизайна (ТЗ: карточки 16 / кнопки 10 / Hero 20) */
+  --radius-card: 16px;
+  --radius-button: 10px;
+  --radius-hero: 20px;
+
+  /* Минимальная тень редизайна (flat UI, без тяжёлых теней) */
+  --shadow-soft: 0 6px 18px rgba(25, 40, 70, 0.06);
+
+  /* Сетка отступов редизайна: внешние 24 / между карточками 20 / внутри 20 */
+  --space-outer: 24px;
+  --space-card-gap: 20px;
+  --space-card-inner: 20px;
+
+  /* Hero-градиенты по времени суток (fallback, когда нет загруженного фото) */
+  --gradient-hero-morning: linear-gradient(135deg, #1a3a5c 0%, #2f6cb5 60%, #4a90c4 100%);
+  --gradient-hero-day: linear-gradient(135deg, #0b2a4a 0%, #143a66 55%, #1f4e85 100%);
+  --gradient-hero-evening: linear-gradient(135deg, #0a1633 0%, #142a5c 50%, #1f3a6e 100%);
 }
 
 /* Dark theme overrides (applied via [data-theme="dark"]) */
@@ -159,4 +190,17 @@
 
   --gradient-hero: linear-gradient(135deg, #071426 0%, #0b2a4a 55%, #143a66 100%);
   --gradient-login: linear-gradient(180deg, #071426 0%, #0f1e33 100%);
+
+  /* MAGE homepage redesign (dark) — карта поверхностностей/текста следует
+     существующей dark-теме; только mage-специфичные корректировки. */
+  --color-mage-bg: #071426;
+  --color-mage-card: var(--color-surface);
+  --color-mage-border: var(--color-border);
+  --color-mage-text: var(--color-text);
+  --color-mage-text-secondary: var(--color-text-muted);
+  --shadow-soft: 0 6px 18px rgba(0, 0, 0, 0.35);
+
+  --gradient-hero-morning: linear-gradient(135deg, #0a1f33 0%, #1a3a5c 60%, #2f6cb5 100%);
+  --gradient-hero-day: linear-gradient(135deg, #071426 0%, #0b2a4a 55%, #143a66 100%);
+  --gradient-hero-evening: linear-gradient(135deg, #050d1f 0%, #0a1633 50%, #142a5c 100%);
 }

@@ -4,7 +4,13 @@ import type { GlobalThemeOverrides } from 'naive-ui'
 import { lightThemeOverrides, darkThemeOverrides } from '../styles/naive-theme'
 import { api, apiUpload } from '../api'
 
-export type BrandingAsset = 'logo' | 'favicon' | 'login-bg'
+export type BrandingAsset =
+  | 'logo'
+  | 'favicon'
+  | 'login-bg'
+  | 'hero-bg-morning'
+  | 'hero-bg-day'
+  | 'hero-bg-evening'
 
 export interface BrandingSettings {
   portal_name: string
@@ -16,11 +22,17 @@ export interface BrandingSettings {
   banner_type: 'info' | 'warning' | 'error' | 'success'
   banner_expires_at: string | null
   logo_hidden: boolean
+  hero_morning_hour?: number
+  hero_day_hour?: number
+  hero_evening_hour?: number
   has_favicon?: boolean
   has_login_bg?: boolean
   has_logo?: boolean
   logo_updated_at?: string | null
   allowed_iframe_origins?: string[]
+  has_hero_bg_morning?: boolean
+  has_hero_bg_day?: boolean
+  has_hero_bg_evening?: boolean
 }
 
 const DEFAULTS: BrandingSettings = {
@@ -39,6 +51,9 @@ const ASSET_FLAG: Record<BrandingAsset, keyof BrandingSettings> = {
   'logo': 'has_logo',
   'favicon': 'has_favicon',
   'login-bg': 'has_login_bg',
+  'hero-bg-morning': 'has_hero_bg_morning',
+  'hero-bg-day': 'has_hero_bg_day',
+  'hero-bg-evening': 'has_hero_bg_evening',
 }
 
 function hexToRgb(hex: string): [number, number, number] | null {

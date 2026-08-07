@@ -82,11 +82,11 @@ onMounted(() => {
 
 <style scoped>
 .widget {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  padding: 16px 18px 12px;
-  box-shadow: var(--shadow-sm);
+  background: var(--color-mage-card, var(--color-surface));
+  border: 1px solid var(--color-mage-border, var(--color-border));
+  border-radius: var(--radius-card, var(--radius-lg));
+  padding: var(--space-card-inner, 16px) var(--space-card-inner, 18px) calc(var(--space-card-inner, 16px) - 4px);
+  box-shadow: var(--shadow-soft, var(--shadow-sm));
 }
 .widget__header {
   display: flex;
@@ -109,17 +109,18 @@ onMounted(() => {
 }
 .widget__link:hover { text-decoration: underline; }
 
+/* Сетка 2×2 с увеличенными миниатюрами (ТЗ п.9) */
 .photos-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   grid-template-rows: repeat(2, 1fr);
-  gap: 6px;
+  gap: 10px;
 }
 .photo-tile {
   display: block;
   aspect-ratio: 1;
   overflow: hidden;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   background: var(--color-bg-muted);
 }
 .photo-tile__img {

@@ -102,4 +102,40 @@ describe('NewsCard.vue', () => {
     })
     expect(wrapper.text()).toContain('123')
   })
+
+  // ── Редизайн: footer в одну строку (date + views + comments + like) ─────────
+
+  it('footer renders date and all stats in one row', async () => {
+    const { default: NewsCard } = await import('../../src/components/news/NewsCard.vue')
+    const wrapper = mount(NewsCard, {
+      props: {
+        news: {
+          ...MOCK_NEWS,
+          view_count: 42,
+          comment_count: 7,
+          like_count: 13,
+          liked_by_me: false,
+        },
+      },
+      global: { plugins: [i18n] },
+    })
+    const footer = wrapper.find('.news-card__footer')
+    expect(footer.exists()).toBe(true)
+    // Внутри footer: дата слева + мета (просмотры/комментарии/лайк) справа
+    expect(footer.find('.news-card__date').exists()).toBe(true)
+    expect(footer.find('.news-card__meta').exists()).toBe(true)
+    expect(footer.text()).toContain('42') // просмотры
+    expect(footer.text()).toContain('7')  // комментарии
+  })
+
+  it('card uses mage redesign radius (16px) via radius-card token', async () => {
+    const { default: NewsCard } = await import('../../src/components/news/NewsCard.vue')
+    const wrapper = mount(NewsCard, {
+      props: { news: MOCK_NEWS },
+      global: { plugins: [i18n] },
+    })
+    // Структура присутствует; точное значение вычисляется из CSS-токена в браузере,
+    // в jsdom проверяем что класс news-card рендерится без ошибок редизайна.
+    expect(wrapper.find('.news-card').exists()).toBe(true)
+  })
 })

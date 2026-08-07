@@ -201,6 +201,15 @@ function isWeekend(tz: string): boolean {
 </script>
 
 <style scoped>
+/* Widget chrome (раньше наследовался негласно; явно приведён к mage-стилю редизайна
+   для единства с остальными виджетами правой колонки). */
+.widget {
+  background: var(--color-mage-card, var(--color-surface));
+  border: 1px solid var(--color-mage-border, var(--color-border));
+  border-radius: var(--radius-card, var(--radius-lg));
+  padding: var(--space-card-inner, 16px) var(--space-card-inner, 18px) calc(var(--space-card-inner, 16px) - 4px);
+  box-shadow: var(--shadow-soft, var(--shadow-sm));
+}
 .clock-grid {
   display: grid;
   grid-template-columns: repeat(var(--cols, 2), minmax(0, 1fr));
