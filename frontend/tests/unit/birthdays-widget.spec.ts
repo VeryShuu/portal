@@ -89,7 +89,7 @@ describe('BirthdaysWidget', () => {
   })
 
   it('ограничивает список VISIBLE_LIMIT и не рендерит карусель/paging', async () => {
-    // 8 именинников, VISIBLE_LIMIT=6 → рендерятся 6, paging/dots/arrows отсутствуют
+    // 8 именинников, VISIBLE_LIMIT=4 → рендерятся 4, paging/dots/arrows отсутствуют
     const items = Array.from({ length: 8 }, (_, i) => ({
       id: `u${i}`,
       full_name: `Фамилия${i} Имя${i}`,
@@ -102,7 +102,7 @@ describe('BirthdaysWidget', () => {
     const wrapper = mount(BirthdaysWidget, { global: { plugins: [i18n] } })
     await flushPromises()
 
-    expect(wrapper.findAll('.birthday-row')).toHaveLength(6)
+    expect(wrapper.findAll('.birthday-row')).toHaveLength(4)
     // Карусель убрана (ТЗ п.8): нет стрелок и точек-индикаторов
     expect(wrapper.find('.nav-arrow').exists()).toBe(false)
     expect(wrapper.find('.dots').exists()).toBe(false)

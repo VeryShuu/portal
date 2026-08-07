@@ -109,16 +109,17 @@ onMounted(() => {
 }
 .widget__link:hover { text-decoration: underline; }
 
-/* Сетка 2×2 с увеличенными миниатюрами (ТЗ п.9) */
+/* Сетка 2×2 миниатюр. Aspect 4/3 (а не квадрат 1:1) — экономит ~60px высоты
+   виджета в сайдбаре (раньше 387px). */
 .photos-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   grid-template-rows: repeat(2, 1fr);
-  gap: 10px;
+  gap: 8px;
 }
 .photo-tile {
   display: block;
-  aspect-ratio: 1;
+  aspect-ratio: 4 / 3;
   overflow: hidden;
   border-radius: var(--radius-md);
   background: var(--color-bg-muted);
@@ -132,7 +133,7 @@ onMounted(() => {
 .photo-tile:hover .photo-tile__img { transform: scale(1.06); }
 
 .photo-skeleton {
-  aspect-ratio: 1;
+  aspect-ratio: 4 / 3;
   border-radius: var(--radius-sm);
   background: linear-gradient(90deg, var(--color-bg-muted) 25%, var(--color-border) 50%, var(--color-bg-muted) 75%);
   background-size: 200% 100%;

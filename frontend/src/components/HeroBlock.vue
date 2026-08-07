@@ -38,7 +38,7 @@
         <n-button
           class="hero__cta"
           type="primary"
-          size="large"
+          size="medium"
           @click="router.push('/news')"
         >
           {{ t('home.viewNews') }}
@@ -198,12 +198,12 @@ const formattedDate = computed(() => {
   border-radius: var(--radius-hero); /* 20px */
   overflow: hidden;
   color: #fff;
-  /* Высота ~250px (концепт): контент центрируется вертикально */
-  min-height: 250px;
   display: flex;
   align-items: center;
-  padding: 36px 40px;
-  margin-bottom: var(--space-outer); /* 24px */
+  /* Уплотнено: раньше min-height 250px + padding 36px → 271px (четверть экрана).
+     Теперь контент сам определяет высоту, без принудительного min-height. */
+  padding: 16px 24px;
+  margin-bottom: 14px;
   box-shadow: var(--shadow-soft);
 }
 
@@ -230,7 +230,7 @@ const formattedDate = computed(() => {
   height: 100%;
   object-fit: cover;
 }
-/* Затемнение слева→направо (концепт): текст слева всегда читается поверх фото */
+/* Затемнение слева→направо: текст слева всегда читается поверх фото */
 .hero__scrim {
   position: absolute;
   inset: 0;
@@ -247,41 +247,40 @@ const formattedDate = computed(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 32px;
+  gap: 24px;
   flex-wrap: wrap;
   width: 100%;
 }
 .hero__text {
   flex: 1;
-  min-width: 300px;
+  min-width: 280px;
   max-width: 620px;
 }
 .hero__date {
   color: rgba(255, 255, 255, 0.85);
-  margin-bottom: 12px;
-  font-size: 14px;
+  margin-bottom: 4px;
+  font-size: 13px;
   font-weight: 600;
   letter-spacing: 0.04em;
 }
 .hero__greeting {
-  /* Концепт: ~42px, Semibold/Bold */
-  font-size: var(--fs-hero-title, 42px);
-  line-height: 1.1;
+  /* Уплотнено с 42px → 26px: Hero больше не доминирует на экране */
+  font-size: 26px;
+  line-height: 1.15;
   font-weight: 700;
   letter-spacing: -0.02em;
   color: #fff;
-  margin: 0 0 10px 0;
+  margin: 0 0 4px 0;
 }
 .hero__sub {
-  font-size: var(--fs-body, 16px);
-  line-height: 1.5;
+  font-size: 14px;
+  line-height: 1.4;
   color: rgba(255, 255, 255, 0.88);
-  margin: 0 0 20px 0;
+  margin: 0 0 12px 0;
   max-width: 520px;
 }
 .hero__cta {
-  /* Navy кнопка с белым текстом (концепт). Использует mage-primary, а не
-     глобальный brand-red, т.к. это декоративный CTA внутри Hero. */
+  /* Navy кнопка с белым текстом */
   --n-color: var(--color-mage-primary);
   --n-color-hover: var(--color-mage-secondary);
   --n-color-pressed: var(--color-mage-primary);
@@ -290,23 +289,23 @@ const formattedDate = computed(() => {
   font-weight: 600;
 }
 
-/* Правая белая карточка «Сегодня» (концепт: ~270×180, radius 18) */
+/* Правая белая карточка «Сегодня» — компактная */
 .hero__stats {
   flex: 0 0 auto;
-  width: 280px;
+  width: 250px;
   background: var(--color-mage-card, #fff);
-  border-radius: 18px;
-  padding: 18px 20px;
+  border-radius: var(--radius-card, 16px);
+  padding: 12px 16px;
   box-shadow: 0 10px 30px rgba(11, 42, 74, 0.18);
   color: var(--color-mage-text, #1f2937);
 }
 .hero__stats-title {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--color-mage-text-secondary, #6b7280);
-  margin-bottom: 12px;
+  margin-bottom: 8px;
 }
 .hero__stats-list {
   list-style: none;
@@ -314,17 +313,17 @@ const formattedDate = computed(() => {
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 6px;
 }
 .hero__stats-row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
 }
 .hero__stats-icon {
-  width: 32px;
-  height: 32px;
-  border-radius: var(--radius-mini, 12px);
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
   background: color-mix(in srgb, var(--color-mage-secondary, #2f6cb5) 12%, transparent);
   color: var(--color-mage-primary, #1f4e8c);
   display: flex;
@@ -334,11 +333,11 @@ const formattedDate = computed(() => {
 }
 .hero__stats-label {
   flex: 1;
-  font-size: 14px;
+  font-size: 13px;
   color: var(--color-mage-text, #1f2937);
 }
 .hero__stats-value {
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 700;
   color: var(--color-mage-primary, #1f4e8c);
   font-variant-numeric: tabular-nums;
@@ -349,26 +348,22 @@ const formattedDate = computed(() => {
 
 /* Адаптивность */
 @media (max-width: 1280px) {
-  .hero { padding: 30px 28px; }
-  .hero__greeting { font-size: 36px; }
-  .hero__stats { width: 250px; }
+  .hero { padding: 18px 24px; }
+  .hero__greeting { font-size: 24px; }
+  .hero__stats { width: 220px; }
 }
 @media (max-width: 1024px) {
-  .hero__stats { width: 240px; padding: 14px 16px; }
+  .hero__stats { width: 210px; padding: 10px 14px; }
 }
 @media (max-width: 720px) {
-  .hero {
-    padding: 24px 20px;
-    min-height: 220px;
-  }
-  .hero__greeting { font-size: 28px; }
-  .hero__sub { font-size: 14px; }
+  .hero { padding: 16px 18px; }
+  .hero__greeting { font-size: 22px; }
+  .hero__sub { font-size: 13px; }
   .hero__content { flex-direction: column; align-items: flex-start; }
   .hero__stats { width: 100%; }
 }
 
-/* Dark mode: hero фото/градиенты уже тёмные, текст остаётся светлым.
-   Карточка stats наследует dark surface. Scrim чуть усиливаем для тёмного фото. */
+/* Dark mode */
 [data-theme='dark'] .hero__scrim {
   background: linear-gradient(
     90deg,

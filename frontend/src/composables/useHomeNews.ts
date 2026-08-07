@@ -14,7 +14,9 @@ export function useHomeNews() {
   const totalNews = computed(() => newsQuery.data.value?.total ?? 0)
 
   const pinned = computed(() => news.value.filter(n => n.is_pinned).slice(0, 1))
-  const regular = computed(() => news.value.filter(n => !n.is_pinned).slice(0, 4))
+  // 3 карточки = один полный ряд сетки 3×N. Раньше было 4 → второй ряд с 1
+  // карточкой и 2 пустыми слотами (+278px высоты дашборда впустую).
+  const regular = computed(() => news.value.filter(n => !n.is_pinned).slice(0, 3))
   const categoriesMap = computed<Record<string, string>>(() =>
     Object.fromEntries((categoriesQuery.data.value ?? []).map(c => [c.name, c.color]))
   )

@@ -55,7 +55,9 @@ const { t, locale } = useI18n()
 const router = useRouter()
 
 // Лимит строк в виджете; остальных показывает «Показать все» → /staff.
-const VISIBLE_LIMIT = 6
+// 4 (а не 6) — чтобы карточка дней рождения не доминировала по высоте в нижнем
+// ряду дашборда (6 строк = ~446px против соседей 108px).
+const VISIBLE_LIMIT = 4
 
 const { data } = useBirthdaysQuery()
 const birthdays = computed(() => data.value?.items ?? [])

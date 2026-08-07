@@ -220,11 +220,12 @@ function badgeStyle(cat: string): Record<string, string> {
   box-shadow: 0 0 0 1px var(--color-brand-red), var(--shadow-soft, var(--shadow-sm));
 }
 
-/* Обложка: фиксированная высота 200px (ТЗ), object-fit: cover. Featured-режим
-   сохраняет широкое 21:9 для полноширинного hero-блока наверху. */
+/* Обложка карточки новости. 200px из ТЗ раздували карточку — уменьшено до 150px
+   для плотного дашборда. Featured-режим сохраняет широкое 21:9 для полноширинного
+   hero-блока наверху. */
 .news-card__cover {
   position: relative;
-  height: 200px;
+  height: 150px;
   overflow: hidden;
 }
 .news-card__cover-img {

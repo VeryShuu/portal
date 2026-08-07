@@ -115,8 +115,8 @@ const { loadingNews, pinned, regular, categoriesMap, goToNews } = useHomeNews()
 .home__content {
   display: flex;
   align-items: flex-start;
-  gap: var(--space-outer, 24px);
-  margin-bottom: var(--space-outer, 24px);
+  gap: 16px;
+  margin-bottom: 16px;
 }
 
 /* MAIN (новости): flex:1, занимает всё оставшееся место. */
@@ -128,21 +128,24 @@ const { loadingNews, pinned, regular, categoriesMap, goToNews } = useHomeNews()
 /* ASIDE (правая колонка): фиксированная ширина ~360px, не сжимается.
    Отдельный блок — НЕ участвует в сетке новостей. */
 .home__side {
-  flex: 0 0 360px;
-  width: 360px;
+  flex: 0 0 340px;
+  width: 340px;
   display: flex;
   flex-direction: column;
-  gap: var(--space-card-gap, 20px);
+  gap: 14px;
   position: sticky;
   top: 16px;
 }
 
-/* НИЖНИЙ РЯД: 3 равные карточки под контентом, на всю ширину. */
+/* НИЖНИЙ РЯД: карточки под контентом, на всю ширину.
+   auto-fit — если часть виджетов скрыта (v-if: meetings/bookmarks/дни рождения),
+   оставшиеся растягиваются без пустых колонок-дыр. align-items: start — карточки
+   НЕ растягиваются до высоты самой высокой (иначе короткие раздуются впустую). */
 .home__bottom-row {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: var(--space-card-gap, 20px);
-  align-items: stretch;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 14px;
+  align-items: start;
 }
 
 .news-header { margin-bottom: 16px; }
@@ -184,7 +187,6 @@ const { loadingNews, pinned, regular, categoriesMap, goToNews } = useHomeNews()
   .home__bottom-row { grid-template-columns: 1fr; }
 }
 @media (max-width: 1280px) and (min-width: 1025px) {
-  /* На средних: нижний ряд в 2 колонки */
-  .home__bottom-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  /* На средних: нижний ряд — minmax сам свернёт в доступное число колонок */
 }
 </style>
