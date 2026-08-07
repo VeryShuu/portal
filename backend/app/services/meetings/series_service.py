@@ -21,6 +21,7 @@ from app.services.meetings.bookings_service import (
     _get_conflict_details,
     _to_utc,
     _verify_rooms_active,
+    invited_users_to_jsonb,
 )
 from app.services.meetings.recurrence import (
     build_rrule_string,
@@ -71,7 +72,7 @@ async def create_booking_series(
     series_id = uuid.uuid4()
     rrule_str = build_rrule_string(payload.recurrence, start_time)
     organizer_name = user.full_name or user.email
-    invited_users_data = [u.model_dump() for u in payload.invited_users]
+    invited_users_data = invited_users_to_jsonb(payload.invited_users)
 
     booking_ids: list[uuid.UUID] = []
 
@@ -287,7 +288,7 @@ async def update_series(
         await _verify_rooms_active(db, payload.room_ids)
 
     now_utc = datetime.now(UTC)
-    invited_data = [u.model_dump() for u in new_invited]
+    invited_data = invited_users_to_jsonb(new_invited)
     room_ids_snapshot: dict[uuid.UUID, list[uuid.UUID]] = {
         b.id: [br.room_id for br in b.rooms] for b in bookings
     }

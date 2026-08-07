@@ -20,6 +20,7 @@ from ._helpers import (
     _load_booking,
     _to_utc,
     _verify_rooms_active,
+    invited_users_to_jsonb,
 )
 from ._types import BookingConflict, BookingDiff
 
@@ -163,7 +164,7 @@ async def create_booking(
     await _verify_rooms_active(db, payload.room_ids)
 
     organizer_name = user.full_name or user.email
-    invited_users_data = [u.model_dump() for u in payload.invited_users]
+    invited_users_data = invited_users_to_jsonb(payload.invited_users)
 
     booking = MeetingBooking(
         title=payload.title,
@@ -230,7 +231,7 @@ async def update_booking(
     if payload.description is not None:
         booking.description = payload.description
     if payload.invited_users is not None:
-        booking.invited_users = [u.model_dump() for u in new_invited]
+        booking.invited_users = invited_users_to_jsonb(new_invited)
 
     new_start, new_end, new_room_ids = _resolve_new_schedule(payload, booking)
     if new_end <= new_start:

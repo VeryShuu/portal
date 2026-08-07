@@ -10,6 +10,7 @@ from ._helpers import (
     _load_booking,
     _to_utc,
     _verify_rooms_active,
+    invited_users_to_jsonb,
 )
 from ._queries import get_booking, list_bookings, list_my_bookings
 from ._types import (
@@ -37,6 +38,7 @@ __all__ = [
     "create_booking",
     "delete_booking",
     "get_booking",
+    "invited_users_to_jsonb",
     "list_bookings",
     "list_my_bookings",
     "logger",
