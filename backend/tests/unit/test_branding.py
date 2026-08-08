@@ -155,6 +155,86 @@ class TestHeroHourValidation:
             loaded.hero_subtitle_night,
         ) == ("Доброе утро!", "Добрый день!", "Добрый вечер!", "Доброй ночи!")
 
+    # ── Hero-bg focal (позиционирование фоновых фото) ──────────────────────────
+
+    def test_hero_bg_focal_defaults_none(self):
+        from app.api.branding import BrandingSettings
+
+        s = BrandingSettings()
+        # Все 9 focal-полей null по умолчанию (= центрирование без zoom)
+        assert s.hero_bg_morning_focal_x is None
+        assert s.hero_bg_morning_focal_y is None
+        assert s.hero_bg_morning_focal_zoom is None
+        assert s.hero_bg_day_focal_x is None
+        assert s.hero_bg_evening_focal_zoom is None
+
+    def test_hero_bg_focal_valid_values_accepted(self):
+        from app.api.branding import BrandingSettings
+
+        s = BrandingSettings(
+            hero_bg_morning_focal_x=30,
+            hero_bg_morning_focal_y=70,
+            hero_bg_morning_focal_zoom=150,
+        )
+        assert (
+            s.hero_bg_morning_focal_x,
+            s.hero_bg_morning_focal_y,
+            s.hero_bg_morning_focal_zoom,
+        ) == (
+            30,
+            70,
+            150,
+        )
+
+    @pytest.mark.parametrize("bad", [-1, 101])
+    def test_hero_bg_focal_xy_out_of_range_rejected(self, bad):
+        from pydantic import ValidationError
+
+        from app.api.branding import BrandingSettings
+
+        with pytest.raises(ValidationError):
+            BrandingSettings(hero_bg_morning_focal_x=bad)
+
+    @pytest.mark.parametrize("bad", [99, 301])
+    def test_hero_bg_focal_zoom_out_of_range_rejected(self, bad):
+        from pydantic import ValidationError
+
+        from app.api.branding import BrandingSettings
+
+        with pytest.raises(ValidationError):
+            BrandingSettings(hero_bg_morning_focal_zoom=bad)
+
+    def test_hero_bg_focal_roundtrip_through_save_load(self, tmp_path):
+        """save→load сохраняет focal-настройки Hero-фона (JSON round-trip)."""
+        from app.services.branding_assets import (
+            BrandingSettings,
+            load_settings,
+            save_settings,
+        )
+
+        settings_file = tmp_path / "settings.json"
+        with (
+            patch("app.services.branding_assets.SETTINGS_FILE", settings_file),
+            patch("app.services.branding_assets.BRANDING_DIR", tmp_path),
+        ):
+            save_settings(
+                BrandingSettings(
+                    hero_bg_morning_focal_x=25,
+                    hero_bg_morning_focal_y=75,
+                    hero_bg_morning_focal_zoom=180,
+                )
+            )
+            loaded = load_settings()
+        assert (
+            loaded.hero_bg_morning_focal_x,
+            loaded.hero_bg_morning_focal_y,
+            loaded.hero_bg_morning_focal_zoom,
+        ) == (
+            25,
+            75,
+            180,
+        )
+
     @pytest.mark.parametrize("bad", [-1, 24, 100])
     def test_hero_morning_hour_out_of_range_rejected(self, bad):
         from pydantic import ValidationError

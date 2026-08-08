@@ -29,6 +29,16 @@ export interface BrandingSettings {
   hero_morning_hour?: number
   hero_day_hour?: number
   hero_evening_hour?: number
+  // Focal-point позиционирования Hero-фонов (0-100 x/y, 100-300 zoom, null=центр)
+  hero_bg_morning_focal_x?: number | null
+  hero_bg_morning_focal_y?: number | null
+  hero_bg_morning_focal_zoom?: number | null
+  hero_bg_day_focal_x?: number | null
+  hero_bg_day_focal_y?: number | null
+  hero_bg_day_focal_zoom?: number | null
+  hero_bg_evening_focal_x?: number | null
+  hero_bg_evening_focal_y?: number | null
+  hero_bg_evening_focal_zoom?: number | null
   has_favicon?: boolean
   has_login_bg?: boolean
   has_logo?: boolean

@@ -11,6 +11,7 @@
         :src="heroPhotoUrl"
         alt=""
         class="hero__photo"
+        :style="heroPhotoStyle"
         loading="lazy"
         decoding="async"
         aria-hidden="true"
@@ -50,6 +51,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '../stores/auth'
 import { useBrandingStore } from '../stores/branding'
+import { focalImageStyle } from '../utils/coverFocal'
 import HeroWorldClock from './widgets/HeroWorldClock.vue'
 
 type HeroSlot = 'morning' | 'day' | 'evening'
@@ -125,6 +127,30 @@ const heroPhotoUrl = computed(() => {
     evening: branding.settings.has_hero_bg_evening,
   }[slot]
   return hasFlag ? branding.assetUrl(`hero-bg-${slot}` as never) : null
+})
+
+// Focal-point позиционирование фото Hero (настраивается в админке). null-значения
+// дают центрирование без zoom — обратно совместимо с ранее загруженными фото.
+const heroPhotoStyle = computed(() => {
+  const slot = heroSlot.value
+  const focalMap = {
+    morning: {
+      x: branding.settings.hero_bg_morning_focal_x,
+      y: branding.settings.hero_bg_morning_focal_y,
+      zoom: branding.settings.hero_bg_morning_focal_zoom,
+    },
+    day: {
+      x: branding.settings.hero_bg_day_focal_x,
+      y: branding.settings.hero_bg_day_focal_y,
+      zoom: branding.settings.hero_bg_day_focal_zoom,
+    },
+    evening: {
+      x: branding.settings.hero_bg_evening_focal_x,
+      y: branding.settings.hero_bg_evening_focal_y,
+      zoom: branding.settings.hero_bg_evening_focal_zoom,
+    },
+  }[slot]
+  return focalImageStyle(focalMap.x, focalMap.y, focalMap.zoom)
 })
 
 const formattedDate = computed(() => {
