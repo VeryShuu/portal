@@ -201,6 +201,15 @@ function isWeekend(tz: string): boolean {
 </script>
 
 <style scoped>
+/* Widget chrome (раньше наследовался негласно; явно приведён к mage-стилю редизайна
+   для единства с остальными виджетами правой колонки). */
+.widget {
+  background: var(--color-mage-card, var(--color-surface));
+  border: 1px solid var(--color-mage-border, var(--color-border));
+  border-radius: var(--radius-card, var(--radius-lg));
+  padding: var(--space-card-inner, 16px) var(--space-card-inner, 18px) calc(var(--space-card-inner, 16px) - 4px);
+  box-shadow: var(--shadow-soft, var(--shadow-sm));
+}
 .clock-grid {
   display: grid;
   grid-template-columns: repeat(var(--cols, 2), minmax(0, 1fr));
@@ -209,8 +218,8 @@ function isWeekend(tz: string): boolean {
 .clock-cube {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 10px 12px;
+  gap: 2px;
+  padding: 7px 10px;
   background: var(--color-bg-muted);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
@@ -266,7 +275,7 @@ function isWeekend(tz: string): boolean {
 }
 .clock-cube__hm {
   font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 22px;
+  font-size: 18px;
   font-weight: 700;
   color: var(--color-text);
   letter-spacing: -0.02em;

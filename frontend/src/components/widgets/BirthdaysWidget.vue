@@ -17,7 +17,7 @@
         :aria-label="t('common.previous')"
         @click="prev"
       >
-        <n-icon :size="20">
+        <n-icon :size="19">
           <ChevronBackOutline />
         </n-icon>
       </button>
@@ -28,11 +28,12 @@
           :key="b.id"
           type="button"
           class="birthday-card"
+          :aria-label="`${displayName(b.full_name)}, ${formatDate(b.birth_date)}`"
           @click="openProfile(b.id)"
         >
           <UserAvatar
             :user="b"
-            :size="48"
+            :size="38"
             class="birthday-card__avatar"
           />
           <div class="birthday-card__body">
@@ -49,7 +50,7 @@
         :aria-label="t('common.next')"
         @click="next"
       >
-        <n-icon :size="20">
+        <n-icon :size="19">
           <ChevronForwardOutline />
         </n-icon>
       </button>
@@ -136,17 +137,18 @@ function openProfile(id: string): void {
 
 <style scoped>
 .widget {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  padding: 16px 18px 12px;
-  box-shadow: var(--shadow-sm);
+  background: var(--color-mage-card, var(--color-surface));
+  border: 1px solid var(--color-mage-border, var(--color-border));
+  border-radius: var(--radius-card, var(--radius-lg));
+  /* Сжато вдвое, затем +20%: 10×12×8 → 12×14×10 */
+  padding: 12px 14px 10px;
+  box-shadow: var(--shadow-soft, var(--shadow-sm));
 }
 .widget__header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 12px;
+  margin-bottom: 7px;
 }
 .widget__title {
   margin: 0;
@@ -157,27 +159,27 @@ function openProfile(id: string): void {
   color: var(--color-text-muted);
 }
 
-/* Сцена: [стрелка] [сетка] [стрелка], выровнено по центру по вертикали. */
+/* Сцена: [стрелка] [сетка] [стрелка] */
 .birthdays-stage {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 5px;
 }
 
-/* Сетка 3 колонки × 2 ряда текущей страницы. */
+/* Сетка 3 колонки × 2 ряда. */
 .birthday-grid {
   flex: 1 1 auto;
   min-width: 0;
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 12px;
+  gap: 7px;
 }
 
-/* Кнопки-стрелки по бокам — не перекрывают карточки. */
+/* Кнопки-стрелки. */
 .nav-arrow {
   flex: 0 0 auto;
-  width: 32px;
-  height: 32px;
+  width: 29px;
+  height: 29px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -198,14 +200,15 @@ function openProfile(id: string): void {
   cursor: default;
 }
 
+/* Карточка именинника. */
 .birthday-card {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 10px 14px;
+  gap: 7px;
+  padding: 6px 8px;
   background: var(--color-bg, #fff);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm);
   min-width: 0;
   cursor: pointer;
   text-align: left;
@@ -220,9 +223,8 @@ function openProfile(id: string): void {
 
 .birthday-card__avatar {
   flex-shrink: 0;
-  font-size: 15px;
+  font-size: 13px;
   font-weight: 700;
-  /* Белая заливка инициалов: цветной круг + белые буквы. */
   background: var(--color-brand-navy, #1f3a5f);
   color: #fff;
 }
@@ -248,16 +250,16 @@ function openProfile(id: string): void {
   color: var(--color-text-secondary, #666);
 }
 
-/* Точки-индикаторы страниц. */
+/* Точки-индикаторы. */
 .dots {
   display: flex;
   justify-content: center;
-  gap: 6px;
-  margin-top: 12px;
+  gap: 4px;
+  margin-top: 7px;
 }
 .dot {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
   border-radius: 50%;
   border: none;
   padding: 0;
@@ -270,7 +272,6 @@ function openProfile(id: string): void {
 }
 
 @media (max-width: 720px) {
-  /* На узком экране — 2 колонки вместо 3. */
   .birthday-grid {
     grid-template-columns: repeat(2, 1fr);
   }

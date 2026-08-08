@@ -49,12 +49,28 @@
       </li>
     </ul>
 
-    <p
+    <div
       v-else
       class="meetings-widget__empty"
     >
-      {{ t('meetings.widget.noMeetings') }}
-    </p>
+      <p class="meetings-widget__empty-title">
+        {{ t('meetings.widget.noMeetings') }}
+      </p>
+      <p class="meetings-widget__empty-hint">
+        {{ t('home.meetings.noMeetingsHint') }}
+      </p>
+      <!-- Декоративный силуэт арктических гор (концепт) -->
+      <svg
+        class="meetings-widget__empty-decor"
+        viewBox="0 0 100 24"
+        aria-hidden="true"
+      >
+        <path
+          d="M0 24 L12 10 L20 16 L32 4 L44 14 L58 8 L70 18 L82 6 L94 16 L100 12 L100 24 Z"
+          fill="currentColor"
+        />
+      </svg>
+    </div>
   </section>
 </template>
 
@@ -109,11 +125,11 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .widget {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  padding: 16px 18px 12px;
-  box-shadow: var(--shadow-sm);
+  background: var(--color-mage-card, var(--color-surface));
+  border: 1px solid var(--color-mage-border, var(--color-border));
+  border-radius: var(--radius-card, var(--radius-lg));
+  padding: var(--space-card-inner, 16px) var(--space-card-inner, 18px) calc(var(--space-card-inner, 16px) - 4px);
+  box-shadow: var(--shadow-soft, var(--shadow-sm));
 }
 .widget__header {
   display: flex;
@@ -176,11 +192,30 @@ onBeforeUnmount(() => {
   text-overflow: ellipsis;
 }
 .meetings-widget__empty {
+  /* Компактный empty-state (ТЗ п.7): без большого пустого пространства */
+  margin: 4px 0 0;
+  text-align: center;
+  padding: 4px 0;
+}
+.meetings-widget__empty-title {
   margin: 0;
   font-size: 13px;
-  color: var(--color-text-muted);
-  text-align: center;
-  padding: 8px 0;
+  font-weight: 600;
+  color: var(--color-mage-text, var(--color-text));
+}
+.meetings-widget__empty-hint {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--color-mage-text-secondary, var(--color-text-muted));
+}
+/* Декоративные арктические горы под empty-сообщением (концепт) */
+.meetings-widget__empty-decor {
+  display: block;
+  margin: 12px auto 0;
+  width: 90px;
+  height: 22px;
+  color: var(--color-mage-secondary, #2f6cb5);
+  opacity: 0.12;
 }
 .meetings-widget__skeleton {
   display: flex;

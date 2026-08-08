@@ -113,6 +113,12 @@ async def get_settings() -> BrandingSettingsOut:
         has_logo=logo_file is not None,
         logo_updated_at=logo_updated_at,
         allowed_iframe_origins=iframe_origins,
+        has_hero_bg_morning=branding_assets.find_file("hero-bg-morning", branding_assets.ALL_EXTS)
+        is not None,
+        has_hero_bg_day=branding_assets.find_file("hero-bg-day", branding_assets.ALL_EXTS)
+        is not None,
+        has_hero_bg_evening=branding_assets.find_file("hero-bg-evening", branding_assets.ALL_EXTS)
+        is not None,
     )
 
 
@@ -252,6 +258,132 @@ async def reset_login_bg(editor: EditorDep, redis: RedisDep) -> dict:
         target="login_bg",
         detail="Login background reset to default",
         log_key="branding.login_bg_reset",
+    )
+
+
+# ── Hero background (morning / day / evening) ─────────────────────────────────
+# Механизм идентичен login-bg: по три хендлера (GET/POST/DELETE) на каждый слот.
+# Время слотов настраивается в BrandingSettings.hero_*_hour, frontend выбирает
+# активный слот по часу и подставляет соответствующее фото.
+
+
+@router.get("/branding/hero-bg-morning", summary="Фон Hero (утро)")
+@router.head("/branding/hero-bg-morning", include_in_schema=False)
+async def get_hero_bg_morning(request: Request) -> Response:
+    return _serve_asset(
+        request,
+        "hero-bg-morning",
+        branding_assets.ALL_EXTS,
+        default_mime="image/jpeg",
+        cache_control=_CACHE_SHORT,
+        not_found="No hero morning background set",
+    )
+
+
+@router.post("/admin/branding/hero-bg-morning", summary="Загрузить фон Hero (утро)")
+async def upload_hero_bg_morning(file: UploadFile, editor: EditorDep, redis: RedisDep) -> dict:
+    return await _upload_asset(
+        file,
+        redis,
+        str(editor.id),
+        prefix="hero-bg-morning",
+        exts=branding_assets.ALL_EXTS,
+        mime_map=branding_assets.MIME_TO_EXT,
+        label="hero-bg-morning",
+        target="hero_bg_morning",
+    )
+
+
+@router.delete("/admin/branding/hero-bg-morning", summary="Сбросить фон Hero (утро)")
+async def reset_hero_bg_morning(editor: EditorDep, redis: RedisDep) -> dict:
+    return await _reset_asset(
+        redis,
+        str(editor.id),
+        prefix="hero-bg-morning",
+        exts=branding_assets.ALL_EXTS,
+        target="hero_bg_morning",
+        detail="Hero morning background reset to default",
+        log_key="branding.hero_bg_morning_reset",
+    )
+
+
+@router.get("/branding/hero-bg-day", summary="Фон Hero (день)")
+@router.head("/branding/hero-bg-day", include_in_schema=False)
+async def get_hero_bg_day(request: Request) -> Response:
+    return _serve_asset(
+        request,
+        "hero-bg-day",
+        branding_assets.ALL_EXTS,
+        default_mime="image/jpeg",
+        cache_control=_CACHE_SHORT,
+        not_found="No hero day background set",
+    )
+
+
+@router.post("/admin/branding/hero-bg-day", summary="Загрузить фон Hero (день)")
+async def upload_hero_bg_day(file: UploadFile, editor: EditorDep, redis: RedisDep) -> dict:
+    return await _upload_asset(
+        file,
+        redis,
+        str(editor.id),
+        prefix="hero-bg-day",
+        exts=branding_assets.ALL_EXTS,
+        mime_map=branding_assets.MIME_TO_EXT,
+        label="hero-bg-day",
+        target="hero_bg_day",
+    )
+
+
+@router.delete("/admin/branding/hero-bg-day", summary="Сбросить фон Hero (день)")
+async def reset_hero_bg_day(editor: EditorDep, redis: RedisDep) -> dict:
+    return await _reset_asset(
+        redis,
+        str(editor.id),
+        prefix="hero-bg-day",
+        exts=branding_assets.ALL_EXTS,
+        target="hero_bg_day",
+        detail="Hero day background reset to default",
+        log_key="branding.hero_bg_day_reset",
+    )
+
+
+@router.get("/branding/hero-bg-evening", summary="Фон Hero (вечер)")
+@router.head("/branding/hero-bg-evening", include_in_schema=False)
+async def get_hero_bg_evening(request: Request) -> Response:
+    return _serve_asset(
+        request,
+        "hero-bg-evening",
+        branding_assets.ALL_EXTS,
+        default_mime="image/jpeg",
+        cache_control=_CACHE_SHORT,
+        not_found="No hero evening background set",
+    )
+
+
+@router.post("/admin/branding/hero-bg-evening", summary="Загрузить фон Hero (вечер)")
+async def upload_hero_bg_evening(file: UploadFile, editor: EditorDep, redis: RedisDep) -> dict:
+    return await _upload_asset(
+        file,
+        redis,
+        str(editor.id),
+        prefix="hero-bg-evening",
+        exts=branding_assets.ALL_EXTS,
+        mime_map=branding_assets.MIME_TO_EXT,
+        label="hero-bg-evening",
+        target="hero_bg_evening",
+    )
+
+
+@router.delete("/admin/branding/hero-bg-evening", summary="Сбросить фон Hero (вечер)")
+async def reset_hero_bg_evening(editor: EditorDep, redis: RedisDep) -> dict:
+    return await _reset_asset(
+        redis,
+        str(editor.id),
+        prefix="hero-bg-evening",
+        exts=branding_assets.ALL_EXTS,
+        target="hero_bg_evening",
+        detail="Hero evening background reset to default",
+        log_key="branding.hero_bg_evening_reset",
     )
 
 

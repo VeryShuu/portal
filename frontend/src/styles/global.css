@@ -19,7 +19,10 @@ body {
   font-size: 0.875rem;
   line-height: 1.6;
   color: var(--color-text);
-  background: var(--color-bg);
+  /* !important: Naive UI NGlobalStyle инжектит инлайн <style> с захардкоженным
+     bodyColor ПОСЛЕ этого файла и побеждает каскад. !important возвращает
+     контроль CSS-токену --color-bg, который корректно переключается в dark. */
+  background: var(--color-bg) !important;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;

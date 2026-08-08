@@ -82,11 +82,11 @@ onMounted(() => {
 
 <style scoped>
 .widget {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  padding: 16px 18px 12px;
-  box-shadow: var(--shadow-sm);
+  background: var(--color-mage-card, var(--color-surface));
+  border: 1px solid var(--color-mage-border, var(--color-border));
+  border-radius: var(--radius-card, var(--radius-lg));
+  padding: var(--space-card-inner, 16px) var(--space-card-inner, 18px) calc(var(--space-card-inner, 16px) - 4px);
+  box-shadow: var(--shadow-soft, var(--shadow-sm));
 }
 .widget__header {
   display: flex;
@@ -109,17 +109,19 @@ onMounted(() => {
 }
 .widget__link:hover { text-decoration: underline; }
 
+/* Сетка 2×2 миниатюр. Aspect 16/10 (шире, ниже) — компактно в сайдбаре.
+   Квадрат давал 387px, 4/3 — 295px, 16/10 — ~225px. */
 .photos-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   grid-template-rows: repeat(2, 1fr);
-  gap: 6px;
+  gap: 8px;
 }
 .photo-tile {
   display: block;
-  aspect-ratio: 1;
+  aspect-ratio: 16 / 10;
   overflow: hidden;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   background: var(--color-bg-muted);
 }
 .photo-tile__img {
@@ -131,7 +133,7 @@ onMounted(() => {
 .photo-tile:hover .photo-tile__img { transform: scale(1.06); }
 
 .photo-skeleton {
-  aspect-ratio: 1;
+  aspect-ratio: 16 / 10;
   border-radius: var(--radius-sm);
   background: linear-gradient(90deg, var(--color-bg-muted) 25%, var(--color-border) 50%, var(--color-bg-muted) 75%);
   background-size: 200% 100%;

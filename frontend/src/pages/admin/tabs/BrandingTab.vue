@@ -152,6 +152,106 @@
 
     <div class="branding-section">
       <div class="branding-section__title">
+        {{ t('admin.branding.heroBgTitle') }}
+      </div>
+      <div class="branding-section__hint">
+        {{ t('admin.branding.heroBgHint') }}
+      </div>
+
+      <!-- Час-границы слотов (hero_morning_hour / hero_day_hour / hero_evening_hour) -->
+      <div
+        class="branding-fields"
+        style="margin-bottom:16px"
+      >
+        <n-form-item
+          :label="t('admin.branding.heroBgMorningHour')"
+          style="margin-bottom:0"
+        >
+          <n-input-number
+            v-model:value="brandingForm.hero_morning_hour"
+            :min="0"
+            :max="23"
+            style="width:120px"
+          />
+        </n-form-item>
+        <n-form-item
+          :label="t('admin.branding.heroBgDayHour')"
+          style="margin-bottom:0"
+        >
+          <n-input-number
+            v-model:value="brandingForm.hero_day_hour"
+            :min="0"
+            :max="23"
+            style="width:120px"
+          />
+        </n-form-item>
+        <n-form-item
+          :label="t('admin.branding.heroBgEveningHour')"
+          style="margin-bottom:0"
+        >
+          <n-input-number
+            v-model:value="brandingForm.hero_evening_hour"
+            :min="0"
+            :max="23"
+            style="width:120px"
+          />
+        </n-form-item>
+      </div>
+
+      <!-- Три аплоада: утро / день / вечер -->
+      <div class="hero-bg-grid">
+        <div
+          v-for="slot in heroBgSlots"
+          :key="slot.kind"
+          class="hero-bg-tile"
+        >
+          <div class="hero-bg-tile__label">
+            {{ t(slot.labelKey) }}
+          </div>
+          <div class="hero-bg-tile__preview">
+            <img
+              v-if="brandingStore.assetUrl(slot.kind)"
+              :src="brandingStore.assetUrl(slot.kind)!"
+              :alt="t(slot.labelKey)"
+              class="hero-bg-tile__img"
+            >
+            <div
+              v-else
+              class="hero-bg-tile__placeholder"
+            />
+          </div>
+          <div class="hero-bg-tile__actions">
+            <input
+              :ref="(el) => setHeroInputRef(slot.kind, el as HTMLInputElement | null)"
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              style="display:none"
+              :aria-label="`Upload ${slot.kind}`"
+              @change="onHeroBgFileChange($event, slot.kind)"
+            >
+            <n-button
+              size="small"
+              type="primary"
+              :loading="heroBgBusy[slot.kind]"
+              @click="heroInputRefs[slot.kind]?.click()"
+            >
+              {{ t('admin.branding.heroBgUpload') }}
+            </n-button>
+            <n-button
+              v-if="brandingStore.assetUrl(slot.kind)"
+              size="small"
+              :loading="heroBgResetBusy[slot.kind]"
+              @click="onHeroBgReset(slot.kind)"
+            >
+              {{ t('admin.branding.heroBgReset') }}
+            </n-button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="branding-section">
+      <div class="branding-section__title">
         {{ t('admin.branding.generalTitle') }}
       </div>
       <div class="branding-fields">
@@ -195,6 +295,17 @@
           </div>
         </n-form-item>
         <n-form-item
+          :label="t('admin.branding.heroSubtitleMode')"
+          style="margin-bottom:0"
+        >
+          <n-select
+            v-model:value="brandingForm.hero_subtitle_mode"
+            :options="heroSubtitleModeOptions"
+            style="width:240px"
+          />
+        </n-form-item>
+        <n-form-item
+          v-if="brandingForm.hero_subtitle_mode === 'custom'"
           :label="t('admin.branding.welcomeSubtitle')"
           style="margin-bottom:0"
         >
@@ -274,9 +385,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, reactive, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { NButton, NInput, NFormItem, NSwitch, NSelect, NCheckbox, useMessage } from 'naive-ui'
+import { NButton, NInput, NInputNumber, NFormItem, NSwitch, NSelect, NCheckbox, useMessage } from 'naive-ui'
 import { useBrandingStore, type BrandingSettings, type BrandingAsset } from '../../../stores/branding'
 import { parseApiError } from '../../../utils/parseApiError'
 
@@ -302,6 +413,41 @@ const currentLogoUrl = computed(() => brandingStore.assetUrl('logo'))
 const currentFaviconUrl = computed(() => brandingStore.assetUrl('favicon'))
 const currentLoginBgUrl = computed(() => brandingStore.assetUrl('login-bg'))
 
+// ── Hero background slots (morning / day / evening) ──────────────────────────
+type HeroBgKind = 'hero-bg-morning' | 'hero-bg-day' | 'hero-bg-evening'
+const heroBgSlots: { kind: HeroBgKind; labelKey: string }[] = [
+  { kind: 'hero-bg-morning', labelKey: 'admin.branding.heroBgMorning' },
+  { kind: 'hero-bg-day', labelKey: 'admin.branding.heroBgDay' },
+  { kind: 'hero-bg-evening', labelKey: 'admin.branding.heroBgEvening' },
+]
+const heroInputRefs = reactive<Record<HeroBgKind, HTMLInputElement | null>>({
+  'hero-bg-morning': null,
+  'hero-bg-day': null,
+  'hero-bg-evening': null,
+})
+function setHeroInputRef(kind: HeroBgKind, el: HTMLInputElement | null) {
+  heroInputRefs[kind] = el
+}
+const heroBgBusy = reactive<Record<HeroBgKind, boolean>>({
+  'hero-bg-morning': false,
+  'hero-bg-day': false,
+  'hero-bg-evening': false,
+})
+const heroBgResetBusy = reactive<Record<HeroBgKind, boolean>>({
+  'hero-bg-morning': false,
+  'hero-bg-day': false,
+  'hero-bg-evening': false,
+})
+
+// Час-границы живут в общей brandingForm и сохраняются кнопкой «Сохранить» в
+// секции «Общие настройки» (единая точка сохранения, как было до редизайна).
+async function onHeroBgFileChange(e: Event, kind: HeroBgKind) {
+  await pickAndUpload(e, kind, { get value() { return heroBgBusy[kind] }, set value(v: boolean) { heroBgBusy[kind] = v } }, 'admin.branding.heroBgUploaded')
+}
+async function onHeroBgReset(kind: HeroBgKind) {
+  await resetAsset(kind, { get value() { return heroBgResetBusy[kind] }, set value(v: boolean) { heroBgResetBusy[kind] = v } }, 'admin.branding.heroBgResetDone')
+}
+
 const brandingFormSaving = ref(false)
 const brandingForm = ref<BrandingSettings>({ ...brandingStore.settings })
 
@@ -310,6 +456,12 @@ const bannerTypeOptions = computed(() => [
   { label: t('admin.branding.bannerTypeWarning'), value: 'warning' },
   { label: t('admin.branding.bannerTypeError'), value: 'error' },
   { label: t('admin.branding.bannerTypeSuccess'), value: 'success' },
+])
+
+const heroSubtitleModeOptions = computed(() => [
+  { label: t('admin.branding.heroSubtitleModeAuto'), value: 'auto' },
+  { label: t('admin.branding.heroSubtitleModeCustom'), value: 'custom' },
+  { label: t('admin.branding.heroSubtitleModeHidden'), value: 'hidden' },
 ])
 
 async function loadBrandingForm() {
@@ -381,4 +533,47 @@ onMounted(() => {
 
 <style scoped>
 @import '../admin-tabs.css';
+
+/* Hero background slots */
+.hero-bg-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+.hero-bg-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.hero-bg-tile__label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text);
+}
+.hero-bg-tile__preview {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--color-bg-muted);
+  border: 1px solid var(--color-border);
+}
+.hero-bg-tile__img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.hero-bg-tile__placeholder {
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(135deg, var(--color-bg-muted), var(--color-border));
+}
+.hero-bg-tile__actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+@media (max-width: 720px) {
+  .hero-bg-grid { grid-template-columns: 1fr; }
+}
 </style>

@@ -17,11 +17,20 @@ class BrandingSettings(BaseModel):
     portal_tagline: str = ""
     accent_color: str = "#d8262c"
     welcome_subtitle: str = ""
+    # Режим подзаголовка Hero на главной: auto (по времени суток) / custom
+    # (welcome_subtitle как фиксированный текст) / hidden (не показывать).
+    hero_subtitle_mode: Literal["auto", "custom", "hidden"] = "auto"
     banner_enabled: bool = False
     banner_text: str = ""
     banner_type: Literal["info", "warning", "error", "success"] = "info"
     banner_expires_at: str | None = None
     logo_hidden: bool = False
+    # Hero-фон главной страницы (эксперимент): границы часовых слотов (0..23),
+    # по которым HeroBlock выбирает утренний/дневной/вечерний фон. Сами изображения
+    # загружаются как ассеты hero-bg-morning/day/evening (механизм как у login-bg).
+    hero_morning_hour: int = Field(default=6, ge=0, le=23)
+    hero_day_hour: int = Field(default=12, ge=0, le=23)
+    hero_evening_hour: int = Field(default=18, ge=0, le=23)
 
 
 class BrandingSettingsOut(BrandingSettings):
@@ -30,6 +39,9 @@ class BrandingSettingsOut(BrandingSettings):
     has_logo: bool = False
     logo_updated_at: str | None = None
     allowed_iframe_origins: list[str] = []
+    has_hero_bg_morning: bool = False
+    has_hero_bg_day: bool = False
+    has_hero_bg_evening: bool = False
 
 
 class EmailSettings(BaseModel):

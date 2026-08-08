@@ -7,10 +7,11 @@ import { ref } from 'vue'
 /**
  * Характеризующий тест виджета «Ближайшие дни рождения сотрудников».
  *
- * Контракты:
- * - рендерит список (ФИО + день месяца) когда есть именинники
- * - скрывается целиком (v-if на корне) когда список пуст
- * - день месяца извлекается из ISO birth_date (без месяца/года)
+ * Контракты (карусель со слайдером, восстановлено по запросу):
+ * - рендерит фамилию+имя (без отчества) и дату (день + месяц) в карточках
+ * - карусель: 6 карточек на слайд (3×2), стрелки и точки-индикаторы
+ * - клик по карточке открывает профиль /users/:id
+ * - скрыт целиком (v-if на корне) когда список пуст
  */
 const i18n = createI18n({
   legacy: false,
@@ -25,6 +26,7 @@ vi.mock('naive-ui', () => ({
     template: '<span class="n-avatar"><slot /></span>',
     props: ['round', 'size', 'src'],
   },
+  NButton: { template: '<button class="n-button"><slot /></button>' },
   NIcon: { template: '<span class="n-icon"><slot /></span>', props: ['size'] },
 }))
 
@@ -50,7 +52,7 @@ describe('BirthdaysWidget', () => {
     mockData = ref(undefined)
   })
 
-  it('рендерит фамилию+имя (без отчества) и дату (день + месяц)', async () => {
+  it('рендерит фамилию+имя (без отчества) и дату (день + месяц) в карточках', async () => {
     mockData = ref({
       items: [
         { id: 'u1', full_name: 'Иванов Иван Петрович', birth_date: '1990-03-12', avatar_url: null },
@@ -87,6 +89,27 @@ describe('BirthdaysWidget', () => {
     expect(mockRouterPush).toHaveBeenCalledWith('/users/user-42')
   })
 
+  it('карусель: 6 карточек на слайд + стрелки + точки-индикаторы (>1 слайда)', async () => {
+    // 8 именинников: PER_SLIDE=6 → 2 слайда, стрелки и точки активны.
+    const items = Array.from({ length: 8 }, (_, i) => ({
+      id: `u${i}`,
+      full_name: `Фамилия${i} Имя${i}`,
+      birth_date: '1990-03-12',
+      avatar_url: null,
+    }))
+    mockData = ref({ items, total: 8 })
+
+    const BirthdaysWidget = (await import('../../src/components/widgets/BirthdaysWidget.vue')).default
+    const wrapper = mount(BirthdaysWidget, { global: { plugins: [i18n] } })
+    await flushPromises()
+
+    // На текущей странице — 6 карточек
+    expect(wrapper.findAll('.birthday-card')).toHaveLength(6)
+    // Карусель: есть стрелки навигации и точки-индикаторы
+    expect(wrapper.findAll('.nav-arrow').length).toBeGreaterThan(0)
+    expect(wrapper.find('.dots').exists()).toBe(true)
+  })
+
   it('скрыт (нет .widget), когда список именинников пуст', async () => {
     mockData = ref({ items: [], total: 0 })
 
@@ -95,7 +118,7 @@ describe('BirthdaysWidget', () => {
     await flushPromises()
 
     expect(wrapper.find('.widget').exists()).toBe(false)
-    expect(wrapper.findAll('.birthday-row')).toHaveLength(0)
+    expect(wrapper.findAll('.birthday-card')).toHaveLength(0)
   })
 
   it('скрыт, пока данные не загружены (undefined)', async () => {

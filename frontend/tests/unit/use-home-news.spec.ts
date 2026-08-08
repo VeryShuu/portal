@@ -41,7 +41,7 @@ describe('useHomeNews (src/composables)', () => {
     expect(state.categoriesMap.value).toEqual({})
   })
 
-  it('splits items into pinned (max 1) and regular (max 4) buckets', async () => {
+  it('splits items into pinned (max 1) and regular (max 5) buckets', async () => {
     newsDataRef.value = {
       items: [
         { id: '1', is_pinned: true },
@@ -59,7 +59,8 @@ describe('useHomeNews (src/composables)', () => {
 
     expect(state.totalNews.value).toBe(7)
     expect(state.pinned.value.map((n: any) => n.id)).toEqual(['1'])
-    expect(state.regular.value.map((n: any) => n.id)).toEqual(['3', '4', '5', '6'])
+    // 5 regular + 6-я плита «Смотреть все» = полный ряд сетки 3×N
+    expect(state.regular.value.map((n: any) => n.id)).toEqual(['3', '4', '5', '6', '7'])
   })
 
   it('builds categoriesMap keyed by name with color value', async () => {

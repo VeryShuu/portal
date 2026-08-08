@@ -20,22 +20,40 @@
       "evening": "Good evening",
       "night": "Good night"
     },
+    "heroSubs": {
+      "morning": "A new day — new discoveries. May today's course be a successful one.",
+      "afternoon": "Everything that matters at MAGE — expeditions, news and corporate services.",
+      "evening": "The workday is winding down. Everything important is gathered here.",
+      "night": "Good night. Rest up — tomorrow is a new workday."
+    },
+    "viewNews": "View news",
+    "statsToday": "Today",
     "stats": {
       "news": "News",
       "articles": "Articles",
-      "services": "Services"
+      "services": "Services",
+      "newsCount": "Company news",
+      "meetingsToday": "Meetings",
+      "myTasks": "My tasks"
     },
     "sections": {
       "featured": "Featured",
       "latest": "Latest news",
       "bookmarks": "Favorites",
       "services": "My services",
-      "worldClock": "World clock"
+      "worldClock": "World clock",
+      "quickLinks": "Quick links",
+      "allBookmarks": "All bookmarks"
     },
     "viewAll": "View all",
+    "showAll": "Show all",
     "createFirstBookmark": "Add your first bookmark",
     "birthdays": {
-      "title": "Upcoming employee birthdays"
+      "title": "Upcoming employee birthdays",
+      "empty": "No upcoming birthdays"
+    },
+    "meetings": {
+      "noMeetingsHint": "Have a great, productive day!"
     }
   },
   "auth": {
@@ -1289,6 +1307,18 @@
       "resetLoginBg": "Reset",
       "loginBgUploaded": "Login background updated",
       "loginBgReset": "Login background reset",
+      "heroBgTitle": "Homepage Background",
+      "heroBgHint": "One photo per time-of-day slot (JPEG/PNG/WebP, up to 2 MB). If no photo is uploaded, a default gradient is used. The hour boundaries set when the slots switch.",
+      "heroBgMorning": "Morning",
+      "heroBgDay": "Day",
+      "heroBgEvening": "Evening",
+      "heroBgUpload": "Upload",
+      "heroBgReset": "Reset",
+      "heroBgUploaded": "Homepage background updated",
+      "heroBgResetDone": "Homepage background reset",
+      "heroBgMorningHour": "Morning starts (0–23)",
+      "heroBgDayHour": "Day starts (0–23)",
+      "heroBgEveningHour": "Evening starts (0–23)",
       "generalTitle": "General Settings",
       "portalName": "Portal Name",
       "portalNamePlaceholder": "Corporate Portal",
@@ -1297,6 +1327,10 @@
       "accentColor": "Accent Color",
       "welcomeSubtitle": "Welcome Text on Home Page",
       "welcomeSubtitlePlaceholder": "Welcome to the corporate portal",
+      "heroSubtitleMode": "Hero subtitle",
+      "heroSubtitleModeAuto": "By time of day (auto)",
+      "heroSubtitleModeCustom": "Custom text",
+      "heroSubtitleModeHidden": "Hidden",
       "settingsSaved": "Branding settings saved",
       "saveSettings": "Save Settings",
       "bannerTitle": "Information Banner",
