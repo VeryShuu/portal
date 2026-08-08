@@ -5125,6 +5125,7 @@ helpdesk-ticket-info-card.spec.ts
 helpdesk-ticket-list-item.spec.ts
 helpdesk-ticket-message-list.spec.ts
 helpdesk-ticket-sort.spec.ts
+hero-bg-focal-editor.spec.ts
 hero-block.spec.ts
 home-links-preview.spec.ts
 home-page.spec.ts
