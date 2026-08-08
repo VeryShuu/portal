@@ -78,7 +78,20 @@ class TestHeroHourValidation:
     def test_hero_subtitle_mode_defaults_auto(self):
         from app.api.branding import BrandingSettings
 
-        assert BrandingSettings().hero_subtitle_mode == "auto"
+        s = BrandingSettings()
+        assert s.hero_subtitle_mode == "auto"
+        # 4 custom-текста пустые по умолчанию
+        assert (
+            s.hero_subtitle_morning,
+            s.hero_subtitle_day,
+            s.hero_subtitle_evening,
+            s.hero_subtitle_night,
+        ) == (
+            "",
+            "",
+            "",
+            "",
+        )
 
     @pytest.mark.parametrize("mode", ["auto", "custom", "hidden"])
     def test_hero_subtitle_mode_valid_values_accepted(self, mode):
@@ -110,6 +123,37 @@ class TestHeroHourValidation:
         ):
             save_settings(BrandingSettings(hero_subtitle_mode="hidden"))
             assert load_settings().hero_subtitle_mode == "hidden"
+
+    def test_hero_subtitle_custom_texts_roundtrip(self, tmp_path):
+        """save→load сохраняет 4 custom-текста подзаголовка (JSON round-trip)."""
+        from app.services.branding_assets import (
+            BrandingSettings,
+            load_settings,
+            save_settings,
+        )
+
+        settings_file = tmp_path / "settings.json"
+        with (
+            patch("app.services.branding_assets.SETTINGS_FILE", settings_file),
+            patch("app.services.branding_assets.BRANDING_DIR", tmp_path),
+        ):
+            save_settings(
+                BrandingSettings(
+                    hero_subtitle_mode="custom",
+                    hero_subtitle_morning="Доброе утро!",
+                    hero_subtitle_day="Добрый день!",
+                    hero_subtitle_evening="Добрый вечер!",
+                    hero_subtitle_night="Доброй ночи!",
+                )
+            )
+            loaded = load_settings()
+        assert loaded.hero_subtitle_mode == "custom"
+        assert (
+            loaded.hero_subtitle_morning,
+            loaded.hero_subtitle_day,
+            loaded.hero_subtitle_evening,
+            loaded.hero_subtitle_night,
+        ) == ("Доброе утро!", "Добрый день!", "Добрый вечер!", "Доброй ночи!")
 
     @pytest.mark.parametrize("bad", [-1, 24, 100])
     def test_hero_morning_hour_out_of_range_rejected(self, bad):

@@ -1061,6 +1061,7 @@ tests/unit/test_branding.py::TestHeroHourValidation::test_hero_hour_roundtrip_th
 tests/unit/test_branding.py::TestHeroHourValidation::test_hero_morning_hour_out_of_range_rejected[-1]
 tests/unit/test_branding.py::TestHeroHourValidation::test_hero_morning_hour_out_of_range_rejected[100]
 tests/unit/test_branding.py::TestHeroHourValidation::test_hero_morning_hour_out_of_range_rejected[24]
+tests/unit/test_branding.py::TestHeroHourValidation::test_hero_subtitle_custom_texts_roundtrip
 tests/unit/test_branding.py::TestHeroHourValidation::test_hero_subtitle_mode_defaults_auto
 tests/unit/test_branding.py::TestHeroHourValidation::test_hero_subtitle_mode_invalid_rejected[AUTO]
 tests/unit/test_branding.py::TestHeroHourValidation::test_hero_subtitle_mode_invalid_rejected[]

@@ -248,6 +248,62 @@
           </div>
         </div>
       </div>
+
+      <!-- Подзаголовок Hero (режим + тексты) — в секции «Фон главной страницы»
+           под аплоадами картинок. -->
+      <div
+        class="branding-fields"
+        style="margin-top:16px"
+      >
+        <n-form-item
+          :label="t('admin.branding.heroSubtitleMode')"
+          style="margin-bottom:0"
+        >
+          <n-select
+            v-model:value="brandingForm.hero_subtitle_mode"
+            :options="heroSubtitleModeOptions"
+            style="width:240px"
+          />
+        </n-form-item>
+        <template v-if="brandingForm.hero_subtitle_mode === 'custom'">
+          <n-form-item
+            :label="t('admin.branding.heroSubtitleMorning')"
+            style="margin-bottom:0"
+          >
+            <n-input
+              v-model:value="brandingForm.hero_subtitle_morning"
+              :placeholder="t('home.heroSubs.morning')"
+            />
+          </n-form-item>
+          <n-form-item
+            :label="t('admin.branding.heroSubtitleDay')"
+            style="margin-bottom:0"
+          >
+            <n-input
+              v-model:value="brandingForm.hero_subtitle_day"
+              :placeholder="t('home.heroSubs.afternoon')"
+            />
+          </n-form-item>
+          <n-form-item
+            :label="t('admin.branding.heroSubtitleEvening')"
+            style="margin-bottom:0"
+          >
+            <n-input
+              v-model:value="brandingForm.hero_subtitle_evening"
+              :placeholder="t('home.heroSubs.evening')"
+            />
+          </n-form-item>
+          <n-form-item
+            :label="t('admin.branding.heroSubtitleNight')"
+            style="margin-bottom:0"
+          >
+            <n-input
+              v-model:value="brandingForm.hero_subtitle_night"
+              :placeholder="t('home.heroSubs.night')"
+            />
+          </n-form-item>
+        </template>
+      </div>
     </div>
 
     <div class="branding-section">
@@ -293,28 +349,6 @@
               :style="`background:${brandingForm.accent_color}`"
             />
           </div>
-        </n-form-item>
-        <n-form-item
-          :label="t('admin.branding.heroSubtitleMode')"
-          style="margin-bottom:0"
-        >
-          <n-select
-            v-model:value="brandingForm.hero_subtitle_mode"
-            :options="heroSubtitleModeOptions"
-            style="width:240px"
-          />
-        </n-form-item>
-        <n-form-item
-          v-if="brandingForm.hero_subtitle_mode === 'custom'"
-          :label="t('admin.branding.welcomeSubtitle')"
-          style="margin-bottom:0"
-        >
-          <n-input
-            v-model:value="brandingForm.welcome_subtitle"
-            type="textarea"
-            :rows="2"
-            :placeholder="t('admin.branding.welcomeSubtitlePlaceholder')"
-          />
         </n-form-item>
       </div>
       <n-button

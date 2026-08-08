@@ -111,14 +111,36 @@ describe('HeroBlock.vue', () => {
     expect(wrapper.text()).toContain(i18n.global.t(`home.heroSubs.${expected}`))
   })
 
-  it('shows custom welcome_subtitle when mode is "custom"', async () => {
+  it('shows custom per-slot subtitle when mode is "custom"', async () => {
     const HeroBlock = (await import('../../src/components/HeroBlock.vue')).default
     const { useBrandingStore } = await import('../../src/stores/branding')
     const branding = useBrandingStore()
     branding.settings.hero_subtitle_mode = 'custom'
-    branding.settings.welcome_subtitle = 'Добро пожаловать!'
+    // Задаём все 4 слота — актуальный выберется по текущему часу
+    branding.settings.hero_subtitle_morning = 'Своё утро!'
+    branding.settings.hero_subtitle_day = 'Свой день!'
+    branding.settings.hero_subtitle_evening = 'Свой вечер!'
+    branding.settings.hero_subtitle_night = 'Своя ночь!'
     const wrapper = mount(HeroBlock, { global: { plugins: [i18n] } })
-    expect(wrapper.text()).toContain('Добро пожаловать!')
+    const hour = new Date().getHours()
+    const expected = hour < 6 || hour >= 18 ? 'Свой вечер!' : hour < 12 ? 'Своё утро!' : 'Свой день!'
+    expect(wrapper.text()).toContain(expected)
+  })
+
+  it('falls back to i18n text when custom slot text is empty', async () => {
+    const HeroBlock = (await import('../../src/components/HeroBlock.vue')).default
+    const { useBrandingStore } = await import('../../src/stores/branding')
+    const branding = useBrandingStore()
+    branding.settings.hero_subtitle_mode = 'custom'
+    // Все custom-поля пустые → fallback на i18n
+    branding.settings.hero_subtitle_morning = ''
+    branding.settings.hero_subtitle_day = ''
+    branding.settings.hero_subtitle_evening = ''
+    branding.settings.hero_subtitle_night = ''
+    const wrapper = mount(HeroBlock, { global: { plugins: [i18n] } })
+    const hour = new Date().getHours()
+    const slot = hour < 6 || hour >= 18 ? 'evening' : hour < 12 ? 'morning' : 'day'
+    expect(wrapper.text()).toContain(i18n.global.t(`home.heroSubs.${slot}`))
   })
 
   it('hides subtitle element entirely when mode is "hidden"', async () => {

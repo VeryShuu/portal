@@ -142,7 +142,7 @@ describe('useBrandingStore', () => {
     it('updates settings on success', async () => {
       const { useBrandingStore } = await import('../../src/stores/branding')
       const saved = { portal_name: 'New', accent_color: '#abcdef', portal_tagline: '',
-        welcome_subtitle: '', banner_enabled: false, banner_text: '', banner_type: 'info' as const, banner_expires_at: null }
+        banner_enabled: false, banner_text: '', banner_type: 'info' as const, banner_expires_at: null }
       mockApi.mockResolvedValueOnce(saved)
       const store = useBrandingStore()
       await store.save({ portal_name: 'New' })
