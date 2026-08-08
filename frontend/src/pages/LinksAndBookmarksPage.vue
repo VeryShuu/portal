@@ -1,5 +1,5 @@
 <template>
-  <div class="links-wrap u-page-wrap">
+  <div class="links-wrap u-page-wrap u-page-wrap--wide">
     <header class="page-head u-page-head">
       <div>
         <h1 class="u-page-head__title">
