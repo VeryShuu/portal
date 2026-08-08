@@ -16,8 +16,11 @@ export interface BrandingSettings {
   portal_name: string
   portal_tagline: string
   accent_color: string
-  welcome_subtitle: string
   hero_subtitle_mode?: 'auto' | 'custom' | 'hidden'
+  hero_subtitle_morning?: string
+  hero_subtitle_day?: string
+  hero_subtitle_evening?: string
+  hero_subtitle_night?: string
   banner_enabled: boolean
   banner_text: string
   banner_type: 'info' | 'warning' | 'error' | 'success'
@@ -40,8 +43,11 @@ const DEFAULTS: BrandingSettings = {
   portal_name: 'Корпоративный портал',
   portal_tagline: '',
   accent_color: '#d8262c',
-  welcome_subtitle: '',
   hero_subtitle_mode: 'auto',
+  hero_subtitle_morning: '',
+  hero_subtitle_day: '',
+  hero_subtitle_evening: '',
+  hero_subtitle_night: '',
   banner_enabled: false,
   banner_text: '',
   banner_type: 'info',

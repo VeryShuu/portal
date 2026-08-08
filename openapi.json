@@ -1602,6 +1602,16 @@
             "title": "Hero Morning Hour",
             "type": "integer"
           },
+          "hero_subtitle_day": {
+            "default": "",
+            "title": "Hero Subtitle Day",
+            "type": "string"
+          },
+          "hero_subtitle_evening": {
+            "default": "",
+            "title": "Hero Subtitle Evening",
+            "type": "string"
+          },
           "hero_subtitle_mode": {
             "default": "auto",
             "enum": [
@@ -1610,6 +1620,16 @@
               "hidden"
             ],
             "title": "Hero Subtitle Mode",
+            "type": "string"
+          },
+          "hero_subtitle_morning": {
+            "default": "",
+            "title": "Hero Subtitle Morning",
+            "type": "string"
+          },
+          "hero_subtitle_night": {
+            "default": "",
+            "title": "Hero Subtitle Night",
             "type": "string"
           },
           "logo_hidden": {
@@ -1625,11 +1645,6 @@
           "portal_tagline": {
             "default": "",
             "title": "Portal Tagline",
-            "type": "string"
-          },
-          "welcome_subtitle": {
-            "default": "",
-            "title": "Welcome Subtitle",
             "type": "string"
           }
         },
@@ -1734,6 +1749,16 @@
             "title": "Hero Morning Hour",
             "type": "integer"
           },
+          "hero_subtitle_day": {
+            "default": "",
+            "title": "Hero Subtitle Day",
+            "type": "string"
+          },
+          "hero_subtitle_evening": {
+            "default": "",
+            "title": "Hero Subtitle Evening",
+            "type": "string"
+          },
           "hero_subtitle_mode": {
             "default": "auto",
             "enum": [
@@ -1742,6 +1767,16 @@
               "hidden"
             ],
             "title": "Hero Subtitle Mode",
+            "type": "string"
+          },
+          "hero_subtitle_morning": {
+            "default": "",
+            "title": "Hero Subtitle Morning",
+            "type": "string"
+          },
+          "hero_subtitle_night": {
+            "default": "",
+            "title": "Hero Subtitle Night",
             "type": "string"
           },
           "logo_hidden": {
@@ -1768,11 +1803,6 @@
           "portal_tagline": {
             "default": "",
             "title": "Portal Tagline",
-            "type": "string"
-          },
-          "welcome_subtitle": {
-            "default": "",
-            "title": "Welcome Subtitle",
             "type": "string"
           }
         },

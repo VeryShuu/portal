@@ -97,16 +97,24 @@ const heroSlot = computed<HeroSlot>(() => {
 
 const heroSubtitle = computed(() => {
   // Режим подзаголовка (настраивается в админке BrandingTab):
-  // - auto: per-time подпись из ТЗ (утро/день/вечер/ночь)
-  // - custom: фиксированный welcome_subtitle (override admin'а)
+  // - auto: стандартные per-time подписи из i18n (утро/день/вечер/ночь)
+  // - custom: свои тексты по слотам (hero_subtitle_morning/day/evening/night);
+  //   если для слота не задано — fallback на стандартный i18n
   // - hidden: подзаголовок не показывается
   const mode = branding.settings.hero_subtitle_mode ?? 'auto'
   if (mode === 'hidden') return ''
+  const slot = heroSlot.value
   if (mode === 'custom') {
-    const override = branding.settings.welcome_subtitle?.trim()
-    return override || t(`home.heroSubs.${heroSlot.value}`)
+    const customTexts: Record<string, string | undefined> = {
+      morning: branding.settings.hero_subtitle_morning,
+      day: branding.settings.hero_subtitle_day,
+      evening: branding.settings.hero_subtitle_evening,
+      night: branding.settings.hero_subtitle_night,
+    }
+    const custom = customTexts[slot]?.trim()
+    return custom || t(`home.heroSubs.${slot}`)
   }
-  return t(`home.heroSubs.${heroSlot.value}`)
+  return t(`home.heroSubs.${slot}`)
 })
 
 const heroPhotoUrl = computed(() => {
