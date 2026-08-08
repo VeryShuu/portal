@@ -16,7 +16,6 @@ const {
     portal_name: 'Portal',
     portal_tagline: 'Tagline',
     accent_color: '#3366aa',
-    welcome_subtitle: '',
     logo_hidden: false,
     banner_enabled: false,
     banner_text: '',

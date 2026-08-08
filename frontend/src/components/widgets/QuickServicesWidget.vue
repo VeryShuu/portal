@@ -102,19 +102,20 @@ const { linksStore, topLinks } = useHomeLinksPreview()
   gap: 8px;
 }
 
-/* Плитки сервисов (ТЗ п.5): 80×80, иконка сверху, название снизу, navy hover */
+/* Плитки сервисов: 4 колонки × 2 ряда. Иконка резиновая (aspect-ratio, не
+   фиксированная) — плитки сжимаются под ширину узкого aside, не вылезая за блок. */
 .quick-grid {
   display: grid;
-  /* Концепт: 2 ряда × 4 плитки (~90×90 каждая). */
-  grid-template-columns: repeat(4, 1fr);
-  gap: 10px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
 }
 .quick-tile {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
-  padding: 12px 6px;
+  gap: 6px;
+  padding: 8px 4px;
+  min-width: 0; /* критично: grid-item должен сжиматься ниже контента */
   background: transparent;
   border: 1px solid transparent;
   border-radius: var(--radius-md);
@@ -129,8 +130,10 @@ const { linksStore, topLinks } = useHomeLinksPreview()
   transform: translateY(-1px);
 }
 .quick-tile__icon {
-  width: 56px;
-  height: 56px;
+  /* Резиновая иконка: занимает ширину плитки, квадрат через aspect-ratio.
+    Раньше фиксированные 56px не давали плиткам сжиматься → вылезали за блок. */
+  width: 100%;
+  aspect-ratio: 1;
   border-radius: var(--radius-lg);
   background: var(--color-mage-card, #fff);
   border: 1px solid var(--color-mage-border, var(--color-border));
@@ -155,7 +158,7 @@ const { linksStore, topLinks } = useHomeLinksPreview()
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 22px;
+  font-size: 18px;
   font-weight: 700;
   color: #fff;
   background: linear-gradient(135deg, var(--color-mage-secondary, var(--color-brand-sky)), var(--color-mage-primary, var(--color-brand-navy)));
@@ -169,13 +172,18 @@ const { linksStore, topLinks } = useHomeLinksPreview()
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
-  max-width: 84px;
+  word-break: break-word;
 }
 .quick-skeleton {
-  height: 90px; /* под увеличенную плитку 80×80 */
+  height: 90px;
   border-radius: var(--radius-md);
   background: var(--color-bg-muted);
   animation: pulse 1.4s ease-in-out infinite;
+}
+/* На узком aside (ноутбуки ≤1440) — 3 колонки вместо 4: плитки крупнее,
+   не вылезают за границы блока при длинных названиях. */
+@media (max-width: 1440px) {
+  .quick-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 
 @keyframes pulse {

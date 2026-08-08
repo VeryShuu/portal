@@ -16,10 +16,15 @@ class BrandingSettings(BaseModel):
     portal_name: str = "Корпоративный портал"
     portal_tagline: str = ""
     accent_color: str = "#d8262c"
-    welcome_subtitle: str = ""
-    # Режим подзаголовка Hero на главной: auto (по времени суток) / custom
-    # (welcome_subtitle как фиксированный текст) / hidden (не показывать).
+    # Режим подзаголовка Hero: auto (по времени суток, стандартные тексты i18n) /
+    # custom (свои тексты ниже, по тому же расписанию) / hidden (не показывать).
     hero_subtitle_mode: Literal["auto", "custom", "hidden"] = "auto"
+    # Свои тексты подзаголовка по слотам (только в режиме custom). Каждый
+    # показывается в своё время суток (границы — hero_*_hour выше).
+    hero_subtitle_morning: str = ""
+    hero_subtitle_day: str = ""
+    hero_subtitle_evening: str = ""
+    hero_subtitle_night: str = ""
     banner_enabled: bool = False
     banner_text: str = ""
     banner_type: Literal["info", "warning", "error", "success"] = "info"
