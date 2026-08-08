@@ -251,7 +251,10 @@
 
       <!-- Подзаголовок Hero (режим + тексты) — в секции «Фон главной страницы»
            под аплоадами картинок. -->
-      <div class="branding-fields" style="margin-top:16px">
+      <div
+        class="branding-fields"
+        style="margin-top:16px"
+      >
         <n-form-item
           :label="t('admin.branding.heroSubtitleMode')"
           style="margin-bottom:0"
