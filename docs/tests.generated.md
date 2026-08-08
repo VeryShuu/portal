@@ -1049,6 +1049,13 @@ tests/unit/test_branding.py::TestHeroBgEndpoints::test_upload_non_editor_gets_40
 tests/unit/test_branding.py::TestHeroBgEndpoints::test_upload_webp_success_returns_url[day]
 tests/unit/test_branding.py::TestHeroBgEndpoints::test_upload_webp_success_returns_url[evening]
 tests/unit/test_branding.py::TestHeroBgEndpoints::test_upload_webp_success_returns_url[morning]
+tests/unit/test_branding.py::TestHeroHourValidation::test_hero_bg_focal_defaults_none
+tests/unit/test_branding.py::TestHeroHourValidation::test_hero_bg_focal_roundtrip_through_save_load
+tests/unit/test_branding.py::TestHeroHourValidation::test_hero_bg_focal_valid_values_accepted
+tests/unit/test_branding.py::TestHeroHourValidation::test_hero_bg_focal_xy_out_of_range_rejected[-1]
+tests/unit/test_branding.py::TestHeroHourValidation::test_hero_bg_focal_xy_out_of_range_rejected[101]
+tests/unit/test_branding.py::TestHeroHourValidation::test_hero_bg_focal_zoom_out_of_range_rejected[301]
+tests/unit/test_branding.py::TestHeroHourValidation::test_hero_bg_focal_zoom_out_of_range_rejected[99]
 tests/unit/test_branding.py::TestHeroHourValidation::test_hero_day_hour_out_of_range_rejected[-1]
 tests/unit/test_branding.py::TestHeroHourValidation::test_hero_day_hour_out_of_range_rejected[24]
 tests/unit/test_branding.py::TestHeroHourValidation::test_hero_evening_hour_out_of_range_rejected[-1]
@@ -5118,6 +5125,7 @@ helpdesk-ticket-info-card.spec.ts
 helpdesk-ticket-list-item.spec.ts
 helpdesk-ticket-message-list.spec.ts
 helpdesk-ticket-sort.spec.ts
+hero-bg-focal-editor.spec.ts
 hero-block.spec.ts
 home-links-preview.spec.ts
 home-page.spec.ts

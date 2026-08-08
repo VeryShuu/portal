@@ -36,6 +36,19 @@ class BrandingSettings(BaseModel):
     hero_morning_hour: int = Field(default=6, ge=0, le=23)
     hero_day_hour: int = Field(default=12, ge=0, le=23)
     hero_evening_hour: int = Field(default=18, ge=0, le=23)
+    # Focal-point позиционирования Hero-фонов (механизм как у news cover focal).
+    # x/y — integer percent 0..100 (точка фокуса), zoom — 100..300 (100=без zoom).
+    # Все nullable: null = центрирование без zoom (sane default). Нет БД-миграций —
+    # branding хранится в settings.json, новые поля появляются автоматически.
+    hero_bg_morning_focal_x: int | None = Field(default=None, ge=0, le=100)
+    hero_bg_morning_focal_y: int | None = Field(default=None, ge=0, le=100)
+    hero_bg_morning_focal_zoom: int | None = Field(default=None, ge=100, le=300)
+    hero_bg_day_focal_x: int | None = Field(default=None, ge=0, le=100)
+    hero_bg_day_focal_y: int | None = Field(default=None, ge=0, le=100)
+    hero_bg_day_focal_zoom: int | None = Field(default=None, ge=100, le=300)
+    hero_bg_evening_focal_x: int | None = Field(default=None, ge=0, le=100)
+    hero_bg_evening_focal_y: int | None = Field(default=None, ge=0, le=100)
+    hero_bg_evening_focal_zoom: int | None = Field(default=None, ge=100, le=300)
 
 
 class BrandingSettingsOut(BrandingSettings):

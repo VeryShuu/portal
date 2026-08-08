@@ -220,6 +220,15 @@
               class="hero-bg-tile__placeholder"
             />
           </div>
+          <!-- Focal-point редактор (drag-маркер + zoom): появляется только когда
+               фото загружено. Позволяет подогнать любое изображение под окошко Hero. -->
+          <HeroBgFocalEditor
+            v-if="brandingStore.assetUrl(slot.kind)"
+            v-model:focal-x="brandingForm[slot.focalXKey]"
+            v-model:focal-y="brandingForm[slot.focalYKey]"
+            v-model:focal-zoom="brandingForm[slot.focalZoomKey]"
+            :image-url="brandingStore.assetUrl(slot.kind)"
+          />
           <div class="hero-bg-tile__actions">
             <input
               :ref="(el) => setHeroInputRef(slot.kind, el as HTMLInputElement | null)"
@@ -424,6 +433,7 @@ import { useI18n } from 'vue-i18n'
 import { NButton, NInput, NInputNumber, NFormItem, NSwitch, NSelect, NCheckbox, useMessage } from 'naive-ui'
 import { useBrandingStore, type BrandingSettings, type BrandingAsset } from '../../../stores/branding'
 import { parseApiError } from '../../../utils/parseApiError'
+import HeroBgFocalEditor from '../../../components/widgets/HeroBgFocalEditor.vue'
 
 const { t } = useI18n()
 const message = useMessage()
@@ -449,10 +459,27 @@ const currentLoginBgUrl = computed(() => brandingStore.assetUrl('login-bg'))
 
 // ── Hero background slots (morning / day / evening) ──────────────────────────
 type HeroBgKind = 'hero-bg-morning' | 'hero-bg-day' | 'hero-bg-evening'
-const heroBgSlots: { kind: HeroBgKind; labelKey: string }[] = [
-  { kind: 'hero-bg-morning', labelKey: 'admin.branding.heroBgMorning' },
-  { kind: 'hero-bg-day', labelKey: 'admin.branding.heroBgDay' },
-  { kind: 'hero-bg-evening', labelKey: 'admin.branding.heroBgEvening' },
+interface HeroBgSlot {
+  kind: HeroBgKind
+  labelKey: string
+  // Ключи focal-полей в brandingForm (для v-model в HeroBgFocalEditor)
+  focalXKey: 'hero_bg_morning_focal_x' | 'hero_bg_day_focal_x' | 'hero_bg_evening_focal_x'
+  focalYKey: 'hero_bg_morning_focal_y' | 'hero_bg_day_focal_y' | 'hero_bg_evening_focal_y'
+  focalZoomKey: 'hero_bg_morning_focal_zoom' | 'hero_bg_day_focal_zoom' | 'hero_bg_evening_focal_zoom'
+}
+const heroBgSlots: HeroBgSlot[] = [
+  {
+    kind: 'hero-bg-morning', labelKey: 'admin.branding.heroBgMorning',
+    focalXKey: 'hero_bg_morning_focal_x', focalYKey: 'hero_bg_morning_focal_y', focalZoomKey: 'hero_bg_morning_focal_zoom',
+  },
+  {
+    kind: 'hero-bg-day', labelKey: 'admin.branding.heroBgDay',
+    focalXKey: 'hero_bg_day_focal_x', focalYKey: 'hero_bg_day_focal_y', focalZoomKey: 'hero_bg_day_focal_zoom',
+  },
+  {
+    kind: 'hero-bg-evening', labelKey: 'admin.branding.heroBgEvening',
+    focalXKey: 'hero_bg_evening_focal_x', focalYKey: 'hero_bg_evening_focal_y', focalZoomKey: 'hero_bg_evening_focal_zoom',
+  },
 ]
 const heroInputRefs = reactive<Record<HeroBgKind, HTMLInputElement | null>>({
   'hero-bg-morning': null,

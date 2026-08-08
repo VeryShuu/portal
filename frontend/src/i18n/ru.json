@@ -1333,6 +1333,8 @@
       "heroSubtitleDay": "Текст — День",
       "heroSubtitleEvening": "Текст — Вечер",
       "heroSubtitleNight": "Текст — Ночь",
+      "heroBgFocalLabel": "Точка фокуса: {x}, {y}",
+      "heroBgZoom": "Zoom",
       "settingsSaved": "Настройки оформления сохранены",
       "saveSettings": "Сохранить настройки",
       "bannerTitle": "Информационный баннер",

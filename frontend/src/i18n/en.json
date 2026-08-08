@@ -1333,6 +1333,8 @@
       "heroSubtitleDay": "Text — Day",
       "heroSubtitleEvening": "Text — Evening",
       "heroSubtitleNight": "Text — Night",
+      "heroBgFocalLabel": "Focal point: {x}, {y}",
+      "heroBgZoom": "Zoom",
       "settingsSaved": "Branding settings saved",
       "saveSettings": "Save Settings",
       "bannerTitle": "Information Banner",

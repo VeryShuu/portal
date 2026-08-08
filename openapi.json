@@ -1581,6 +1581,123 @@
             "title": "Banner Type",
             "type": "string"
           },
+          "hero_bg_day_focal_x": {
+            "anyOf": [
+              {
+                "maximum": 100.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hero Bg Day Focal X"
+          },
+          "hero_bg_day_focal_y": {
+            "anyOf": [
+              {
+                "maximum": 100.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hero Bg Day Focal Y"
+          },
+          "hero_bg_day_focal_zoom": {
+            "anyOf": [
+              {
+                "maximum": 300.0,
+                "minimum": 100.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hero Bg Day Focal Zoom"
+          },
+          "hero_bg_evening_focal_x": {
+            "anyOf": [
+              {
+                "maximum": 100.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hero Bg Evening Focal X"
+          },
+          "hero_bg_evening_focal_y": {
+            "anyOf": [
+              {
+                "maximum": 100.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hero Bg Evening Focal Y"
+          },
+          "hero_bg_evening_focal_zoom": {
+            "anyOf": [
+              {
+                "maximum": 300.0,
+                "minimum": 100.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hero Bg Evening Focal Zoom"
+          },
+          "hero_bg_morning_focal_x": {
+            "anyOf": [
+              {
+                "maximum": 100.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hero Bg Morning Focal X"
+          },
+          "hero_bg_morning_focal_y": {
+            "anyOf": [
+              {
+                "maximum": 100.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hero Bg Morning Focal Y"
+          },
+          "hero_bg_morning_focal_zoom": {
+            "anyOf": [
+              {
+                "maximum": 300.0,
+                "minimum": 100.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hero Bg Morning Focal Zoom"
+          },
           "hero_day_hour": {
             "default": 12,
             "maximum": 23.0,
@@ -1727,6 +1844,123 @@
             "default": false,
             "title": "Has Logo",
             "type": "boolean"
+          },
+          "hero_bg_day_focal_x": {
+            "anyOf": [
+              {
+                "maximum": 100.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hero Bg Day Focal X"
+          },
+          "hero_bg_day_focal_y": {
+            "anyOf": [
+              {
+                "maximum": 100.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hero Bg Day Focal Y"
+          },
+          "hero_bg_day_focal_zoom": {
+            "anyOf": [
+              {
+                "maximum": 300.0,
+                "minimum": 100.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hero Bg Day Focal Zoom"
+          },
+          "hero_bg_evening_focal_x": {
+            "anyOf": [
+              {
+                "maximum": 100.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hero Bg Evening Focal X"
+          },
+          "hero_bg_evening_focal_y": {
+            "anyOf": [
+              {
+                "maximum": 100.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hero Bg Evening Focal Y"
+          },
+          "hero_bg_evening_focal_zoom": {
+            "anyOf": [
+              {
+                "maximum": 300.0,
+                "minimum": 100.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hero Bg Evening Focal Zoom"
+          },
+          "hero_bg_morning_focal_x": {
+            "anyOf": [
+              {
+                "maximum": 100.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hero Bg Morning Focal X"
+          },
+          "hero_bg_morning_focal_y": {
+            "anyOf": [
+              {
+                "maximum": 100.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hero Bg Morning Focal Y"
+          },
+          "hero_bg_morning_focal_zoom": {
+            "anyOf": [
+              {
+                "maximum": 300.0,
+                "minimum": 100.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hero Bg Morning Focal Zoom"
           },
           "hero_day_hour": {
             "default": 12,
