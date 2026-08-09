@@ -154,10 +154,10 @@ XS-S правки, не требующие архитектурных решен
 | M3  | 🟡 Medium | Perf | Batch INSERT outbox | M | 2 | [x] 2026-08-02 |
 | M4  | 🟡 Medium | Perf | meetings limit=100 | S | 2 | [x] 2026-07-27 |
 | M5  | 🟡 Medium | DB | Drop redundant indexes | S | 1 | [ ] ⚠️ прод |
-| M6  | 🟡 Medium | Code Smell | `_ingest_message` Long Method | M | 2 | [ ] |
+| M6  | 🟡 Medium | Code Smell | `_ingest_message` Long Method | M | 2 | [x] 2026-08-09 |
 | M7  | 🟡 Medium | Code Smell | helpdesk email/notification sprawl | M | 3 | [ ] |
 | M8  | 🟡 Medium | Code Smell | analytics boilerplate | S-M | 3 | [x] 2026-08-02 |
-| M9  | 🟡 Medium | Architecture | keycloak_admin God Module | M | 2 | [ ] |
+| M9  | 🟡 Medium | Architecture | keycloak_admin God Module | M | 2 | [x] 2026-08-09 |
 | M10 | 🟡 Medium | Code Smell | Magic numbers | XS | 1 | [x] 2026-07-26 |
 | M11 | 🟡 Medium | Architecture | Service Locator → DI | M | 3 | [ ] ⚠️ decision |
 | M12 | 🟡 Medium | Frontend | LinksTab.vue composable | M | 2 | [x] 2026-08-02 |
@@ -171,7 +171,7 @@ XS-S правки, не требующие архитектурных решен
 | M20 | 🟡 Medium | Docker | screenshot-service /ready | S | 2 | [x] 2026-07-26 |
 | M21 | 🟡 Medium | CI/CD | gitleaks/trivy/ZAP pin | XS | 2 | [x] 2026-07-27 (ZAP добавлен) |
 | M22 | 🟡 Medium | Config | migrate_env race | S | 2 | [x] 2026-07-26 |
-| L1  | 🟢 Low | DB | миграции zero-downtime паттерн | XS | 4 | [ ] |
+| L1  | 🟢 Low | DB | миграции zero-downtime паттерн | XS | 4 | [x] 2026-08-09 |
 | L2  | 🟢 Low | Perf | analytics Redis-кеш | M | 4 | [ ] |
 | L3  | 🟢 Low | Perf | search offset лимит | XS | 4 | [x] 2026-07-26 |
 | L4  | 🟢 Low | DB | outbox watchdog lock | XS | 4 | [x] 2026-07-26 |
@@ -903,7 +903,7 @@ XS-S правки, не требующие архитектурных решен
 - **Сложность:** M
 - **Риск регрессии:** Medium — критический путь email-ingress. Стратегия: characterization-тест первым, пошагово, без feature-flag (поведение неизменно).
 - **Ожидаемый эффект:** `_ingest_message` ~30 LOC; unit-тестируемость шагов.
-- **Статус:** [ ]
+- **Статус:** [x] 2026-08-09 — выполнено. Characterization-подушка уже существовала: `test_helpdesk_ingress_tx.py` (12 тестов на инварианты оркестратора — single-commit, cleanup-при-rollback, `include_remote=False`, post-commit в отдельной сессии) — новый snapshot не понадобился. Декомпозиция в 3 шага + 2 frozen-dataclass-результата: `_parse_and_match` (заголовки/тикет/заявка/тела) → `_persist_ticket_and_message` (тикет+сообщение+in-tx локализация) → `_finalize_ingest` (commit-инвариант+post-commit+notify). `_ingest_message` 143→19 LOC (wiring). Инвариант `db.commit()` только в `_finalize_ingest` соблюдён. Все 46 ingress unit-тестов зелёные до и после. `ruff` чист.
 
 ---
 
@@ -982,20 +982,23 @@ XS-S правки, не требующие архитектурных решен
 - **Последствия:** Сложно тестировать без FastAPI; SSRF-логика не переиспользуется; дубли `_validate_keycloak_url` vs `email_images.is_safe_remote_url`.
 
 #### План действий
-- [ ] `app/services/keycloak_settings_store.py` — `load_settings`, `save_settings`, `migrate_legacy`
-- [ ] `app/core/net_guard.py` (см. [H1]) — SSRF-валидация, переиспользуется
-- [ ] `app/services/keycloak/probe.py` — `test_oidc_connection`, `test_sync_connection`
-- [ ] Роутер становится тонкой обёрткой: dependency-lookup → вызов сервиса → response
+- [x] `app/services/keycloak/admin_store.py` — `load_settings`, `save_settings`, `migrate_legacy` + модели
+      (имя `admin_store`, не `keycloak_settings_store` — в `services/keycloak/` уже есть `settings.py`
+      с другим смыслом: read-only runtime-кеш `_KCSettings`; avoiding двух «settings» рядом)
+- [x] `app/core/net_guard.py` (см. [H1]) — добавлены `is_unsafe_internal_ip`/`is_safe_internal_url`
+      (allow-private политика для Keycloak; strict-политика уже была для bookmarks)
+- [x] `app/services/keycloak/probe.py` — `test_oidc_connection`, `test_sync_connection`, `require_configured`
+- [x] Роутер стал тонкой обёрткой (394→181 LOC): deps → вызов сервиса → response
 
 #### DoD
-- [ ] −~150 LOC из роутера
-- [ ] `net_guard.py` используется и здесь, и в bookmarks ([H1])
-- [ ] Integration-тест на test-endpoints с моком Keycloak
+- [x] −213 LOC из роутера (394 → 181)
+- [x] `net_guard.py` используется и здесь, и в bookmarks ([H1]) — две политики (strict + allow-private)
+- [x] Тесты на test-endpoints с моком Keycloak (probe.test_oidc_discovery_fails + роутерные 400-кейсы)
 
 - **Сложность:** M
 - **Риск регрессии:** Low-medium. Стратегия: characterization-тесты contract'ов URL/payload.
 - **Ожидаемый эффект:** Тестируемость без FastAPI; единый SSRF-validation.
-- **Статус:** [ ]
+- **Статус:** [x] 2026-08-09 — выполнено. Роутер `keycloak_admin.py` 394→181 LOC (−54%): вынесены persistence+модели+SSRF в `services/keycloak/admin_store.py`, HTTP-пробы в `services/keycloak/probe.py`. SSRF консолидирован в `net_guard` — добавлены `is_unsafe_internal_ip`/`is_safe_internal_url` (allow-private, для Keycloak за VPN), строгая политика (`is_public_ip`/`is_safe_remote_url`) уже использовалась в bookmarks [H1]. Удалён дубликат `_is_unsafe_ip`/`_CLOUD_METADATA_NETS` из роутера (теперь в net_guard). Обратная совместимость: алиасы `_load_kc_settings`/`_KC_SETTINGS_FILE`/`KeycloakSettings` реэкспортятся из роутера (тесты/потребители не сломаны). Тесты обновлены: `test_keycloak_admin.py` (22) перенаправлен на admin_store/probe, `test_net_guard.py` (+18) покрывает allow-private. Все unit-тесты зелёные.
 
 ---
 
@@ -1378,7 +1381,7 @@ XS-S правки, не требующие архитектурных решен
 - **Где:** `migrations/versions/084_*.py:38`, миграция 077
 - **Что найдено:** `ALTER TABLE ... ADD COLUMN ... NOT NULL DEFAULT '...'`. Прокатило (PG11+ meta-op), но нарушает zero-downtime-конвенцию AGENTS.md.
 - **Действие:** Зафиксировать в код-ревью правило: для больших таблиц строго `nullable=True` → backfill → `SET NOT NULL`. Хороший пример — миграция 058.
-- **Сложность:** XS (процедурное) · **Статус:** [ ]
+- **Сложность:** XS (процедурное) · **Статус:** [x] 2026-08-09 — выполнено. Создан `.github/PULL_REQUEST_TEMPLATE.md` с выделенным чекпоинтом «Миграции БД — zero-downtime»: правило трёх шагов (`ADD COLUMN NULL` → backfill → `SET NOT NULL`), `CREATE INDEX CONCURRENTLY`, rename-паттерн, канонический пример миграции 058. Ссылается на `AGENTS.md` §«Миграции (zero-downtime)». Само правило в AGENTS.md уже было зафиксировано (`:321`, `:479-480`); L1 закрывала именно процедурную часть — видимость на code review.
 
 ### [L2] — `analytics.py`: 9 round-trip к БД на дашборд
 - **Категория:** Performance

@@ -116,6 +116,68 @@ class TestIsSafeRemoteUrl:
         assert is_safe_remote_url("https://attacker.evil/") is True
 
 
+# ── is_unsafe_internal_ip / is_safe_internal_url (allow-private, audit [M9]) ──
+#
+# Перенесено из keycloak_admin._is_unsafe_ip: приватные диапазоны разрешены
+# (Keycloak за VPN), блокируются loopback/link-local/multicast/cloud-metadata.
+
+
+from app.core.net_guard import is_safe_internal_url, is_unsafe_internal_ip
+
+
+class TestIsUnsafeInternalIp:
+    """allow-private политика: private разрешён, остальное (как в strict) — нет."""
+
+    @pytest.mark.parametrize("ip", ["127.0.0.1", "::1", "169.254.1.1", "224.0.0.1", "0.0.0.0"])
+    def test_blocked(self, ip):
+        assert is_unsafe_internal_ip(ipaddress.ip_address(ip)) is True
+
+    @pytest.mark.parametrize("ip", ["169.254.169.254", "fd00:ec2::254"])
+    def test_cloud_metadata_blocked(self, ip):
+        assert is_unsafe_internal_ip(ipaddress.ip_address(ip)) is True
+
+    @pytest.mark.parametrize("ip", ["192.168.1.1", "10.0.0.1", "172.16.0.1", "8.8.8.8"])
+    def test_private_and_public_allowed(self, ip):
+        assert is_unsafe_internal_ip(ipaddress.ip_address(ip)) is False
+
+    def test_ipv4_mapped_ipv6_normalized(self):
+        # ::ffff:127.0.0.1 — IPv4-mapped IPv6; должен блокироваться как loopback.
+        assert is_unsafe_internal_ip(ipaddress.ip_address("::ffff:127.0.0.1")) is True
+
+
+class TestIsSafeInternalUrl:
+    """Keycloak-валидатор: http(s) + непустой host + allow-private IP."""
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "https://keycloak.company.com/auth",
+            "https://192.168.1.100/auth",  # private IP — разрешён (Keycloak за VPN)
+            "http://10.0.0.5:8080/",
+            "http://keycloak.intranet.local/",  # домен — резолв в caller
+        ],
+    )
+    def test_allowed(self, url):
+        assert is_safe_internal_url(url) is True
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "http://127.0.0.1/auth",
+            "http://localhost/auth",
+            "http://169.254.169.254/auth",  # cloud-metadata
+            "http://0.0.0.0/auth",
+            "http://[::1]/auth",
+        ],
+    )
+    def test_blocked(self, url):
+        assert is_safe_internal_url(url) is False
+
+    @pytest.mark.parametrize("url", ["ftp://kc.example.com", "http://", "not a url"])
+    def test_invalid_scheme_or_host(self, url):
+        assert is_safe_internal_url(url) is False
+
+
 # ── resolve_all_ips (async) ───────────────────────────────────────────────────
 #
 # Патчим app.core.net_guard.resolve_all_ips в тестах assert_url_safe /

@@ -20,6 +20,7 @@ from __future__ import annotations
 import asyncio
 import re
 import uuid
+from dataclasses import dataclass
 from email import message_from_bytes
 from email.message import Message
 from email.utils import getaddresses
@@ -618,55 +619,105 @@ async def _dispatch_ingest_notifications(
             logger.warning("helpdesk.ingress.notify_email_failed", error=str(exc))
 
 
-async def _ingest_message(
+@dataclass(frozen=True, slots=True)
+class _IngestMatch:
+    """Результат шага parse+match (шаг 1 декомпозиции ``_ingest_message``).
+
+    Несёт всё, что нужно последующим шагам: разобранные заголовки, найденный
+    тикет (``None`` → будет создан новый), заявку-инициатора и нормализованные
+    тела письма. Неизменяемый — шаги не мутируют чужое состояние.
+    """
+
+    headers: dict
+    ticket: HelpdeskTicket | None
+    requester: User | None
+    body_text: str
+    body_html: str
+
+
+@dataclass(frozen=True, slots=True)
+class _IngestPersist:
+    """Результат шага persist (шаг 2): созданный/апдейтнутый тикет + сообщение.
+
+    ``new_status`` — ``"created"`` (новый тикет) или ``"appended"`` (ответ).
+    ``localized_html``/``total_tracker`` — результат in-tx локализации картинок
+    (без remote-fetch, см. H-2); tracker нужен для cleanup при rollback.
+    """
+
+    ticket: HelpdeskTicket
+    message: HelpdeskMessage
+    new_status: str
+    localized_html: str | None
+    total_tracker: _TotalTracker
+
+
+async def _parse_and_match(
     db: AsyncSession,
-    redis: Redis,
     msg: Message,
-    message_id: str,
     settings_row: HelpdeskMailboxSettings,
-    summary: dict,
-) -> None:
+) -> _IngestMatch:
+    """Шаг 1: разобрать заголовки, найти тикет, заявку и тела письма.
+
+    ``keep_forward``: для НОВОЙ заявки (нет матча с тикетом) forward-блок письма
+    не отрезается — это часто суть обращения (bounce, пересланный контекст). Для
+    ответа на существующий тикет forward режется как цитата (чтобы не дублировать
+    прошлое письмо в ленте). ``_extract_bodies`` возвращает ``str | None``; пустое
+    тело валидно (напр. только вложения) — нормализуем в ``""``.
+    """
     headers = _parse_inbound_headers(msg, support_address=settings_row.support_address)
-    sender_email = headers["sender_email"]
-    references = headers["references"]
-    subject_token = headers["subject_token"]
-    recipient_token = headers["recipient_token"]
-    subject_raw = headers["subject_raw"]
-    sender_name = headers["sender_name"]
 
     ticket = await _match_ticket(
         db,
-        references=references,
-        subject_token=subject_token,
-        recipient_token=recipient_token,
-        sender_email=sender_email,
+        references=headers["references"],
+        subject_token=headers["subject_token"],
+        recipient_token=headers["recipient_token"],
+        sender_email=headers["sender_email"],
+    )
+    requester = await _find_user_by_email(db, headers["sender_email"])
+
+    body_text, body_html = _extract_bodies(msg, keep_forward=ticket is None)
+    return _IngestMatch(
+        headers=headers,
+        ticket=ticket,
+        requester=requester,
+        body_text=body_text or "",
+        body_html=body_html or "",
     )
 
-    requester = await _find_user_by_email(db, sender_email)
 
-    # ``keep_forward``: для НОВОЙ заявки (нет матча с тикетом) forward-блок
-    # письма не отрезается — это часто суть обращения (bounce об ошибке доставки,
-    # пересланный контекст проблемы). Для ответа на существующий тикет forward
-    # режется как цитата (чтобы не дублировать прошлое письмо в ленте).
-    body_text, body_html = _extract_bodies(msg, keep_forward=ticket is None)
-    # ``_extract_bodies`` возвращает ``tuple[str | None, str | None]``, но ниже по
-    # потоку (HelpdeskTicket/Message, html_to_plain) требует ``str``. Пустое тело
-    # входящего письма тоже валидно (напр. только вложения) — нормализуем в "".
-    body_text = body_text or ""
-    body_html = body_html or ""
+async def _persist_ticket_and_message(
+    db: AsyncSession,
+    msg: Message,
+    match: _IngestMatch,
+    message_id: str,
+) -> _IngestPersist:
+    """Шаг 2: создать/апдейтнуть тикет + сообщение и локализовать картинки (in-tx).
 
-    if ticket is None:
+    Для нового тикета — ``HelpdeskTicket`` + ``new_status="created"`` (со ссылкой
+    на архивный, если ``subject_token`` указывал на него). Для ответа — смена
+    статия по машине (``_apply_requester_reply``) + ``new_status="appended"``.
+
+    In-tx локализация картинок (H-2): только inline ``cid:`` и обычные вложения
+    (локальные операции FS+DB); медленный remote-http(s) fetch вынесен в шаг 3
+    post-commit, чтобы не держать DB-транзакцию минутами. ``total_tracker`` (H-5)
+    регистрирует пути записанных файлов для cleanup при rollback.
+    """
+    body_text = match.body_text
+    body_html = match.body_html
+
+    if match.ticket is None:
         # Новый тикет. Если subject_token указывал на архивный — сохраним ссылку.
+        subject_token = match.headers["subject_token"]
         ref_archived = subject_token if subject_token is not None else None
         ticket = HelpdeskTicket(
-            subject=_derive_subject(subject_raw),
+            subject=_derive_subject(match.headers["subject_raw"]),
             description=body_text,
             description_html=body_html,
             status=HelpdeskStatus.new,
             source=HelpdeskSource.email,
-            requester_user_id=requester.id if requester else None,
-            requester_email=sender_email,
-            requester_name=sender_name,
+            requester_user_id=match.requester.id if match.requester else None,
+            requester_email=match.headers["sender_email"],
+            requester_name=match.headers["sender_name"],
             references_archived_ticket_number=ref_archived,
         )
         db.add(ticket)
@@ -674,13 +725,14 @@ async def _ingest_message(
         new_status = "created"
     else:
         # Ответ на существующий тикет → сменить статус по машине.
+        ticket = match.ticket
         _apply_requester_reply(ticket)
         new_status = "appended"
 
     message = _build_inbound_helpdesk_message(
         ticket=ticket,
-        requester=requester,
-        headers=headers,
+        requester=match.requester,
+        headers=match.headers,
         message_id=message_id,
         body_text=body_text,
         body_html=body_html,
@@ -689,64 +741,86 @@ async def _ingest_message(
     await db.flush()  # message.id нужен для привязки вложений/локализации картинок
     ticket.last_activity_at = func.now()
 
-    # Локализация картинок + обычные вложения. Снимает MVP-заглушку: раньше
-    # email-вложения не сохранялись, а inline cid: / внешние http(s) картинки
-    # ломались (битая иконка / CSP-блок). Теперь все картинки локализуются в
-    # FS (attachments), src переписываются на /api/v1/helpdesk/attachments/{id}.
-    #
-    # H-2: remote http(s) картинки локализуем POST-COMMIT (отдельная сессия),
-    # не в этой транзакции — иначе медленный httpx-fetch держит DB-соединение
-    # открытым минутами (письмо с множеством <img> → pool exhaustion). Здесь —
-    # только inline cid: и обычные вложения (локальные операции FS+DB).
-    #
-    # H-5: ``total_tracker`` регистрирует пути записанных файлов — если commit
-    # упадёт, файлы-сирота (без DB-строки) удаляются в except-блоке ниже.
     localized_html, total_tracker = await _localize_attachments_and_images(
         db, msg=msg, ticket=ticket, message=message, body_html=body_html, include_remote=False
     )
+    return _IngestPersist(
+        ticket=ticket,
+        message=message,
+        new_status=new_status,
+        localized_html=localized_html,
+        total_tracker=total_tracker,
+    )
+
+
+async def _finalize_ingest(
+    db: AsyncSession,
+    redis: Redis,
+    match: _IngestMatch,
+    persist: _IngestPersist,
+    message_id: str,
+    summary: dict,
+) -> None:
+    """Шаг 3: применить локализованный html, закоммитить и разослать уведомления.
+
+    Инварианты (см. characterization-тесты ``test_helpdesk_ingress_tx.py``):
+
+    * **Единый commit** — ``helpdesk_email_log`` и (для нового тикета) email
+      заявителю добавляются в сессию **до** ``db.commit()``. Раньше лог писался
+      отдельным коммитом → сбой между ними → дубль письма (split-commit баг).
+    * **Cleanup файлов-сирот (H-5)** — при rollback файлы, записанные локализацией,
+      удаляются (``ticket.number`` уже потрачен, без cleanup папка ``TKT-{n}`` течёт).
+    * **Post-commit remote-localize (H-2)** — медленный httpx-fetch внешних картинок
+      в отдельной сессии **после** коммита; здесь — лишь инициация.
+    * **Уведомления** — in-app/email/MAX, best-effort (``_dispatch_ingest_notifications``).
+    """
+    body_text = match.body_text
+    body_html = match.body_html
+    localized_html = persist.localized_html
+
     try:
         if localized_html is not None and localized_html != body_html:
-            message.body_html = localized_html
+            persist.message.body_html = localized_html
             # Деривация plain из обновлённого html (картинки стали относительными).
-            message.body_text = html_to_plain(localized_html) or body_text
-            body_text = message.body_text
-            if new_status == "created":
+            persist.message.body_text = html_to_plain(localized_html) or body_text
+            body_text = persist.message.body_text
+            if persist.new_status == "created":
                 # description — копия первого сообщения, синхронизируем.
-                ticket.description = body_text
-                ticket.description_html = localized_html
+                persist.ticket.description = body_text
+                persist.ticket.description_html = localized_html
 
         # Идемпотентный лог пишется В ТОЙ ЖЕ транзакции, что и сообщение
-        # (outbox-style инвариант): раньше бизнес-коммит сообщения (:486) и
-        # запись helpdesk_email_log (отдельный commit в _write_log) были в разных
+        # (outbox-style инвариант): раньше бизнес-коммит сообщения и запись
+        # helpdesk_email_log (отдельный commit в _write_log) были в разных
         # транзакциях — сбой между ними → письмо создано, но не залогировано →
         # повторная обработка / дубль. Теперь единый commit.
         db.add(
             HelpdeskEmailLog(
                 message_id=message_id,
-                ticket_id=ticket.id,
-                message_db_id=message.id,
-                status=new_status,
+                ticket_id=persist.ticket.id,
+                message_db_id=persist.message.id,
+                status=persist.new_status,
                 error=None,
             )
         )
-        # Email заявителю «заявка зарегистрирована» — только для новых тикетов
+        # Email заявчику «заявка зарегистрирована» — только для новых тикетов
         # (не для ответов на существующие). В ту же транзакцию, что и создание
         # (outbox-инвариант AGENTS.md). Best-effort: сбой enqueue (нет mailbox)
         # не роняет создание тикета — тикет/сообщение/лог коммитятся без письма.
-        if new_status == "created":
+        if persist.new_status == "created":
             from app.services.helpdesk.tickets import _try_enqueue_created_email
 
-            await _try_enqueue_created_email(db, ticket=ticket)
+            await _try_enqueue_created_email(db, ticket=persist.ticket)
         await db.commit()
     except BaseException:
         # H-5: при rollback транзакции файлы-сирота (записанные в FS, но без
         # закоммиченной DB-строки) удаляются. identity ``ticket.number`` уже
         # потрачен и не переиспользуется → без cleanup папка TKT-{n} течёт.
         await db.rollback()
-        cleanup_recorded_files(total_tracker)
+        cleanup_recorded_files(persist.total_tracker)
         raise
-    await db.refresh(message)
-    summary[new_status] += 1
+    await db.refresh(persist.message)
+    summary[persist.new_status] += 1
 
     # H-2: post-commit локализация внешних http(s) картинок. Тикет/сообщение
     # уже атомарно закоммичены (outbox-инвариант соблюдён). Remote-fetch
@@ -754,14 +828,41 @@ async def _ingest_message(
     # основную транзакцию. Best-effort: если шаг упадёт, письмо уже создано,
     # картинки останутся внешними (CSP пропустит https; http — битый src).
     await _localize_remote_post_commit(
-        ticket_id=ticket.id,
-        message_id=message.id,
+        ticket_id=persist.ticket.id,
+        message_id=persist.message.id,
         body_html=localized_html if localized_html is not None else body_html,
     )
 
     await _dispatch_ingest_notifications(
-        db, redis, new_status=new_status, ticket=ticket, message=message, body_text=body_text
+        db,
+        redis,
+        new_status=persist.new_status,
+        ticket=persist.ticket,
+        message=persist.message,
+        body_text=body_text,
     )
+
+
+async def _ingest_message(
+    db: AsyncSession,
+    redis: Redis,
+    msg: Message,
+    message_id: str,
+    settings_row: HelpdeskMailboxSettings,
+    summary: dict,
+) -> None:
+    """Оркестратор email-ingress: разобрать → сопоставить → сохранить → финализировать.
+
+    Тонкий wiring из трёх шагов (декомпозиция [M6], поведение 1:1 с исходным
+    монолитом — см. characterization-тесты ``test_helpdesk_ingress_tx.py``):
+
+    1. ``_parse_and_match`` — заголовки, тикет, заявка, тела.
+    2. ``_persist_ticket_and_message`` — тикет+сообщение+in-tx локализация.
+    3. ``_finalize_ingest`` — commit-инвариант + post-commit + уведомления.
+    """
+    match = await _parse_and_match(db, msg, settings_row)
+    persist = await _persist_ticket_and_message(db, msg, match, message_id)
+    await _finalize_ingest(db, redis, match, persist, message_id, summary)
 
 
 async def _match_ticket(
