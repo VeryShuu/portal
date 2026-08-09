@@ -240,7 +240,7 @@ async function onCopy() {
 
 <style scoped>
 .signature-page {
-  max-width: 1100px;
+  max-width: var(--content-wide);
   margin: 0 auto;
   padding: 16px;
 }
