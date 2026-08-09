@@ -22,10 +22,21 @@ from sqlalchemy.sql import Select
 from app.core.logging import get_logger
 from app.models.helpdesk import HelpdeskMessage, HelpdeskTicket
 from app.models.user import User
-from app.schemas.helpdesk import TicketCreateIn
+from app.schemas.helpdesk import (
+    ACTIVE_STATUSES,
+    HelpdeskDirection,
+    HelpdeskSource,
+    HelpdeskStatus,
+    TicketCreateIn,
+)
 from app.services.helpdesk.lifecycle import IllegalTransitionError, agent_set_status
 
 logger = get_logger(__name__)
+
+# Переопределение для обратной совместимости с внешними импортами
+# (`from app.services.helpdesk.tickets import _ACTIVE_STATUSES`).
+# Единый источник — `app.schemas.helpdesk.ACTIVE_STATUSES` (audit [H7]).
+_ACTIVE_STATUSES = ACTIVE_STATUSES
 
 
 async def _try_enqueue_created_email(db: AsyncSession, *, ticket: HelpdeskTicket) -> None:
@@ -74,8 +85,8 @@ async def create_ticket(
         subject=payload.subject,
         description=payload.description,
         description_html=payload.description_html,
-        status="new",
-        source="web",
+        status=HelpdeskStatus.new,
+        source=HelpdeskSource.web,
         requester_user_id=user.id,
         requester_email=user.email,
         requester_name=user.full_name,
@@ -88,14 +99,14 @@ async def create_ticket(
         author_user_id=user.id,
         author_email=user.email,
         author_name=user.full_name,
-        direction="inbound",
+        direction=HelpdeskDirection.inbound,
         body_text=payload.description,
         # ``body_html`` = ``description_html`` (sanitized в роутере): письмо
         # агентам (``render_new_ticket_agent_email``) читает ``first_message.body_html``
         # с fallback на plain — форматирование заявки попадёт в письмо автоматически,
         # без правок email-кода. В ленте портала рендерится через ``TicketMessageList``.
         body_html=payload.description_html,
-        source="web",
+        source=HelpdeskSource.web,
         # Явный ``created_at`` (Python-время) — см. комментарий в
         # ``add_requester_reply``: server_default ``NOW()`` фиксирует
         # transaction-start time и ломает unread-семантику в тестах.
@@ -181,8 +192,9 @@ async def count_my_tickets(
 
 # Активные статусы (new/open/pending) — «открытые» тикеты, не закрытые и не в
 # архиве. Используется для счётчиков в меню (заявитель видит «мои открытые»,
-# агент — «мои назначенные в работе»). ``closed`` исключается.
-_ACTIVE_STATUSES = ("new", "open", "pending")
+# агент — «мои назначенные в работе»). ``closed`` исключается. Единый источник
+# — ``app.schemas.helpdesk.ACTIVE_STATUSES`` (audit [H7]); ``_ACTIVE_STATUSES``
+# выше — алиас для обратной совместимости.
 
 
 async def count_my_active_tickets(db: AsyncSession, *, user_id: uuid.UUID) -> int:
@@ -423,7 +435,7 @@ def _agent_filter_conditions(
     # чтобы не тащить закрытые в основной вид. Игнорируется, если задан
     # конкрет status_filter (он точнее).
     elif active_only:
-        conditions.append(HelpdeskTicket.status.in_(("new", "open", "pending")))
+        conditions.append(HelpdeskTicket.status.in_(ACTIVE_STATUSES))
     if assignee_id is not None:
         conditions.append(HelpdeskTicket.assignee_user_id == assignee_id)
     if unassigned:
@@ -521,7 +533,7 @@ async def assign_ticket(
     now = datetime.now(UTC)
     ticket.assignee_user_id = assignee_id
     ticket.assigned_at = now
-    if ticket.status == "new":
+    if ticket.status == HelpdeskStatus.new:
         ticket.status = "open"
     ticket.last_activity_at = now
     return ticket
@@ -603,13 +615,13 @@ async def reopen_ticket(
     """Reopen закрытого тикета агентом/админом: ``closed → open`` с очисткой
     ``closed_*`` (ТЗ §4.2.1). Reopen архивного тикета невозможен — он уже
     удалён из основной таблицы."""
-    if ticket.status != "closed":
+    if ticket.status != HelpdeskStatus.closed:
         raise IllegalTransitionError(
             current=ticket.status,
-            allowed=["closed"],  # reopen только из closed
+            allowed=[HelpdeskStatus.closed],  # reopen только из closed
         )
     now = datetime.now(UTC)
-    ticket.status = "open"
+    ticket.status = HelpdeskStatus.open
     ticket.closed_at = None
     ticket.closed_by_user_id = None
     ticket.last_activity_at = now

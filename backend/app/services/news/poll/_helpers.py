@@ -8,8 +8,7 @@ from fastapi import HTTPException, status
 
 from app.models.news import NewsPoll
 from app.models.user import User
-
-PRIVILEGED_ROLES = ("editor", "admin")
+from app.schemas.user import PRIVILEGED_ROLES  # audit [H7] — единый источник
 
 POLL_ALWAYS_EDITABLE = ("closes_at",)
 POLL_FROZEN_AFTER_VOTE = ("is_anonymous", "allow_revote", "results_visibility")

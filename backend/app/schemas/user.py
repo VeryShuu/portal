@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 import uuid
 from datetime import date, datetime
+from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
@@ -12,6 +13,28 @@ _EMAIL_RE = re.compile(r"^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,63}$")
 # Пол сотрудника — источником является ERP-выгрузка (миграция 087), но админ
 # может отредактировать вручную. Значения фиксированы CHECK-ограничением БД.
 GENDER_VALUES = ("male", "female")
+
+
+class UserRole(StrEnum):
+    """Роли пользователя портала (audit [H7]).
+
+    Закрытый набор, enforced в 3 слоя: DB CHECK ``ck_users_role``, Pydantic
+    validator (ниже), service-guard в ``users_admin_service``. НЕ читается из
+    JWT — ``_upsert_user`` хардкодит ``reader`` для новых KC-юзеров, админ
+    меняет роль через Admin UI. ``StrEnum`` → value-equal строке, backward-
+    compatible со всеми существующими сравнениями ``user.role == "admin"``.
+    """
+
+    reader = "reader"
+    editor = "editor"
+    admin = "admin"
+
+
+# Роли с расширенными правами (editor + admin). Раньше дублировалось литералом
+# ``("editor", "admin")`` в news/poll.py и news/poll/_helpers.py (PRIVILEGED_ROLES),
+# а также в инлайн-проверках ``user.role in ("editor", "admin")`` по всему коду.
+# Единый источник — этот кортеж (audit [H7]).
+PRIVILEGED_ROLES: tuple[UserRole, ...] = (UserRole.editor, UserRole.admin)
 
 
 class UserPublic(BaseModel):
@@ -137,7 +160,7 @@ class LocalUserCreateRequest(BaseModel):
     email: str = Field(min_length=3, max_length=254)
     full_name: str = Field(min_length=1, max_length=255)
     password: str = Field(min_length=8, max_length=128)
-    role: str = Field(default="reader")
+    role: str = Field(default=UserRole.reader)
 
     @field_validator("email")
     @classmethod
@@ -149,8 +172,8 @@ class LocalUserCreateRequest(BaseModel):
     @field_validator("role")
     @classmethod
     def validate_role(cls, v: str) -> str:
-        if v not in ("reader", "editor", "admin"):
-            raise ValueError("role must be reader, editor or admin")
+        if v not in UserRole.__members__.values():
+            raise ValueError(f"role must be one of: {', '.join(r.value for r in UserRole)}")
         return v
 
 

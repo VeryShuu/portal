@@ -35,6 +35,7 @@ from app.models.helpdesk import (
     HelpdeskTicket,
 )
 from app.models.user import User
+from app.schemas.helpdesk import HelpdeskStatus
 from app.services.email_outbox import KIND_GENERIC, enqueue_outbox_email
 from app.services.helpdesk.email_quote import html_to_plain
 from app.services.helpdesk.email_signature import strip_email_signature
@@ -196,12 +197,17 @@ async def notify_status_changed(
     ticket: HelpdeskTicket,
     new_status: str,
 ) -> int:
-    """Статус → closed → инициатору (с инфо о reopen-окне)."""
+    """Статус → closed → инициатору (с инфо о reopen-окне).
+
+    ``new_status`` — строка (Literal из ``TicketStatusIn.status`` или
+    ``HelpdeskStatus`` от lifecycle); сравнение через enum-value надёжно
+    благодаря ``StrEnum``.
+    """
     targets: list[uuid.UUID] = []
     if ticket.requester_user_id is not None:
         targets.append(ticket.requester_user_id)
     body = None
-    if new_status == "closed":
+    if new_status == HelpdeskStatus.closed:
         body = f"Ответить и переоткрыть можно в течение {HELPDESK_REOPEN_WINDOW_DAYS} дн."
     return await _fan_out(
         db,

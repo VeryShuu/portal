@@ -32,9 +32,12 @@ from app.api.kb._common import _rfc5987_filename
 from app.core.logging import get_logger
 from app.models.helpdesk import HelpdeskTicket
 from app.schemas.helpdesk import (
+    ALL_SOURCES,
+    ALL_STATUSES,
     AgentOptionListOut,
     AgentOptionOut,
     CcRecipient,
+    HelpdeskStatus,
     MarkTicketReadOut,
     MessageCreateIn,
     MessageOut,
@@ -69,9 +72,10 @@ async def _try_notify(coro: Awaitable[object], *, context: str) -> None:
         logger.warning("helpdesk.notify_failed", context=context, error=str(exc))
 
 
-# Допустимые значения ?status для list-эндпоинтов (ТЗ §3.1).
-_TICKET_STATUSES = frozenset({"new", "open", "pending", "closed"})
-_TICKET_SOURCES = frozenset({"email", "web"})
+# Допустимые значения ?status/?source для list-эндпоинтов (ТЗ §3.1).
+# Берутся из enum'ов — единый источник истины (audit [H7]).
+_TICKET_STATUSES = ALL_STATUSES
+_TICKET_SOURCES = ALL_SOURCES
 
 
 def _validate_status_filter(value: str | None) -> str | None:
@@ -821,7 +825,7 @@ async def change_ticket_status(
         )
     except IllegalTransitionError as exc:
         raise _illegal_to_409(exc) from None
-    if payload.status == "closed":
+    if payload.status == HelpdeskStatus.closed:
         await _try_notify(
             notifications_service.notify_status_changed(
                 db, redis, ticket=ticket, new_status=payload.status
