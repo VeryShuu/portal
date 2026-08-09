@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 from pydantic import BaseModel, Field
 from redis.asyncio import Redis
@@ -39,6 +39,8 @@ class NextcloudModuleSettings(BaseModel):
 class PhotosModuleSettings(BaseModel):
     enabled: bool = True
     widget_limit: int = Field(default=8, ge=1, le=50)
+    # Режим выборки для виджета на главной: «recent» (последние) или «random» (случайные).
+    widget_mode: Literal["recent", "random"] = "recent"
     max_size_mb: int = Field(default=50, ge=1, le=500)
     allowed_mime: list[str] = Field(
         default_factory=lambda: [

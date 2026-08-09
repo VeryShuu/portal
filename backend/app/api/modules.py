@@ -9,6 +9,8 @@ with existing call sites and tests that patch `app.api.modules.*`.
 
 from __future__ import annotations
 
+from typing import Literal
+
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
@@ -91,6 +93,7 @@ class NextcloudModuleOut(BaseModel):
 class PhotosModuleOut(BaseModel):
     enabled: bool
     widget_limit: int
+    widget_mode: Literal["recent", "random"]
     max_size_mb: int
     allowed_mime: list[str]
     strip_gps: bool
@@ -141,6 +144,7 @@ class NextcloudModuleIn(BaseModel):
 class PhotosModuleIn(BaseModel):
     enabled: bool = True
     widget_limit: int = Field(default=8, ge=1, le=50)
+    widget_mode: Literal["recent", "random"] = "recent"
     max_size_mb: int = Field(default=50, ge=1, le=500)
     allowed_mime: list[str] = Field(default_factory=list)
     strip_gps: bool = True
@@ -178,6 +182,7 @@ def _photos_out(m: PhotosModuleSettings) -> PhotosModuleOut:
     return PhotosModuleOut(
         enabled=m.enabled,
         widget_limit=m.widget_limit,
+        widget_mode=m.widget_mode,
         max_size_mb=m.max_size_mb,
         allowed_mime=list(m.allowed_mime),
         strip_gps=m.strip_gps,
@@ -236,6 +241,7 @@ async def update_photos_module(
     updated = PhotosModuleSettings(
         enabled=data.enabled,
         widget_limit=data.widget_limit,
+        widget_mode=data.widget_mode,
         max_size_mb=data.max_size_mb,
         allowed_mime=data.allowed_mime or m.photos.allowed_mime,
         strip_gps=data.strip_gps,

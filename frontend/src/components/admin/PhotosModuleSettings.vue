@@ -49,6 +49,19 @@
               {{ t('admin.modules.photos.stripGps') }}
             </n-checkbox>
           </n-form-item>
+          <n-form-item
+            :label="t('admin.modules.photos.widgetMode')"
+            style="margin-bottom:0"
+          >
+            <n-radio-group v-model:value="photosForm.widget_mode">
+              <n-radio value="recent">
+                {{ t('admin.modules.photos.modeRecent') }}
+              </n-radio>
+              <n-radio value="random">
+                {{ t('admin.modules.photos.modeRandom') }}
+              </n-radio>
+            </n-radio-group>
+          </n-form-item>
         </div>
         <div class="settings-actions">
           <n-button
@@ -142,6 +155,7 @@ const { data: sysSettingsData } = useSystemSettingsQuery()
 
 const photosForm = reactive({
   widget_limit: 8,
+  widget_mode: 'recent' as 'recent' | 'random',
   max_size_mb: 50,
   allowed_mime: 'image/jpeg,image/png,image/webp,image/heic,image/heif,image/gif',
   strip_gps: true,
@@ -158,6 +172,7 @@ const gallerySaving = ref(false)
 watch(modulesData, (data) => {
   if (!data?.photos) return
   photosForm.widget_limit = data.photos.widget_limit
+  photosForm.widget_mode = data.photos.widget_mode
   photosForm.max_size_mb = data.photos.max_size_mb
   photosForm.allowed_mime = (data.photos.allowed_mime || []).join(',')
   photosForm.strip_gps = data.photos.strip_gps
@@ -178,6 +193,7 @@ async function onSavePhotos() {
       body: {
         enabled: modulesData.value?.photos?.enabled ?? true,
         widget_limit: photosForm.widget_limit,
+        widget_mode: photosForm.widget_mode,
         max_size_mb: photosForm.max_size_mb,
         allowed_mime: photosForm.allowed_mime.split(',').map((s) => s.trim()).filter(Boolean),
         strip_gps: photosForm.strip_gps,

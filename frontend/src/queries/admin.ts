@@ -102,6 +102,7 @@ export interface AdminKeycloakSyncStatus {
 export interface PhotosModuleOut {
   enabled: boolean
   widget_limit: number
+  widget_mode: 'recent' | 'random'
   max_size_mb: number
   allowed_mime: string[]
   strip_gps: boolean

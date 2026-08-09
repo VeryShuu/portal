@@ -35,6 +35,7 @@ class TestAllModuleSettingsModel:
         assert m.nextcloud.enabled is False
         assert m.photos.enabled is True
         assert m.photos.widget_limit == 8
+        assert m.photos.widget_mode == "recent"
         assert m.photos.max_size_mb == 50
         assert m.photos.strip_gps is True
 
@@ -47,6 +48,18 @@ class TestAllModuleSettingsModel:
             PhotosModuleSettings(widget_limit=0)
         with pytest.raises(ValidationError):
             PhotosModuleSettings(widget_limit=51)
+
+    def test_photos_widget_mode_validation(self):
+        from pydantic import ValidationError
+
+        from app.api.modules import PhotosModuleSettings
+
+        # допустимые значения
+        assert PhotosModuleSettings(widget_mode="recent").widget_mode == "recent"
+        assert PhotosModuleSettings(widget_mode="random").widget_mode == "random"
+        # инородное значение → ValidationError (Pydantic Literal-валидация)
+        with pytest.raises(ValidationError):
+            PhotosModuleSettings(widget_mode="bogus")
 
     def test_photos_max_size_mb_validation(self):
         from pydantic import ValidationError
@@ -71,6 +84,7 @@ class TestAllModuleSettingsModel:
         assert p.enabled is True
         assert p.strip_gps is True
         assert p.allowed_mime == []
+        assert p.widget_mode == "recent"
 
 
 # ── load_modules ──────────────────────────────────────────────────────────────
@@ -104,6 +118,7 @@ class TestLoadModules:
                     "photos": {
                         "enabled": False,
                         "widget_limit": 8,
+                        "widget_mode": "random",
                         "max_size_mb": 50,
                         "allowed_mime": [],
                         "strip_gps": True,
@@ -119,6 +134,7 @@ class TestLoadModules:
             result = load_modules()
         assert result.nextcloud.enabled is True
         assert result.photos.enabled is False
+        assert result.photos.widget_mode == "random"
 
     def test_cache_hit_skips_file_read(self, tmp_path):
         import app.core.modules_config as mod
@@ -299,6 +315,7 @@ class TestUpdatePhotosModule:
                 json={
                     "enabled": False,
                     "widget_limit": 16,
+                    "widget_mode": "random",
                     "max_size_mb": 100,
                     "strip_gps": False,
                 },
@@ -307,6 +324,7 @@ class TestUpdatePhotosModule:
         body = r.json()
         assert body["enabled"] is False
         assert body["widget_limit"] == 16
+        assert body["widget_mode"] == "random"
         assert body["max_size_mb"] == 100
 
     async def test_invalid_widget_limit_returns_422(self, authed_client_factory):
@@ -314,6 +332,19 @@ class TestUpdatePhotosModule:
         r = await ac.put(
             "/api/v1/admin/modules/photos",
             json={"enabled": True, "widget_limit": 0, "max_size_mb": 50},
+        )
+        assert r.status_code == 422
+
+    async def test_invalid_widget_mode_returns_422(self, authed_client_factory):
+        ac, _ = authed_client_factory(role="admin")
+        r = await ac.put(
+            "/api/v1/admin/modules/photos",
+            json={
+                "enabled": True,
+                "widget_limit": 8,
+                "widget_mode": "bogus",
+                "max_size_mb": 50,
+            },
         )
         assert r.status_code == 422
 
