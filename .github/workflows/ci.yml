@@ -330,6 +330,66 @@ jobs:
             backend/coverage.xml
           retention-days: 14
 
+  # Diff-coverage гейт: новый/изменённый код в PR обязан быть покрыт ≥80%.
+  # В отличие от абсолютного покрытия (backend-coverage/frontend-unit меряют всю
+  # базу целиком), этот job смотрит только на строки из git diff относительно
+  # main — останавливает регресс: нельзя добавить непокрытый код, если общий %
+  # всё равно проходит порог. Локально: ./scripts/diff-cover.sh backend|frontend.
+  # Branch protection: добавить `diff-coverage` в required status checks.
+  diff-coverage:
+    name: coverage / diff-coverage gate (≥80% new code)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: [backend-coverage, frontend-unit]
+    # Только на PR: на push в main нет базы для сравнения.
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Нужна история origin/main для git diff. fetch-depth: 0 тянет всё,
+          # но diff-cover использует только origin/main → достаточно fetch-depth: 2
+          # + явный fetch base. Используем 0 для надёжности (репо небольшой).
+          fetch-depth: 0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Install diff-cover
+        run: pip install "diff-cover>=9.2.0,<10"
+      - name: Ensure origin/main ref exists
+        # На PR checkout создаёт refs/remotes/origin/<pr-branch>, но не всегда
+        # origin/main. fetch-depth: 0 уже тянет все ветки, но явный fetch
+        # гарантирует наличие origin/main для --compare-branch.
+        run: git fetch origin main:refs/remotes/origin/main
+      - name: Download backend coverage
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: backend-coverage
+          path: cov-backend
+      - name: Download frontend coverage
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: frontend-coverage
+          path: cov-frontend
+      # Backend: coverage.py Cobertura-XML. Артефакт содержит backend/coverage.xml.
+      # Запуск из backend/ — критично для путь-мэтчинга (см. scripts/diff-cover.sh).
+      - name: diff-cover backend
+        working-directory: backend
+        run: |
+          diff-cover ../cov-backend/coverage.xml \
+            --compare-branch origin/main \
+            --fail-under 80 \
+            --show-uncovered
+      # Frontend: vitest LCOV. Артефакт содержит frontend/coverage/lcov.info.
+      - name: diff-cover frontend
+        working-directory: frontend
+        run: |
+          diff-cover ../cov-frontend/coverage/lcov.info \
+            --compare-branch origin/main \
+            --fail-under 80 \
+            --show-uncovered
+
   coverage-comment:
     name: coverage / PR summary comment
     runs-on: ubuntu-latest
