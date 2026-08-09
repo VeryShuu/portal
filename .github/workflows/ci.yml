@@ -381,11 +381,13 @@ jobs:
             --compare-branch origin/main \
             --fail-under 80 \
             --show-uncovered
-      # Frontend: vitest LCOV. Артефакт содержит frontend/coverage/lcov.info.
+      # Frontend: vitest LCOV. Артефакт frontend-coverage загружен с
+      # path: frontend/coverage → после download в cov-frontend/ файлы лежат
+      # в корне (lcov.info, cobertura-coverage.xml, lcov-report/...).
       - name: diff-cover frontend
         working-directory: frontend
         run: |
-          diff-cover ../cov-frontend/coverage/lcov.info \
+          diff-cover ../cov-frontend/lcov.info \
             --compare-branch origin/main \
             --fail-under 80 \
             --show-uncovered
