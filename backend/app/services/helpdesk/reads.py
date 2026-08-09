@@ -29,11 +29,13 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.helpdesk import HelpdeskMessage, HelpdeskTicket, HelpdeskTicketRead
+from app.schemas.helpdesk import HelpdeskDirection
 
 # Константы контракта «непрочитанности». Вынесены, чтобы тесты и запросы
-# ссылались на единый источник истины (защита от регрессии).
-INBOUND_DIRECTION = "inbound"  # от заявителя (для агентского unread-контракта)
-OUTBOUND_DIRECTION = "outbound"  # от агента (для заявительского unread-контракта)
+# ссылались на единый источник истины (защита от регрессии). audit [H7] —
+# берутся из ``HelpdeskDirection`` enum (единый источник значений).
+INBOUND_DIRECTION = HelpdeskDirection.inbound  # от заявителя (агентский unread)
+OUTBOUND_DIRECTION = HelpdeskDirection.outbound  # от агента (заявительский unread)
 
 # Sentinel «никогда не видел»: ``datetime`` через ``func.coalesce`` передаётся
 # как типизированный bind-parameter TIMESTAMPTZ (а не VARCHAR, как было с

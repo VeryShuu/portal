@@ -18,10 +18,7 @@ Keys are nc_path values of the file (folder.nc_path + '/' + filename).
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import json
-import os
-import tempfile
 from collections.abc import Callable
 from pathlib import Path
 from typing import TypedDict, cast
@@ -78,19 +75,13 @@ def _read_raw() -> SharesBackup:
 
 
 def _write_raw(data: SharesBackup) -> None:
-    _SETTINGS_DIR.mkdir(parents=True, exist_ok=True)
-    fd, tmp_path = tempfile.mkstemp(dir=_SETTINGS_DIR, prefix=".files-shares-", suffix=".json")
-    try:
-        os.chmod(tmp_path, 0o600)
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-        os.replace(tmp_path, _SHARES_FILE)
-        with contextlib.suppress(OSError):
-            os.chmod(_SHARES_FILE, 0o600)
-    except Exception:
-        with contextlib.suppress(OSError):
-            os.unlink(tmp_path)
-        raise
+    from app.core.system_config import atomic_write
+
+    atomic_write(
+        _SHARES_FILE,
+        json.dumps(data, ensure_ascii=False, indent=2),
+        mode=0o600,
+    )
 
 
 async def save_file_shares(nc_path: str, entries: list[ShareEntry]) -> None:

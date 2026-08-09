@@ -13,6 +13,16 @@ pytest.importorskip("fastapi", reason="fastapi not installed")
 pytest.importorskip("httpx", reason="httpx not installed")
 
 
+@pytest.fixture(autouse=True)
+def _clear_categories_cache():
+    """Сбрасывать TTL-кеш категорий между тестами (module-level state)."""
+    from app.api.news_categories import invalidate_categories_cache
+
+    invalidate_categories_cache()
+    yield
+    invalidate_categories_cache()
+
+
 def _make_user(role: str = "editor") -> SimpleNamespace:
     return SimpleNamespace(id=uuid.uuid4(), role=role, email="e@test.local")
 
@@ -143,6 +153,73 @@ class TestLoadCategories:
             result = _load()
 
         assert len(result) == 1
+
+
+class TestLoadCache:
+    """Characterization тесты для TTL-кеша `_load` (audit [H4])."""
+
+    def test_second_load_uses_cache_no_second_disk_read(self, tmp_path):
+        from app.api.news_categories import _load, _load_from_disk
+
+        cat_file = tmp_path / "categories.json"
+        cat_file.write_text(json.dumps([{"name": "Tech", "color": "#ff0000"}]), encoding="utf-8")
+
+        with patch("app.api.news_categories._CATEGORIES_FILE", cat_file):
+            _load()  # warm cache
+            # Если кеш работает, второй вызов НЕ дойдёт до _load_from_disk.
+            with patch(
+                "app.api.news_categories._load_from_disk",
+                side_effect=AssertionError("disk read on cache hit"),
+            ):
+                second = _load()
+            # Сравним с fresh-read — должно совпадать.
+            assert _load_from_disk() == second
+        assert len(second) == 1
+
+    def test_invalidate_forces_reload(self, tmp_path):
+        from app.api.news_categories import _load, invalidate_categories_cache
+
+        cat_file = tmp_path / "categories.json"
+        cat_file.write_text(json.dumps([{"name": "Tech", "color": "#ff0000"}]), encoding="utf-8")
+
+        with patch("app.api.news_categories._CATEGORIES_FILE", cat_file):
+            _load()  # warm cache
+            cat_file.write_text(
+                json.dumps([{"name": "Sport", "color": "#00ff00"}]), encoding="utf-8"
+            )
+            # Без invalidate — кеш вернёт устаревшие данные (Tech).
+            assert _load()[0].name == "Tech"
+            invalidate_categories_cache()
+            # После invalidate — fresh read (Sport).
+            assert _load()[0].name == "Sport"
+
+    def test_save_invalidates_cache(self, tmp_path):
+        from app.api.news_categories import NewsCategory, _load, _save
+
+        cat_file = tmp_path / "categories.json"
+        cat_file.write_text(json.dumps([{"name": "Tech", "color": "#ff0000"}]), encoding="utf-8")
+
+        with (
+            patch("app.api.news_categories._CATEGORIES_FILE", cat_file),
+            patch("app.api.news_categories._SETTINGS_DIR", tmp_path),
+        ):
+            _load()  # warm cache with Tech
+            _save([NewsCategory(name="Sport", color="#00ff00")])
+            assert _load()[0].name == "Sport"
+
+    def test_returns_deep_copy(self, tmp_path):
+        """Мутирующие call-сайты не должны портить кеш."""
+        from app.api.news_categories import _load
+
+        cat_file = tmp_path / "categories.json"
+        cat_file.write_text(json.dumps([{"name": "Tech", "color": "#ff0000"}]), encoding="utf-8")
+
+        with patch("app.api.news_categories._CATEGORIES_FILE", cat_file):
+            first = _load()
+            first[0].color = "#000000"  # mutate the returned copy
+            second = _load()
+
+        assert second[0].color == "#ff0000"  # cache was not poisoned
 
 
 class TestEnsureCategoryExists:

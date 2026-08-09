@@ -21,7 +21,6 @@ from __future__ import annotations
 from ._helpers import (
     POLL_ALWAYS_EDITABLE,
     POLL_FROZEN_AFTER_VOTE,
-    PRIVILEGED_ROLES,
     QUESTION_ALWAYS_EDITABLE,
     QUESTION_FROZEN_AFTER_VOTE,
     _aware,
@@ -48,7 +47,6 @@ from .voting import cast_vote, revoke_vote
 __all__ = [
     "POLL_ALWAYS_EDITABLE",
     "POLL_FROZEN_AFTER_VOTE",
-    "PRIVILEGED_ROLES",
     "QUESTION_ALWAYS_EDITABLE",
     "QUESTION_FROZEN_AFTER_VOTE",
     "_aware",

@@ -1,5 +1,5 @@
 <template>
-  <div class="trash-wrap">
+  <div class="trash-wrap u-page-wrap u-page-wrap--wide">
     <header class="page-head">
       <h1 class="page-head__title">
         {{ t('trash.title') }}

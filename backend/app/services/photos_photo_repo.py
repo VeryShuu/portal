@@ -3,6 +3,7 @@ from __future__ import annotations
 import uuid
 from collections.abc import Sequence
 from datetime import datetime
+from typing import Literal
 
 from sqlalchemy import Select, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -223,8 +224,16 @@ async def fetch_deleted_photos_with_folders(
 
 
 async def fetch_recent_photos_with_folders(
-    db: AsyncSession, limit: int, offset: int = 0
+    db: AsyncSession,
+    limit: int,
+    offset: int = 0,
+    *,
+    mode: Literal["recent", "random"] = "recent",
 ) -> list[tuple[Photo, PhotoFolder]]:
+    # mode="random" — случайные фото для виджета (ORDER BY random());
+    # mode="recent" — последние добавленные (по умолчанию). Фильтры и JOIN
+    # идентичны; меняется только сортировка.
+    order = func.random() if mode == "random" else Photo.created_at.desc()
     res = await db.execute(
         select(Photo, PhotoFolder)
         .join(PhotoFolder, Photo.folder_id == PhotoFolder.id)
@@ -233,7 +242,7 @@ async def fetch_recent_photos_with_folders(
             PhotoFolder.deleted_at.is_(None),
             Photo.processed.is_(True),
         )
-        .order_by(Photo.created_at.desc())
+        .order_by(order)
         .offset(offset)
         .limit(limit)
     )

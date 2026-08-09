@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 from fastapi import APIRouter, HTTPException, UploadFile, status
 
 from app.api import system_settings as _ss
@@ -25,6 +27,32 @@ _VALID_PRIVATE_KEY_HEADERS = (
 )
 
 _TLS_FILE_MAX_BYTES = 64 * 1024  # 64 KiB is sufficient for any PEM cert/key
+
+
+def _persist_cert(content: bytes) -> None:
+    """Write the cert bytes to disk (mkdir + write). Sync — call via to_thread."""
+    _nginx_config._CERTS_DIR.mkdir(parents=True, exist_ok=True)
+    (_nginx_config._CERTS_DIR / "portal.crt").write_bytes(content)
+
+
+def _persist_key(content: bytes) -> None:
+    """Write the key bytes to disk (mkdir + write + chmod 0o600). Sync — call via to_thread."""
+    _nginx_config._CERTS_DIR.mkdir(parents=True, exist_ok=True)
+    key_path = _nginx_config._CERTS_DIR / "portal.key"
+    key_path.write_bytes(content)
+    try:
+        import os as _os
+
+        _os.chmod(key_path, 0o600)
+    except OSError:
+        pass
+
+
+def _delete_file(name: str) -> None:
+    """Unlink a cert/key file if present. Sync — call via to_thread."""
+    path = _nginx_config._CERTS_DIR / name
+    if path.exists():
+        path.unlink()
 
 
 @router.post("/admin/system/nginx/reload")
@@ -63,8 +91,8 @@ async def upload_tls_cert(file: UploadFile, admin: AdminDep, redis: RedisDep) ->
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Неверный формат сертификата. Ожидается PEM (-----BEGIN CERTIFICATE-----)",
         )
-    _nginx_config._CERTS_DIR.mkdir(parents=True, exist_ok=True)
-    (_nginx_config._CERTS_DIR / "portal.crt").write_bytes(content)
+    # FS-операция offloaded из event loop (audit [H4]).
+    await asyncio.to_thread(_persist_cert, content)
     # nginx-config sidecar inotifies /data/certs/, re-renders ssl_server.conf
     # (HTTP→HTTPS variant once both crt+key are present) and touches the
     # nginx reload trigger automatically.
@@ -96,15 +124,8 @@ async def upload_tls_key(file: UploadFile, admin: AdminDep, redis: RedisDep) -> 
                 "Сертификаты и CSR сюда загружать нельзя."
             ),
         )
-    _nginx_config._CERTS_DIR.mkdir(parents=True, exist_ok=True)
-    key_path = _nginx_config._CERTS_DIR / "portal.key"
-    key_path.write_bytes(content)
-    try:
-        import os as _os
-
-        _os.chmod(key_path, 0o600)
-    except OSError:
-        pass
+    # FS-операция offloaded из event loop (audit [H4]).
+    await asyncio.to_thread(_persist_key, content)
     # nginx-config sidecar inotifies /data/certs/ and re-renders+reloads.
     await _ss._emit_audit(
         redis,
@@ -118,9 +139,7 @@ async def upload_tls_key(file: UploadFile, admin: AdminDep, redis: RedisDep) -> 
 
 @router.delete("/admin/system/tls/cert")
 async def delete_tls_cert(admin: AdminDep, redis: RedisDep) -> dict[str, str]:
-    cert_path = _nginx_config._CERTS_DIR / "portal.crt"
-    if cert_path.exists():
-        cert_path.unlink()
+    await asyncio.to_thread(_delete_file, "portal.crt")
     # nginx-config sidecar inotifies /data/certs/ and re-renders+reloads.
     await _ss._emit_audit(
         redis,
@@ -133,9 +152,7 @@ async def delete_tls_cert(admin: AdminDep, redis: RedisDep) -> dict[str, str]:
 
 @router.delete("/admin/system/tls/key")
 async def delete_tls_key(admin: AdminDep, redis: RedisDep) -> dict[str, str]:
-    key_path = _nginx_config._CERTS_DIR / "portal.key"
-    if key_path.exists():
-        key_path.unlink()
+    await asyncio.to_thread(_delete_file, "portal.key")
     # nginx-config sidecar inotifies /data/certs/ and re-renders+reloads.
     await _ss._emit_audit(
         redis,

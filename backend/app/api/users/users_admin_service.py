@@ -16,6 +16,7 @@ from app.schemas.user import (
     LocalUserCreateRequest,
     PasswordResetRequest,
     PatchRoleRequest,
+    UserRole,
 )
 from app.services.audit import make_audit_emitter
 from app.services.session import invalidate_all_user_sessions
@@ -47,7 +48,7 @@ async def change_user_role(
     user_id: uuid.UUID,
     body: PatchRoleRequest,
 ) -> User:
-    if body.role not in ("reader", "editor", "admin"):
+    if body.role not in UserRole.__members__.values():
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Invalid role"
         )

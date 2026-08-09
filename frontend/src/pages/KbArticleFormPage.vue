@@ -1,5 +1,5 @@
 <template>
-  <div class="form-wrap u-page-wrap">
+  <div class="form-wrap u-page-wrap u-page-wrap--wide">
     <header class="editor-header">
       <div class="editor-header__titles">
         <h1 class="u-page-head__title">

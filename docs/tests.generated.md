@@ -765,12 +765,11 @@ tests/unit/test_audit.py::test_push_audit_event_minimal_args
 tests/unit/test_audit.py::test_push_audit_event_serialises_complex_metadata
 tests/unit/test_audit.py::test_push_audit_event_swallows_redis_errors
 tests/unit/test_audit.py::test_push_audit_event_writes_full_payload
-tests/unit/test_audit_events.py::test_all_enum_members_are_used_in_code
-tests/unit/test_audit_events.py::test_all_literals_in_code_are_registered_in_enum
-tests/unit/test_audit_events.py::test_event_type_enum_has_no_duplicates
-tests/unit/test_audit_events.py::test_event_type_enum_naming_convention
-tests/unit/test_audit_events.py::test_iter_event_types_is_sorted_and_matches_enum
-tests/unit/test_audit_events.py::test_str_enum_backward_compat_with_string_literal
+tests/unit/test_audit_events.py::test_all_literals_in_code_are_registered
+tests/unit/test_audit_events.py::test_all_registered_types_are_used_in_code
+tests/unit/test_audit_events.py::test_iter_event_types_is_sorted_and_matches_registry
+tests/unit/test_audit_events.py::test_known_event_types_has_no_duplicates
+tests/unit/test_audit_events.py::test_known_event_types_naming_convention
 tests/unit/test_audit_partitions.py::TestDropOldPartitions::test_drops_partitions_older_than_retention
 tests/unit/test_audit_partitions.py::TestDropOldPartitions::test_nothing_dropped_if_all_within_retention
 tests/unit/test_audit_partitions.py::TestDropOldPartitions::test_skips_non_audit_tables
@@ -990,6 +989,10 @@ tests/unit/test_branding.py::TestDeleteBrandingFiles::test_reset_favicon_admin_2
 tests/unit/test_branding.py::TestDeleteBrandingFiles::test_reset_login_bg_admin_200
 tests/unit/test_branding.py::TestDeleteBrandingFiles::test_reset_logo_admin_200
 tests/unit/test_branding.py::TestDeleteBrandingFiles::test_reset_logo_non_admin_403
+tests/unit/test_branding.py::TestEmailSettingsCache::test_none_cached_when_file_missing
+tests/unit/test_branding.py::TestEmailSettingsCache::test_returns_deep_copy
+tests/unit/test_branding.py::TestEmailSettingsCache::test_save_invalidates_cache
+tests/unit/test_branding.py::TestEmailSettingsCache::test_second_read_uses_cache_no_second_disk_read
 tests/unit/test_branding.py::TestEmailSettingsFileCompatibility::test_empty_string_password_persisted_as_empty
 tests/unit/test_branding.py::TestEmailSettingsFileCompatibility::test_saved_format_compatible_with_email_utils
 tests/unit/test_branding.py::TestEmailSettingsFileCompatibility::test_saved_password_is_plaintext_not_masked
@@ -2891,15 +2894,6 @@ tests/unit/test_keycloak_admin.py::test_get_keycloak_settings_returns_out
 tests/unit/test_keycloak_admin.py::test_get_sync_status_corrupt_json
 tests/unit/test_keycloak_admin.py::test_get_sync_status_empty
 tests/unit/test_keycloak_admin.py::test_get_sync_status_with_data
-tests/unit/test_keycloak_admin.py::test_is_unsafe_ip_cloud_metadata
-tests/unit/test_keycloak_admin.py::test_is_unsafe_ip_hostname_not_ip
-tests/unit/test_keycloak_admin.py::test_is_unsafe_ip_ipv6_loopback
-tests/unit/test_keycloak_admin.py::test_is_unsafe_ip_link_local
-tests/unit/test_keycloak_admin.py::test_is_unsafe_ip_loopback
-tests/unit/test_keycloak_admin.py::test_is_unsafe_ip_multicast
-tests/unit/test_keycloak_admin.py::test_is_unsafe_ip_private_10_allowed
-tests/unit/test_keycloak_admin.py::test_is_unsafe_ip_private_allowed
-tests/unit/test_keycloak_admin.py::test_is_unsafe_ip_public
 tests/unit/test_keycloak_admin.py::test_load_kc_settings_corrupt_file_returns_defaults
 tests/unit/test_keycloak_admin.py::test_load_kc_settings_defaults_when_file_missing
 tests/unit/test_keycloak_admin.py::test_load_kc_settings_migrates_legacy
@@ -3426,6 +3420,7 @@ tests/unit/test_modules.py::TestAllModuleSettingsModel::test_nextcloud_module_in
 tests/unit/test_modules.py::TestAllModuleSettingsModel::test_photos_max_size_mb_validation
 tests/unit/test_modules.py::TestAllModuleSettingsModel::test_photos_module_in_defaults
 tests/unit/test_modules.py::TestAllModuleSettingsModel::test_photos_widget_limit_validation
+tests/unit/test_modules.py::TestAllModuleSettingsModel::test_photos_widget_mode_validation
 tests/unit/test_modules.py::TestGetAdminModules::test_admin_gets_200
 tests/unit/test_modules.py::TestGetAdminModules::test_non_admin_gets_403
 tests/unit/test_modules.py::TestGetModulesEndpoint::test_reader_gets_200
@@ -3442,6 +3437,7 @@ tests/unit/test_modules.py::TestUpdateNextcloudModule::test_admin_enables_nextcl
 tests/unit/test_modules.py::TestUpdateNextcloudModule::test_non_admin_gets_403
 tests/unit/test_modules.py::TestUpdatePhotosModule::test_admin_updates_photos
 tests/unit/test_modules.py::TestUpdatePhotosModule::test_invalid_widget_limit_returns_422
+tests/unit/test_modules.py::TestUpdatePhotosModule::test_invalid_widget_mode_returns_422
 tests/unit/test_modules.py::TestUpdatePhotosModule::test_non_admin_gets_403
 tests/unit/test_nc_federation.py::TestCreateTempPublicShare::test_can_write_controls_share_permissions[False-1]
 tests/unit/test_nc_federation.py::TestCreateTempPublicShare::test_can_write_controls_share_permissions[True-3]
@@ -3504,6 +3500,18 @@ tests/unit/test_net_guard.py::TestIsPublicIp::test_public_allowed[1.1.1.1]
 tests/unit/test_net_guard.py::TestIsPublicIp::test_public_allowed[2001:4860:4860::8888]
 tests/unit/test_net_guard.py::TestIsPublicIp::test_public_allowed[8.8.8.8]
 tests/unit/test_net_guard.py::TestIsPublicIp::test_public_allowed[93.184.216.34]
+tests/unit/test_net_guard.py::TestIsSafeInternalUrl::test_allowed[http://10.0.0.5:8080/]
+tests/unit/test_net_guard.py::TestIsSafeInternalUrl::test_allowed[http://keycloak.intranet.local/]
+tests/unit/test_net_guard.py::TestIsSafeInternalUrl::test_allowed[https://192.168.1.100/auth]
+tests/unit/test_net_guard.py::TestIsSafeInternalUrl::test_allowed[https://keycloak.company.com/auth]
+tests/unit/test_net_guard.py::TestIsSafeInternalUrl::test_blocked[http://0.0.0.0/auth]
+tests/unit/test_net_guard.py::TestIsSafeInternalUrl::test_blocked[http://127.0.0.1/auth]
+tests/unit/test_net_guard.py::TestIsSafeInternalUrl::test_blocked[http://169.254.169.254/auth]
+tests/unit/test_net_guard.py::TestIsSafeInternalUrl::test_blocked[http://[::1]/auth]
+tests/unit/test_net_guard.py::TestIsSafeInternalUrl::test_blocked[http://localhost/auth]
+tests/unit/test_net_guard.py::TestIsSafeInternalUrl::test_invalid_scheme_or_host[ftp://kc.example.com]
+tests/unit/test_net_guard.py::TestIsSafeInternalUrl::test_invalid_scheme_or_host[http://]
+tests/unit/test_net_guard.py::TestIsSafeInternalUrl::test_invalid_scheme_or_host[not a url]
 tests/unit/test_net_guard.py::TestIsSafeRemoteUrl::test_allowed[http://93.184.216.34/]
 tests/unit/test_net_guard.py::TestIsSafeRemoteUrl::test_allowed[http://example.com/favicon.ico]
 tests/unit/test_net_guard.py::TestIsSafeRemoteUrl::test_allowed[https://8.8.8.8/x]
@@ -3525,6 +3533,18 @@ tests/unit/test_net_guard.py::TestIsSafeRemoteUrl::test_invalid_scheme_or_host[f
 tests/unit/test_net_guard.py::TestIsSafeRemoteUrl::test_invalid_scheme_or_host[gopher://x/y]
 tests/unit/test_net_guard.py::TestIsSafeRemoteUrl::test_invalid_scheme_or_host[http:///nohost]
 tests/unit/test_net_guard.py::TestIsSafeRemoteUrl::test_invalid_scheme_or_host[not a url at all]
+tests/unit/test_net_guard.py::TestIsUnsafeInternalIp::test_blocked[0.0.0.0]
+tests/unit/test_net_guard.py::TestIsUnsafeInternalIp::test_blocked[127.0.0.1]
+tests/unit/test_net_guard.py::TestIsUnsafeInternalIp::test_blocked[169.254.1.1]
+tests/unit/test_net_guard.py::TestIsUnsafeInternalIp::test_blocked[224.0.0.1]
+tests/unit/test_net_guard.py::TestIsUnsafeInternalIp::test_blocked[::1]
+tests/unit/test_net_guard.py::TestIsUnsafeInternalIp::test_cloud_metadata_blocked[169.254.169.254]
+tests/unit/test_net_guard.py::TestIsUnsafeInternalIp::test_cloud_metadata_blocked[fd00:ec2::254]
+tests/unit/test_net_guard.py::TestIsUnsafeInternalIp::test_ipv4_mapped_ipv6_normalized
+tests/unit/test_net_guard.py::TestIsUnsafeInternalIp::test_private_and_public_allowed[10.0.0.1]
+tests/unit/test_net_guard.py::TestIsUnsafeInternalIp::test_private_and_public_allowed[172.16.0.1]
+tests/unit/test_net_guard.py::TestIsUnsafeInternalIp::test_private_and_public_allowed[192.168.1.1]
+tests/unit/test_net_guard.py::TestIsUnsafeInternalIp::test_private_and_public_allowed[8.8.8.8]
 tests/unit/test_net_guard.py::TestResolveAllIps::test_bare_ipv4_returns_itself
 tests/unit/test_net_guard.py::TestResolveAllIps::test_bare_ipv6_returns_itself
 tests/unit/test_net_guard.py::TestResolveAllIps::test_dedupes_duplicate_ips
@@ -3549,6 +3569,10 @@ tests/unit/test_news_categories.py::TestEnsureCategoryExists::test_already_exist
 tests/unit/test_news_categories.py::TestEnsureCategoryExists::test_empty_name_noop
 tests/unit/test_news_categories.py::TestEnsureCategoryExists::test_max_categories_noop
 tests/unit/test_news_categories.py::TestEnsureCategoryExists::test_save_error_swallowed
+tests/unit/test_news_categories.py::TestLoadCache::test_invalidate_forces_reload
+tests/unit/test_news_categories.py::TestLoadCache::test_returns_deep_copy
+tests/unit/test_news_categories.py::TestLoadCache::test_save_invalidates_cache
+tests/unit/test_news_categories.py::TestLoadCache::test_second_load_uses_cache_no_second_disk_read
 tests/unit/test_news_categories.py::TestLoadCategories::test_dict_format
 tests/unit/test_news_categories.py::TestLoadCategories::test_duplicate_names_deduped
 tests/unit/test_news_categories.py::TestLoadCategories::test_file_not_exists_returns_empty
@@ -4016,6 +4040,7 @@ tests/unit/test_photo_service.py::test_get_storage_stats_proxies_to_repo
 tests/unit/test_photo_service.py::test_list_folder_photos_404_when_missing
 tests/unit/test_photo_service.py::test_list_recent_photos_empty_rows
 tests/unit/test_photo_service.py::test_list_recent_photos_module_disabled_returns_empty
+tests/unit/test_photo_service.py::test_list_recent_photos_random_mode_dedupes_and_uses_random_mode
 tests/unit/test_photo_service.py::test_load_bulk_target_folder_admin_skips_acl_check
 tests/unit/test_photo_service.py::test_load_bulk_target_folder_not_found
 tests/unit/test_photo_service.py::test_load_bulk_target_folder_requires_id
@@ -4183,7 +4208,9 @@ tests/unit/test_photos_photo_repo.py::TestFetchFoldersMap::test_returns_map
 tests/unit/test_photos_photo_repo.py::TestFetchGlobalStorageTotals::test_returns_totals
 tests/unit/test_photos_photo_repo.py::TestFetchPhotoAny::test_found
 tests/unit/test_photos_photo_repo.py::TestFetchPhotoAny::test_not_found
+tests/unit/test_photos_photo_repo.py::TestFetchRecentPhotosWithFolders::test_default_mode_is_recent
 tests/unit/test_photos_photo_repo.py::TestFetchRecentPhotosWithFolders::test_empty
+tests/unit/test_photos_photo_repo.py::TestFetchRecentPhotosWithFolders::test_random_mode_returns_pairs
 tests/unit/test_photos_photo_repo.py::TestFetchRecentPhotosWithFolders::test_returns_pairs
 tests/unit/test_photos_photo_repo.py::TestFetchStorageStats::test_returns_dict
 tests/unit/test_photos_photo_repo.py::TestFetchStorageStatsTopFolders::test_empty

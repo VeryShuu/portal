@@ -75,14 +75,22 @@ async def list_recent_photos(
     if not cfg.enabled:
         return []
     eff_limit = min(limit, cfg.widget_limit or 8)
+    mode = cfg.widget_mode
 
     out: list[PhotoPublic] = []
+    # При random-режиме ORDER BY random() в каждом чанке даёт новое окно, из-за
+    # чего одно и то же фото может попасть в разные чанки. Ведём множество уже
+    # отданных id, чтобы не показывать дубли. При recent-режиме проверка по
+    # множеству безвредна (пагинация по offset детерминирована, дублей не возникает).
+    seen_ids: set[uuid.UUID] = set()
     chunk_size = max(50, eff_limit * 2)
     offset = 0
     max_total_checks = 500
 
     while len(out) < eff_limit and offset < max_total_checks:
-        rows = await photo_repo.fetch_recent_photos_with_folders(db, chunk_size, offset=offset)
+        rows = await photo_repo.fetch_recent_photos_with_folders(
+            db, chunk_size, offset=offset, mode=mode
+        )
         if not rows:
             break
 
@@ -101,6 +109,9 @@ async def list_recent_photos(
                 perm = folder_perms.get(folder.id)
                 if perm is None:
                     continue
+            if photo.id in seen_ids:
+                continue
+            seen_ids.add(photo.id)
             out.append(_photo_to_public(photo, folder))
             if len(out) >= eff_limit:
                 break

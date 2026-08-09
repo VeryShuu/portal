@@ -2704,6 +2704,7 @@ Thumbnail фото в публичной папке (без auth). `size` in `20
   "photos": {
     "enabled": true,
     "widget_limit": 8,
+    "widget_mode": "recent",
     "max_size_mb": 50,
     "allowed_mime": ["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif", "image/gif"],
     "strip_gps": true
@@ -2719,6 +2720,7 @@ Thumbnail фото в публичной папке (без auth). `size` in `20
 {
   "enabled": true,
   "widget_limit": 8,
+  "widget_mode": "recent",
   "max_size_mb": 50,
   "allowed_mime": ["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"],
   "strip_gps": true

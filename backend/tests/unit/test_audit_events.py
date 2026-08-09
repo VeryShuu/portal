@@ -1,15 +1,16 @@
-"""Charakterisierende тесты для таксономии audit event_type.
+"""Характеризующие тесты для реестра audit event_type.
 
-Цель: гарантировать, что (а) enum ``EventType`` не дрейфует относительно
-реальных литералов в коде, и (б) опечатка в ``event_type="links.vistied"``
-не сможет молча создать новый тип в ``audit_log``.
+Цель: гарантировать, что (а) реестр ``KNOWN_EVENT_TYPES`` не дрейфует
+относительно реальных литералов в коде, и (б) опечатка в
+``event_type="links.vistied"`` не сможет молча создать новый тип в
+``audit_log``.
 
-Подход: парсим ``backend/app/`` регуляркой, собираем все ``event_type="..."``
-литералы и сверяем с ``EventType``. Любой literal, не зарегистрированный в
-enum'е, проваливает тест — нужно либо добавить ``EventType.XXX``, либо исправить
-опечатку.
+Подход: парсим ``backend/app/`` через AST, собираем все ``event_type="..."``
+литералы и сверяем с ``KNOWN_EVENT_TYPES``. Любой literal, не
+зарегистрированный в реестре, проваливает тест — нужно либо добавить строку в
+``KNOWN_EVENT_TYPES``, либо исправить опечатку.
 
-Эти тесты запускаются быстро (filesystem-scan регуляркой), без импорта app/.
+Эти тесты запускаются быстро (filesystem-scan), без импорта app/.
 """
 
 from __future__ import annotations
@@ -19,7 +20,7 @@ import re
 from pathlib import Path
 
 from app.services.audit_events import (
-    EventType,
+    KNOWN_EVENT_TYPES,
     all_event_types,
     is_known_event_type,
     iter_event_types,
@@ -95,32 +96,33 @@ def _record_literal(value: object, py_file: Path, found: dict[str, set[Path]]) -
         found.setdefault(value, set()).add(py_file)
 
 
-def test_event_type_enum_has_no_duplicates() -> None:
-    """Каждое значение enum уникально (защита от copy-paste при добавлении)."""
-    values = [e.value for e in EventType]
-    assert len(values) == len(set(values)), "Duplicate values in EventType"
-    # Число членов enum'а == числу уникальных строковых значений.
-    assert len(EventType) == len(values)
+def test_known_event_types_has_no_duplicates() -> None:
+    """frozenset по построению не содержит дублей; проверяем только count."""
+    # frozenset гарантирует уникальность; тест документирует инвариант.
+    assert len(KNOWN_EVENT_TYPES) > 0, "KNOWN_EVENT_TYPES is empty"
+    # Наличие дублей в исходном literal-list проявилось бы как меньший размер:
+    # все значения уникальны (это просто самопроверка реестра).
+    assert isinstance(KNOWN_EVENT_TYPES, frozenset)
 
 
-def test_event_type_enum_naming_convention() -> None:
+def test_known_event_types_naming_convention() -> None:
     """Все значения следуют формату ``<domain>.<action>`` (минимум одна точка)."""
-    for e in EventType:
-        assert "." in e.value, f"Event type without domain separator: {e.value}"
+    for value in KNOWN_EVENT_TYPES:
+        assert "." in value, f"Event type without domain separator: {value}"
         # Домен и action — lowercase ASCII, без дефисов.
-        for part in e.value.split("."):
-            assert part, f"Empty segment in {e.value}"
-            assert re.fullmatch(r"[a-z][a-z0-9_]*", part), f"Invalid segment '{part}' in {e.value}"
+        for part in value.split("."):
+            assert part, f"Empty segment in {value}"
+            assert re.fullmatch(r"[a-z][a-z0-9_]*", part), f"Invalid segment '{part}' in {value}"
 
 
-def test_all_literals_in_code_are_registered_in_enum() -> None:
-    """Каждый event_type-литерал в app/ должен быть в EventType.
+def test_all_literals_in_code_are_registered() -> None:
+    """Каждый event_type-литерал в app/ должен быть в KNOWN_EVENT_TYPES.
 
-    Если тест падает: добавьте новое значение в ``EventType`` (файл
+    Если тест падает: добавьте новое значение в ``KNOWN_EVENT_TYPES`` (файл
     ``app/services/audit_events.py``) ИЛИ исправьте опечатку в литерале.
     """
     literals = _collect_event_literals()
-    assert literals, "No event_type literals found — regex broke?"
+    assert literals, "No event_type literals found — AST scan broke?"
 
     unregistered: dict[str, set[Path]] = {}
     for literal, files in literals.items():
@@ -128,7 +130,7 @@ def test_all_literals_in_code_are_registered_in_enum() -> None:
             unregistered[literal] = files
 
     assert not unregistered, (
-        "event_type literals in code not registered in EventType enum "
+        "event_type literals in code not registered in KNOWN_EVENT_TYPES "
         "(add to app/services/audit_events.py or fix typo):\n"
         + "\n".join(
             f"  {lit!r} in {', '.join(str(p.relative_to(_APP_DIR.parent)) for p in files)}"
@@ -137,37 +139,24 @@ def test_all_literals_in_code_are_registered_in_enum() -> None:
     )
 
 
-def test_all_enum_members_are_used_in_code() -> None:
-    """Каждый член EventType должен иметь хотя бы один literal в app/.
+def test_all_registered_types_are_used_in_code() -> None:
+    """Каждое значение в KNOWN_EVENT_TYPES должно иметь хотя бы один literal в app/.
 
-    Защита от мёртвых членов enum'а (удалённый feature оставил след).
-    Если тест падает: удалите неиспользуемый член из ``EventType``.
+    Защита от мёртвых записей реестра (удалённый feature оставил след).
+    Если тест падает: удалите неиспользуемое значение из ``KNOWN_EVENT_TYPES``.
     """
     literals = _collect_event_literals()
     used_in_code = set(literals.keys())
 
-    orphans = [e.value for e in EventType if e.value not in used_in_code]
+    orphans = sorted(KNOWN_EVENT_TYPES - used_in_code)
     assert not orphans, (
-        "EventType members with no matching literal in app/ (dead enum entry):\n"
-        + "\n".join(f"  {v!r}" for v in sorted(orphans))
+        "KNOWN_EVENT_TYPES entries with no matching literal in app/ (dead entry):\n"
+        + "\n".join(f"  {v!r}" for v in orphans)
     )
 
 
-def test_iter_event_types_is_sorted_and_matches_enum() -> None:
-    """iter_event_types() и all_event_types() возвращают тот же набор, что enum."""
-    expected = sorted(e.value for e in EventType)
+def test_iter_event_types_is_sorted_and_matches_registry() -> None:
+    """iter_event_types() и all_event_types() возвращают тот же набор, что реестр."""
+    expected = sorted(KNOWN_EVENT_TYPES)
     assert list(iter_event_types()) == expected
     assert all_event_types() == expected
-
-
-def test_str_enum_backward_compat_with_string_literal() -> None:
-    """EventType.AUTH_LOGIN == 'auth.login' (StrEnum-семантика).
-
-    Гарантирует, что существующие call-sites с литералами и новые с enum'ом
-    не создают разные бакеты в audit_log.
-    """
-    assert EventType.AUTH_LOGIN == "auth.login"
-    assert EventType.FILES_FILE_UPLOADED == "files.file_uploaded"
-    assert EventType.HELPDESK_STATUS_CHANGED == "helpdesk.status_changed"
-    # str-cast (для JSON-сериализации).
-    assert str(EventType.NEWS_CREATED) == "news.created"

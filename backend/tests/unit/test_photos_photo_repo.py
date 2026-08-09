@@ -320,6 +320,34 @@ class TestFetchRecentPhotosWithFolders:
         result = await repo.fetch_recent_photos_with_folders(db, limit=10, offset=5)
         assert result == []
 
+    @pytest.mark.asyncio
+    async def test_random_mode_returns_pairs(self):
+        """mode='random' использует ORDER BY random(), но возвращает те же
+        (Photo, PhotoFolder) кортежи с теми же фильтрами."""
+        photo = SimpleNamespace(id=uuid.uuid4())
+        folder = SimpleNamespace(id=uuid.uuid4())
+        row = MagicMock()
+        row.__getitem__ = lambda self, i: [photo, folder][i]
+        res = MagicMock()
+        res.all.return_value = [row]
+        db = AsyncMock()
+        db.execute = AsyncMock(return_value=res)
+        result = await repo.fetch_recent_photos_with_folders(db, limit=4, mode="random")
+        assert len(result) == 1
+        assert result[0][0] is photo
+        assert result[0][1] is folder
+
+    @pytest.mark.asyncio
+    async def test_default_mode_is_recent(self):
+        """Без явного mode функция использует режим 'recent' (обратная совместимость)."""
+        res = MagicMock()
+        res.all.return_value = []
+        db = AsyncMock()
+        db.execute = AsyncMock(return_value=res)
+        # Должен выполняться без ошибок с дефолтным mode.
+        await repo.fetch_recent_photos_with_folders(db, limit=10)
+        assert db.execute.await_count == 1
+
 
 class TestFetchStorageStatsTopFolders:
     @pytest.mark.asyncio

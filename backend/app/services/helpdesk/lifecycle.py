@@ -12,15 +12,26 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 from app.core.constants import HELPDESK_REOPEN_WINDOW_DAYS
+from app.schemas.helpdesk import (
+    AGENT_SETTABLE_STATUSES,
+    REQUESTER_REOPEN_STATUSES,
+    HelpdeskStatus,
+)
 
-# Статусы, которые агент/админ могут выставить вручную через PATCH /status.
-AGENT_SETTABLE_STATUSES = frozenset({"open", "pending", "closed"})
-
-# Ответ клиента реопенит эти статусы в ``open`` без временного окна (ТЗ §4.2).
-# ``closed`` реопенится отдельно — только в окне HELPDESK_REOPEN_WINDOW_DAYS
-# (см. ``requester_reply_on_closed``). ``resolved`` упразднён (единый финал —
-# ``closed``), миграция 079.
-REQUESTER_REOPEN_STATUSES = frozenset({"pending"})
+# Re-export для обратной совместимости с существующими импортами
+# (`from app.services.helpdesk.lifecycle import AGENT_SETTABLE_STATUSES`).
+# Единый источник истины — ``app.schemas.helpdesk`` (audit [H7]).
+__all__ = [
+    "AGENT_SETTABLE_STATUSES",
+    "REQUESTER_REOPEN_STATUSES",
+    "IllegalTransitionError",
+    "TransitionResult",
+    "agent_outbound_reply",
+    "agent_set_status",
+    "closed_reopen_eligible",
+    "requester_reply",
+    "requester_reply_on_closed",
+]
 
 
 class IllegalTransitionError(Exception):
@@ -61,7 +72,7 @@ def agent_set_status(current: str, target: str) -> TransitionResult:
     if current == target:
         return TransitionResult(status=current)
 
-    set_closed = target == "closed"
+    set_closed = target == HelpdeskStatus.closed
     return TransitionResult(status=target, set_closed=set_closed)
 
 
@@ -70,7 +81,7 @@ def requester_reply(current: str) -> TransitionResult:
     окна; ``new``/``open``/``closed`` не меняет (``closed`` реопенится только в
     окне через отдельный путь — см. ``requester_reply_on_closed``)."""
     if current in REQUESTER_REOPEN_STATUSES:
-        return TransitionResult(status="open")
+        return TransitionResult(status=HelpdeskStatus.open)
     return TransitionResult(status=current)
 
 
@@ -94,8 +105,8 @@ def requester_reply_on_closed(
     создаст новый тикет, но веб-инициатор просто не сможет ответить — у него
     нет UI; для email это решается на этапе 5)."""
     if closed_reopen_eligible(closed_at, now=now):
-        return TransitionResult(status="open", cleared_closed=True)
-    return TransitionResult(status="closed")
+        return TransitionResult(status=HelpdeskStatus.open, cleared_closed=True)
+    return TransitionResult(status=HelpdeskStatus.closed)
 
 
 def agent_outbound_reply(current: str) -> TransitionResult:
@@ -104,4 +115,4 @@ def agent_outbound_reply(current: str) -> TransitionResult:
     ТЗ §4.2.1: ``new`` → ``pending`` (с авто-назначением), ``open`` →
     ``pending``, ``pending`` → ``pending``. Internal-заметки статус не меняют
     (обрабатывается в сервисе отдельно)."""
-    return TransitionResult(status="pending")
+    return TransitionResult(status=HelpdeskStatus.pending)

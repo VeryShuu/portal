@@ -9,12 +9,9 @@ HTTP DTOs (IN/OUT) and endpoints live in `app.api.modules`.
 
 from __future__ import annotations
 
-import contextlib
-import os
-import tempfile
 import time
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 from pydantic import BaseModel, Field
 from redis.asyncio import Redis
@@ -42,6 +39,8 @@ class NextcloudModuleSettings(BaseModel):
 class PhotosModuleSettings(BaseModel):
     enabled: bool = True
     widget_limit: int = Field(default=8, ge=1, le=50)
+    # Режим выборки для виджета на главной: «recent» (последние) или «random» (случайные).
+    widget_mode: Literal["recent", "random"] = "recent"
     max_size_mb: int = Field(default=50, ge=1, le=500)
     allowed_mime: list[str] = Field(
         default_factory=lambda: [
@@ -140,21 +139,9 @@ async def load_modules_shared(redis: Redis) -> AllModuleSettings:
 
 
 def _save_modules(m: AllModuleSettings) -> None:
-    _SETTINGS_DIR.mkdir(parents=True, exist_ok=True)
-    payload = m.model_dump_json(indent=2).encode("utf-8")
-    fd, tmp_path = tempfile.mkstemp(prefix=".modules.", suffix=".json.tmp", dir=str(_SETTINGS_DIR))
-    try:
-        try:
-            os.write(fd, payload)
-        finally:
-            os.close(fd)
-        with contextlib.suppress(OSError):
-            os.chmod(tmp_path, 0o600)
-        os.replace(tmp_path, _MODULES_FILE)
-    except Exception:
-        with contextlib.suppress(OSError):
-            os.unlink(tmp_path)
-        raise
+    from app.core.system_config import atomic_write
+
+    atomic_write(_MODULES_FILE, m.model_dump_json(indent=2), mode=0o600)
     _modules_cache.clear()
 
 
