@@ -1,5 +1,5 @@
 <template>
-  <div class="news-list-wrap u-page-wrap">
+  <div class="news-list-wrap u-page-wrap u-page-wrap--wide">
     <div class="page-head u-page-head">
       <div class="page-head__left">
         <h1 class="u-page-head__title">

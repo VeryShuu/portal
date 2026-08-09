@@ -1,5 +1,5 @@
 <template>
-  <div class="my-shares-page u-page-wrap">
+  <div class="my-shares-page u-page-wrap u-page-wrap--wide">
     <h1 class="my-shares-page__title">
       {{ t('photos.myShares.title') }}
     </h1>

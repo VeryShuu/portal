@@ -1,5 +1,5 @@
 <template>
-  <div class="my-fb u-page-wrap">
+  <div class="my-fb u-page-wrap u-page-wrap--wide">
     <header class="page-head">
       <h1 class="u-page-head__title">
         {{ t('feedback.myTicketsTitle') }}
