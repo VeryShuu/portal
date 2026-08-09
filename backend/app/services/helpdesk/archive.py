@@ -31,6 +31,7 @@ from app.models.helpdesk import (
     HelpdeskTicket,
     HelpdeskTicketArchive,
 )
+from app.schemas.helpdesk import HelpdeskStatus
 from app.services.helpdesk.attachments import delete_ticket_dir
 
 logger = get_logger(__name__)
@@ -42,7 +43,7 @@ async def archive_closed_tickets(db: AsyncSession) -> int:
     cutoff = datetime.now(UTC) - timedelta(days=HELPDESK_ARCHIVE_AFTER_DAYS)
     res = await db.execute(
         select(HelpdeskTicket)
-        .where(HelpdeskTicket.status == "closed", HelpdeskTicket.closed_at < cutoff)
+        .where(HelpdeskTicket.status == HelpdeskStatus.closed, HelpdeskTicket.closed_at < cutoff)
         .order_by(HelpdeskTicket.closed_at)
     )
     tickets = res.scalars().unique().all()

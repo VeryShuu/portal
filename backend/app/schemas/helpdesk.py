@@ -38,6 +38,46 @@ class HelpdeskDirection(StrEnum):
 
 
 # ---------------------------------------------------------------------------
+# Производные множества от enum'ов (audit [H7] — единый источник истины).
+# Раньше эти наборы дублировались литералами в lifecycle/tickets/digest/messages
+# и API-валидаторах — теперь все берут отсюда. Менять enum → множества
+# пересчитываются автоматически.
+# ---------------------------------------------------------------------------
+
+# Все возможные статусы (для query-param валидации списков, e.g. ?status=).
+ALL_STATUSES: frozenset[HelpdeskStatus] = frozenset(HelpdeskStatus)
+# Все источники (для query-param валидации, e.g. ?source=).
+ALL_SOURCES: frozenset[HelpdeskSource] = frozenset(HelpdeskSource)
+
+# Активные статусы (тикет «в работе», не финал). new — ничейный старт;
+# open/pending — в работе у агента. Используется для инбокса, дайджеста,
+# архивации (archive = NOT active). Раньше дублировалось в tickets.py:185
+# (_ACTIVE_STATUSES), digest.py:54 (UNASSIGNED_ACTIVE_STATUSES), tickets.py:426.
+ACTIVE_STATUSES: frozenset[HelpdeskStatus] = frozenset(
+    {HelpdeskStatus.new, HelpdeskStatus.open, HelpdeskStatus.pending}
+)
+# Активные статусы назначенного тикета (new исключён — по определению ничейный).
+# Раньше digest.py:52 (ASSIGNED_ACTIVE_STATUSES).
+ASSIGNED_ACTIVE_STATUSES: frozenset[HelpdeskStatus] = frozenset(
+    {HelpdeskStatus.open, HelpdeskStatus.pending}
+)
+# Псевдоним для дайджеста: неназначенные активные == все активные (new по
+# определению ничейный, open/pending могут быть неназначенными при ручных
+# переходах). Раньше digest.py:54 (UNASSIGNED_ACTIVE_STATUSES).
+UNASSIGNED_ACTIVE_STATUSES: frozenset[HelpdeskStatus] = ACTIVE_STATUSES
+
+# Статусы, которые агент выставляет вручную через PATCH /status
+# (== AGENT_SETTABLE_STATUSES в lifecycle.py). TicketStatusIn.status Literal
+# повторяет этот набор — берём отсюда, чтобы не расходиться.
+AGENT_SETTABLE_STATUSES: frozenset[HelpdeskStatus] = frozenset(
+    {HelpdeskStatus.open, HelpdeskStatus.pending, HelpdeskStatus.closed}
+)
+# Статусы, реопенящиеся ответом заявителя в ``open`` без временного окна.
+# (== REQUESTER_REOPEN_STATUSES в lifecycle.py.)
+REQUESTER_REOPEN_STATUSES: frozenset[HelpdeskStatus] = frozenset({HelpdeskStatus.pending})
+
+
+# ---------------------------------------------------------------------------
 # Tickets
 # ---------------------------------------------------------------------------
 
@@ -95,6 +135,10 @@ class TicketStatusIn(BaseModel):
     (см. ТЗ §1.3 п.9).
     """
 
+    # Значения должны совпадать с ``AGENT_SETTABLE_STATUSES`` выше. Дублирование
+    # осознанное: Literal нужен для статической OpenAPI-схемы (type:string +
+    # enum-массив), а enum — для бизнес-логики. Рассинхрон ловит
+    # characterization-тест в ``test_helpdesk_lifecycle.py``.
     status: Literal["open", "pending", "closed"]
 
 

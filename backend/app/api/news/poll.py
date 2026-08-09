@@ -15,14 +15,12 @@ from app.schemas.news_poll import (
     NewsPollVoteRequest,
     UpdateNewsPollRequest,
 )
+from app.schemas.user import PRIVILEGED_ROLES  # audit [H7] — единый источник
 from app.services import news as news_svc
 
 from ._common import emit_news_audit, require_news_read_access
 
 router = APIRouter(prefix="/{news_id}/poll")
-
-
-PRIVILEGED_ROLES = ("editor", "admin")
 
 
 def _poll_title(poll: Any) -> str:

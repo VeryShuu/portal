@@ -23,12 +23,14 @@ from sqlalchemy.orm import selectinload
 from app.core.sanitize import sanitize_html
 from app.models.helpdesk import HelpdeskMessage, HelpdeskTicket
 from app.models.user import User
-from app.schemas.helpdesk import CcRecipient, MessageCreateIn
-
-# Статусы, из которых ответ клиента реопенит тикет в ``open`` (ТЗ §4.2.1).
-# ``closed`` реопенится отдельно — только в окне HELPDESK_REOPEN_WINDOW_DAYS
-# (см. requester_reply_on_closed в lifecycle). ``resolved`` упразднён (079).
-_REQUESTER_REOPEN_STATUSES = frozenset({"pending"})
+from app.schemas.helpdesk import (
+    REQUESTER_REOPEN_STATUSES,
+    CcRecipient,
+    HelpdeskDirection,
+    HelpdeskSource,
+    HelpdeskStatus,
+    MessageCreateIn,
+)
 
 
 def normalize_message_bodies(
@@ -106,10 +108,10 @@ async def add_requester_reply(
         author_user_id=user.id,
         author_email=user.email,
         author_name=user.full_name,
-        direction="inbound",
+        direction=HelpdeskDirection.inbound,
         body_text=payload.body_text,
         body_html=payload.body_html,
-        source="web",
+        source=HelpdeskSource.web,
         created_at=now,
     )
     db.add(message)
@@ -120,8 +122,8 @@ async def add_requester_reply(
 
         await upload_attachments(db, ticket=ticket, message_id=message.id, files=files, actor=user)
 
-    if ticket.status in _REQUESTER_REOPEN_STATUSES:
-        ticket.status = "open"
+    if ticket.status in REQUESTER_REOPEN_STATUSES:
+        ticket.status = HelpdeskStatus.open
 
     ticket.last_activity_at = now
 
@@ -212,10 +214,10 @@ async def add_agent_reply(
         author_user_id=agent.id,
         author_email=agent.email,
         author_name=agent.full_name,
-        direction="outbound",
+        direction=HelpdeskDirection.outbound,
         body_text=payload.body_text,
         body_html=payload.body_html,
-        source="web",
+        source=HelpdeskSource.web,
         email_message_id=email_message_id,
         created_at=now,
         cc=cc_payload,

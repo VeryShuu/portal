@@ -39,6 +39,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.logging import get_logger
 from app.models.helpdesk import HelpdeskAgent, HelpdeskTicket
 from app.models.user import User
+from app.schemas.helpdesk import ASSIGNED_ACTIVE_STATUSES, UNASSIGNED_ACTIVE_STATUSES
 from app.services.email_outbox import KIND_GENERIC, enqueue_outbox_email
 
 logger = get_logger(__name__)
@@ -48,10 +49,8 @@ logger = get_logger(__name__)
 # ``helpdesk:imap:last_poll_at`` (см. ``ingress.py``).
 DIGEST_LAST_SENT_KEY = "helpdesk:digest:last_sent_at"
 
-# Статусы «в работе» у ответственного (активные, не завершённые).
-ASSIGNED_ACTIVE_STATUSES: tuple[str, ...] = ("open", "pending")
-# Статусы неназначенных тикетов (включая ``new`` — он по определению ничей).
-UNASSIGNED_ACTIVE_STATUSES: tuple[str, ...] = ("new", "open", "pending")
+# Статусы «в работе» импортированы из app.schemas.helpdesk (audit [H7] —
+# единый источник истины для ASSIGNED_ACTIVE_STATUSES / UNASSIGNED_ACTIVE_STATUSES).
 
 
 @dataclass(frozen=True, slots=True)

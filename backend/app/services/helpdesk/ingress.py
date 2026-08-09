@@ -37,6 +37,7 @@ from app.models.helpdesk import (
     HelpdeskTicket,
 )
 from app.models.user import User
+from app.schemas.helpdesk import HelpdeskDirection, HelpdeskSource, HelpdeskStatus
 from app.services.helpdesk import threading as threading_utils
 from app.services.helpdesk.attachments import cleanup_recorded_files
 from app.services.helpdesk.email_quote import html_to_plain, strip_quoted_html, strip_quoted_reply
@@ -514,7 +515,7 @@ def _apply_requester_reply(ticket: HelpdeskTicket) -> None:
     if ticket.status in REQUESTER_REOPEN_STATUSES:
         result = requester_reply(ticket.status)
         ticket.status = result.status
-    elif ticket.status == "closed":
+    elif ticket.status == HelpdeskStatus.closed:
         result = requester_reply_on_closed(ticket.closed_at)
         ticket.status = result.status
         if result.cleared_closed:
@@ -537,10 +538,10 @@ def _build_inbound_helpdesk_message(
         author_user_id=requester.id if requester else None,
         author_email=headers["sender_email"],
         author_name=headers["sender_name"],
-        direction="inbound",
+        direction=HelpdeskDirection.inbound,
         body_text=body_text,
         body_html=body_html,
-        source="email",
+        source=HelpdeskSource.email,
         email_message_id=message_id,
         in_reply_to=headers["references"][0] if headers["references"] else None,
         # Cc входящего письма (миграция 083): адресаты в копии. ``support_address``
@@ -661,8 +662,8 @@ async def _ingest_message(
             subject=_derive_subject(subject_raw),
             description=body_text,
             description_html=body_html,
-            status="new",
-            source="email",
+            status=HelpdeskStatus.new,
+            source=HelpdeskSource.email,
             requester_user_id=requester.id if requester else None,
             requester_email=sender_email,
             requester_name=sender_name,
