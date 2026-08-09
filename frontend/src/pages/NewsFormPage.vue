@@ -1,5 +1,5 @@
 <template>
-  <div class="form-wrap u-page-wrap">
+  <div class="form-wrap u-page-wrap u-page-wrap--wide">
     <header class="form-head">
       <h1 class="u-page-head__title">
         {{ isEdit ? t('news.edit.title') : t('news.create.title') }}
