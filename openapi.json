@@ -10471,6 +10471,15 @@
             "minimum": 1.0,
             "title": "Widget Limit",
             "type": "integer"
+          },
+          "widget_mode": {
+            "default": "recent",
+            "enum": [
+              "recent",
+              "random"
+            ],
+            "title": "Widget Mode",
+            "type": "string"
           }
         },
         "title": "PhotosModuleIn",
@@ -10505,11 +10514,20 @@
           "widget_limit": {
             "title": "Widget Limit",
             "type": "integer"
+          },
+          "widget_mode": {
+            "enum": [
+              "recent",
+              "random"
+            ],
+            "title": "Widget Mode",
+            "type": "string"
           }
         },
         "required": [
           "enabled",
           "widget_limit",
+          "widget_mode",
           "max_size_mb",
           "allowed_mime",
           "strip_gps"

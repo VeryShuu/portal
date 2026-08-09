@@ -3429,6 +3429,7 @@ tests/unit/test_modules.py::TestAllModuleSettingsModel::test_nextcloud_module_in
 tests/unit/test_modules.py::TestAllModuleSettingsModel::test_photos_max_size_mb_validation
 tests/unit/test_modules.py::TestAllModuleSettingsModel::test_photos_module_in_defaults
 tests/unit/test_modules.py::TestAllModuleSettingsModel::test_photos_widget_limit_validation
+tests/unit/test_modules.py::TestAllModuleSettingsModel::test_photos_widget_mode_validation
 tests/unit/test_modules.py::TestGetAdminModules::test_admin_gets_200
 tests/unit/test_modules.py::TestGetAdminModules::test_non_admin_gets_403
 tests/unit/test_modules.py::TestGetModulesEndpoint::test_reader_gets_200
@@ -3445,6 +3446,7 @@ tests/unit/test_modules.py::TestUpdateNextcloudModule::test_admin_enables_nextcl
 tests/unit/test_modules.py::TestUpdateNextcloudModule::test_non_admin_gets_403
 tests/unit/test_modules.py::TestUpdatePhotosModule::test_admin_updates_photos
 tests/unit/test_modules.py::TestUpdatePhotosModule::test_invalid_widget_limit_returns_422
+tests/unit/test_modules.py::TestUpdatePhotosModule::test_invalid_widget_mode_returns_422
 tests/unit/test_modules.py::TestUpdatePhotosModule::test_non_admin_gets_403
 tests/unit/test_nc_federation.py::TestCreateTempPublicShare::test_can_write_controls_share_permissions[False-1]
 tests/unit/test_nc_federation.py::TestCreateTempPublicShare::test_can_write_controls_share_permissions[True-3]
@@ -4023,6 +4025,7 @@ tests/unit/test_photo_service.py::test_get_storage_stats_proxies_to_repo
 tests/unit/test_photo_service.py::test_list_folder_photos_404_when_missing
 tests/unit/test_photo_service.py::test_list_recent_photos_empty_rows
 tests/unit/test_photo_service.py::test_list_recent_photos_module_disabled_returns_empty
+tests/unit/test_photo_service.py::test_list_recent_photos_random_mode_dedupes_and_uses_random_mode
 tests/unit/test_photo_service.py::test_load_bulk_target_folder_admin_skips_acl_check
 tests/unit/test_photo_service.py::test_load_bulk_target_folder_not_found
 tests/unit/test_photo_service.py::test_load_bulk_target_folder_requires_id
@@ -4190,7 +4193,9 @@ tests/unit/test_photos_photo_repo.py::TestFetchFoldersMap::test_returns_map
 tests/unit/test_photos_photo_repo.py::TestFetchGlobalStorageTotals::test_returns_totals
 tests/unit/test_photos_photo_repo.py::TestFetchPhotoAny::test_found
 tests/unit/test_photos_photo_repo.py::TestFetchPhotoAny::test_not_found
+tests/unit/test_photos_photo_repo.py::TestFetchRecentPhotosWithFolders::test_default_mode_is_recent
 tests/unit/test_photos_photo_repo.py::TestFetchRecentPhotosWithFolders::test_empty
+tests/unit/test_photos_photo_repo.py::TestFetchRecentPhotosWithFolders::test_random_mode_returns_pairs
 tests/unit/test_photos_photo_repo.py::TestFetchRecentPhotosWithFolders::test_returns_pairs
 tests/unit/test_photos_photo_repo.py::TestFetchStorageStats::test_returns_dict
 tests/unit/test_photos_photo_repo.py::TestFetchStorageStatsTopFolders::test_empty

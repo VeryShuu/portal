@@ -1,5 +1,5 @@
 <!-- AUTO-GENERATED — do not edit manually. Run: cd backend && python -m scripts.generate_api_contracts_doc --output ../docs/api-contracts.generated.md -->
-<!-- Generated: 2026-08-05 19:03 UTC -->
+<!-- Generated: 2026-08-09 19:37 UTC -->
 
 # API Contracts (auto-generated)
 
@@ -744,6 +744,132 @@ Content-Type: `multipart/form-data` — schema: `Body_upload_favicon_api_v1_admi
 | 200 | Successful Response | object |
 | 422 | Validation Error | `HTTPValidationError` |
 
+### `POST /api/v1/admin/branding/hero-bg-day`
+
+**Загрузить фон Hero (день)**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `portal_session` | cookie | `any` |  |  |
+
+**Request Body**
+
+Content-Type: `multipart/form-data` — schema: `Body_upload_hero_bg_day_api_v1_admin_branding_hero_bg_day_post`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `file` | string | ✓ |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | object |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `DELETE /api/v1/admin/branding/hero-bg-day`
+
+**Сбросить фон Hero (день)**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | object |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `POST /api/v1/admin/branding/hero-bg-evening`
+
+**Загрузить фон Hero (вечер)**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `portal_session` | cookie | `any` |  |  |
+
+**Request Body**
+
+Content-Type: `multipart/form-data` — schema: `Body_upload_hero_bg_evening_api_v1_admin_branding_hero_bg_evening_post`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `file` | string | ✓ |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | object |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `DELETE /api/v1/admin/branding/hero-bg-evening`
+
+**Сбросить фон Hero (вечер)**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | object |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `POST /api/v1/admin/branding/hero-bg-morning`
+
+**Загрузить фон Hero (утро)**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `portal_session` | cookie | `any` |  |  |
+
+**Request Body**
+
+Content-Type: `multipart/form-data` — schema: `Body_upload_hero_bg_morning_api_v1_admin_branding_hero_bg_morning_post`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `file` | string | ✓ |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | object |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `DELETE /api/v1/admin/branding/hero-bg-morning`
+
+**Сбросить фон Hero (утро)**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | object |
+| 422 | Validation Error | `HTTPValidationError` |
+
 ### `POST /api/v1/admin/branding/login-bg`
 
 **Загрузить фон страницы входа**
@@ -847,12 +973,28 @@ Content-Type: `application/json` — schema: `BrandingSettings`
 | `portal_name` | string |  |  |
 | `portal_tagline` | string |  |  |
 | `accent_color` | string |  |  |
-| `welcome_subtitle` | string |  |  |
+| `hero_subtitle_mode` | string |  |  |
+| `hero_subtitle_morning` | string |  |  |
+| `hero_subtitle_day` | string |  |  |
+| `hero_subtitle_evening` | string |  |  |
+| `hero_subtitle_night` | string |  |  |
 | `banner_enabled` | boolean |  |  |
 | `banner_text` | string |  |  |
 | `banner_type` | string |  |  |
 | `banner_expires_at` | any |  |  |
 | `logo_hidden` | boolean |  |  |
+| `hero_morning_hour` | integer |  |  |
+| `hero_day_hour` | integer |  |  |
+| `hero_evening_hour` | integer |  |  |
+| `hero_bg_morning_focal_x` | any |  |  |
+| `hero_bg_morning_focal_y` | any |  |  |
+| `hero_bg_morning_focal_zoom` | any |  |  |
+| `hero_bg_day_focal_x` | any |  |  |
+| `hero_bg_day_focal_y` | any |  |  |
+| `hero_bg_day_focal_zoom` | any |  |  |
+| `hero_bg_evening_focal_x` | any |  |  |
+| `hero_bg_evening_focal_y` | any |  |  |
+| `hero_bg_evening_focal_zoom` | any |  |  |
 
 **Responses**
 
@@ -976,6 +1118,36 @@ Content-Type: `application/json` — schema: `EmailTestRequest`
 ### `GET /api/v1/branding/favicon`
 
 **Получить favicon портала**
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | any |
+
+### `GET /api/v1/branding/hero-bg-day`
+
+**Фон Hero (день)**
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | any |
+
+### `GET /api/v1/branding/hero-bg-evening`
+
+**Фон Hero (вечер)**
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | any |
+
+### `GET /api/v1/branding/hero-bg-morning`
+
+**Фон Hero (утро)**
 
 **Responses**
 
@@ -5493,6 +5665,7 @@ Content-Type: `application/json` — schema: `PhotosModuleIn`
 |-------|------|----------|-------------|
 | `enabled` | boolean |  |  |
 | `widget_limit` | integer |  |  |
+| `widget_mode` | string |  |  |
 | `max_size_mb` | integer |  |  |
 | `allowed_mime` | array of string |  |  |
 | `strip_gps` | boolean |  |  |

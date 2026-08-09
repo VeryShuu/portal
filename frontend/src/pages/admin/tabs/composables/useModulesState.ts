@@ -168,6 +168,7 @@ export function useModulesState() {
         body: {
           enabled: value,
           widget_limit: modulesData.value.photos.widget_limit,
+          widget_mode: modulesData.value.photos.widget_mode,
           max_size_mb: modulesData.value.photos.max_size_mb,
           allowed_mime: modulesData.value.photos.allowed_mime,
           strip_gps: modulesData.value.photos.strip_gps,

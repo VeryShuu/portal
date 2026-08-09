@@ -326,7 +326,11 @@ async def test_list_recent_photos_module_disabled_returns_empty() -> None:
     from app.api.photos import photo_service
 
     fake_cfg = SimpleNamespace(
-        enabled=False, max_size_mb=None, allowed_mime=None, widget_limit=None
+        enabled=False,
+        max_size_mb=None,
+        allowed_mime=None,
+        widget_limit=None,
+        widget_mode="recent",
     )
     with patch.object(photo_service, "_module_settings", return_value=fake_cfg):
         result = await photo_service.list_recent_photos(
@@ -343,7 +347,9 @@ async def test_list_recent_photos_empty_rows() -> None:
     from app.api.photos import photo_service
     from app.services import photos_photo_repo
 
-    fake_cfg = SimpleNamespace(enabled=True, max_size_mb=10, allowed_mime=[], widget_limit=8)
+    fake_cfg = SimpleNamespace(
+        enabled=True, max_size_mb=10, allowed_mime=[], widget_limit=8, widget_mode="recent"
+    )
     with (
         patch.object(photo_service, "_module_settings", return_value=fake_cfg),
         patch.object(
@@ -357,6 +363,60 @@ async def test_list_recent_photos_empty_rows() -> None:
             limit=5,
         )
     assert result == []
+
+
+@pytest.mark.asyncio
+async def test_list_recent_photos_random_mode_dedupes_and_uses_random_mode() -> None:
+    """В random-режиме репо зовётся с mode='random', а дубликаты фото между
+    чанками (ORDER BY random() даёт новое окно на каждом offset) отсекаются."""
+    from app.api.photos import photo_service
+    from app.api.photos.photo_service import _queries as queries
+    from app.services import photos_photo_repo
+
+    # eff_limit = min(limit=5, widget_limit=5) = 5.
+    fake_cfg = SimpleNamespace(
+        enabled=True, max_size_mb=10, allowed_mime=[], widget_limit=5, widget_mode="random"
+    )
+
+    folder = _make_folder()
+    p1, p2, p3, p4 = (MagicMock(id=uuid.uuid4()) for _ in range(4))
+    # Дубликаты фото из первого чанка, которые могут попасть во второй чанк
+    # при ORDER BY random() на разных offset.
+    dup_of_p1 = MagicMock(id=p1.id)
+    dup_of_p2 = MagicMock(id=p2.id)
+
+    first_chunk = [(p1, folder), (p2, folder), (p3, folder), (p4, folder)]
+    second_chunk = [(dup_of_p1, folder), (dup_of_p2, folder)]
+
+    fetch_mock = AsyncMock(side_effect=[first_chunk, second_chunk, []])
+
+    # Сериализатор замокирован: photo → уникальный маркер по id.
+    def fake_serializer(photo, _folder=None):
+        return f"photo:{photo.id}"
+
+    with (
+        patch.object(photo_service, "_module_settings", return_value=fake_cfg),
+        patch.object(photos_photo_repo, "fetch_recent_photos_with_folders", new=fetch_mock),
+        patch.object(queries, "_photo_to_public", side_effect=fake_serializer),
+    ):
+        result = await photo_service.list_recent_photos(
+            AsyncMock(),
+            _make_user("admin"),  # type: ignore[arg-type]  # admin пропускает ACL-фильтр
+            AsyncMock(),
+            limit=5,
+        )
+
+    # Репо звался с mode="random" в каждом вызове.
+    assert fetch_mock.call_args_list
+    for call in fetch_mock.call_args_list:
+        assert call.kwargs.get("mode") == "random"
+
+    # Все дубликаты из второго чанка отсечены: ровно 4 уникальных фото.
+    assert len(result) == 4
+    result_ids = [r for r in result]
+    assert len(set(result_ids)) == 4  # нет дублей в выдаче
+    assert f"photo:{p1.id}" in result_ids
+    assert f"photo:{p2.id}" in result_ids
 
 
 # ── _bulk_delete_photo ────────────────────────────────────────────────────────
