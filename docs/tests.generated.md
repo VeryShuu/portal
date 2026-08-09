@@ -2894,15 +2894,6 @@ tests/unit/test_keycloak_admin.py::test_get_keycloak_settings_returns_out
 tests/unit/test_keycloak_admin.py::test_get_sync_status_corrupt_json
 tests/unit/test_keycloak_admin.py::test_get_sync_status_empty
 tests/unit/test_keycloak_admin.py::test_get_sync_status_with_data
-tests/unit/test_keycloak_admin.py::test_is_unsafe_ip_cloud_metadata
-tests/unit/test_keycloak_admin.py::test_is_unsafe_ip_hostname_not_ip
-tests/unit/test_keycloak_admin.py::test_is_unsafe_ip_ipv6_loopback
-tests/unit/test_keycloak_admin.py::test_is_unsafe_ip_link_local
-tests/unit/test_keycloak_admin.py::test_is_unsafe_ip_loopback
-tests/unit/test_keycloak_admin.py::test_is_unsafe_ip_multicast
-tests/unit/test_keycloak_admin.py::test_is_unsafe_ip_private_10_allowed
-tests/unit/test_keycloak_admin.py::test_is_unsafe_ip_private_allowed
-tests/unit/test_keycloak_admin.py::test_is_unsafe_ip_public
 tests/unit/test_keycloak_admin.py::test_load_kc_settings_corrupt_file_returns_defaults
 tests/unit/test_keycloak_admin.py::test_load_kc_settings_defaults_when_file_missing
 tests/unit/test_keycloak_admin.py::test_load_kc_settings_migrates_legacy
@@ -3509,6 +3500,18 @@ tests/unit/test_net_guard.py::TestIsPublicIp::test_public_allowed[1.1.1.1]
 tests/unit/test_net_guard.py::TestIsPublicIp::test_public_allowed[2001:4860:4860::8888]
 tests/unit/test_net_guard.py::TestIsPublicIp::test_public_allowed[8.8.8.8]
 tests/unit/test_net_guard.py::TestIsPublicIp::test_public_allowed[93.184.216.34]
+tests/unit/test_net_guard.py::TestIsSafeInternalUrl::test_allowed[http://10.0.0.5:8080/]
+tests/unit/test_net_guard.py::TestIsSafeInternalUrl::test_allowed[http://keycloak.intranet.local/]
+tests/unit/test_net_guard.py::TestIsSafeInternalUrl::test_allowed[https://192.168.1.100/auth]
+tests/unit/test_net_guard.py::TestIsSafeInternalUrl::test_allowed[https://keycloak.company.com/auth]
+tests/unit/test_net_guard.py::TestIsSafeInternalUrl::test_blocked[http://0.0.0.0/auth]
+tests/unit/test_net_guard.py::TestIsSafeInternalUrl::test_blocked[http://127.0.0.1/auth]
+tests/unit/test_net_guard.py::TestIsSafeInternalUrl::test_blocked[http://169.254.169.254/auth]
+tests/unit/test_net_guard.py::TestIsSafeInternalUrl::test_blocked[http://[::1]/auth]
+tests/unit/test_net_guard.py::TestIsSafeInternalUrl::test_blocked[http://localhost/auth]
+tests/unit/test_net_guard.py::TestIsSafeInternalUrl::test_invalid_scheme_or_host[ftp://kc.example.com]
+tests/unit/test_net_guard.py::TestIsSafeInternalUrl::test_invalid_scheme_or_host[http://]
+tests/unit/test_net_guard.py::TestIsSafeInternalUrl::test_invalid_scheme_or_host[not a url]
 tests/unit/test_net_guard.py::TestIsSafeRemoteUrl::test_allowed[http://93.184.216.34/]
 tests/unit/test_net_guard.py::TestIsSafeRemoteUrl::test_allowed[http://example.com/favicon.ico]
 tests/unit/test_net_guard.py::TestIsSafeRemoteUrl::test_allowed[https://8.8.8.8/x]
@@ -3530,6 +3533,18 @@ tests/unit/test_net_guard.py::TestIsSafeRemoteUrl::test_invalid_scheme_or_host[f
 tests/unit/test_net_guard.py::TestIsSafeRemoteUrl::test_invalid_scheme_or_host[gopher://x/y]
 tests/unit/test_net_guard.py::TestIsSafeRemoteUrl::test_invalid_scheme_or_host[http:///nohost]
 tests/unit/test_net_guard.py::TestIsSafeRemoteUrl::test_invalid_scheme_or_host[not a url at all]
+tests/unit/test_net_guard.py::TestIsUnsafeInternalIp::test_blocked[0.0.0.0]
+tests/unit/test_net_guard.py::TestIsUnsafeInternalIp::test_blocked[127.0.0.1]
+tests/unit/test_net_guard.py::TestIsUnsafeInternalIp::test_blocked[169.254.1.1]
+tests/unit/test_net_guard.py::TestIsUnsafeInternalIp::test_blocked[224.0.0.1]
+tests/unit/test_net_guard.py::TestIsUnsafeInternalIp::test_blocked[::1]
+tests/unit/test_net_guard.py::TestIsUnsafeInternalIp::test_cloud_metadata_blocked[169.254.169.254]
+tests/unit/test_net_guard.py::TestIsUnsafeInternalIp::test_cloud_metadata_blocked[fd00:ec2::254]
+tests/unit/test_net_guard.py::TestIsUnsafeInternalIp::test_ipv4_mapped_ipv6_normalized
+tests/unit/test_net_guard.py::TestIsUnsafeInternalIp::test_private_and_public_allowed[10.0.0.1]
+tests/unit/test_net_guard.py::TestIsUnsafeInternalIp::test_private_and_public_allowed[172.16.0.1]
+tests/unit/test_net_guard.py::TestIsUnsafeInternalIp::test_private_and_public_allowed[192.168.1.1]
+tests/unit/test_net_guard.py::TestIsUnsafeInternalIp::test_private_and_public_allowed[8.8.8.8]
 tests/unit/test_net_guard.py::TestResolveAllIps::test_bare_ipv4_returns_itself
 tests/unit/test_net_guard.py::TestResolveAllIps::test_bare_ipv6_returns_itself
 tests/unit/test_net_guard.py::TestResolveAllIps::test_dedupes_duplicate_ips

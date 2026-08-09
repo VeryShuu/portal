@@ -7,13 +7,16 @@ private/loopback/link-local/multicast/unspecified/cloud-metadata адреса,
 Дизайн перенесён из ``app.services.helpdesk.email_images`` (лучшая реализация
 в кодовой базе) и обобщён для переиспользования несколькими потребителями:
   * ``app.api.bookmarks._do_favicon_fetch`` (audit [H1] — favicon-прокси)
-  * (план) ``app.api.keycloak_admin._validate_keycloak_url`` (audit [M9])
+  * ``app.services.keycloak.probe`` / ``admin_store`` (audit [M9] — Keycloak,
+    allow-private политика через ``is_safe_internal_url``)
   * (план) консолидация ``email_images._fetch_remote`` после стабилизации
 
-Контракт политики по умолчанию — **strict**: разрешены только public-адреса
-(``is_global=True`` и не private/loopback/link-local). Потребители, которым
-нужны приватные диапазоны (например, Keycloak за VPN), используют частные
-валидаторы (см. ``keycloak_admin._is_unsafe_ip`` до задачи M9).
+Две политики:
+  * **strict** (по умолчанию, ``is_public_ip``/``is_safe_remote_url``) — только
+    public-адреса; для внешнего fetch (favicon, remote-картинки).
+  * **allow-private** (``is_unsafe_internal_ip``/``is_safe_internal_url``) —
+    private разрешён, блокируются loopback/link-local/multicast/cloud-metadata;
+    для intranet-целей (Keycloak за VPN).
 
 Все функции безопасны для async-контекста: DNS-резолв через
 ``asyncio.get_running_loop().getaddrinfo`` (раньше синхронный
@@ -42,8 +45,61 @@ _BLOCKED_HOSTNAMES = frozenset(
 )
 
 # IPv6-эквивалент cloud-metadata (AWS IMDS): не покрывается is_link_local,
-# проверяется явно. См. _CLOUD_METADATA_NETS в keycloak_admin.py (M9 — слить).
+# проверяется явно. Слито из keycloak_admin._CLOUD_METADATA_NETS (audit [M9]).
 _CLOUD_METADATA_V6 = ipaddress.ip_network("fd00:ec2::254/128")
+_CLOUD_METADATA_V4 = ipaddress.ip_network("169.254.169.254/32")
+
+
+def is_unsafe_internal_ip(ip: IPv4Address | IPv6Address) -> bool:
+    """``True`` для адресов, запрещённых даже в allow-private политике (Keycloak).
+
+    Блокирует loopback, link-local, multicast, unspecified и cloud-metadata
+    (AWS IMDS v4 ``169.254.169.254`` + v6 ``fd00:ec2::254``). Приватные
+    диапазоны (10.x, 172.16-31.x, 192.168.x, fc00::/7) **разрешены** — Keycloak
+    обычно развёрнут за корпоративным VPN. IPv4-mapped IPv6 нормализуются.
+
+    Перенесено из ``app.api.keycloak_admin._is_unsafe_ip`` (audit [M9] —
+    консолидация SSRF в едином модуле). Семантически дополняет ``is_public_ip``
+    (strict): здесь разрешаем private, там — нет.
+    """
+    if isinstance(ip, IPv6Address) and ip.ipv4_mapped is not None:
+        ip = ip.ipv4_mapped
+    return (
+        ip.is_loopback
+        or ip.is_link_local
+        or ip.is_multicast
+        or ip.is_unspecified
+        or ip in _CLOUD_METADATA_V4
+        or ip in _CLOUD_METADATA_V6
+    )
+
+
+def is_safe_internal_url(url: str) -> bool:
+    """SSRF-валидатор для intranet-целей (Keycloak и т.п.) — allow-private.
+
+    Контракт как у ``is_safe_remote_url`` (scheme http(s), непустой host,
+    блокировка ``localhost``/``0.0.0.0``), но приватные диапазоны **разрешены** —
+    блокируются только loopback/link-local/multicast/unspecified/cloud-metadata.
+    DNS-резолв здесь не выполняется (чистая функция, как у ``is_safe_remote_url``)
+    — для домена возвращает ``True`` (домен отдельно резолвится в caller'е).
+
+    Используется для Keycloak, который типично развёрнут за VPN (см.
+    ``keycloak_admin._validate_keycloak_url`` до задачи M9, audit [M9]).
+    """
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        return False
+    if parsed.scheme not in ("http", "https"):
+        return False
+    host = (parsed.hostname or "").lower()
+    if not host or _is_blocked_hostname(host):
+        return False
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        return True  # домен — резолв в caller
+    return not is_unsafe_internal_ip(ip)
 
 
 def is_public_ip(ip: IPv4Address | IPv6Address) -> bool:
