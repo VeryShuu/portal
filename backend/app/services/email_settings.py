@@ -13,10 +13,11 @@ IMAP-блок (ADR-048) — общий приёмник почты портал�
 
 from __future__ import annotations
 
-import contextlib
+import copy
 import json
-import os
+import time
 from pathlib import Path
+from typing import Any
 
 from app.core.logging import get_logger
 from app.core.secret_crypto import decrypt_secret, encrypt_secret
@@ -27,6 +28,16 @@ logger = get_logger(__name__)
 BRANDING_DIR = Path("/data/branding")
 EMAIL_SETTINGS_FILE = BRANDING_DIR / "email-settings.json"
 EMAIL_PASSWORD_MASK = "***"
+
+# In-process TTL-кеш для email-settings (audit [H4], 2026-08-09). Файл читается
+# на каждом тике worker'ов (`load_smtp_config`, meetings-нотификатор, erp_sync)
+# и на admin-путях — без кеша это sync disk-read + JSON-parse + Fernet-decrypt
+# каждый раз. Кеш снимает I/O до cache-miss раз в _CACHE_TTL секунд на процесс.
+# Cross-process задержка после admin-save ≤ TTL (приемлемо для SMTP/IMAP).
+# `save_email_settings()` инвалидирует кеш в текущем процессе. Deep-copy при
+# возврате — потребители не должны мутировать кешированный объект.
+_CACHE_TTL = 60
+_cache: dict[str, Any] = {}
 
 
 def _settings_from_disk(data: dict) -> EmailSettings:
@@ -63,13 +74,11 @@ def _settings_to_disk(s: EmailSettings) -> dict:
     return data
 
 
-def read_email_settings() -> EmailSettings | None:
-    """Единый загрузчик on-disk ``email-settings.json``.
+def _read_from_disk() -> EmailSettings | None:
+    """Read+parse email-settings.json from disk (no cache). Returns None if absent/invalid.
 
-    Единственное место, читающее и парсящее файл. Возвращает разобранные
-    настройки либо ``None``, если файл отсутствует/не читается/не валиден.
-    Потребители (worker ``load_smtp_config``, meetings-нотификатор, erp_sync)
-    делегируют сюда, чтобы on-disk схема была определена в одном месте.
+    Это единственное место, читающее и парсящее файл напрямую. Публичный
+    ``read_email_settings()`` оборачивает его в TTL-кеш.
     """
     if EMAIL_SETTINGS_FILE.exists():
         try:
@@ -80,6 +89,31 @@ def read_email_settings() -> EmailSettings | None:
     return None
 
 
+def read_email_settings() -> EmailSettings | None:
+    """Единый загрузчик on-disk ``email-settings.json`` (TTL-кешируется, audit [H4]).
+
+    Возвращает deep-copy разобранных настроек либо ``None``, если файл
+    отсутствует/не читается/не валиден. Потребители (worker ``load_smtp_config``,
+    meetings-нотификатор, erp_sync) делегируют сюда, чтобы on-disk схема была
+    определена в одном месте. Cache-miss раз в ``_CACHE_TTL`` секунд на процесс;
+    ``save_email_settings()`` инвалидирует кеш немедленно в текущем процессе.
+    """
+    now = time.monotonic()
+    if "data" not in _cache or now - _cache.get("fetched_at", 0.0) >= _CACHE_TTL:
+        # None тоже кешируем (файл отсутствует) — иначе каждый тик worker'а
+        # будет стучать на диск в ожидании настройки.
+        _cache["data"] = _read_from_disk()
+        _cache["fetched_at"] = now
+    # Возвращаем deep-copy — мутирующие потребители не должны портить кеш.
+    snapshot = copy.deepcopy(_cache["data"])
+    return snapshot if isinstance(snapshot, (EmailSettings, type(None))) else None
+
+
+def invalidate_email_settings_cache() -> None:
+    """Drop in-process cache (called after ``save_email_settings``)."""
+    _cache.clear()
+
+
 def load_email_settings() -> EmailSettings:
     return read_email_settings() or EmailSettings()
 
@@ -87,13 +121,13 @@ def load_email_settings() -> EmailSettings:
 def save_email_settings(s: EmailSettings) -> None:
     from app.core.system_config import atomic_write
 
-    BRANDING_DIR.mkdir(parents=True, exist_ok=True)
+    # email-settings.json содержит SMTP-пароль (plaintext) и IMAP-шифр → 0o600.
     atomic_write(
-        EMAIL_SETTINGS_FILE, json.dumps(_settings_to_disk(s), indent=2, ensure_ascii=False)
+        EMAIL_SETTINGS_FILE,
+        json.dumps(_settings_to_disk(s), indent=2, ensure_ascii=False),
+        mode=0o600,
     )
-    # email-settings.json содержит SMTP-пароль (plaintext) и IMAP-шифр.
-    with contextlib.suppress(OSError):
-        os.chmod(EMAIL_SETTINGS_FILE, 0o600)
+    invalidate_email_settings_cache()
 
 
 def email_settings_to_out(s: EmailSettings) -> EmailSettingsOut:

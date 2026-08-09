@@ -8,10 +8,11 @@
 
 from __future__ import annotations
 
+import copy
 import json
-import os
-import tempfile
+import time
 from pathlib import Path
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field, field_validator
@@ -30,6 +31,16 @@ _CATEGORIES_FILE = _SETTINGS_DIR / "news_categories.json"
 _MAX_NAME_LEN = 100
 _MAX_CATEGORIES = 100
 _DEFAULT_COLOR = "#6B7AE8"
+
+# In-process TTL-кеш для категорий (audit [H4], 2026-08-09). `_load()` вызывается
+# на каждом news-listing GET и каждом create/update news — без кеша это sync
+# disk-read + JSON-parse в тёплом пути. Кеш снимает disk-I/O до cache-miss раз в
+# _CACHE_TTL секунд на процесс. Cross-process задержка после admin-save ≤ TTL
+# (приемлемо: категории меняются редко). `_save()` инвалидирует кеш в текущем
+# процессе. Deep-copy при возврате — мутирующие call-сайты (`rename_category`,
+# `update_category_color`) не должны портить кешированное состояние.
+_CACHE_TTL = 60
+_cache: dict[str, Any] = {}
 
 
 class NewsCategory(BaseModel):
@@ -76,7 +87,8 @@ class CategoriesResponse(BaseModel):
     items: list[NewsCategoryWithCount]
 
 
-def _load() -> list[NewsCategory]:
+def _load_from_disk() -> list[NewsCategory]:
+    """Read+parse categories from disk (no cache). Raises no exceptions."""
     if not _CATEGORIES_FILE.exists():
         return []
     try:
@@ -105,25 +117,35 @@ def _load() -> list[NewsCategory]:
     return out
 
 
+def _load() -> list[NewsCategory]:
+    """Return categories (cached for _CACHE_TTL s). Returns deep copies."""
+    now = time.monotonic()
+    cached = _cache.get("data")
+    if cached is not None and now - _cache.get("fetched_at", 0.0) < _CACHE_TTL:
+        return copy.deepcopy(cached)
+    fresh = _load_from_disk()
+    _cache["data"] = fresh
+    _cache["fetched_at"] = now
+    return copy.deepcopy(fresh)
+
+
+def invalidate_categories_cache() -> None:
+    """Drop in-process cache (called after `_save`)."""
+    _cache.clear()
+
+
 def _save(items: list[NewsCategory]) -> None:
-    _SETTINGS_DIR.mkdir(parents=True, exist_ok=True)
-    fd, tmp_path = tempfile.mkstemp(
-        prefix="news_categories.",
-        suffix=".json",
-        dir=str(_SETTINGS_DIR),
+    from app.core.system_config import atomic_write
+
+    atomic_write(
+        _CATEGORIES_FILE,
+        json.dumps(
+            [{"name": c.name, "color": c.color} for c in items],
+            ensure_ascii=False,
+            indent=2,
+        ),
     )
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            json.dump(
-                [{"name": c.name, "color": c.color} for c in items],
-                f,
-                ensure_ascii=False,
-                indent=2,
-            )
-        os.replace(tmp_path, _CATEGORIES_FILE)
-    except Exception:
-        Path(tmp_path).unlink(missing_ok=True)
-        raise
+    invalidate_categories_cache()
 
 
 def ensure_category_exists(name: str) -> None:

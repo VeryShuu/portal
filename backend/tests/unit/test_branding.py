@@ -24,6 +24,17 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+
+@pytest.fixture(autouse=True)
+def _clear_email_settings_cache():
+    """Сбрасывать TTL-кеш email-settings между тестами (audit [H4])."""
+    from app.services.email_settings import invalidate_email_settings_cache
+
+    invalidate_email_settings_cache()
+    yield
+    invalidate_email_settings_cache()
+
+
 pytest.importorskip("fastapi", reason="fastapi not installed locally")
 pytest.importorskip("httpx", reason="httpx not installed locally")
 
@@ -521,6 +532,77 @@ class TestLoadSaveEmailSettings:
         assert loaded.port == 465
         assert loaded.password == "pass123"
         assert loaded.use_tls is True
+
+
+class TestEmailSettingsCache:
+    """Characterization тесты для TTL-кеша `read_email_settings` (audit [H4])."""
+
+    def test_second_read_uses_cache_no_second_disk_read(self, tmp_path):
+        from app.services import email_settings as es_mod
+        from app.services.email_settings import read_email_settings
+
+        f = tmp_path / "email-settings.json"
+        f.write_text(
+            json.dumps(
+                {"host": "smtp.example.com", "port": 465, "password": "pass123", "use_tls": True}
+            ),
+            encoding="utf-8",
+        )
+        with patch.object(es_mod, "EMAIL_SETTINGS_FILE", f):
+            read_email_settings()  # warm cache
+            # Если кеш работает, второй вызов НЕ дойдёт до _read_from_disk.
+            with patch.object(
+                es_mod, "_read_from_disk", side_effect=AssertionError("disk read on cache hit")
+            ):
+                result = read_email_settings()
+        assert result is not None
+        assert result.host == "smtp.example.com"
+
+    def test_save_invalidates_cache(self, tmp_path):
+        from app.services import email_settings as es_mod
+        from app.services.email_settings import (
+            EmailSettings,
+            load_email_settings,
+            save_email_settings,
+        )
+
+        email_file = tmp_path / "email-settings.json"
+        with (
+            patch.object(es_mod, "EMAIL_SETTINGS_FILE", email_file),
+            patch.object(es_mod, "BRANDING_DIR", tmp_path),
+        ):
+            save_email_settings(EmailSettings(host="smtp1.example.com", port=25))
+            assert load_email_settings().host == "smtp1.example.com"
+            save_email_settings(EmailSettings(host="smtp2.example.com", port=25))
+            assert load_email_settings().host == "smtp2.example.com"
+
+    def test_none_cached_when_file_missing(self, tmp_path):
+        """None тоже кешируется — иначе каждый тик worker'а стучит на диск."""
+        from app.services import email_settings as es_mod
+        from app.services.email_settings import read_email_settings
+
+        with patch.object(es_mod, "EMAIL_SETTINGS_FILE", tmp_path / "missing.json"):
+            assert read_email_settings() is None
+            with patch.object(
+                es_mod,
+                "_read_from_disk",
+                side_effect=AssertionError("disk read on cache miss-stub"),
+            ):
+                assert read_email_settings() is None
+
+    def test_returns_deep_copy(self, tmp_path):
+        from app.services import email_settings as es_mod
+        from app.services.email_settings import read_email_settings
+
+        f = tmp_path / "email-settings.json"
+        f.write_text(json.dumps({"host": "smtp.example.com", "port": 25}), encoding="utf-8")
+        with patch.object(es_mod, "EMAIL_SETTINGS_FILE", f):
+            first = read_email_settings()
+            assert first is not None
+            first.host = "mutated.example.com"
+            second = read_email_settings()
+            assert second is not None
+            assert second.host == "smtp.example.com"  # cache was not poisoned
 
 
 # ── find_file / delete_files ────────────────────────────────────────────────

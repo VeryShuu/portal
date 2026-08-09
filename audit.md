@@ -140,10 +140,10 @@ XS-S правки, не требующие архитектурных решен
 | H1  | 🟠 High | Security | SSRF favicon | M | 2 | [x] 2026-07-27 |
 | H2  | 🟠 High | DB/Perf | news ILIKE → FTS | XS | 1 | [x] 2026-07-26 |
 | H3  | 🟠 High | DB/Perf | audit metadata::text → jsonb GIN | S | 2 | [x] 2026-07-28 |
-| H4  | 🟠 High | Backend | Sync I/O в async | M | 3 | [ ] |
+| H4  | 🟠 High | Backend | Sync I/O в settings-путях (scope сужен) | S | 3 | [x] 2026-08-09 |
 | H5  | 🟠 High | Architecture | worker→api цикл | S | 1 | [x] 2026-07-26 |
-| H6  | 🟠 High | Architecture | EventType enum half-done | M/S | 3 | [ ] ⚠️ decision |
-| H7  | 🟠 High | Code Smell | Primitive Obsession (строки) | M | 3 | [ ] |
+| H6  | 🟠 High | Architecture | EventType enum half-done → удалить | S | 3 | [x] 2026-08-09 |
+| H7  | 🟠 High | Code Smell | Primitive Obsession (консолидация первой) | M | 3 | [ ] re-verified 2026-08-09 |
 | H8  | 🟠 High | Backend/Obs | silent except | S | 2 | [x] 2026-07-29 |
 | H9  | 🟠 High | Logging | PII-маскинг (только IP) | S | 2 | [x] 2026-07-29 |
 | H10 | 🟠 High | Logging | redact_secrets_processor | XS | 1 | [x] 2026-07-26 |
@@ -375,42 +375,56 @@ XS-S правки, не требующие архитектурных решен
 
 ---
 
-### [H4] — Синхронное файловое I/O в async-эндпоинтах
+### [H4] — Синхронное файловое I/O в settings-путях `[re-verified 2026-08-09]`
 - **Категория:** Backend / Performance
-- **Приоритет:** 🟠 High
-- **Где:** 12+ мест:
-  - `backend/app/api/keycloak_admin.py:138,146,150,160` (`_load_kc_settings`/`_save_kc_settings`)
-  - `backend/app/api/system_settings/_tls.py:105`
-  - `backend/app/services/files_acl_persistence.py:84-89`
-  - `backend/app/services/files_shares_persistence.py:84-89`
-  - `backend/app/core/system_config/_storage.py:45`
-  - `backend/app/api/news_categories.py:83,117`
-  - `backend/app/services/email_settings.py:56`
-  - `backend/app/core/modules_config.py:147`
-- **Что найдено:** В async-функциях вызываются синхронные `Path.write_bytes`/`read_text`/`os.chmod`/`json.load`/`json.dump`/`glob`/`rglob`. Самый показательный: `GET /admin/keycloak/settings` → `_load_kc_settings` → синхронно читает файл + парсит JSON, при legacy-миграции ещё `read_bytes`+`write_bytes`+`chmod`.
-- **Почему проблема:** Sync disk/syscall блокирует event loop. На NFS/docker-volume латентность одной операции — десятки ms. При admin-запросах это замораживает обработку других запросов в воркере.
-- **Последствия:** Periodic latency-spikes; труднодиагностируемая деградация (no traceback).
+- **Приоритет:** 🟠 High (сужено после ре-верификации)
+- **Где:** 8 сайтов (оригинальная карточка называла «12+» и неверные строки — см. «Корректировка» ниже). Реальная разбивка после верификации кода:
 
-#### План действий
-- [ ] Создать `backend/app/core/settings_storage.py` — async-фасад:
-  - [ ] `async def read_json_atomic(path: Path) -> dict` (через `aiofiles` + `asyncio.to_thread(json.loads)`)
-  - [ ] `async def write_json_atomic(path: Path, data: dict, *, mode: int = 0o600)`
-  - [ ] `async def migrate_legacy(legacy: Path, current: Path)` для keycloak-settings
-- [ ] Мигрировать каскадно (по одному модулю за PR):
-  - [ ] PR1: `keycloak_admin.py` + system_config/_storage.py (высокая admin-нагрузка)
-  - [ ] PR2: `news_categories.py` + `email_settings.py` + `modules_config.py`
-  - [ ] PR3: `files_acl_persistence.py` + `files_shares_persistence.py` + `_tls.py`
-- [ ] Каждый модуль: characterization-тест текущего поведения, миграция, тест снова зелёный
+  | Сайт | Enclosing fn | Hot/Cold | Документация |
+  |---|---|---|---|
+  | `keycloak_admin._load/_save_kc_settings` | sync `def` → из async | **cold** (AdminDep, save-only) | admin-only |
+  | `system_settings/_tls.py:101,105` (`upload_tls_key`) | **inline в `async def`** | cold (upload cert, admin) | единственный реально inline-sync |
+  | `files_acl_persistence._write_raw:80-93` | sync `def` | cold + **уже `asyncio.to_thread`** (L106) | loop НЕ блокируется |
+  | `files_shares_persistence._write_raw:80-93` | sync `def` | cold + **уже `to_thread`** (L106) | loop НЕ блокируется |
+  | `system_config/_storage._save:37-45` | sync `def` | cold (admin save); **read — 60s TTL + Redis-версия** | hot-path уже закрыт кешем |
+  | `modules_config._save_modules:142-158` | sync `def` | cold (admin save); **read — 60s TTL + Redis** | hot-path уже закрыт кешом |
+  | `news_categories._load:79-83` | sync `def` → из async | **⚠️ WARM, БЕЗ кеша** | на каждом news-listing GET + каждом create/update news |
+  | `email_settings.read_email_settings:66-76` | sync `def` | **⚠️ WARM, БЕЗ кеша** | на каждом тике worker'ов + admin-путях |
+
+- **Корректировка оригинальной карточки (2026-08-09):**
+  - `email_settings.py:56` — это docstring, не I/O (реальный read L76, write L91/96)
+  - `modules_config.py:147` — это `try:`, не I/O (реальный `os.write` L148)
+  - «glob/rglob» — **не найдены** ни в одном из 8 файлов (ложное утверждение)
+  - `files_*_persistence.py` — **уже обёрнуты в `asyncio.to_thread`** (L106), loop не блокируется
+- **Реальная проблема:** из 8 сайтов только **2 тёплых и без кеша** (`news_categories._load`, `email_settings.read`) — sync disk-read + JSON-parse на каждом news-listing-запросе и каждом тике worker'а. Остальные 6 — cold admin-saves (не несут runtime-риска) либо уже offloaded.
+- **Сопутствующая находка:** в коде **5 независимых реализаций atomic-write** (общая `app/core/system_config/_storage.py:20-34::atomic_write` + 4 inline-дубликата: `news_categories._save`, оба `*_persistence._write_raw`, `modules_config._save_modules`). Ни одна не делает `fsync` (grep по `backend/app/` → 0). Общий хелпер text-only, без поддержки bytes/`chmod`.
+
+#### План действий (пересмотрен по отзыву внешнего аудитора 2026-08-09)
+> ⚠️ Аудитор верно указал: не вводить `aiofiles`-фасад вслепую, не делать `to_thread(path.exists)` (EAFP `try/except FileNotFoundError`), не гнаться за fsync для settings. Главная ценность — единая точка работы с settings + кеш для тёплых сайтов, а не механический перевод всего в async.
+
+- [ ] **PR1 (корень проблемы — кеш для тёплых сайтов):**
+  - [ ] `news_categories._load` → TTL-кеш (60s) + Redis-версионирование по образцу `load_modules_shared` (`modules_config.py:120-139`). `invalidate_news_categories_cache()` на save.
+  - [ ] `email_settings.read_email_settings` → аналогичный TTL-кеш + invalidate на save.
+  - [ ] Это убирает sync disk-read из тёплого пути (cache-miss раз в 60s на процесс).
+- [ ] **PR2 (DRY atomic-write — «единая точка»):**
+  - [ ] Расширить `atomic_write` (`_storage.py:20-34`): поддержка bytes + опциональный `mode` (0o600). **Без fsync** (осознанное решение — для settings durability-after-crash не критична, документировать в docstring).
+  - [ ] Заменить 4 inline-дубликата на общий хелпер.
+- [ ] **PR3 (оставшийся inline-sync — `_tls.py`):**
+  - [ ] `upload_tls_key` (L82, `async def`) — обернуть `write_bytes`+`os.chmod` в `await asyncio.to_thread(...)` (cold admin-path, но единственный真正 inline-sync в async fn; правка ради консистентности).
+- [ ] **НЕ делать в рамках H4** (вынести в отдельную low-priority задачу):
+  - `keycloak_admin`, `system_config/_storage`, `modules_config` write-пути — cold admin-saves, runtime-риска не несут; правка = чистый DRY без perf-выгоды.
+  - `files_*_persistence` — уже offloaded через `to_thread`.
 
 #### DoD
-- [ ] 0 sync file-операций в async-path (grep `Path\.\(write\|read\)\|os\.chmod\|json\.\(load\|dump\)` в async-функциях)
+- [ ] `news_categories._load` и `email_settings.read` под TTL-кешем — sync disk-read только на cache-miss (тест: 2 вызова подряд → 1 disk-read)
+- [ ] 4 inline atomic-write заменены на общий хелпер (grep `tempfile.mkstemp` в `app/` → только в хелпере)
 - [ ] `mypy .` + `pytest tests/unit` зелёные после каждого PR
-- [ ] Тест на `_save_kc_settings`: writes 0o600 mode
+- [ ] Characterization-тесты: семантика read/write unchanged, mode 0o600 сохранён
 
-- **Сложность:** M
-- **Риск регрессии:** Низкий — `to_thread` семантически эквивалентен. Стратегия: по одному модулю, characterization-тесты.
-- **Ожидаемый эффект:** Устранение latency-spikes; единая точка atomic-write; −120 LOC дублирующихся try/except.
-- **Статус:** [ ]
+- **Сложность:** M → **S** (после сужения scope: 2 кеша + DRY-дедуп вместо 12-точечного мигра)
+- **Риск регрессии:** Низкий. Кеш по образцу `load_modules_shared` (обкатан); `atomic_write` расширение backward-compatible.
+- **Ожидаемый эффект:** Sync disk-read уходит из тёплого пути news/email; −~60 LOC дублирующихся atomic-write; единая точка settings-I/O.
+- **Статус:** [x] 2026-08-09 — выполнено. **PR1:** TTL-кеш (60s) + invalidate-on-save для `news_categories._load` и `email_settings.read_email_settings` (deep-copy при возврате — мутирующие call-сайты не портят кеш; None кешируется — файл-отсутствует не стучит на диск). 8 characterization-тестов (4 news + 4 email: cache-hit-no-disk-read, invalidate-forces-reload, save-invalidates, deep-copy). **PR2:** `atomic_write(path, content: str|bytes, *, mode: int|None)` (chmod ДО rename — нет 0o644 window; без fsync — осознанное решение для settings, документировано). Заменены 5 inline-дубликатов: `news_categories._save`, `email_settings.save_email_settings`, `modules_config._save_modules`, `files_acl_persistence._write_raw`, `files_shares_persistence._write_raw`. Чистка неиспользуемых импортов (`os`, `tempfile`, `contextlib`). **PR3:** `_tls.py` — FS-операции (cert/key persist + delete) вынесены в sync-хелперы `_persist_cert`/`_persist_key`/`_delete_file` и обёрнуты в `await asyncio.to_thread(...)`. ci_lint ✓ (757 файлов, ruff+mypy+format чисто), 4324 unit ✓ (+8), tests.generated.md регенерирован.
 
 ---
 
@@ -441,72 +455,122 @@ XS-S правки, не требующие архитектурных решен
 
 ---
 
-### [H6] — `EventType` enum: заведён, но 0 call-сайтов `[verified]`
+### [H6] — `EventType` enum: заведён, но 0 call-сайтов `[re-verified 2026-08-09]`
 - **Категория:** Architecture / Code Smell (Speculative Generality)
 - **Приоритет:** 🟠 High
-- **Где:** `backend/app/services/audit_events.py:39` (класс `EventType`, ~80 members) vs. **147 call-сайтов** с литералами по `app/`
-- **Что найдено:** Документация модуля сама признаёт: *"call sites are intentionally NOT mass-migrated to `EventType.XXX` ... the test will catch any new literal that isn't registered here."* Enum создан как источник истины, но фактически не используется — защита идёт через unit-тест.
-- **Почему проблема:** Защита от typo держится на тесте, а не на типах. Поддержка ~80 members — мёртвая нагрузка. Enum отстаёт от реальности.
-- **Последствия:** Энтропия, ~150 LOC мёртвого реестра, ложное чувство типобезопасности.
+- **Где:** `backend/app/services/audit_events.py:39` (класс `EventType`, **115 members** в 17 доменных группах — уточнено: оригинал говорил «~80») vs. **27 call-сайтов `push_audit_event` / 142 строковых литерала** по `app/`
+- **Что найдено (верифицировано 2026-08-09):**
+  - `EventType` импортируется **ровно одним файлом во всём репозитории** — `tests/unit/test_audit_events.py:22`. **0 production-импортов** в `backend/app/`.
+  - Все 27 call-сайтов `push_audit_event` передают **100% строковые литералы** (`event_type="ticket.assigned"`), 0% — `EventType.XXX`.
+  - Документация модуля сама признаёт: *"call sites are intentionally NOT mass-migrated to `EventType.XXX` ... the test will catch any new literal that isn't registered here."*
+- **Почему проблема:** Мёртвая абстракция. Защита от typo держится на AST-тесте, а не на типах. Поддержка 115 members — нагрузка без выгоды. Enum отстаёт от реальности.
+- **Публичный контракт НЕ зависит от enum (проверено):**
+  - Endpoint `/audit/event-types` и фронтовый dropdown берут значения из `SELECT DISTINCT event_type FROM audit_log` (`audit_repo.py:67-72`), **не из enum**.
+  - SQL-фильтры `audit.py:46-48` — free-text от пользователя, не связаны с enum.
+  - `analytics.py` — `event_type` не используется (grep → 0).
+  - Frontend: `event_type?: string | null` (plain string), никакого TS-enum.
+  → **Удаление enum не вызывает ripple-эффекта.** Гипотеза «могут быть контракты внизу» для этой кодобазы не подтверждается.
+- **Тест `test_audit_events.py` — двунаправленный** (литералы ⊆ enum И enum ⊆ литералы), работает через AST-парсинг. При замене `EventType` → `frozenset[str]` нужно лишь итерировать set вместо класса — тривиальная адаптация.
 
-#### План действий ⚠️ требует решения команды
-- [ ] **Decision required:** выбрать стратегию
-  - **(A) Довести до конца** — каскадно заменить 147 литералов на `EventType.XXX` (mypy проверит). Сложность M.
-  - **(B) Удалить enum** — `audit_events.py` превращается в список для документации без `StrEnum`. Сложность S.
-- [ ] После решения — реализовать единым PR
+#### Решение команды (2026-08-09): **Вариант B — удалить `EventType`**
+> Обоснование: enum никогда не использовался как тип (0 импортов в production), публичный контракт через БД, защита через AST-тест сохраняется. Согласовано с внешним аудитором. Вариант A (довести 147 литералов) отклонён — нет практической выгоды при отсутствии downstream-потребителей.
 
-#### DoD (вариант A)
-- [ ] 0 литералов `event_type="..."` вне тестов
+#### План действий
+- [ ] В `audit_events.py`: заменить `class EventType(StrEnum)` → `KNOWN_EVENT_TYPES: frozenset[str] = frozenset({...})` (значения сохраняются 1:1)
+- [ ] Хелперы `is_known_event_type()`/`iter_event_types()`/`all_event_types()` — адаптировать под frozenset
+- [ ] `test_audit_events.py`: заменить итерацию по `EventType` на итерацию по `KNOWN_EVENT_TYPES`; тест `test_str_enum_backward_compat_with_string_literal` — удалить (утрачивает смысл); AST-проверка литералов остаётся как есть
+- [ ] Еженедельный runtime-drift (опционально, к отдельной задаче): `SELECT DISTINCT event_type FROM audit_log WHERE created_at > now() - interval '7 days'` vs `KNOWN_EVENT_TYPES` — алёрт на новые значения
+
+#### DoD
+- [ ] `EventType` класс удалён, `KNOWN_EVENT_TYPES: frozenset[str]` определён
+- [ ] `test_audit_events.py` адаптирован, проходит (включая AST-проверку литералов)
+- [ ] `grep -rn "EventType" backend/app/` → пусто
 - [ ] `mypy .` зелёный
-- [ ] `test_audit_events.py` проходит
+- [ ] Endpoint `/audit/event-types` возвращает то же (источник — БД, не трогается)
 
-#### DoD (вариант B)
-- [ ] `EventType` удалён, документация сохранена как список
-- [ ] `test_audit_events.py` адаптирован или удалён
-
-- **Сложность:** M (A) / S (B)
-- **Риск регрессии:** Низкий.
-- **Ожидаемый эффект:** Либо реальная типобезопасность, либо −150 LOC мёртвого кода.
-- **Статус:** [ ] ⚠️ blocked on team decision
+- **Сложность:** **S** (вариант B)
+- **Риск регрессии:** Очень низкий. Blast radius = `audit_events.py` + `test_audit_events.py`. Данные в БД не меняются.
+- **Ожидаемый эффект:** −115 LOC мёртвого StrEnum; честная семантика (frozenset + AST-тест = реальная защита от typo, без ложного чувства типобезопасности).
+- **Статус:** [x] 2026-08-09 — выполнено. `class EventType(StrEnum)` (115 members) → `KNOWN_EVENT_TYPES: frozenset[str]`. Хелперы `is_known_event_type`/`iter_event_types`/`all_event_types` адаптированы. `test_audit_events.py`: переименованы тесты под реестр (без `enum`/`EventType` в названиях); удалён `test_str_enum_backward_compat_with_string_literal` (утрачивает смысл без StrEnum); двунаправленная AST-проверка (литералы ⊆ реестр И реестр ⊆ литералы) сохранена — это и есть реальная защита от typo. `grep -rn "EventType" backend/app/` → пусто (единственный остаток `TestListEventTypes` в `test_audit_routes.py` — имя test-class'а, не ссылка на enum). ci_lint ✓, 5 audit_events тестов ✓, openapi не дрейфит (источник `/audit/event-types` — БД).
 
 ---
 
-### [H7] — Primitive Obsession: role/status/direction как голые строки
+### [H7] — Primitive Obsession: role/status/direction как голые строки `[re-verified 2026-08-09]`
 - **Категория:** Code Smell
 - **Приоритет:** 🟠 High
-- **Где:** ~50 мест:
+- **Где:** ~50 мест (точные строки в оригинальной карточке ниже сохранены для контекста):
   - Роли: `deps.py:222,249`, `feedback_service.py:246`, `photos.py:243`, `folders.py:122`, `helpdesk/media.py:43`, `links.py:40` (26 мест)
   - Статусы helpdesk: `tickets.py:179,373`, `digest.py:54`, `archive.py:45`, `tickets.py:72,777`, `ingress.py:489-497`
   - `direction`: `ingress.py:515`, `tickets.py:85`, `messages.py:109,211`
   - `source`: `tickets.py:72,92`, `messages.py:112,214`, `ingress.py:518,624`
-- **Что найдено:** В `schemas/helpdesk.py` уже есть `StrEnum`'ы `HelpdeskStatus`/`HelpdeskSource`/`HelpdeskDirection`, но service/api продолжают использовать литералы. Три параллельных источника: `_ACTIVE_STATUSES = ("new","open","pending")` в `tickets.py:179` vs `:373`, и `REQUESTER_REOPEN_STATUSES = frozenset({"pending"})` в `lifecycle.py`.
-- **Почему проблема:** Typo `"opens"` вместо `"open"` проходит mypy/ruff, ломает логику silently. Shotgun Surgery при добавлении статуса. Рассинхрон правил между машиной состояний и SQL.
-- **Последствия:** Регрессии при добавлении перехода/статуса.
 
-#### План действий
-- [ ] В `backend/app/core/constants.py` (или `models/enums.py`) определить enum'ы:
-  ```python
-  class UserRole(StrEnum): ADMIN = "admin"; EDITOR = "editor"; USER = "user"
-  class TicketStatus(StrEnum): NEW = "new"; OPEN = "open"; PENDING = "pending"; CLOSED = "closed"
-  class TicketDirection(StrEnum): INBOUND = "inbound"; OUTBOUND = "outbound"
-  class TicketSource(StrEnum): EMAIL = "email"; WEB = "web"
-  ```
-- [ ] Заменить литералы поэтапно (по домену):
-  - [ ] PR1: `lifecycle.py` + `tickets.py` (status/source/direction)
-  - [ ] PR2: роли (deps.py + 26 мест)
-  - [ ] PR3: helpdesk services (ingress/digest/archive/messages)
-- [ ] В `lifecycle.py` использовать enum для `AGENT_SETTABLE_STATUSES`/`REQUESTER_REOPEN_STATUSES` — единый источник
-- [ ] Между шагами: `pytest tests/unit/test_helpdesk_lifecycle.py` + `mypy .`
+> **🔴 КРИТИЧЕСКАЯ КОРРЕКТИРОВКА оригинальной карточки (2026-08-09):**
+> Оригинальный план предлагал `class UserRole(StrEnum): ... USER = "user"`. **Значения `"user"` в кодобазе НЕ СУЩЕСТВУЕТ.** Реальная третья роль — **`reader`**:
+> - DB CHECK `ck_users_role`: `role IN ('reader','editor','admin')` (`models/user.py:26`, миграция `001:50`)
+> - Pydantic `validate_role` принимает только `("reader","editor","admin")` (`schemas/user.py:149-153`)
+> - Default в модели — `"reader"` (`models/user.py:72`)
+> - `docs/roles-matrix.md:5` фиксирует: «Роли: reader / editor / admin»
+>
+> Дословная реализация оригинального плана **сломала бы DB-констрейнт и каждого reader'а**. Должно быть `READER = "reader"`.
+
+- **Что найдено (верифицировано 2026-08-09):**
+
+  **(1) Карта существующих enum'ов и источников истины:**
+
+  | Понятие | Источники в коде (файл:строка) | Кол-во |
+  |---|---|---|
+  | Helpdesk status | `schemas/helpdesk.py:23-27` (`HelpdeskStatus` enum), `lifecycle.py:17` (`AGENT_SETTABLE_STATUSES`), `lifecycle.py:23` (`REQUESTER_REOPEN_STATUSES`), `tickets.py:185` (`_ACTIVE_STATUSES`), `digest.py:52,54` (`ASSIGNED/UNASSIGNED_ACTIVE_STATUSES`), `schemas/helpdesk.py:98` (`Literal["open","pending","closed"]` в `TicketStatusIn`), DB CHECK `ck_helpdesk_status` | **7** |
+  | Helpdesk source | `schemas/helpdesk.py:30-32` (`HelpdeskSource` enum), DB CHECK `ck_helpdesk_source` | 2 |
+  | Helpdesk direction | `schemas/helpdesk.py:35-37` (`HelpdeskDirection` enum), DB CHECK `ck_helpdesk_messages_direction` | 2 |
+  | User role | DB CHECK `ck_users_role`, `schemas/user.py:149` (validator), `users_admin_service.py:50` (service guard), `docs/roles-matrix.md` — **enum'а НЕТ** | 3+ |
+  | Helpdesk message visibility | DB CHECK `ck_helpdesk_messages_visibility` (`public`/`internal`) — **пропущено в оригинальной карточке** | 1 |
+
+  **(2) Дубликаты (реальная цель H7, не создание enum'ов):**
+  - `_ACTIVE_STATUSES` определён **дважды**: `tickets.py:185` и `digest.py:54` (`UNASSIGNED_ACTIVE_STATUSES`)
+  - `REQUESTER_REOPEN_STATUSES` определён **дважды**: `lifecycle.py:23` и `messages.py:31` (`_REQUESTER_REOPEN_STATUSES`)
+
+  **(3) Роли — закрытый DB-набор (не open-set из Keycloak):**
+  - Роль **НЕ читается из JWT**: `_upsert_user` хардкодит `role="reader"` для новых KC-юзеров (`auth/_helpers.py:236`), `update_set` (L237-245) не включает `role` → Keycloak не может мутировать существующую роль.
+  - Enforced в 3 слоях: Pydantic-validator + service-guard + DB CHECK.
+  - ⚠️ Не путать с `users.keycloak_groups` (`models/user.py:84-86`, `ARRAY(Text)`) — это **open-set** для per-module ACL, синхронится из JWT `groups` claim (`deps.py:109-164`). Архитектурно отдельная сущность от `users.role`.
+  - → `UserRole(StrEnum)` с `READER/EDITOR/ADMIN` **валидно** для этой кодобазы.
+
+  **(4) SQLAlchemy-колонки — все `String(N)` + CHECK, 0 `Enum`-колонок.** Менять тип колонки НЕ нужно (и НЕ应该在 рамках H7).
+
+#### План действий (пересмотрен по отзыву внешнего аудитора 2026-08-09: «сначала консолидация, не создавать второй enum»)
+> Аудитор категорически прав: создавать `TicketStatus` рядом с `HelpdeskStatus` = 4-й источник истины. Сначала консолидировать существующее.
+
+- [ ] **Этап 0 — baseline (до любых изменений):**
+  - [ ] `pytest tests/unit/test_helpdesk_lifecycle.py` зелёный (обязательно — это тест статус-машины)
+  - [ ] `mypy .` + `check-drift.sh --check` → snapshot baseline
+- [ ] **Этап 1 — консолидация источников (без замены литералов):**
+  - [ ] Вынести `HelpdeskStatus`/`Source`/`Direction` в единое место (предпочтительно `app/models/enums.py` или оставить в `schemas/helpdesk.py`, но импортировать везде оттуда). **НЕ создавать параллельные `TicketStatus`/`TicketSource`/`TicketDirection`.**
+  - [ ] `_ACTIVE_STATUSES` (`tickets.py:185`) и `UNASSIGNED_ACTIVE_STATUSES` (`digest.py:54`) → одно определение через `HelpdeskStatus`
+  - [ ] `REQUESTER_REOPEN_STATUSES` (`lifecycle.py:23`) и `_REQUESTER_REOPEN_STATUSES` (`messages.py:31`) → одно определение
+  - [ ] `Literal["open","pending","closed"]` в `TicketStatusIn` (`schemas/helpdesk.py:98`) → выразить через `HelpdeskStatus`
+  - [ ] Тесты зелёные, **литералы на call-сайтах не трогаются**
+- [ ] **Этап 2 — `UserRole(StrEnum)`** с **`READER = "reader"`** (исправленный баг карточки):
+  - [ ] `class UserRole(StrEnum): READER = "reader"; EDITOR = "editor"; ADMIN = "admin"`
+  - [ ] `schemas/user.py:149` validator + `users_admin_service.py:50` guard → используют enum
+- [ ] **Этап 3 — замена литералов по доменам** (поэтапно, под зелёным lifecycle-тестом):
+  - [ ] PR: `lifecycle.py` + `tickets.py` (status/source/direction)
+  - [ ] PR: роли (`deps.py` + 26 мест)
+  - [ ] PR: helpdesk services (ingress/digest/archive/messages)
+- [ ] **Этап 4 (бонус) — `HelpdeskMessageVisibility` enum** (`public`/`internal`) — пропущено в оригинальной карточке, но кандидат на тот же паттерн
 
 #### DoD
-- [ ] `grep -rE '"(new|open|pending|closed|inbound|outbound|admin|editor|user)"' backend/app/ | grep -v test | grep -v schema` → пусто или обосновано
-- [ ] `_ACTIVE_STATUSES` определён один раз через enum
-- [ ] Все тесты зелёные
+- [ ] `HelpdeskStatus`/`Source`/`Direction` — единственный источник (нет параллельных `TicketStatus` и т.п.)
+- [ ] `_ACTIVE_STATUSES` и `REQUESTER_REOPEN_STATUSES` определены ровно по одному разу
+- [ ] `UserRole` имеет `READER = "reader"` (НЕ `USER = "user"`)
+- [ ] `grep -rE '"(reader|editor|admin|new|open|pending|closed|inbound|outbound|email|web)"' backend/app/ | grep -v test | grep -v schemas` → пусто или обосновано
+- [ ] SQLAlchemy-колонки остались `String(N)` (без `Enum`-типа)
+- [ ] `check-drift.sh --check` → OpenAPI не дрейфит (строки остались строками)
+- [ ] `test_helpdesk_lifecycle.py` зелёный до и после
 
 - **Сложность:** M
-- **Риск регрессии:** Низкий-средний (StrEnum value-equal строке, backward-compatible). Стратегия: ввести enum, прогнать mypy.
-- **Ожидаемый эффект:** Типобезопасность; единый источник истины; grep по типизированному символу.
-- **Статус:** [ ]
+- **Риск регрессии:** Средний. Главные риски: (1) создать 4-й источник истины [контр: консолидация первой], (2) сломать статус-машину [контр: lifecycle-тест заранее], (3) `USER="user"`-подобная опечатка значения [контр: значения сверять с DB CHECK]. StrEnum value-equal строке → backward-compatible на уровне данных.
+- **Ожидаемый эффект:** Единый источник истины для статусов/ролей; устранение 4 дубликатов; типобезопасность; grep по типизированному символу.
+- **Статус:** [ ] — план пересмотрен 2026-08-09 (исправлен баг `USER="user"`, добавлена консолидация первой, включён `visibility`).
 
 ---
 
@@ -1503,6 +1567,71 @@ XS-S правки, не требующие архитектурных решен
 | 2026-07-28 | Reydan (ZCode) | **C2 CI-fix: `user:` сломал compose-smoke.** После мёрджа коммита `12290e4` CI workflow `compose / up + healthcheck smoke` упал: redis unhealthy → каскадный fail migrations/backend. **Причина**: bind-mount `base_data/redis:/data` приходит в контейнер root-owned (`mkdir -p` в CI от root); compose-директива `user: "999:1000"` применяется к entrypoint целиком → redis-юзер не может создать `appendonlydir` в `/data` → `Can't open or create append-only dir appendonlydir: Permission denied`. Мой локальный smoke-тест это упустил (тестировал на свежем контейнере где `/data` уже redis-owned из образа). **Фикс**: убрал `user:` (entrypoint стартует от root), добавил `chown -R 999:1000 /data /tmp/redis.acl` в entrypoint (как `docker-entrypoint.sh` у postgres), затем `exec su redis -s /bin/sh -c 'exec redis-server ...'` для drop-privileges (gosu/su-exec в redis-alpine нет — только busybox `su`). Локальная верификация CI-сценария (root-owned volume): redis-server PID 1 работает от uid=999 (`/proc/<pid>/status` → Uid/Gid 999/1000), healthcheck → healthy, ACL/AOF создаются, `redis-cli ping` → PONG. Карточка C2 обновлена: сложность S→M, подход `user:` → entrypoint-chown. |
 | 2026-07-29 | Reydan (ZCode) | **Спринт 2: H9 (PII-маскинг) + окончание H8 (silent-except) — оба выполнены.** **[H9]** Аудит кодовой базы через subagent показал что задача **значительно меньше** чем в карточке: телефонов и ФИО в логах **фактически нет** (только в XLSX-выгрузке, не в `logger.*`), IP — единственный реальный вектор через `client_ip` contextvar (каждый HTTP-запрос) + uvicorn.access message. Критический риск: regex IP по всем строковым значениям сломал бы SSRF/Security-логи (`url=http://192.168.1.1/...` в bookmarks/email_images/collabora). **Реализация**: `mask_ipv4_last_octet` хелпер (`192.168.1.100` → `192.168.1.x`, сохраняет subnet для debug), применяется в `middleware/logging.py` ДО `bind_request_context(client_ip=...)` — источник маскируется, processor не нужен для contextvar. Для uvicorn.access message — IPv4-regex в `_mask_pii_value`, но **только для ключей** `event`/`message`/`msg` (`_PII_IPV4_VALUE_KEYS` whitelist) — URL/origin/blocked_ip НЕ маскируются. Телефон/ФИО НЕ добавлены (defensive-ключи впустую = мёртвый код). 13 новых тестов (5 параметризованных + 4 сценарных). Сложность M→S. **[H8]** AST-классификация ~58 мест с `except Exception`: ~21 стоило править (A+B), ~37 — сознательные fallback/cleanup. Правки: `meetings/recurrence.py` (ZoneInfo fallback — debug-лог), `nextcloud/webdav/_client.py` (version.json parse — сужен до ValueError/KeyError + debug), `keycloak_admin.py` get_sync_status (JSON parse — сужен + debug), `health.py` `_probe_optional_integrations` (3 probe-crashed — debug). `files_shares_persistence.py` и `keycloak_admin.py:143,152` — уже логируются (не silent). ruff BLE001 НЕ включён (отдельный PR). **Проверки**: ci_lint ✓ (698 файлов), 3907 unit ✓ (+12 от Спринта 1), 110 затронутых модулей ✓. Карточки H9/H8 обновлены, сложность H9 M→S. |
 | 2026-08-02 | Reydan (ZCode) | **Спринт 3 (Batch 3): M12 + M14 + M8 + M3 + M2 — все 5 выполнены.** Выбраны с пользователем как сбалансированный микс (2 frontend + 3 backend). Разведка через 3 параллельных subagent'ов вскрыла что карточки **переоценены**: M12/M14 проще чем в аудите (готовые composables/hooks уже существовали), а M9 (изначально в списке) оказался недооценённой (2-3 PR, риск регрессии на admin Keycloak) — заменён на M2 по решению пользователя. **[M12]** `useLinkIconUpload.ts` уже готов и идентичен inline-коду LinksTab → вынесены `useLinkColumns` + `useLinkForm`, LinksTab script setup 279→42 LOC, 15 новых тестов. **[M14]** `useAgentInboxQuery`/`useTakeTicketMutation` уже существовали — модернизирован хук под `MaybeRefOrGetter` (реактивные params), страница переписана на 3 query + invalidateQueries, 10 characterization-тестов адаптированы под VueQueryPlugin. **[M8]** `DatasetSpec` dataclass + реестр `_DATASETS` (single source of truth, add dataset = 1 запись вместо 5 правок), 7 новых тестов, 24 characterization зелёные. **[M3]** `enqueue_outbox_email_batch` (multi-row INSERT через unnest) + `_enqueue_many` заменили N циклов в meetings notifications, 6 новых тестов (50 recipients → 1 INSERT), 70 существующих адаптированы. **[M2]** миграция 091 (индексы `(created_at DESC, id DESC)`) + общий `_cursor_pagination.py` + `?cursor=` в audit/outbox (backward-compat offset) + `useCursorPager` (гибрид page→cursor) + 3 integration-теста (cursor==OFFSET, index scan, no-gaps). **Проверки**: ci_lint ✓ (736 файлов), 4113 backend unit ✓ (+6), 2185 frontend unit ✓ (+15), 3 integration ✓, i18n ✓ (2243 keys). Регенерированы openapi.json (+34), api-contracts/db-schema/tests.generated.md. Карточки обновлены до [x]. План фичи — `docs/wip/audit-batch-3.md`. |
+| 2026-08-09 | Reydan (ZCode) | **Re-верификация H4/H6/H7 после отзыва внешнего аудитора.** 3 параллельных subagent'а (backend / audit-contracts / enum-landscape+roles) проверили кодовую базу против карточек и тезисов аудитора. **Найдены критические расхождения оригинальных карточек с кодом** (все исправлены в карточках): (1) **[H4]** scope переоценен — из 8 сайтов только 2 тёплых без кеша (`news_categories._load`, `email_settings.read`); 6 cold admin-saves или уже offloaded через `to_thread`. Невреные ссылки строк (`email_settings.py:56` — docstring, `modules_config.py:147` — `try:`), несуществующие `glob/rglob`. Найдена общая `atomic_write` (`_storage.py:20-34`) + 4 inline-дубликата (все без fsync). План сужен: TTL-кеш для 2 тёплых сайтов + DRY-дедуп atomic-write (вместо 12-точечного async-мигра). Приняты упрощения аудитора: `to_thread` вместо aiofiles-settings, EAFP вместо `to_thread(path.exists)`, без fsync для settings. Сложность M→S. (2) **[H6]** гипотеза аудитора «проверить downstream-контракты» проверена — enum импортирует ТОЛЬКО тест (0 production-импортов), endpoint `/audit/event-types` и фронтовый dropdown берут значения из `SELECT DISTINCT event_type FROM audit_log` (не из enum), analytics `event_type` не использует. **Решение B принято** (удалить `EventType` → `KNOWN_EVENT_TYPES: frozenset[str]`); ripple-эффекта нет. (3) **[H7] 🔴 БАГ оригинальной карточки**: предлагалось `UserRole.USER = "user"`, но значения `"user"` в кодобазе НЕТ — реальная роль `reader` (DB CHECK `ck_users_role`, validator, `docs/roles-matrix.md`). Дословная реализация сломала бы констрейнт и каждого reader'а. Исправлено на `READER = "reader"`. Аудитор прав насчёт консолидации: НЕ создавать второй enum рядом с `HelpdeskStatus` — сначала консолидировать 7 источников (дубликаты `_ACTIVE_STATUSES` × 2, `REQUESTER_REOPEN_STATUSES` × 2, `Literal[...]`). Тезис аудитора «роли могут быть open-set из Keycloak» НЕ подтвердился для `users.role` (закрытый DB-набор, НЕ читается из JWT — `_helpers.py:236` хардкодит `reader`, update_set L237-245 опускает role; путаница с `users.keycloak_groups` — отдельная open-set колонка для ACL). Включён `HelpdeskMessageVisibility` (пропущен в оригинале). Карточки H4/H6/H7 + сводная таблица обновлены. Финальные решения зафиксированы ниже в разделе «Финальные решения по H4/H6/H7 (2026-08-09)». |
+| 2026-08-09 | Reydan (ZCode) | **Реализация H6 + H4 (ветка `feat/audit-h6-h4`).** **[H6]:** `class EventType(StrEnum)` (115 members) → `KNOWN_EVENT_TYPES: frozenset[str]`. Хелперы адаптированы; тест переименован (без `enum`/`EventType` в названиях); удалён утративший смысл `test_str_enum_backward_compat_with_string_literal`; двунаправленная AST-защита (литералы ⊆ реестр И реестр ⊆ литералы) сохранена. `grep EventType backend/app/` → пусто. **[H4-PR1]:** TTL-кеш (60s) + invalidate-on-save для `news_categories._load` и `email_settings.read_email_settings` (deep-copy при возврате; None кешируется). 8 characterization-тестов. **[H4-PR2]:** `atomic_write(path, content: str\|bytes, *, mode)` — chmod ДО rename (нет 0o644 window), без fsync (осознанно для settings, документировано). Заменены 5 inline-дубликатов (`news_categories._save`, `email_settings.save_email_settings`, `modules_config._save_modules`, `files_acl_persistence._write_raw`, `files_shares_persistence._write_raw`). Чистка импортов. **[H4-PR3]:** `_tls.py` FS-операции → sync-хелперы `_persist_cert`/`_persist_key`/`_delete_file` + `await asyncio.to_thread(...)`. **Проверки:** ci_lint ✓ (757 файлов, ruff+mypy+format), 4324 unit ✓ (+8), check-drift ✓ (openapi/types без изменений, tests.generated.md регенерирован). Карточки H4/H6 → [x]. |
+
+---
+
+## Финальные решения по H4 / H6 / H7 (2026-08-09, после отзыва внешнего аудитора + верификации кода)
+
+> Приняты после сверки тезисов аудитора с кодовой базой (3 параллельных субагента).
+> Порядок реализации: **H6 → H4 → H7** (от самого дешёвого/низкорискового к самому объёмному).
+
+### [H6] — УДАЛИТЬ `EventType` enum (Вариант B)
+**Решение:** заменить `class EventType(StrEnum)` → `KNOWN_EVENT_TYPES: frozenset[str]`.
+
+**Почему:** enum — мёртвая абстракция. Импортируется ровно одним файлом (`test_audit_events.py`), 0 production-импортов. Все 27 call-сайтов передают строковые литералы. Публичный контракт (`/audit/event-types` + фронтовый dropdown) берёт значения из `SELECT DISTINCT event_type FROM audit_log`, не из enum. Analytics `event_type` не использует. Ripple-эффекта нет — удаление бесплатно.
+
+**Что делать:**
+1. `audit_events.py`: `EventType` → `KNOWN_EVENT_TYPES: frozenset[str]`, хелперы адаптировать.
+2. `test_audit_events.py`: итерация по set вместо класса; удалить `test_str_enum_backward_compat_with_string_literal`; AST-проверка литералов остаётся.
+3. DoD: `grep -rn "EventType" backend/app/` → пусто; mypy зелёный; `/audit/event-types` возвращает то же (источник — БД).
+
+**Сложность/риск:** S / очень низкий. **1 PR.**
+
+---
+
+### [H4] — TTL-кеш для 2 тёплых сайтов + DRY atomic-write
+**Решение:** суженный scope. Из 8 сайтов только 2 реально тёплых и без кеша — `news_categories._load` (каждый news-listing GET) и `email_settings.read` (каждый тик worker'ов). Остальные 6 — cold admin-saves или уже offloaded через `to_thread`.
+
+**Почему не async-фасад по оригинальному плану:** аудитор прав — для небольших settings-файлов `aiofiles`-фасад избыточен, `to_thread(path.exists)` лишний, fsync для settings не нужен. Главная ценность (аудитор): единая точка работы с settings + кеш для тёплых сайтов. Кеш бьёт в корень (disk-read уходит в cache-miss раз в 60s), async-обёртка — в симптом.
+
+**Что делать (3 PR):**
+- **PR1:** TTL-кеш (60s) + Redis-версионирование по образцу `load_modules_shared` для `news_categories._load` и `email_settings.read`. Invalidate на save. → убирает sync disk-read из тёплого пути.
+- **PR2:** расширить общий `atomic_write` (`_storage.py:20-34`) — поддержка bytes + опциональный `mode`, без fsync (документировать). Заменить 4 inline-дубликата (`news_categories._save`, оба `*_persistence._write_raw`, `modules_config._save_modules`).
+- **PR3:** `_tls.py::upload_tls_key` (единственный真正 inline-sync в `async def`) → `await asyncio.to_thread(...)`.
+
+**Что НЕ делать в H4:** cold write-пути keycloak_admin/system_config/modules_config (runtime-риска не несут, только DRY) и `files_*_persistence` (уже offloaded). Вынести в отдельную low-priority задачу.
+
+**Сложность/риск:** S / низкий. Кеш по обкатанному образцу `load_modules_shared`.
+
+---
+
+### [H7] — Консолидация источников первой, затем enum'ы (с исправленным багом карточки)
+**Решение:** многоэтапный рефакторинг с упором на устранение дубликатов. **НЕ создавать** второй enum рядом с существующими.
+
+**🔴 Критическое исправление оригинальной карточки:** предлагалось `UserRole.USER = "user"` — этого значения в кодобазе НЕТ. Реальная роль — `reader` (DB CHECK `ck_users_role`, validator, `docs/roles-matrix.md`). Должно быть `READER = "reader"`.
+
+**Верификация тезиса аудитора о ролях:** тезис «роли могут быть open-set из Keycloak» НЕ подтвердился для `users.role` — это закрытый DB-набор `{reader, editor, admin}`, enforced в 3 слоях, НЕ читается из JWT. Аудитор перепутал с `users.keycloak_groups` (отдельная open-set колонка для per-module ACL). → `UserRole(StrEnum)` с `READER/EDITOR/ADMIN` валиден.
+
+**Карта источников (проблема = дубликаты, не отсутствие enum'ов):**
+- `_ACTIVE_STATUSES` определён **дважды** (`tickets.py:185`, `digest.py:54`)
+- `REQUESTER_REOPEN_STATUSES` определён **дважды** (`lifecycle.py:23`, `messages.py:31`)
+- `HelpdeskStatus`/`Source`/`Direction` уже есть в `schemas/helpdesk.py:23-37`
+- `Literal["open","pending","closed"]` в `TicketStatusIn` — hand-written subset
+- `HelpdeskMessageVisibility` (`public`/`internal`) — пропущен в оригинальной карточке
+- Роли: 3+ источника (DB CHECK, validator, service-guard), enum'а нет
+
+**Что делать (поэтапно):**
+- **Этап 0 (baseline):** `test_helpdesk_lifecycle.py` зелёный + `check-drift.sh --check` snapshot.
+- **Этап 1 (консолидация, без замены литералов):** единое место для `HelpdeskStatus`/`Source`/`Direction`; дубликаты `_ACTIVE_STATUSES`/`REQUESTER_REOPEN_STATUSES` → одно определение через enum; `Literal[...]` → через enum.
+- **Этап 2:** `UserRole(StrEnum)` с `READER = "reader"` (НЕ `user`); validator + service-guard используют enum.
+- **Этап 3:** замена литералов по доменам (lifecycle+tickets → роли → helpdesk services), под зелёным lifecycle-тестом.
+- **Этап 4 (бонус):** `HelpdeskMessageVisibility`.
+
+**DoD:** колонки остаются `String(N)` (без `Enum`-типа, CHECK в БД — реальный source of truth); OpenAPI не дрейфит; lifecycle-тест зелёный до/после.
+
+**Сложность/риск:** M / средний. Главные риски: создать 4-й источник [контр: консолидация первой], сломать статус-машину [контр: lifecycle-тест заранее], опечатка значения [контр: сверять с DB CHECK].
 
 ---
 

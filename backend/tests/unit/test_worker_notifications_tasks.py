@@ -18,6 +18,16 @@ import pytest
 from app.worker.tasks import notifications as nt
 
 
+@pytest.fixture(autouse=True)
+def _clear_email_settings_cache():
+    """Сбрасывать TTL-кеш email-settings между тестами (audit [H4])."""
+    from app.services.email_settings import invalidate_email_settings_cache
+
+    invalidate_email_settings_cache()
+    yield
+    invalidate_email_settings_cache()
+
+
 class TestGetSmtpConfig:
     def test_missing_file_returns_defaults(self, tmp_path):
         fake_path = tmp_path / "nonexistent.json"
