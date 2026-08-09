@@ -7688,6 +7688,7 @@
         "type": "object"
       },
       "KeycloakSettingsIn": {
+        "description": "Входная модель для PUT (секреты опциональны — keep/clear/update).",
         "properties": {
           "keycloak_realm": {
             "default": "company",
@@ -7738,6 +7739,7 @@
         "type": "object"
       },
       "KeycloakSettingsOut": {
+        "description": "Выходная модель (секреты замаскированы флагами ``*_set``).",
         "properties": {
           "keycloak_realm": {
             "title": "Keycloak Realm",
@@ -17716,7 +17718,7 @@
     },
     "/api/v1/admin/keycloak/test/oidc": {
       "post": {
-        "description": "Проверяет OIDC-клиент: discovery-эндпоинт + client_credentials токен.",
+        "description": "Проверить OIDC-клиент: discovery + client_credentials токен (делегат probe).",
         "operationId": "test_oidc_connection_api_v1_admin_keycloak_test_oidc_post",
         "parameters": [
           {
@@ -17768,7 +17770,7 @@
     },
     "/api/v1/admin/keycloak/test/sync": {
       "post": {
-        "description": "Проверяет sync-клиент: получает токен и пробует прочитать 1 пользователя из Admin API.\n\nЕсли в теле запроса переданы sync_client_id / sync_client_secret — они используются для теста\n(позволяет проверить новые credentials до сохранения). Иначе читаются из файла настроек.",
+        "description": "Проверить sync-клиент: токен + чтение 1 пользователя из Admin API (делегат probe).\n\nТело опционально — позволяет проверить новые credentials до сохранения.",
         "operationId": "test_sync_connection_api_v1_admin_keycloak_test_sync_post",
         "parameters": [
           {

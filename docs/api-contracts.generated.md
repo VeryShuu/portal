@@ -1,5 +1,5 @@
 <!-- AUTO-GENERATED — do not edit manually. Run: cd backend && python -m scripts.generate_api_contracts_doc --output ../docs/api-contracts.generated.md -->
-<!-- Generated: 2026-08-09 19:37 UTC -->
+<!-- Generated: 2026-08-09 21:17 UTC -->
 
 # API Contracts (auto-generated)
 
@@ -3607,7 +3607,7 @@ Content-Type: `application/json` — schema: `KeycloakSettingsIn`
 
 **Test Oidc Connection**
 
-Проверяет OIDC-клиент: discovery-эндпоинт + client_credentials токен.
+Проверить OIDC-клиент: discovery + client_credentials токен (делегат probe).
 
 **Parameters**
 
@@ -3626,10 +3626,9 @@ Content-Type: `application/json` — schema: `KeycloakSettingsIn`
 
 **Test Sync Connection**
 
-Проверяет sync-клиент: получает токен и пробует прочитать 1 пользователя из Admin API.
+Проверить sync-клиент: токен + чтение 1 пользователя из Admin API (делегат probe).
 
-Если в теле запроса переданы sync_client_id / sync_client_secret — они используются для теста
-(позволяет проверить новые credentials до сохранения). Иначе читаются из файла настроек.
+Тело опционально — позволяет проверить новые credentials до сохранения.
 
 **Parameters**
 
