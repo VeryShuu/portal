@@ -223,7 +223,7 @@ async def callback(
     try:
         from app.services.helpdesk.tickets import link_guest_tickets
 
-        await link_guest_tickets(db, user_id=user.id, email=user.email)
+        await link_guest_tickets(db, user_id=user.id, email=user.email, full_name=user.full_name)
     except Exception as exc:
         from app.core.logging import get_logger as _get_logger
 

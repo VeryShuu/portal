@@ -35,6 +35,7 @@ def _make_ticket(
     description: str = "",
     status: str = "new",
     requester_email: str = "user@portal.local",
+    requester_name: str = "Тест",
 ) -> HelpdeskTicket:
     """Создать HelpdeskTicket для FTS-теста.
 
@@ -50,7 +51,7 @@ def _make_ticket(
         status=status,
         source="web",
         requester_email=requester_email,
-        requester_name="Тест",
+        requester_name=requester_name,
         last_activity_at=datetime.now(UTC),
     )
 
@@ -204,6 +205,56 @@ class TestEmailIlike:
         # Домен.
         matched_domain = await _fetch_matched_ids(real_db_session, "company.local")
         assert t.id in matched_domain
+
+
+# ─── tests: поиск по имени/фамилии заявителя (миграция 094) ───────────────────
+
+
+class TestRequesterNameSearch:
+    async def test_finds_ticket_by_requester_name(self, real_db_session):
+        """requester_name входит в search_tsvector — поиск по фамилии находит тикет."""
+        t1 = _make_ticket(
+            subject="Доступ",
+            description="нужен доступ к CRM",
+            requester_name="Иван Борисов",
+        )
+        t2 = _make_ticket(
+            subject="Доступ",
+            description="нужен доступ к 1С",
+            requester_name="Пётр Смирнов",
+        )
+        real_db_session.add_all([t1, t2])
+        await real_db_session.flush()
+
+        matched = await _fetch_matched_ids(real_db_session, "Борисов")
+        assert t1.id in matched
+        assert t2.id not in matched
+
+    async def test_requester_name_case_insensitive(self, real_db_session):
+        """Регистронезависимый поиск по имени заявителя."""
+        t = _make_ticket(
+            subject="Заявка",
+            description="текст",
+            requester_name="Анна Сидорова",
+        )
+        real_db_session.add(t)
+        await real_db_session.flush()
+
+        matched = await _fetch_matched_ids(real_db_session, "сидорова")
+        assert t.id in matched
+
+    async def test_requester_name_null_still_searchable_by_other_fields(self, real_db_session):
+        """Тикет с requester_name=None не валит поиск — находится по subject через FTS."""
+        t = _make_ticket(
+            subject="VPN проблема",
+            description="не подключается",
+            requester_name="",
+        )
+        real_db_session.add(t)
+        await real_db_session.flush()
+
+        matched = await _fetch_matched_ids(real_db_session, "vpn")
+        assert t.id in matched
 
 
 # ─── tests: комбинация с фильтрами ───────────────────────────────────────────
