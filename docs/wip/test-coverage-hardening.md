@@ -188,6 +188,39 @@ i18n-проверки, синхронизация `docs/testing.md` с акту�
   - ruff/mypy/format — clean (672 файла)
   - Все 10 ранее падавших тестов локально PASS
 
+### Этап 17 — Diff-coverage гейт (blocking, ≥80% нового кода)
+
+**Контекст**: Абсолютный coverage-гейт (`fail_under=75` backend, vitest-thresholds
+frontend) меряет всю базу целиком. Это не защищает от регресса: можно добавить
+непокрытый код, общий % всё равно пройдёт порог. Diff-coverage решает это —
+проверяет только новые/изменённые строки из `git diff origin/main`.
+
+**Решения** (согласованы):
+- Порог 80% (реалистично: большая часть нового кода и так покрывается).
+- Hard — блокирует мёрдж сразу (17-й обязательный чек).
+- Инструмент: `diff-cover` (Python) для обоих контуров (backend coverage.xml =
+  Cobertura-XML от coverage.py; frontend lcov.info от vitest coverage-v8; diff-cover
+  поддерживает оба формата).
+- Срабатывание: только на `pull_request` (на push в main нет базы).
+
+- [x] 17.0 Проверка главный риск — **путь-мэтчинг** diff-cover. lcov хранит
+  `SF:src/...`, coverage.xml хранит `filename="app/..."` (оба относительно
+  директории контура), а `git diff` отдаёт `frontend/src/...` / `backend/app/...`
+  (относительно repo-root). `diff-cover` (`GitPathTool.relative_path`) приводит
+  git-пути к виду относительно CWD → **решение: запускать из директории контура**
+  (`working-directory: backend` / `frontend`). Подтверждено синтетическими
+  тестами на обоих контурах (см. «Грабли / контекст» ниже).
+- [x] 17.1 `backend/pyproject.toml`: `diff-cover>=9.2.0,<10` в `[dev]`.
+- [x] 17.2 `scripts/diff-cover.sh`: переписан под оба контура (`backend|frontend`),
+  запуск из директории контура, `THRESHOLD` / `COMPARE_BRANCH` env-override,
+  shellcheck-clean.
+- [x] 17.3 `.github/workflows/ci.yml`: новый job `diff-coverage` (needs:
+  `backend-coverage` + `frontend-unit`, `if: pull_request`, `fetch-depth: 0` +
+  `git fetch origin main`). Запускает diff-cover дважды — из `backend/` и `frontend/`.
+- [x] 17.4 `docs/testing.md`: CI-таблица обновлена (строка `diff-coverage`).
+- [x] 17.5 `AGENTS.md`: 16→17 обязательных чеков + локальная команда.
+- [ ] 17.6 Branch protection (вне репо): после мёрджа добавить `coverage / diff-coverage gate (≥80% new code)` в required status checks через GH Settings → Branches → main.
+
 ## Грабли / контекст
 
 - **Bash пайпы в plan mode блокируются хуком** — использовать простые команды или `/usr/bin/grep` с одним аргументом без `|`.
@@ -209,4 +242,7 @@ i18n-проверки, синхронизация `docs/testing.md` с акту�
 - **PG `NOW()` = transaction-start time, не wall-clock**: `server_default=NOW()` для `created_at` фиксируется на старте текущей транзакции (PG `transaction_timestamp()`). В тестах с savepoint-сессией (одна транзакция на весь тест) **все** сообщения получают одинаковое `created_at`. Любая семантика «новее чем» (`created_at > last_seen_at`) ломается. Решения: либо явный `created_at=now` из Python (как сделали мы), либо `clock_timestamp()` (real-time wall clock). Для прод-маршрута (разные HTTP-запросы → разные транзакции) проблема не проявляется.
 - **Hunspell stemming для FTS требует полное слово, не подстроку**: `websearch_to_tsquery('russian_hunspell', 'Заявк')` даёт лексему `'заявк'`, а `to_tsvector('Заявка')` → `'заявка'`. Они не совпадают (hunspell-нормализация query/tsvector асимметрична для усечённых форм). Для substring-поиска использовать `ilike`, не FTS.
 - **FastAPI 0.137+ сломал интроспекцию `app.routes`**: PR fastapi/fastapi#15785 (для starlette 1.x) изменил `include_router` — вместо flatten дочерних маршрутов в `app.routes` теперь лежат `_IncludedRouter` обёртки без `path`/`routes`, но с `original_router.routes`. Любой код, итерирующий `app.routes` и читающий `route.path`/фильтрующий по `isinstance(route, APIRoute)` — ломается. В pyproject `fastapi>=0.115.0,<0.140.0` → pip резолвил 0.137+ на CI, но 0.136 локально → расхождение. Решение: рекурсивный unwrap через duck-typing (`not hasattr(route, "path") and hasattr(route, "original_router")`), без хардкода имени класса. Если при апгрейде fastapi всплывут новые подобные баги в `prometheus_fastapi_instrumentator` или `fastapi_limiter` — там нужен либо apgrade библиотеки, либо аналогичный monkey-patch.
+- **diff-cover путь-мэтчинг (главный риск этапа 17)**: lcov хранит `SF:src/...`, coverage.xml — `filename="app/..."` (оба относительно директории контура), а `git diff` отдаёт пути относительно repo-root (`frontend/src/...`, `backend/app/...`). diff-cover (`GitPathTool.relative_path`) приводит git-пути к виду относительно CWD: `relative_path('frontend/src/App.vue')` при `cwd=frontend/` → `src/App.vue` (матчит lcov). **Решение: запускать diff-cover ИЗ директории контура** (`working-directory: backend` / `frontend` в CI; `cd backend &&` / `cd frontend &&` локально). Подтверждено синтетическими тестами: контролируемый lcov+diff-file с известной непокрытой строкой → diff-cover корректно сообщает "Coverage is below 80%", exit 1. `--src-roots` для lcov НЕ помогает (не влияет на SF-парсинг). Если вместо lcov использовать cobertura-XML (frontend тоже умеет) — мэтчинг работает аналогично, но lcov компактнее.
+- **diff-cover exit code ловушка**: `--fail-under N` возвращает exit 1 при провале порога, но **только** если получить exit code самого `diff-cover`, а не downstream-команды пайпа. `diff-cover ... | tail; echo $?` поймает exit code `tail` (=0), не `diff-cover`. В CI (прямая команда без пайпа) — корректно; в локальных скриптах/тестах — проверять через `PIPESTATUS[0]` или без пайпа.
+- **download-artifact распаковывает содержимое path-директории в корень dest**: артефакт `frontend-coverage` загружается с `path: frontend/coverage` (ci.yml:145) → после `download-artifact` в `cov-frontend/` файлы лежат **в корне** (`cov-frontend/lcov.info`, `cobertura-coverage.xml`), а НЕ в `cov-frontend/coverage/lcov.info`. Аналогично `backend-coverage` (`path: backend/coverage.xml` + `backend/htmlcov`) → `cov-backend/coverage.xml`. На первом CI-прогоне diff-coverage упал с `FileNotFoundError: '../cov-frontend/coverage/lcov.info'` — был неверный путь. Правильно: `../cov-frontend/lcov.info`. Урок: всегда сверять структуру распакованного артефакта с тем, как его `path` объявлен в upload-шаге.
 - **Воспроизведение CI-специфичных багов локально**: pyproject.toml использует диапазоны версий (`>=X,<Y`), pip резолвит разные версии в CI vs локально (особенно если локально был старый кэш). Перед диагностикой «работает локально, падает в CI» — проверять версии explicitly: `python -c "import fastapi, starlette; print(fastapi.__version__, starlette.__version__)"` и при расхождении имитировать CI через `pip install --break-system-packages 'fastapi>=0.137'`.
