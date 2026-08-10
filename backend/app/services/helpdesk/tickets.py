@@ -676,11 +676,22 @@ async def delete_ticket(db: AsyncSession, *, ticket: HelpdeskTicket) -> int:
 # ---------------------------------------------------------------------------
 
 
-async def link_guest_tickets(db: AsyncSession, *, user_id: uuid.UUID, email: str) -> int:
+async def link_guest_tickets(
+    db: AsyncSession,
+    *,
+    user_id: uuid.UUID,
+    email: str,
+    full_name: str | None = None,
+) -> int:
     """Привязать гостевые тикеты (``requester_user_id IS NULL``) с совпадающим
     email к только что материализованному аккаунту (ТЗ §4.5). Матчинг по
     ``LOWER(requester_email) = LOWER(user.email)`` (bind-параметр, не
     интерполяция). Идемпотентно: повторные логины — no-op.
+
+    Дополнительно дозаполняет ``requester_name`` снимка из ``full_name``, если
+    он пуст (гостевые email-заявки без display-name в ``From``). Без этого такие
+    тикеты не находятся по ФИО в агентском инбоксе — ``search_tsvector``
+    (миграция 094) индексирует снимок, а он оставался NULL.
 
     Вызывается из OIDC-callback после ``_upsert_user`` (до commit), в local.py
     точки вызова нет (там логин без upsert'а). Возвращает кол-во привязанных
@@ -695,4 +706,6 @@ async def link_guest_tickets(db: AsyncSession, *, user_id: uuid.UUID, email: str
     tickets = res.scalars().all()
     for t in tickets:
         t.requester_user_id = user_id
+        if not t.requester_name and full_name:
+            t.requester_name = full_name
     return len(tickets)

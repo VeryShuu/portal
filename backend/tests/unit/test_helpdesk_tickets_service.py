@@ -798,6 +798,51 @@ class TestLinkGuestTickets:
 
         assert t1.requester_user_id is not None
 
+    @pytest.mark.asyncio
+    async def test_backfills_empty_requester_name_from_full_name(self):
+        """Пустой снимок requester_name дозаполняется из full_name — чтобы
+        search_tsvector (миграция 094) индексировал ФИО гостевой email-заявки
+        без display-name в From (edge case, иначе не находится по имени)."""
+        t1 = _ticket(requester_user_id=None, requester_email="guest@example.com")
+        t1.requester_name = None  # email-заявка без display-name
+        t2 = _ticket(requester_user_id=None, requester_email="guest@example.com")
+        t2.requester_name = ""  # edge case: пустая строка
+        db = _db_returning_scalars_all_plain([t1, t2])
+
+        await svc.link_guest_tickets(
+            db, user_id=uuid.uuid4(), email="guest@example.com", full_name="Иван Борисов"
+        )
+
+        assert t1.requester_name == "Иван Борисов"
+        assert t2.requester_name == "Иван Борисов"
+
+    @pytest.mark.asyncio
+    async def test_does_not_overwrite_existing_requester_name(self):
+        """Существующий снимок requester_name не перезаписывается — сохраняем
+        оригинальный display-name (snapshot-at-write + live-fallback-at-read)."""
+        t = _ticket(requester_user_id=None, requester_email="guest@example.com")
+        t.requester_name = "Борис Андреев"  # display-name из From
+        db = _db_returning_scalars_all_plain([t])
+
+        await svc.link_guest_tickets(
+            db, user_id=uuid.uuid4(), email="guest@example.com", full_name="Борис Борисович Андреев"
+        )
+
+        assert t.requester_name == "Борис Андреев"  # не перезаписан
+
+    @pytest.mark.asyncio
+    async def test_no_full_name_keeps_requester_name_as_is(self):
+        """full_name=None (обратная совместимость) — снимок не меняется."""
+        t = _ticket(requester_user_id=None, requester_email="guest@example.com")
+        t.requester_name = None
+        db = _db_returning_scalars_all_plain([t])
+
+        await svc.link_guest_tickets(
+            db, user_id=uuid.uuid4(), email="guest@example.com", full_name=None
+        )
+
+        assert t.requester_name is None  # без full_name — без дозаполнения
+
 
 # ── create_ticket — инвариант первого сообщения + commit ────────────────────
 

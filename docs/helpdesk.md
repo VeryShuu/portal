@@ -109,7 +109,7 @@
 | `last_activity_at` | `TIMESTAMPTZ` NOT NULL default `NOW()` | Обновляется при любом сообщении/изменении |
 | `references_archived_ticket_number` | `BigInteger` NULL | Если тикет — продолжение архивного (не FK) |
 | `created_at` / `updated_at` | `TIMESTAMPTZ` | Метки |
-| `search_tsvector` | `TSVECTOR` NULL | Generated STORED: `to_tsvector('russian_hunspell', subject \|\| description)` (миграция `078`). Поиск инбокса — `search_tsvector @@ websearch_to_tsquery(...)`, GIN `idx_helpdesk_tickets_fts`. |
+| `search_tsvector` | `TSVECTOR` NULL | Generated STORED: `to_tsvector('russian_hunspell', subject \|\| description \|\| requester_name)` (миграция `078`, расширение `094` — добавлен `requester_name` для поиска по ФИО инициатора). Поиск инбокса — `search_tsvector @@ websearch_to_tsquery(...)`, GIN `idx_helpdesk_tickets_fts`. |
 
 Индексы: `status`; partial `assignee`/`requester`/`ref_archive` (WHERE NOT NULL); `LOWER(requester_email)`; `last_activity DESC`; partial `open_list` (status IN new/open/pending); GIN `idx_helpdesk_tickets_fts` (FTS). `CHECK` на `status` и `source`.
 
@@ -364,11 +364,11 @@ Retry-классификация (отличается от email): 429/5xx/time
 - **Конфигурация** — `websearch_to_tsquery('russian_hunspell', q)` (единый для портала regconfig, как в KB-статьях/новостях). Поддерживает морфологию (hunspell + stemming: «доступ» находит «доступа»/«доступом»), регистронезависимость, латиницу в русском тексте (VPN/Outlook).
 - **Операторы websearch** (как в Google): `"точная фраза"`, `OR`, `-исключение`. Устойчив к мусору (не падает на спецсимволах, в отличие от `to_tsquery`).
 - **Где ищет** (`_agent_filter_conditions`, OR-комбинация):
-  1. `subject` + `description` тикета — через `search_tsvector @@ websearch_to_tsquery(...)` (GIN `idx_helpdesk_tickets_fts`);
+  1. `subject` + `description` + **`requester_name`** (ФИО инициатора) тикета — через `search_tsvector @@ websearch_to_tsquery(...)` (GIN `idx_helpdesk_tickets_fts`). `requester_name` добавлен в выражение tsvector миграцией `094` — инбокс находит тикеты по фамилии/имени заявителя (раньше не находил). Морфология hunspell на ФИО ограничена (нет stemming для фамилий), но точное совпадение и словоформы ищет. Email-заявки без display-name в `From` (голый `user@host`) имеют `requester_name IS NULL` — по имени не находятся, пока аккаунт не сматчится; при линковке гостевого тикета (`link_guest_tickets`) снимок дозаполняется из `users.full_name`;
   2. **тела ответов** (`helpdesk_messages.body_text`) — EXISTS-подзапрос `body_tsvector @@ websearch_to_tsquery(...)` (GIN `idx_helpdesk_messages_fts`). Находит «мы же решали такое полгода назад» по содержимому переписки;
   3. `requester_email` — `ilike` (адреса плохо матчатся tsquery: `@`/точки/домены не нормализуются).
 - **Сортировка** — без изменений, `last_activity_at DESC` (FTS только фильтрует, не ранжирует по `ts_rank` — привычно для инбокса, свежие сверху).
-- Generated STORED tsvector-колонки вычисляются БД автоматически при вставке/обновлении `subject`/`description`/`body_text` — триггеров и ручного обновления нет.
+- Generated STORED tsvector-колонки вычисляются БД автоматически при вставке/обновлении `subject`/`description`/`requester_name`/`body_text` — триггеров и ручного обновления нет.
 - **Не входит**: глобальный поиск портала (Cmd-K) helpdesk не подключён (фронт `useGlobalSearch` идёт тремя отдельными запросами; подключение тикетов в палитру — отдельная UI-задача); поиск по архиву (`helpdesk_tickets_archive`, jsonb-снимок).
 
 ---
