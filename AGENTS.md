@@ -209,19 +209,39 @@ cd backend && ./scripts/ci_lint.sh
   git add -A && git commit -m "<type>(<module>): <что сделано>"
   git push -u origin <branch>
   gh pr create --base main --title "..." --body "..."
-  gh pr checks --watch                       # дождаться 16 обязательных чеков
+  gh pr checks --watch                       # дождаться 17 обязательных чеков
   ```
 - **Процесс (пользователь):** видит в GitHub UI `🟢 All checks passed` → нажимает
   **Merge**. Если `🔴 failed` — не мёрджит, агент чинит и пушит в **ту же ветку**
   (`git push`, без нового PR — CI перезапускается автоматически).
-- **16 обязательных чеков** (без зелёного мёрдж заблокирован): `backend / ruff + mypy`,
+- **17 обязательных чеков** (без зелёного мёрдж заблокирован): `backend / ruff + mypy`,
   `backend / pytest unit + security`, `backend / pytest integration`, `frontend / eslint + tsc + i18n + build`,
   `frontend / vitest`, `frontend / playwright e2e`, `compose / up + healthcheck smoke`,
   `openapi / drift check`, `frontend / types_gen drift check`, `docs / tests.generated.md drift check`,
   `quality / complexity + duplication + dead-code`, `secrets / gitleaks`,
   `screenshot-service / playwright base image sync`, `screenshot-service / pytest unit`,
-  `shellcheck / *.sh`, `bats / tests/setup`. Информационные (не блокируют): `deps / pip-audit + npm audit`,
+  `shellcheck / *.sh`, `bats / tests/setup`,
+  `coverage / diff-coverage gate (≥80% new code)` — новый/изменённый код в PR обязан быть покрыт ≥80% (см. ниже «Diff-coverage гейт»). Информационные (не блокируют): `deps / pip-audit + npm audit`,
   `trivy / filesystem scan`, `backend / merged coverage`.
+
+> **Diff-coverage гейт** (с 2026-08-10): CI job `diff-coverage` проверяет, что
+> **только новый/изменённый** код в PR (строки из `git diff origin/main`) покрыт
+> тестами ≥80%. В отличие от абсолютного покрытия (`backend / merged coverage`,
+> который меряет всю базу целиком и лишь информационный), этот гейт блокирующий —
+> нельзя добавить непокрытый код, если общий % всё равно проходит порог. Оба
+> контура: backend (`coverage.xml` от coverage.py) + frontend (`lcov.info` от
+> vitest). Локальная проверка перед пушем:
+> ```bash
+> # сгенерировать отчёты (если ещё нет):
+> cd backend && pytest tests/unit --cov=app --cov-report=xml && cd ..
+> cd frontend && npm run test:coverage && cd ..
+> # проверить diff-coverage (по умолчанию threshold=80, compare=origin/main):
+> ./scripts/diff-cover.sh backend
+> ./scripts/diff-cover.sh frontend
+> ```
+> Грабли: `diff-cover` обязан запускаться **из директории контура** (скрипт
+> делает это сам) — иначе путь-мэтчинг ломается. Branch protection: добавить
+> `coverage / diff-coverage gate (≥80% new code)` в required status checks.
 - **Грабли (важно):** если меняешь состав тестов (add/remove) — перегенерируй
   `docs/tests.generated.md` (`bash scripts/list_tests.sh`), иначе drift-check упадёт
   и заблокирует мёрдж. То же для `openapi.json` (`python scripts/export_openapi.py`)
@@ -317,7 +337,7 @@ cd backend && ./scripts/ci_lint.sh
 
 ### Общее
 - **Definition of Done**: код + тест (unit обязательно, integration если есть API/БД) + lint pass + typecheck pass + i18n проверен (frontend).
-- **Перед коммитом** (backend): `./scripts/ci_lint.sh` (ruff+mypy в точном CI-окружении, см. §«CI-эквивалент локально») + `pytest tests/unit`. Не полагайся на локальные ruff/mypy — их версии могут расходиться с CI (урок 2026-07-24). Frontend: `npm run lint:check && npm run typecheck && npm run test:unit && npm run i18n:check`.
+- **Перед коммитом** (backend): `./scripts/ci_lint.sh` (ruff+mypy в точном CI-окружении, см. §«CI-эквивалент локально») + `pytest tests/unit`. Не полагайся на локальные ruff/mypy — их версии могут расходиться с CI (урок 2026-07-24). Frontend: `npm run lint:check && npm run typecheck && npm run test:unit && npm run i18n:check`. **Новый код в PR — покрыть ≥80%**: локально `./scripts/diff-cover.sh backend` / `frontend` (см. §«Работа между сессиями» → «Diff-coverage гейт»).
 - **Миграции zero-downtime**: добавление колонок — `nullable=True` сначала, бэкфилл данных, затем `NOT NULL` отдельной миграцией.
 
 ---

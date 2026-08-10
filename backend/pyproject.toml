@@ -70,6 +70,10 @@ dev = [
     "pytest>=8.2.0",
     "pytest-asyncio>=0.23.5",
     "pytest-cov>=5.0.0",
+    # diff-cover — diff-coverage гейт: проверяет, что новый/изменённый код в PR
+    # покрыт ≥80% (см. scripts/diff-cover.sh, CI job diff-coverage, ADR ниже).
+    # Запускается из CI, не нужен в prod-runtime.
+    "diff-cover>=9.2.0,<10",
     "pytest-xdist>=3.6.0",
     "pytest-randomly>=3.15.0",
     "pytest-mock>=3.14.0",
