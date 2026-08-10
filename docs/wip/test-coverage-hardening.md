@@ -221,6 +221,51 @@ frontend) меряет всю базу целиком. Это не защища�
 - [x] 17.5 `AGENTS.md`: 16→17 обязательных чеков + локальная команда.
 - [ ] 17.6 Branch protection (вне репо): после мёрджа добавить `coverage / diff-coverage gate (≥80% new code)` в required status checks через GH Settings → Branches → main.
 
+### Этап 18 — Фаза 2: поднятие покрытия api-модулей до 80% (merged)
+
+**Контекст**: Diff-coverage гейт (этап 17) защищает **новый** код. Но ~18 api-модулей
+остаются ниже 80% в **merged** (unit+integration) покрытии. Этот этап — поэтапное
+их закрытие. Пилот доказал подход end-to-end.
+
+**Важное открытие (противоречие с PR-таблицей)**: PR-таблица coverage
+(`irongut/CodeCoverageSummary`) в реальности показывает **merged** (unit+integration)
+цифры, но они **устарели** относительно свежего замера. Свежий merged-замер
+(2026-08-10, через `pytest tests/unit --cov=xml` + `pytest tests/integration --cov-append`):
+
+**Уже ≥80% (16 модулей, не трогать):** analytics (98%), audit (92%), auth (90%),
+bookmarks (93%), bootstrap (97%), branding (95%), kb (87%), keycloak_admin (95%),
+links (100%), modules (81%), nc_federation (100%), news_categories (86%),
+notifications (100%), search (95%), signature (100%) + repo-модули.
+
+**Ниже 80% — реальные кандидаты (11 модулей):**
+user_attribute_mappings (30%✅пилот), email_outbox+_repo (32/36%), meetings (33%),
+file_icons (42%), directories (46%), erp_sync (49%), photos (50%), users (54%),
+helpdesk (55%), files (62%), feedback (72%), news (75%), system_settings (76%).
+
+**Подход (доказан пилотом):** integration-тесты через **прямой вызов route-функций**
+на `real_db_session` + мок Redis (audit-emitter). Паттерн — `test_photos_api.py`.
+Не использовать `authed_client_factory` (fake_db_allowlist-гейт противодействует;
+no-op `_fake_db` не тестирует бизнес-логику).
+
+- [x] 18.1 **Пилот**: `api/user_attribute_mappings.py` 30%→**97%** —
+  `test_user_attribute_mappings_db.py` (14 тестов): schema/list/discover/create
+  (happy+reserved-400+conflict-409+full_name_source+backfill)/update
+  (fields+404+toggle)/delete (happy+404). PR #106. Непокрытые 2 строки: edge-case
+  `not isinstance(key, str)` в discover (стр. 109), условное логирование backfill
+  при update (стр. 230) — оба тривиальные, 97% достаточно.
+- [ ] 18.2 `api/email_outbox.py` + `email_outbox_repo.py` (32/36%) — маленькие (124 строки).
+- [ ] 18.3 `api/meetings/*` (33%, 371 строка) — есть integration-база (test_meetings_*).
+- [ ] 18.4 `api/file_icons.py` (42%, 67 строк) — маленький.
+- [ ] 18.5 `api/directories.py` (46%, 121 строка).
+- [ ] 18.6 `api/erp_sync/*` (49%, 169 строк) — внешний (IMAP), моки `imap_configured`/`arq_pool`.
+- [ ] 18.7 `api/photos/*` (50%, 1265 строк) — большой, частично покрыт test_photos_api.
+- [ ] 18.8 `api/users/*` (54%, 640 строк) — большой.
+- [ ] 18.9 `api/helpdesk/*` (55%, 688 строк) — большой.
+- [ ] 18.10 `api/files/*` (62%, 1085 строк).
+- [ ] 18.11 `api/feedback/*` (72%, 249 строк).
+- [ ] 18.12 `api/news/*` (75%, 630 строк).
+- [ ] 18.13 `api/system_settings/*` (76%, 258 строк).
+
 ## Грабли / контекст
 
 - **Bash пайпы в plan mode блокируются хуком** — использовать простые команды или `/usr/bin/grep` с одним аргументом без `|`.
@@ -245,4 +290,12 @@ frontend) меряет всю базу целиком. Это не защища�
 - **diff-cover путь-мэтчинг (главный риск этапа 17)**: lcov хранит `SF:src/...`, coverage.xml — `filename="app/..."` (оба относительно директории контура), а `git diff` отдаёт пути относительно repo-root (`frontend/src/...`, `backend/app/...`). diff-cover (`GitPathTool.relative_path`) приводит git-пути к виду относительно CWD: `relative_path('frontend/src/App.vue')` при `cwd=frontend/` → `src/App.vue` (матчит lcov). **Решение: запускать diff-cover ИЗ директории контура** (`working-directory: backend` / `frontend` в CI; `cd backend &&` / `cd frontend &&` локально). Подтверждено синтетическими тестами: контролируемый lcov+diff-file с известной непокрытой строкой → diff-cover корректно сообщает "Coverage is below 80%", exit 1. `--src-roots` для lcov НЕ помогает (не влияет на SF-парсинг). Если вместо lcov использовать cobertura-XML (frontend тоже умеет) — мэтчинг работает аналогично, но lcov компактнее.
 - **diff-cover exit code ловушка**: `--fail-under N` возвращает exit 1 при провале порога, но **только** если получить exit code самого `diff-cover`, а не downstream-команды пайпа. `diff-cover ... | tail; echo $?` поймает exit code `tail` (=0), не `diff-cover`. В CI (прямая команда без пайпа) — корректно; в локальных скриптах/тестах — проверять через `PIPESTATUS[0]` или без пайпа.
 - **download-artifact распаковывает содержимое path-директории в корень dest**: артефакт `frontend-coverage` загружается с `path: frontend/coverage` (ci.yml:145) → после `download-artifact` в `cov-frontend/` файлы лежат **в корне** (`cov-frontend/lcov.info`, `cobertura-coverage.xml`), а НЕ в `cov-frontend/coverage/lcov.info`. Аналогично `backend-coverage` (`path: backend/coverage.xml` + `backend/htmlcov`) → `cov-backend/coverage.xml`. На первом CI-прогоне diff-coverage упал с `FileNotFoundError: '../cov-frontend/coverage/lcov.info'` — был неверный путь. Правильно: `../cov-frontend/lcov.info`. Урок: всегда сверять структуру распакованного артефакта с тем, как его `path` объявлен в upload-шаге.
+- **Локальный запуск integration-тестов — testcontainers DSN**: `real_db_session` берёт `DATABASE_URL` из `get_settings()`. Дефолтный settings DSN (`test:test@localhost:5432/test`) **не работает** с dev-контейнерами. Testcontainers-БД (`portal-postgres-test-1`) пробросила порт 5432→**5433** на хосте, креды `test:test`, БД `test`. Правильный запуск с хоста:
+  ```bash
+  cd backend && DATABASE_URL="postgresql+asyncpg://test:test@localhost:5433/test" \
+    INTEGRATION_DB=true INTEGRATION_REDIS=true \
+    pytest tests/integration/test_user_attribute_mappings_db.py -v
+  ```
+  Проверить, что контейнер жив: `docker ps | grep postgres-test`. В CI (GitHub Actions) DSN настраивается через env job'а `backend-integration` — там работает дефолт.
+- **Паттерн integration-теста api-модуля (этап 18)**: прямой вызов route-функций на `real_db_session` (НЕ через HTTP/ASGITransport) + мок Redis (`_redis_mock()` с `rpush` для audit-emitter, не `lpush`/`hset` — audit пишет через `redis.rpush(AUDIT_QUEUE_KEY, ...)`). Образец: `tests/integration/test_photos_api.py` + новый `test_user_attribute_mappings_db.py`. Fixtures `real_admin`/`real_user`/`real_db_session` — из `tests/db_fixtures.py`.
 - **Воспроизведение CI-специфичных багов локально**: pyproject.toml использует диапазоны версий (`>=X,<Y`), pip резолвит разные версии в CI vs локально (особенно если локально был старый кэш). Перед диагностикой «работает локально, падает в CI» — проверять версии explicitly: `python -c "import fastapi, starlette; print(fastapi.__version__, starlette.__version__)"` и при расхождении имитировать CI через `pip install --break-system-packages 'fastapi>=0.137'`.
