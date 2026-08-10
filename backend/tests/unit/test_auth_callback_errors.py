@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -147,6 +147,105 @@ async def test_callback_nonce_mismatch_redirects(client, app):
         )
     assert resp.status_code == 302
     assert resp.headers["location"] == "/auth/error?reason=sso_failed"
+
+
+@pytest.mark.asyncio
+async def test_callback_passes_full_name_to_link_guest_tickets(client, app):
+    """Happy-path callback передаёт user.full_name в link_guest_tickets —
+    чтобы гостевые email-заявки без display-name дозаполняли снимок имени
+    для FTS (миграция 094). Регрессия: раньше full_name не передавался."""
+    from types import SimpleNamespace
+
+    from app.api.deps import get_db
+    from app.services.session import save_pkce_state
+
+    redis = app.state.redis
+    await save_pkce_state(redis, "valid-state-fn", "verifier", "nonce-fn", "/")
+
+    fake_user = SimpleNamespace(
+        id="00000000-0000-0000-0000-000000000001",
+        email="borisov@company.local",
+        full_name="Иван Борисов",
+        keycloak_id="kc-borisov",
+        auth_source="keycloak",
+    )
+
+    # db-заглушка: _upsert_user и full_name-UPDATE выполняют db.execute без
+    # бизнес-значения для этого теста (возвращаемые user/bool задаём через
+    # mock _upsert_user напрямую).
+    async def _fake_db():
+        session = MagicMock()
+        session.execute = AsyncMock()
+        session.commit = AsyncMock()
+        return session
+
+    app.dependency_overrides[get_db] = _fake_db
+
+    link_mock = AsyncMock(return_value=0)
+    fake_claims = {
+        "sub": "kc-borisov",
+        "email": "borisov@company.local",
+        "name": "Иван Борисов",
+        "nonce": "nonce-fn",
+        "preferred_username": "borisov",
+        "email_verified": True,
+    }
+    try:
+        with (
+            patch(
+                "app.api.auth.oidc.kc_service.exchange_code_for_tokens",
+                new=AsyncMock(
+                    return_value={"access_token": "at", "id_token": "it", "refresh_token": "rt"}
+                ),
+            ),
+            patch(
+                "app.api.auth.oidc.kc_service.get_jwks",
+                new=AsyncMock(return_value={"keys": []}),
+            ),
+            patch(
+                "app.api.auth.oidc.parse_jwt_claims",
+                new=AsyncMock(return_value=fake_claims),
+            ),
+            patch(
+                "app.api.auth.oidc._resolve_id_token_nonce",
+                new=AsyncMock(return_value="nonce-fn"),
+            ),
+            patch(
+                "app.api.auth.oidc.get_full_name_attr_key_sa",
+                new=AsyncMock(return_value=None),
+            ),
+            patch(
+                "app.api.auth.oidc._upsert_user",
+                new=AsyncMock(return_value=(fake_user, False)),
+            ),
+            patch(
+                "app.api.auth.oidc.rotate_session",
+                new=AsyncMock(return_value="session-id"),
+            ),
+            patch(
+                "app.api.auth.oidc.push_audit_event",
+                new=AsyncMock(),
+            ),
+            patch(
+                "app.services.helpdesk.tickets.link_guest_tickets",
+                new=link_mock,
+            ),
+        ):
+            resp = await client.get(
+                "/api/v1/auth/callback",
+                params={"code": "x", "state": "valid-state-fn"},
+                follow_redirects=False,
+            )
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+
+    assert resp.status_code == 302
+    # Ключевое: link_guest_tickets вызван с full_name пользователя.
+    link_mock.assert_awaited_once()
+    _, kwargs = link_mock.call_args
+    assert kwargs["user_id"] == fake_user.id
+    assert kwargs["email"] == "borisov@company.local"
+    assert kwargs["full_name"] == "Иван Борисов"
 
 
 @pytest.mark.asyncio

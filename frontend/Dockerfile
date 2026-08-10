@@ -1,5 +1,5 @@
 # pinned 2026-07-26
-FROM node:26-alpine@sha256:233761595746769ebfdb6090f44fc7cdf818ae0ce62d2b37e0367723b9823e36 AS builder
+FROM node:26-alpine@sha256:aadf416b2cdce311a8811ba3f0608a61b77dbf997500e2eafe781b51f6a0b019 AS builder
 
 WORKDIR /app
 
@@ -15,7 +15,7 @@ RUN npm run build
 # Используется через docker-compose.dev.yml (target: dev). Исходники монтируются
 # bind-mount'ом, openapi.json — отдельным volume в /openapi.json.
 # pinned 2026-07-26
-FROM node:26-slim@sha256:deae974a69e140f44f434ab29cb519fb5f8fe250fd364b8ca446bd0761acdc6a AS dev
+FROM node:26-slim@sha256:4ebb5ace66f15a24c14c492e01a8beeed4fddf970a856109f5126e703e5fe503 AS dev
 
 WORKDIR /app
 

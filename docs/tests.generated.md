@@ -158,6 +158,9 @@ tests/integration/test_helpdesk_fts.py::TestFtsOperators::test_phrase_search
 tests/integration/test_helpdesk_fts.py::TestFtsSearchInReplies::test_finds_ticket_by_reply_body
 tests/integration/test_helpdesk_fts.py::TestFtsWithFilters::test_empty_query_no_filter
 tests/integration/test_helpdesk_fts.py::TestFtsWithFilters::test_fts_combined_with_status
+tests/integration/test_helpdesk_fts.py::TestRequesterNameSearch::test_finds_ticket_by_requester_name
+tests/integration/test_helpdesk_fts.py::TestRequesterNameSearch::test_requester_name_case_insensitive
+tests/integration/test_helpdesk_fts.py::TestRequesterNameSearch::test_requester_name_null_still_searchable_by_other_fields
 tests/integration/test_helpdesk_ingress.py::TestArchive::test_archive_moves_closed_old_ticket
 tests/integration/test_helpdesk_ingress.py::TestArchive::test_open_not_archived
 tests/integration/test_helpdesk_ingress.py::TestArchive::test_recent_closed_not_archived
@@ -468,6 +471,7 @@ tests/integration/test_migrations.py::test_migration_revision_round_trip[090]
 tests/integration/test_migrations.py::test_migration_revision_round_trip[091]
 tests/integration/test_migrations.py::test_migration_revision_round_trip[092]
 tests/integration/test_migrations.py::test_migration_revision_round_trip[093]
+tests/integration/test_migrations.py::test_migration_revision_round_trip[094]
 tests/integration/test_migrations.py::test_migrations_full_lifecycle
 tests/integration/test_migrations.py::test_migrations_stepwise_down_up
 tests/integration/test_migrations_nightly.py::test_alembic_upgrade_head_on_clean_container
@@ -818,6 +822,7 @@ tests/unit/test_auth_callback_errors.py::test_callback_error_only_without_code_r
 tests/unit/test_auth_callback_errors.py::test_callback_jwt_parse_failure_redirects
 tests/unit/test_auth_callback_errors.py::test_callback_missing_code_and_state_redirects
 tests/unit/test_auth_callback_errors.py::test_callback_nonce_mismatch_redirects
+tests/unit/test_auth_callback_errors.py::test_callback_passes_full_name_to_link_guest_tickets
 tests/unit/test_auth_callback_errors.py::test_callback_token_exchange_failure_redirects
 tests/unit/test_auth_callback_errors.py::test_callback_with_invalid_state_redirects
 tests/unit/test_auth_callback_errors.py::test_callback_with_oidc_error_redirects_to_auth_error
@@ -2443,8 +2448,11 @@ tests/unit/test_helpdesk_tickets_service.py::TestChangeStatus::test_illegal_tran
 tests/unit/test_helpdesk_tickets_service.py::TestChangeStatus::test_non_close_transition_no_closed_fields
 tests/unit/test_helpdesk_tickets_service.py::TestCreateTicket::test_creates_ticket_and_first_message_then_commits
 tests/unit/test_helpdesk_tickets_service.py::TestCreateTicket::test_uploads_attachments_when_files_provided
+tests/unit/test_helpdesk_tickets_service.py::TestLinkGuestTickets::test_backfills_empty_requester_name_from_full_name
+tests/unit/test_helpdesk_tickets_service.py::TestLinkGuestTickets::test_does_not_overwrite_existing_requester_name
 tests/unit/test_helpdesk_tickets_service.py::TestLinkGuestTickets::test_email_case_insensitive_match
 tests/unit/test_helpdesk_tickets_service.py::TestLinkGuestTickets::test_links_matching_guest_tickets
+tests/unit/test_helpdesk_tickets_service.py::TestLinkGuestTickets::test_no_full_name_keeps_requester_name_as_is
 tests/unit/test_helpdesk_tickets_service.py::TestLinkGuestTickets::test_no_matches_returns_zero
 tests/unit/test_helpdesk_tickets_service.py::TestMenuBadgeCounts::test_count_assigned_active_returns_int
 tests/unit/test_helpdesk_tickets_service.py::TestMenuBadgeCounts::test_count_assigned_active_zero
