@@ -301,3 +301,70 @@ class TestExtractBodiesKeepForward:
         plain, _ = _extract_bodies(msg, keep_forward=True)
         assert "Мой ответ." in plain
         assert "Цитата предыдущего письма" not in plain
+
+
+# ── Регрессия: SOGo кодирует русский текст в HTML numeric entities ──────────
+
+
+class TestExtractBodiesNumericEntities:
+    """Регрессия прод-тикета №93 (ответы Савельева через SOGo).
+
+    SOGo (корпоративный webmail mail.mage.ru) кодирует весь русский текст в
+    HTML numeric entities: «писал(а):» → «&#1087;&#1080;&#1089;&#1072;&#1083;
+    (&#1072;):». ``strip_quoted_html`` гоняется по **сырому** письму (до nh3)
+    и его regex с буквальным русским текстом не матчится → цитата оставалась в
+    ленте. ``_decode_numeric_entities`` на входе ``strip_quoted_html``/
+    ``strip_quoted_reply`` решает проблему. Воспроизводит полный путь
+    ``_extract_bodies`` end-to-end на структуре реального письма.
+    """
+
+    def test_sogo_ru_pisal_in_numeric_entities_cut(self) -> None:
+        """``multipart/alternative`` (plain+html), HTML с entities: цитата по
+        разделителю «писал(а):» отрезается в обоих телах (html + деривированном
+        plain). Реальная структура из eml Савельева (тикет №93)."""
+        # text/html с entities (как SOGo): ответ + подпись + разделитель + цитата
+        html = (
+            "<html><body>"
+            "<p>&#1084;&#1086;&#1078;&#1077;&#1090;&#1077; "
+            "&#1079;&#1072;&#1087;&#1080;&#1089;&#1072;&#1090;&#1100;?</p>"
+            "<p><br><br>"
+            "&#1055;&#1086;&#1085;&#1077;&#1076;&#1077;&#1083;&#1100;&#1085;&#1080;&#1082;, "
+            "&#1040;&#1074;&#1075;&#1091;&#1089;&#1090; 10, 2026, "
+            "&#1070;&#1083;&#1072; &lt;T@mage.ru&gt; "
+            "&#1087;&#1080;&#1089;&#1072;&#1083;(&#1072;):<br>&#160;</p>"
+            "<blockquote><div>"
+            "&#1044;&#1086;&#1073;&#1088;&#1099;&#1081; &#1076;&#1077;&#1085;&#1100;"
+            "</div></blockquote>"
+            "</body></html>"
+        )
+        plain = "можете записать этот заказ?\n\nистория ниже"
+        msg = _multipart_alternative(plain, html)
+
+        body_text, body_html = _extract_bodies(msg, keep_forward=False)
+        # Ответ сохранён в обоих телах.
+        assert "можете записать" in body_text
+        # Цитата отрезана в обоих телах: ни разделитель «писал(а):», ни
+        # процитированное «Добрый день» не должны остаться.
+        assert "писал" not in body_text.lower()
+        assert "Добрый день" not in body_text
+        if body_html is not None:
+            assert "писал" not in body_html.lower()
+            assert "Добрый день" not in body_html
+
+    def test_sogo_html_entities_email_angle_brackets_preserved(self) -> None:
+        """Именованные entities ``&lt;``/``&gt;`` (вокруг email) НЕ декодируются
+        в настоящие ``<>`` — иначе ``[^<>]*`` в regex споткнулся бы. Теги ``<p>``
+        сохраняются (numeric-only decode не трогает их)."""
+        html = (
+            "<p>&#1054;&#1090;&#1074;&#1077;&#1090;</p>"
+            "<p>Автор &lt;user@host&gt; &#1087;&#1080;&#1089;&#1072;&#1083;(&#1072;):</p>"
+            "<blockquote>цитата</blockquote>"
+        )
+        msg = _multipart_alternative("plain", html)
+        _, body_html = _extract_bodies(msg, keep_forward=False)
+        assert body_html is not None
+        # Тег <p> сохранился (не превратился в &lt;p&gt;).
+        assert "<p>" in body_html
+        # Цитата отрезана.
+        assert "цитата" not in body_html
+        assert "Ответ" in body_html

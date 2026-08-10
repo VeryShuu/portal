@@ -71,6 +71,23 @@ class TestStripQuotedReplyMarker:
         body = f"Ответ сверху\n--- {REPLY_MARKER_TOKEN} ---\nостальное отрезать"
         assert strip_quoted_reply(body) == "Ответ сверху"
 
+    def test_own_marker_encoded_as_numeric_entities(self) -> None:
+        # Регрессия: если SOGo/веб-клиент закодирует наш собственный маркер
+        # ``REPLY_MARKER_TOKEN`` (видимый русский текст) в numeric entities при
+        # ответе, буквальный regex его не найдёт. ``_decode_numeric_entities``
+        # на входе ``strip_quoted_reply`` решает проблему. Полная фраза
+        # «Ответьте выше этой линии» в entities.
+        token_entities = (
+            "&#1054;&#1090;&#1074;&#1077;&#1090;&#1100;&#1090;&#1077;"
+            " &#1074;&#1099;&#1096;&#1077; &#1101;&#1090;&#1086;&#1081;"
+            " &#1083;&#1080;&#1085;&#1080;&#1080;"
+        )
+        body = f"Мой ответ\n--- {token_entities} ---\nпроцитированная история\n"
+        out = strip_quoted_reply(body)
+        assert "Мой ответ" in out
+        assert "процитированная история" not in out
+        assert REPLY_MARKER_TOKEN not in out
+
 
 # ── strip_quoted_reply — эвристика (без маркера) ─────────────────────────────
 
@@ -202,6 +219,21 @@ class TestStripQuotedReplySogoMailRu:
         assert "Ответ сверху" in out
         assert "цитата ниже" not in out
 
+    def test_sogo_pisal_encoded_as_numeric_entities_plain(self) -> None:
+        # Регрессия: редкий случай, когда text/plain письма содержит numeric
+        # entities для русского текста (SOGo иногда так делает). «писал(а):»
+        # закодирован → regex не сматчится без ``_decode_numeric_entities``.
+        body = (
+            "Ответ сверху\n\n"
+            "&#1055;&#1086;&#1085;&#1077;&#1076;&#1077;&#1083;&#1100;&#1085;&#1080;&#1082; "
+            "отправитель &#1087;&#1080;&#1089;&#1072;&#1083;(&#1072;):\n"
+            "цитата ниже"
+        )
+        out = strip_quoted_reply(body)
+        assert "Ответ сверху" in out
+        assert "цитата ниже" not in out
+        assert "писал" not in out
+
 
 # ── strip_quoted_reply — edge cases ──────────────────────────────────────────
 
@@ -316,6 +348,47 @@ class TestStripQuotedHtmlSogoMailRu:
         html = "<p>Ответ</p><blockquote>цитата как форматирование</blockquote>"
         assert strip_quoted_html(html) == html
 
+    def test_sogo_pisal_encoded_as_numeric_entities(self) -> None:
+        # Регрессия прод-тикета №93: SOGo кодирует весь русский текст в numeric
+        # HTML entities («писал(а):» → «&#1087;&#1088;&#1080;&#1089;&#1072;&#1083;
+        # (&#1072;):»). Regex с буквальным русским текстом не матчится на сыром
+        # письме (до nh3-декодирования) — ``_decode_numeric_entities`` на входе
+        # ``strip_quoted_html`` решает проблему. Реальная структура из eml
+        # Савельева: разделитель «писал(а):» в <p> перед голым <blockquote>.
+        html = (
+            "<p>&#1084;&#1086;&#1078;&#1077;&#1090;&#1077; "
+            "&#1079;&#1072;&#1087;&#1080;&#1089;&#1072;&#1090;&#1100;?</p>"
+            "<p><br><br>"
+            "&#1055;&#1086;&#1085;&#1077;&#1076;&#1077;&#1083;&#1100;&#1085;&#1080;&#1082;, "
+            "&#1040;&#1074;&#1075;&#1091;&#1089;&#1090; 10, 2026 11:52 MSK, "
+            "&#1070;&#1083;&#1072; &lt;Tatjana.Ula@mage.ru&gt; "
+            "&#1087;&#1080;&#1089;&#1072;&#1083;(&#1072;):<br><br>&#160;</p>"
+            "<blockquote><div>"
+            "&#1044;&#1086;&#1073;&#1088;&#1099;&#1081; &#1076;&#1077;&#1085;&#1100;"
+            "</div></blockquote>"
+        )
+        out = strip_quoted_html(html)
+        assert "можете записать" in out
+        # Разделитель и процитированное сообщение отрезаны.
+        assert "писал" not in out
+        assert "Добрый день" not in out
+
+    def test_named_entities_in_email_preserved(self) -> None:
+        # Регресс на безопасность ``_decode_numeric_entities``: именованные
+        # entities (``&lt;``/``&gt;``) НЕ декодируются в настоящие ``<>`` — иначе
+        # ``[^<>]*`` в regex споткнулся бы об email, а теги превратились бы в текст.
+        # Email в ``&lt; &gt;`` остаётся, тег ``<p>`` сохраняется.
+        html = (
+            "<p>Ответ</p>"
+            "<p>Отправитель &lt;user@host&gt; писал(а):<br>&nbsp;</p>"
+            "<blockquote><div>цитата</div></blockquote>"
+        )
+        out = strip_quoted_html(html)
+        assert "Ответ" in out
+        assert "цитата" not in out
+        # Тег <p> в результате сохранился (не стал &lt;p&gt;).
+        assert "<p>" in out
+
 
 # ── strip_quoted_html — Roundcube / Outlook-веб Original Message ────────────
 
@@ -385,6 +458,25 @@ class TestStripQuotedHtmlOriginalMessage:
         assert "Добрый день" in out
         assert "-------- Исходное сообщение --------" in out
         assert "message size exceeds limit" in out
+
+    def test_roundcube_ru_original_message_encoded_as_entities(self) -> None:
+        # Регрессия: Roundcube-маркер «Исходное сообщение» в numeric entities
+        # (как SOGo кодирует весь русский текст). ``_decode_numeric_entities``
+        # на входе ``strip_quoted_html`` делает regex работоспособным.
+        # «-------- Исходное сообщение --------» → entities.
+        html = (
+            "<div>&#1058;&#1072;&#1082; &#1085;&#1077; &#1088;&#1072;&#1073;&#1086;&#1090;&#1072;&#1077;&#1090;</div>"
+            "<div>&#045;&#045;&#045;&#045;&#045; "
+            "&#1048;&#1089;&#1093;&#1086;&#1076;&#1085;&#1086;&#1077; "
+            "&#1089;&#1086;&#1086;&#1073;&#1097;&#1077;&#1085;&#1080;&#1077; "
+            "&#045;&#045;&#045;&#045;&#045;</div>"
+            "<div>&#1054;&#1090;: it@mage.ru</div>"
+            "<div>history below</div>"
+        )
+        out = strip_quoted_html(html)
+        assert "Так не работает" in out
+        assert "Исходное сообщение" not in out
+        assert "history below" not in out
 
 
 # ── Round-trip: письмо с историей → ответ заявителя → чистый текст ────────────
