@@ -15,6 +15,10 @@ const ru = {
     delete: 'Удалить заявку',
     deleted: 'Заявка удалена',
     deleteConfirm: 'Удалить заявку #TKT-{number}?',
+    lockedByOther: 'Заявку ведёт {name}',
+    lockedByOtherHint: 'Закреплено за другим агентом',
+    lockedToast: 'Закреплено за другим агентом',
+    statusLocked: 'Статус может менять только ответственный',
     statuses: {
       open: 'В работе',
       pending: 'Ожидание',
@@ -53,10 +57,12 @@ vi.mock('@vicons/ionicons5', () => ({
 
 // Auth store mock: по умолчанию не-admin (кнопка удаления не рендерится —
 // существующие тесты не ломаются). Тесты admin-функционала переопределяют
-// isAdmin через authIsAdminMock.
+// isAdmin через authIsAdminMock. ``user.id`` позволяет тестам assignee-lock'а
+// управлять, «чей» тикет (currentUserId === assignee_user_id).
 const authIsAdminMock = { value: false }
+const authUserMock = { value: { id: 'me' } }
 vi.mock('../../src/stores/auth', () => ({
-  useAuthStore: () => ({ isAdmin: authIsAdminMock.value }),
+  useAuthStore: () => ({ isAdmin: authIsAdminMock.value, user: authUserMock.value }),
 }))
 
 const messageError = vi.fn()
@@ -76,6 +82,10 @@ vi.mock('naive-ui', () => ({
   NCard: {
     template: '<div class="n-card"><slot /></div>',
     props: ['size', 'bordered'],
+  },
+  NAlert: {
+    template: '<div class="n-alert" :data-type="type"><slot /></div>',
+    props: ['type', 'showIcon'],
   },
   NSelect: {
     template: '<select class="n-select" @change="$emit(\'update:value\', $event.target.value)"><option v-for="o in options" :key="o.value" :value="o.value">{{ o.label }}</option></select>',
@@ -136,7 +146,12 @@ const stubs = {
 }
 
 function makeTicket(
-  over: Partial<{ id: string; status: string; assignee_user_id: string | null }> = {},
+  over: Partial<{
+    id: string
+    status: string
+    assignee_user_id: string | null
+    assignee_name: string | null
+  }> = {},
 ) {
   return {
     id: 'ticket-99',
@@ -144,6 +159,7 @@ function makeTicket(
     subject: 'Тема',
     status: 'open',
     assignee_user_id: null,
+    assignee_name: null,
     messages: [],
     requester_profile: null,
     ...over,
@@ -162,6 +178,7 @@ describe('HelpdeskAgentTicketDetailPage', () => {
     // По умолчанию — не-admin (кнопка удаления скрыта; существующие тесты
     // проверяют take/reopen/status/reply без admin-функционала).
     authIsAdminMock.value = false
+    authUserMock.value = { id: 'me' }
     fetchAgentTicketMock.mockResolvedValue(makeTicket())
     takeTicketMock.mockResolvedValue(undefined)
     changeTicketStatusMock.mockResolvedValue(undefined)
@@ -190,7 +207,8 @@ describe('HelpdeskAgentTicketDetailPage', () => {
   })
 
   it('показывает n-select статусов для назначенного тикета', async () => {
-    fetchAgentTicketMock.mockResolvedValue(makeTicket({ assignee_user_id: 'agent-1' }))
+    // assignee = текущий пользователь → селект активен (не заблокирован).
+    fetchAgentTicketMock.mockResolvedValue(makeTicket({ assignee_user_id: 'me' }))
     const wrapper = mountPage()
     await flushPromises()
     expect(wrapper.find('.n-select').exists()).toBe(true)
@@ -215,7 +233,8 @@ describe('HelpdeskAgentTicketDetailPage', () => {
   })
 
   it('onStatusChange вызывает changeTicketStatus', async () => {
-    fetchAgentTicketMock.mockResolvedValue(makeTicket({ assignee_user_id: 'agent-1' }))
+    // assignee = текущий пользователь → селект не заблокирован.
+    fetchAgentTicketMock.mockResolvedValue(makeTicket({ assignee_user_id: 'me' }))
     const wrapper = mountPage()
     await flushPromises()
     changeTicketStatusMock.mockClear()
@@ -230,13 +249,13 @@ describe('HelpdeskAgentTicketDetailPage', () => {
 
   it('кнопка Reopen видна только для закрытого тикета', async () => {
     // Не закрыт — кнопки Reopen нет.
-    fetchAgentTicketMock.mockResolvedValue(makeTicket({ status: 'open', assignee_user_id: 'a' }))
+    fetchAgentTicketMock.mockResolvedValue(makeTicket({ status: 'open', assignee_user_id: 'me' }))
     let wrapper = mountPage()
     await flushPromises()
     expect(wrapper.findAll('.n-button').find((b) => b.text().includes('Переоткрыть'))).toBeUndefined()
 
     // Закрыт — кнопка появляется.
-    fetchAgentTicketMock.mockResolvedValue(makeTicket({ status: 'closed', assignee_user_id: 'a' }))
+    fetchAgentTicketMock.mockResolvedValue(makeTicket({ status: 'closed', assignee_user_id: 'me' }))
     wrapper = mountPage()
     await flushPromises()
     const reopenBtn = wrapper.findAll('.n-button').find((b) => b.text().includes('Переоткрыть'))
@@ -244,7 +263,7 @@ describe('HelpdeskAgentTicketDetailPage', () => {
   })
 
   it('onReopen вызывает reopenTicket', async () => {
-    fetchAgentTicketMock.mockResolvedValue(makeTicket({ status: 'closed', assignee_user_id: 'a' }))
+    fetchAgentTicketMock.mockResolvedValue(makeTicket({ status: 'closed', assignee_user_id: 'me' }))
     const wrapper = mountPage()
     await flushPromises()
     reopenTicketMock.mockClear()
@@ -285,6 +304,86 @@ describe('HelpdeskAgentTicketDetailPage', () => {
     mountPage()
     await flushPromises()
     expect(messageError).toHaveBeenCalled()
+  })
+
+  // ── Assignee-lock: блокировка за назначенным агентом ──────────────────────
+
+  it('скрывает форму ответа и показывает alert, если заявка закреплена за другим', async () => {
+    fetchAgentTicketMock.mockResolvedValue(
+      makeTicket({ assignee_user_id: 'other-agent', assignee_name: 'Иван Петров' }),
+    )
+    const wrapper = mountPage()
+    await flushPromises()
+    // Формы ответа нет — заменена на n-alert.
+    expect(wrapper.find('.reply-form').exists()).toBe(false)
+    const alert = wrapper.find('.n-alert')
+    expect(alert.exists()).toBe(true)
+    expect(alert.text()).toContain('Иван Петров')
+  })
+
+  it('блокирует селект статуса для не-владельца', async () => {
+    fetchAgentTicketMock.mockResolvedValue(makeTicket({ assignee_user_id: 'other-agent' }))
+    const wrapper = mountPage()
+    await flushPromises()
+    const select = wrapper.find('.n-select')
+    expect(select.exists()).toBe(true)
+    expect(select.attributes('disabled')).toBeDefined()
+  })
+
+  it('блокирует кнопку Reopen для не-владельца закрытого тикета', async () => {
+    fetchAgentTicketMock.mockResolvedValue(
+      makeTicket({ status: 'closed', assignee_user_id: 'other-agent' }),
+    )
+    const wrapper = mountPage()
+    await flushPromises()
+    const reopenBtn = wrapper.findAll('.n-button').find((b) => b.text().includes('Переоткрыть'))!
+    expect(reopenBtn.attributes('disabled')).toBeDefined()
+  })
+
+  it('не блокирует селект/форму, если тикет назначен текущему пользователю', async () => {
+    fetchAgentTicketMock.mockResolvedValue(makeTicket({ assignee_user_id: 'me' }))
+    const wrapper = mountPage()
+    await flushPromises()
+    expect(wrapper.find('.n-select').attributes('disabled')).toBeUndefined()
+    expect(wrapper.find('.reply-form').exists()).toBe(true)
+    expect(wrapper.find('.n-alert').exists()).toBe(false)
+  })
+
+  it('показывает lockedToast и перезагружает карточку при 403 на ответе', async () => {
+    // Тикет «мой» по UI, но бэкенд вернёт 403 (assignee сменился в другой вкладке).
+    fetchAgentTicketMock.mockResolvedValue(makeTicket({ assignee_user_id: 'me' }))
+    const err = Object.assign(new Error('forbidden'), { response: { status: 403 } })
+    replyAgentTicketMock.mockRejectedValue(err)
+    const wrapper = mountPage()
+    await flushPromises()
+    fetchAgentTicketMock.mockClear()
+
+    await wrapper.find('.reply-form').trigger('click')
+    await flushPromises()
+
+    expect(messageError).toHaveBeenCalled()
+    // Карточка перезагружена (handleAssigneeLock → load) — актуальный assignee
+    // подтянулся, UI пришёл в согласованное состояние.
+    expect(fetchAgentTicketMock).toHaveBeenCalledTimes(1)
+    // replyAgentTicket не прошёл → success не вызывался.
+    expect(messageSuccess).not.toHaveBeenCalled()
+  })
+
+  it('показывает lockedToast при 403 на смене статуса (withActing-путь)', async () => {
+    //assignee = текущий пользователь → селект активен, но бэкенд 403 (гонка).
+    fetchAgentTicketMock.mockResolvedValue(makeTicket({ assignee_user_id: 'me' }))
+    const err = Object.assign(new Error('forbidden'), { response: { status: 403 } })
+    changeTicketStatusMock.mockRejectedValue(err)
+    const wrapper = mountPage()
+    await flushPromises()
+
+    await wrapper.find('.n-select').setValue('closed')
+    await wrapper.find('.n-select').trigger('change')
+    await flushPromises()
+
+    expect(messageError).toHaveBeenCalled()
+    // status-change не прошёл → success не вызывался.
+    expect(messageSuccess).not.toHaveBeenCalled()
   })
 
   // ── Admin-only: полное удаление заявки ───────────────────────────────────

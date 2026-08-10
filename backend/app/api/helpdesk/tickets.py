@@ -31,6 +31,7 @@ from app.api.helpdesk._common import (
 from app.api.kb._common import _rfc5987_filename
 from app.core.logging import get_logger
 from app.models.helpdesk import HelpdeskTicket
+from app.models.user import User
 from app.schemas.helpdesk import (
     ALL_SOURCES,
     ALL_STATUSES,
@@ -439,6 +440,29 @@ async def _load_agent_ticket(db: DbDep, ticket_id: uuid.UUID) -> HelpdeskTicket:
     return ticket
 
 
+def _require_ticket_owner(ticket: HelpdeskTicket, *, actor: User) -> None:
+    """Блокировка мутаций за назначенным агентом (assignee-lock).
+
+    Правило «одна заявка — один исполнитель»: если на тикете назначен агент,
+    работу с ним (комментарий, смена статуса, reopen) ведёт только он. Остальные
+    агенты обязаны сначала сменить ответственного на себя через ``POST /assign``
+    (или ``/take`` для неназначенной заявки). Админ подчиняется тому же правилу
+    — без admin-bypass, исключений нет.
+
+    Неназначенный тикет (``assignee_user_id IS NULL``) пропускается: любой
+    агент может взять его в работу (``take`` или первым ответом через
+    авто-назначение в ``messages.add_agent_reply``).
+    """
+    if ticket.assignee_user_id is not None and ticket.assignee_user_id != actor.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "message": "Ticket is assigned to another agent",
+                "assignee_user_id": str(ticket.assignee_user_id),
+            },
+        )
+
+
 async def _ticket_requester_profile(
     db: DbDep, *, ticket: HelpdeskTicket
 ) -> RequesterProfileOut | None:
@@ -624,6 +648,7 @@ async def add_agent_message(
     files: list[UploadFile] = File(default=[]),
 ) -> MessageOut:
     ticket = await _load_agent_ticket(db, ticket_id)
+    _require_ticket_owner(ticket, actor=agent)
     # Нормализация для rich-редактора: sanitize body_html (nh3) + деривация
     # body_text (plain) для email-треда, если агент прислал только HTML.
     norm_text: str
@@ -819,6 +844,7 @@ async def change_ticket_status(
     redis: RedisDep,
 ) -> TicketAgentOut:
     ticket = await _load_agent_ticket(db, ticket_id)
+    _require_ticket_owner(ticket, actor=agent)
     try:
         ticket = await tickets_service.change_status(
             db, ticket=ticket, target=payload.status, actor=agent
@@ -857,6 +883,7 @@ async def reopen_ticket(
     redis: RedisDep,
 ) -> TicketAgentOut:
     ticket = await _load_agent_ticket(db, ticket_id)
+    _require_ticket_owner(ticket, actor=agent)
     try:
         ticket = await tickets_service.reopen_ticket(db, ticket=ticket)
     except IllegalTransitionError as exc:

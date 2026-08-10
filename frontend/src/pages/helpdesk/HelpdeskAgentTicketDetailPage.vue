@@ -34,6 +34,8 @@
               size="small"
               style="width: 180px"
               :loading="acting"
+              :disabled="assignedToOther"
+              :title="assignedToOther ? t('helpdesk.statusLocked') : undefined"
               @update:value="onStatusChange"
             />
 
@@ -41,6 +43,7 @@
               v-if="ticket.status === 'closed'"
               size="small"
               :loading="acting"
+              :disabled="assignedToOther"
               @click="onReopen"
             >
               {{ t('helpdesk.reopen') }}
@@ -83,7 +86,10 @@
               />
             </div>
 
-            <n-card class="ticket-detail__reply">
+            <n-card
+              v-if="!assignedToOther"
+              class="ticket-detail__reply"
+            >
               <div class="ticket-detail__reply-title">
                 {{ t('helpdesk.agentReply') }}
               </div>
@@ -95,6 +101,17 @@
                 @submit="onReply"
               />
             </n-card>
+            <n-alert
+              v-else
+              class="ticket-detail__locked"
+              type="info"
+              :show-icon="true"
+            >
+              <div class="ticket-detail__locked-title">
+                {{ t('helpdesk.lockedByOther', { name: ticket.assignee_name ?? '—' }) }}
+              </div>
+              {{ t('helpdesk.lockedByOtherHint') }}
+            </n-alert>
           </div>
 
           <aside class="ticket-layout__aside">
@@ -115,7 +132,7 @@
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
-import { NSpin, NCard, NButton, NIcon, NSelect, NPopconfirm, useMessage } from 'naive-ui'
+import { NSpin, NCard, NButton, NIcon, NSelect, NPopconfirm, NAlert, useMessage } from 'naive-ui'
 import { ArrowBackOutline, TrashOutline } from '@vicons/ionicons5'
 import TicketDetailHeader from '../../components/helpdesk/TicketDetailHeader.vue'
 import TicketInfoCard from '../../components/helpdesk/TicketInfoCard.vue'
@@ -134,7 +151,7 @@ import {
   type HelpdeskTicketDetail,
   type HelpdeskStatus,
 } from '../../api/helpdesk'
-import { parseApiError } from '../../utils/parseApiError'
+import { parseApiError, getErrorStatus } from '../../utils/parseApiError'
 import { useAuthStore } from '../../stores/auth'
 import { ROUTES } from '../../router'
 
@@ -157,6 +174,16 @@ const statusOptions = computed(() =>
     { value: 'pending', label: t('helpdesk.statuses.pending') },
     { value: 'closed', label: t('helpdesk.statuses.closed') },
   ],
+)
+
+// Блокировка за назначенным агентом (assignee-lock): заявка закреплена за
+// другим агентом → не он не может отвечать/менять статус/reopen. Админ
+// подчиняется тому же правилу (без bypass — решение продукта). Сменить
+// ответственного на себя можно всегда (через ``TicketInfoCard`` справа).
+const assignedToOther = computed(
+  () =>
+    !!ticket.value?.assignee_user_id &&
+    ticket.value.assignee_user_id !== auth.user?.id,
 )
 
 watch(ticket, (t) => {
@@ -188,7 +215,9 @@ async function withActing(fn: () => Promise<void>) {
     await fn()
     await load()
   } catch (e) {
-    message.error(parseApiError(e, t))
+    if (!(await handleAssigneeLock(e))) {
+      message.error(parseApiError(e, t))
+    }
   } finally {
     acting.value = false
   }
@@ -213,6 +242,19 @@ function onReopen() {
     await reopenTicket(ticketId)
     message.success(t('helpdesk.reopened'))
   })
+}
+
+/** Специфичный toast на 403 assignee-lock: стандартный «Недостаточно прав»
+ * не объясняет причину, а assignee мог смениться (другая вкладка) — перезагружаем
+ * карточку, чтобы UI пришёл в актуальное состояние. Safety-net поверх disabled-
+ * состояния в шаблоне (гонка load↔assign). */
+async function handleAssigneeLock(e: unknown): Promise<boolean> {
+  if (getErrorStatus(e) === 403) {
+    message.error(t('helpdesk.lockedToast'))
+    await load()
+    return true
+  }
+  return false
 }
 
 async function onDelete() {
@@ -246,7 +288,9 @@ async function onReply(payload: {
     message.success(t('helpdesk.replySent'))
     await load()
   } catch (e) {
-    message.error(parseApiError(e, t))
+    if (!(await handleAssigneeLock(e))) {
+      message.error(parseApiError(e, t))
+    }
   } finally {
     replying.value = false
   }
@@ -299,5 +343,12 @@ load()
 .ticket-detail__reply-title {
   font-weight: 600;
   margin-bottom: 10px;
+}
+.ticket-detail__locked {
+  margin: 0 0 16px;
+}
+.ticket-detail__locked-title {
+  font-weight: 600;
+  margin-bottom: 4px;
 }
 </style>

@@ -3343,13 +3343,13 @@ Soft-delete объекта.
 | `GET` | `/tickets/counts` | `{active: N}` — тикеты, назначенные агенту, в new/open/pending (для бейджа «Инбокс поддержки») |
 | `GET` | `/users/search` | Поиск пользователя по справочнику (Keycloak) для CC-селектора «Ответить всем» (`?q=`, `?limit=`). `[{user_id, full_name, email}]`. `<3 символов` → `[]`. Доступ: любой авторизованный (parent-router gate `require_helpdesk_module`). Симметрично `meetings/participants/search`, но helpdesk-принадлежный. |
 | `GET` | `/tickets/{id}` | Карточка (`TicketAgentOut`, все сообщения + служебные поля + `requester_profile`) |
-| `POST` | `/tickets/{id}/messages` | Ответ (`Form`: `body_text`, `body_html?`, `files[]`) → `pending` + outbound email через outbox. |
+| `POST` | `/tickets/{id}/messages` | Ответ (`Form`: `body_text`, `body_html?`, `files[]`) → `pending` + outbound email через outbox. **Assignee-lock:** 403 если тикет назначен другому агенту (не инициатору запроса) — см. §helpdesk «Блокировка за назначенным агентом». |
 | `POST` | `/tickets/{id}/inline-media` | Загрузка inline-картинки для TipTap-редактора ответа (`multipart`, поле `file`) → `{url, filename}` |
 | `GET` | `/tickets/{id}/inline-media/{filename}` | Отдача inline-картинки (nginx `X-Accel-Redirect`, `no-store`+`nosniff`) |
-| `POST` | `/tickets/{id}/assign` | Назначить (`assignee_user_id`) |
+| `POST` | `/tickets/{id}/assign` | Назначить (`assignee_user_id`). Доступна любому агенту всегда (даже если тикет закреплён за другим — это канал «передать заявку»). |
 | `POST` | `/tickets/{id}/take` | Взять на себя (409 если уже назначен) |
-| `PATCH` | `/tickets/{id}/status` | Сменить статус (409 на запрещённый переход) |
-| `POST` | `/tickets/{id}/reopen` | Reopen закрытой (409 из не-`closed`) |
+| `PATCH` | `/tickets/{id}/status` | Сменить статус (409 на запрещённый переход). **Assignee-lock:** 403 если тикет назначен другому агенту. |
+| `POST` | `/tickets/{id}/reopen` | Reopen закрытой (409 из не-`closed`). **Assignee-lock:** 403 если тикет назначен другому агенту. |
 | `POST` | `/tickets/{id}/read` | Отметить прочитанным для пары `(ticket, agent)` (UPSERT `last_seen_at`) |
 
 ### Админ (`AdminDep`)
