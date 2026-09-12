@@ -1,0 +1,32 @@
+# Blackbox exporter — модули внешних HTTP(S)-проб.
+#
+# Цели задаёт НЕ этот файл, а env (BLACKBOX_TARGETS / BLACKBOX_TARGETS_INSECURE
+# в .env): render-prometheus.sh генерирует /tmp/blackbox-targets.json (file_sd),
+# Prometheus ходит на /probe?target=<url>&module=<module>.
+#
+# http_2xx          — проверка сертификата включена (прод-URL с нормальным TLS)
+# http_2xx_insecure — self-signed / внутренние имена без валидного TLS (dev)
+#
+# Метрики: probe_success, probe_duration_seconds, probe_ssl_earliest_cert_expiry
+# (unix-ts истечения ближайшего сертификата → алерты PortalCertExpiry*).
+
+modules:
+  http_2xx:
+    prober: http
+    timeout: 10s
+    http:
+      method: GET
+      preferred_ip_protocol: ip4
+      follow_redirects: true
+      tls_config:
+        insecure_skip_verify: false
+
+  http_2xx_insecure:
+    prober: http
+    timeout: 10s
+    http:
+      method: GET
+      preferred_ip_protocol: ip4
+      follow_redirects: true
+      tls_config:
+        insecure_skip_verify: true

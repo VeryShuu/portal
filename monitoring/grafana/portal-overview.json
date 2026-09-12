@@ -1,0 +1,5103 @@
+{
+ "annotations": {
+  "list": [
+   {
+    "builtIn": 1,
+    "datasource": {
+     "type": "grafana",
+     "uid": "-- Grafana --"
+    },
+    "enable": true,
+    "hide": true,
+    "iconColor": "rgba(0, 211, 255, 1)",
+    "name": "Annotations & Alerts",
+    "type": "dashboard"
+   }
+  ]
+ },
+ "description": "Главный экран: что не работает у сотрудников, кто затронут, насколько свежи данные и что делать. Диагностические секции ниже. Runbook: docs/runbooks.md. Явные состояния: «Нет данных» — наблюдение не отвечает; «Данные устарели» — источник остановился; «Отключено» — модуль выключен; «Ещё не проверено» — проверка не завершалась ни разу.",
+ "editable": true,
+ "fiscalYearStartMonth": 0,
+ "graphTooltip": 1,
+ "id": null,
+ "links": [
+  {
+   "title": "Runbook — что делать при тревогах",
+   "type": "link",
+   "icon": "doc",
+   "url": "https://forgejo.mage.ru/mage/portal/src/branch/main/docs/runbooks.md"
+  },
+  {
+   "title": "Backend metrics docs",
+   "url": "https://forgejo.mage.ru/mage/portal/src/branch/main/docs/monitoring.md",
+   "type": "link",
+   "icon": "doc"
+  },
+  {
+   "title": "Portal — Logs",
+   "type": "link",
+   "url": "/d/portal-logs/portal-logs",
+   "icon": "dashboard",
+   "tags": [],
+   "targetBlank": false,
+   "asDropdown": false
+  },
+  {
+   "title": "Portal — Infrastructure",
+   "type": "link",
+   "url": "/d/portal-infra/portal-infrastructure",
+   "icon": "dashboard",
+   "tags": [],
+   "targetBlank": false,
+   "asDropdown": false
+  },
+  {
+   "title": "Portal — Storage",
+   "type": "link",
+   "url": "/d/portal-storage/portal-storage",
+   "icon": "dashboard",
+   "tags": [],
+   "targetBlank": false,
+   "asDropdown": false
+  }
+ ],
+ "liveNow": false,
+ "panels": [
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "id": 200,
+   "title": "Окружение: $env — что не работает и что делать",
+   "type": "row",
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "id": 201,
+   "title": "API портала",
+   "type": "stat",
+   "description": "Отвечает ли backend на scrape Prometheus. Недоступен = сотрудники не работают с порталом. Детали — PortalBackendDown в алертах.",
+   "gridPos": {
+    "h": 5,
+    "w": 4,
+    "x": 8,
+    "y": 1
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "text",
+        "value": null
+       }
+      ]
+     },
+     "mappings": [
+      {
+       "type": "value",
+       "options": {
+        "1": {
+         "text": "Работает",
+         "color": "green",
+         "index": 0
+        },
+        "0": {
+         "text": "Недоступен",
+         "color": "red",
+         "index": 1
+        }
+       }
+      }
+     ],
+     "noValue": "Нет данных"
+    },
+    "overrides": []
+   },
+   "options": {
+    "colorMode": "value",
+    "graphMode": "none",
+    "justifyMode": "auto",
+    "orientation": "auto",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "noValue": "Нет данных"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "editorMode": "code",
+     "expr": "up{job=\"portal\"}",
+     "instant": true,
+     "range": false,
+     "refId": "A"
+    }
+   ]
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "id": 202,
+   "title": "Готовность",
+   "type": "stat",
+   "description": "/ready: БД, Redis, миграции. Живой процесс с недоступной БД = «Не готов».",
+   "gridPos": {
+    "h": 5,
+    "w": 4,
+    "x": 12,
+    "y": 1
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "text",
+        "value": null
+       }
+      ]
+     },
+     "mappings": [
+      {
+       "type": "value",
+       "options": {
+        "1": {
+         "text": "Готов",
+         "color": "green",
+         "index": 0
+        },
+        "0": {
+         "text": "Не готов",
+         "color": "orange",
+         "index": 1
+        }
+       }
+      }
+     ],
+     "noValue": "Нет данных"
+    },
+    "overrides": []
+   },
+   "options": {
+    "colorMode": "value",
+    "graphMode": "none",
+    "justifyMode": "auto",
+    "orientation": "auto",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "noValue": "Нет данных"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "editorMode": "code",
+     "expr": "portal_backend_ready",
+     "instant": true,
+     "range": false,
+     "refId": "A"
+    }
+   ]
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "id": 203,
+   "title": "Почта",
+   "type": "stat",
+   "description": "Сумма: письма в DLQ (исчерпали попытки) + застрявшие в SENDING >10 мин. 0 = рассылка работает. Число писем в очереди — см. секцию «Очереди» ниже.",
+   "gridPos": {
+    "h": 5,
+    "w": 4,
+    "x": 16,
+    "y": 1
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "text",
+        "value": null
+       },
+       {
+        "color": "red",
+        "value": 1
+       }
+      ]
+     },
+     "noValue": "Нет данных",
+     "mappings": [
+      {
+       "type": "value",
+       "options": {
+        "0": {
+         "text": "Норма",
+         "color": "green",
+         "index": 0
+        }
+       }
+      }
+     ]
+    },
+    "overrides": []
+   },
+   "options": {
+    "colorMode": "value",
+    "graphMode": "none",
+    "justifyMode": "auto",
+    "orientation": "auto",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "noValue": "Нет данных"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "editorMode": "code",
+     "expr": "portal_email_outbox_dlq + portal_email_outbox_sending_stale",
+     "instant": true,
+     "range": false,
+     "refId": "A"
+    }
+   ]
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "id": 220,
+   "title": "Активные проблемы",
+   "type": "row",
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 11
+   }
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "id": 221,
+   "title": "Всего тревог",
+   "type": "stat",
+   "description": "Число активных (firing) тревог БЕЗ служебного Watchdog-маяка. Critical — реакция немедленно, warning — в течение рабочего дня. Расшифровка в таблице справа и в Runbook.",
+   "gridPos": {
+    "h": 9,
+    "w": 4,
+    "x": 0,
+    "y": 12
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "text",
+        "value": null
+       },
+       {
+        "color": "red",
+        "value": 1
+       }
+      ]
+     },
+     "noValue": "Нет данных",
+     "mappings": []
+    },
+    "overrides": []
+   },
+   "options": {
+    "colorMode": "value",
+    "graphMode": "none",
+    "justifyMode": "auto",
+    "orientation": "auto",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "noValue": "Нет данных"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "editorMode": "code",
+     "expr": "count(ALERTS{alertstate=\"firing\", alertname!=\"Watchdog\"}) or vector(0)",
+     "instant": true,
+     "range": false,
+     "refId": "A"
+    }
+   ]
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "id": 222,
+   "title": "Что не работает (детали тревог)",
+   "type": "table",
+   "description": "Каждая строка — активная тревога (без служебного Watchdog-маяка): текст = что происходит и на что влияет; клик по строке → Runbook с конкретным действием. Фильтр по сервису — переменная «Сервис» сверху.",
+   "gridPos": {
+    "h": 9,
+    "w": 20,
+    "x": 4,
+    "y": 12
+   },
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "thresholds"
+     },
+     "custom": {
+      "align": "auto",
+      "cellOptions": {
+       "type": "auto"
+      },
+      "inspect": false
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       }
+      ]
+     }
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Важность"
+      },
+      "properties": [
+       {
+        "id": "mappings",
+        "value": [
+         {
+          "type": "value",
+          "options": {
+           "critical": {
+            "text": "critical",
+            "color": "red",
+            "index": 0
+           },
+           "warning": {
+            "text": "warning",
+            "color": "yellow",
+            "index": 1
+           },
+           "info": {
+            "text": "info",
+            "color": "blue",
+            "index": 2
+           }
+          }
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Что происходит"
+      },
+      "properties": [
+       {
+        "id": "mappings",
+        "value": [
+         {
+          "type": "value",
+          "options": {
+           "AlertmanagerDown": {
+            "text": "Alertmanager недоступен",
+            "index": 0
+           },
+           "AlertmanagerNotificationsFailed": {
+            "text": "Alertmanager не доставляет уведомления",
+            "index": 1
+           },
+           "AlloyDown": {
+            "text": "Alloy (сборщик логов) недоступен",
+            "index": 2
+           },
+           "AlloyDroppedLogEntries": {
+            "text": "Alloy теряет лог-линии",
+            "index": 3
+           },
+           "BlackboxDown": {
+            "text": "Blackbox exporter недоступен",
+            "index": 4
+           },
+           "CadvisorDown": {
+            "text": "cAdvisor недоступен",
+            "index": 5
+           },
+           "GrafanaDown": {
+            "text": "Grafana недоступна",
+            "index": 6
+           },
+           "LokiDiscardedSamples": {
+            "text": "Loki отбрасывает лог-линии",
+            "index": 7
+           },
+           "LokiDown": {
+            "text": "Loki недоступен",
+            "index": 8
+           },
+           "NginxDown": {
+            "text": "Nginx exporter недоступен",
+            "index": 9
+           },
+           "NodeExporterDown": {
+            "text": "Node exporter недоступен",
+            "index": 10
+           },
+           "PortalArqJobFailures": {
+            "text": "ARQ-задача повторно неуспешна — смотреть логи worker",
+            "index": 11
+           },
+           "PortalArqQueueBacklog": {
+            "text": "ARQ-очередь растёт — воркер не успевает обрабатывать задачи",
+            "index": 12
+           },
+           "PortalAuditFlushStuck": {
+            "text": "Конвейер аудита завис — события застряли в обработке",
+            "index": 13
+           },
+           "PortalAuditPushRateZero": {
+            "text": "Audit-события не эмитятся",
+            "index": 14
+           },
+           "PortalAuditQueueBacklog": {
+            "text": "Очередь аудита растёт — события не успевают писаться в БД",
+            "index": 15
+           },
+           "PortalBackendDown": {
+            "text": "Portal backend недоступен для scrape",
+            "index": 16
+           },
+           "PortalBackendUnhealthy": {
+            "text": "Backend жив, но /ready не проходит дольше 3 минут",
+            "index": 17
+           },
+           "PortalCPUHigh": {
+            "text": "Высокая загрузка CPU",
+            "index": 18
+           },
+           "PortalCertExpiryCritical": {
+            "text": "TLS-сертификат истекает — осталось менее 3 дней",
+            "index": 19
+           },
+           "PortalCertExpirySoon": {
+            "text": "TLS-сертификат истекает — осталось менее 14 дней",
+            "index": 20
+           },
+           "PortalContainerRestartLoop": {
+            "text": "Рестарт-луп контейнера",
+            "index": 21
+           },
+           "PortalDBPoolHigh": {
+            "text": "Backend: пул соединений насыщен",
+            "index": 22
+           },
+           "PortalDBPoolTelemetryStale": {
+            "text": "Метрики пула БД устарели у одного из API-процессов",
+            "index": 23
+           },
+           "PortalDiskSpaceLow": {
+            "text": "Мало места на диске — риск остановки записи",
+            "index": 24
+           },
+           "PortalEmailOutboxBacklog": {
+            "text": "Очередь писем растёт — отправка не успевает",
+            "index": 25
+           },
+           "PortalEmailOutboxDLQ": {
+            "text": "Email outbox: писем в DLQ",
+            "index": 26
+           },
+           "PortalEmailOutboxStuck": {
+            "text": "Email outbox: писем застряли в SENDING",
+            "index": 27
+           },
+           "PortalExternalProbeFailed": {
+            "text": "Внешняя проба не проходит",
+            "index": 28
+           },
+           "PortalHighErrorRate": {
+            "text": "Высокий уровень 5xx ошибок на портале",
+            "index": 29
+           },
+           "PortalHighLatencyP99": {
+            "text": "Высокая p99-латентность у одного из эндпоинтов",
+            "index": 30
+           },
+           "PortalIntegrationDown": {
+            "text": "Интеграция недоступна — какая, см. колонку integration",
+            "index": 31
+           },
+           "PortalIntegrationProbeStale": {
+            "text": "Проверка интеграции перестала выполняться вовремя",
+            "index": 32
+           },
+           "PortalLokiStorageHigh": {
+            "text": "Loki: объём логов большой",
+            "index": 33
+           },
+           "PortalMessengerOutboxBacklog": {
+            "text": "Очередь сообщений MAX растёт — отправка не успевает",
+            "index": 34
+           },
+           "PortalMessengerOutboxDLQ": {
+            "text": "Messenger outbox: сообщений в DLQ",
+            "index": 35
+           },
+           "PortalMessengerOutboxStuck": {
+            "text": "Messenger outbox: сообщений застряли в SENDING",
+            "index": 36
+           },
+           "PortalMetricsSnapshotStale": {
+            "text": "Снапшот метрик портала не обновляется",
+            "index": 37
+           },
+           "PortalNginxConnectionsHigh": {
+            "text": "Nginx: много активных соединений",
+            "index": 38
+           },
+           "PortalPGCacheHitLow": {
+            "text": "PostgreSQL: низкий cache hit ratio",
+            "index": 39
+           },
+           "PortalPGConnectionsHigh": {
+            "text": "PostgreSQL: соединения насыщены",
+            "index": 40
+           },
+           "PortalPGDeadlocks": {
+            "text": "PostgreSQL: обнаружены дедлоки",
+            "index": 41
+           },
+           "PortalPGWraparound": {
+            "text": "PostgreSQL: возраст незамороженного XID большой",
+            "index": 42
+           },
+           "PortalPhotoStorageHigh": {
+            "text": "Фото-хранилище большое",
+            "index": 43
+           },
+           "PortalRAMLow": {
+            "text": "Мало свободной RAM",
+            "index": 44
+           },
+           "PortalRedisEvictions": {
+            "text": "Redis выбрасывает ключи — риск потери сессий/аудита",
+            "index": 45
+           },
+           "PortalRedisKeyspaceLow": {
+            "text": "Redis: низкий keyspace hit ratio с eviction'ами",
+            "index": 46
+           },
+           "PortalRedisMemoryHigh": {
+            "text": "Redis: память близка к maxmemory",
+            "index": 47
+           },
+           "PortalSSEConnectionsHigh": {
+            "text": "Аномальный рост SSE-соединений",
+            "index": 48
+           },
+           "PortalScreenshotServiceMetricsDown": {
+            "text": "Метрики synthetic-проверки недоступны",
+            "index": 49
+           },
+           "PortalStorageCollectorStale": {
+            "text": "Storage-collector не обновляет метрики размеров",
+            "index": 50
+           },
+           "PortalSyntheticProbeFailed": {
+            "text": "Внутренний local-auth flow не работает",
+            "index": 51
+           },
+           "PortalSyntheticProbeStale": {
+            "text": "Synthetic-проверка не выдаёт свежий результат",
+            "index": 52
+           },
+           "PortalWorkerDown": {
+            "text": "ARQ-воркер не подаёт признаков жизни",
+            "index": 53
+           },
+           "PortalWorkerStale": {
+            "text": "ARQ-воркер: кастомные гейджи застывают",
+            "index": 54
+           },
+           "PostgresExporterDown": {
+            "text": "PostgreSQL exporter недоступен",
+            "index": 55
+           },
+           "PrometheusDown": {
+            "text": "Prometheus недоступен",
+            "index": 56
+           },
+           "RedisExporterDown": {
+            "text": "Redis exporter недоступен",
+            "index": 57
+           },
+           "Watchdog": {
+            "text": "Monitoring watchdog alive",
+            "index": 58
+           }
+          }
+         }
+        ]
+       },
+       {
+        "id": "custom.cellOptions",
+        "value": {
+         "type": "auto",
+         "wrapText": true
+        }
+       },
+       {
+        "id": "links",
+        "value": [
+         {
+          "title": "Что делать — Runbook",
+          "url": "https://forgejo.mage.ru/mage/portal/src/branch/main/docs/runbooks.md",
+          "targetBlank": true
+         }
+        ]
+       }
+      ]
+     }
+    ]
+   },
+   "options": {
+    "showHeader": true,
+    "cellHeight": "sm",
+    "footer": {
+     "show": false,
+     "reducer": [
+      "sum"
+     ],
+     "countRows": false,
+     "fields": ""
+    }
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "editorMode": "code",
+     "expr": "ALERTS{alertstate=\"firing\", alertname!=\"Watchdog\", service=~\"$service\"}",
+     "instant": true,
+     "range": false,
+     "format": "table",
+     "refId": "A"
+    }
+   ],
+   "transformations": [
+    {
+     "id": "organize",
+     "options": {
+      "excludeByName": {
+       "Time": true,
+       "Value": true,
+       "__name__": true,
+       "alertstate": true
+      },
+      "includeByName": {},
+      "indexByName": {
+       "alertname": 0,
+       "severity": 1,
+       "service": 2
+      },
+      "renameByName": {
+       "alertname": "Что происходит",
+       "severity": "Важность",
+       "service": "Сервис"
+      }
+     }
+    }
+   ]
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "id": 230,
+   "title": "Здоровье наблюдения",
+   "type": "row",
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 21
+   }
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "id": 231,
+   "title": "Prometheus",
+   "type": "stat",
+   "description": "Сбор метрик/алертов. Недоступен — часть наблюдения слепа, см. Runbook §«Здоровье наблюдения».",
+   "gridPos": {
+    "h": 5,
+    "w": 3,
+    "x": 0,
+    "y": 22
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "text",
+        "value": null
+       }
+      ]
+     },
+     "mappings": [
+      {
+       "type": "value",
+       "options": {
+        "1": {
+         "text": "Работает",
+         "color": "green",
+         "index": 0
+        },
+        "0": {
+         "text": "Недоступен",
+         "color": "red",
+         "index": 1
+        }
+       }
+      }
+     ],
+     "noValue": "Нет данных"
+    },
+    "overrides": []
+   },
+   "options": {
+    "colorMode": "value",
+    "graphMode": "none",
+    "justifyMode": "auto",
+    "orientation": "auto",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "noValue": "Нет данных"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "editorMode": "code",
+     "expr": "up{job=\"prometheus\"}",
+     "instant": true,
+     "range": false,
+     "refId": "A"
+    }
+   ]
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "id": 232,
+   "title": "Alertmanager",
+   "type": "stat",
+   "description": "Сбор метрик/алертов. Недоступен — часть наблюдения слепа, см. Runbook §«Здоровье наблюдения».",
+   "gridPos": {
+    "h": 5,
+    "w": 3,
+    "x": 3,
+    "y": 22
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "text",
+        "value": null
+       }
+      ]
+     },
+     "mappings": [
+      {
+       "type": "value",
+       "options": {
+        "1": {
+         "text": "Работает",
+         "color": "green",
+         "index": 0
+        },
+        "0": {
+         "text": "Недоступен",
+         "color": "red",
+         "index": 1
+        }
+       }
+      }
+     ],
+     "noValue": "Нет данных"
+    },
+    "overrides": []
+   },
+   "options": {
+    "colorMode": "value",
+    "graphMode": "none",
+    "justifyMode": "auto",
+    "orientation": "auto",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "noValue": "Нет данных"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "editorMode": "code",
+     "expr": "up{job=\"alertmanager\"}",
+     "instant": true,
+     "range": false,
+     "refId": "A"
+    }
+   ]
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "id": 233,
+   "title": "Grafana",
+   "type": "stat",
+   "description": "Сбор метрик/алертов. Недоступен — часть наблюдения слепа, см. Runbook §«Здоровье наблюдения».",
+   "gridPos": {
+    "h": 5,
+    "w": 3,
+    "x": 6,
+    "y": 22
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "text",
+        "value": null
+       }
+      ]
+     },
+     "mappings": [
+      {
+       "type": "value",
+       "options": {
+        "1": {
+         "text": "Работает",
+         "color": "green",
+         "index": 0
+        },
+        "0": {
+         "text": "Недоступен",
+         "color": "red",
+         "index": 1
+        }
+       }
+      }
+     ],
+     "noValue": "Нет данных"
+    },
+    "overrides": []
+   },
+   "options": {
+    "colorMode": "value",
+    "graphMode": "none",
+    "justifyMode": "auto",
+    "orientation": "auto",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "noValue": "Нет данных"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "editorMode": "code",
+     "expr": "up{job=\"grafana\"}",
+     "instant": true,
+     "range": false,
+     "refId": "A"
+    }
+   ]
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "id": 234,
+   "title": "Loki",
+   "type": "stat",
+   "description": "Сбор метрик/алертов. Недоступен — часть наблюдения слепа, см. Runbook §«Здоровье наблюдения».",
+   "gridPos": {
+    "h": 5,
+    "w": 3,
+    "x": 9,
+    "y": 22
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "text",
+        "value": null
+       }
+      ]
+     },
+     "mappings": [
+      {
+       "type": "value",
+       "options": {
+        "1": {
+         "text": "Работает",
+         "color": "green",
+         "index": 0
+        },
+        "0": {
+         "text": "Недоступен",
+         "color": "red",
+         "index": 1
+        }
+       }
+      }
+     ],
+     "noValue": "Нет данных"
+    },
+    "overrides": []
+   },
+   "options": {
+    "colorMode": "value",
+    "graphMode": "none",
+    "justifyMode": "auto",
+    "orientation": "auto",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "noValue": "Нет данных"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "editorMode": "code",
+     "expr": "up{job=\"loki\"}",
+     "instant": true,
+     "range": false,
+     "refId": "A"
+    }
+   ]
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "id": 235,
+   "title": "Alloy",
+   "type": "stat",
+   "description": "Сбор метрик/алертов. Недоступен — часть наблюдения слепа, см. Runbook §«Здоровье наблюдения».",
+   "gridPos": {
+    "h": 5,
+    "w": 3,
+    "x": 12,
+    "y": 22
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "text",
+        "value": null
+       }
+      ]
+     },
+     "mappings": [
+      {
+       "type": "value",
+       "options": {
+        "1": {
+         "text": "Работает",
+         "color": "green",
+         "index": 0
+        },
+        "0": {
+         "text": "Недоступен",
+         "color": "red",
+         "index": 1
+        }
+       }
+      }
+     ],
+     "noValue": "Нет данных"
+    },
+    "overrides": []
+   },
+   "options": {
+    "colorMode": "value",
+    "graphMode": "none",
+    "justifyMode": "auto",
+    "orientation": "auto",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "noValue": "Нет данных"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "editorMode": "code",
+     "expr": "up{job=\"alloy\"}",
+     "instant": true,
+     "range": false,
+     "refId": "A"
+    }
+   ]
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "id": 236,
+   "title": "node-exporter",
+   "type": "stat",
+   "description": "Сбор метрик/алертов. Недоступен — часть наблюдения слепа, см. Runbook §«Здоровье наблюдения».",
+   "gridPos": {
+    "h": 5,
+    "w": 3,
+    "x": 15,
+    "y": 22
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "text",
+        "value": null
+       }
+      ]
+     },
+     "mappings": [
+      {
+       "type": "value",
+       "options": {
+        "1": {
+         "text": "Работает",
+         "color": "green",
+         "index": 0
+        },
+        "0": {
+         "text": "Недоступен",
+         "color": "red",
+         "index": 1
+        }
+       }
+      }
+     ],
+     "noValue": "Нет данных"
+    },
+    "overrides": []
+   },
+   "options": {
+    "colorMode": "value",
+    "graphMode": "none",
+    "justifyMode": "auto",
+    "orientation": "auto",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "noValue": "Нет данных"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "editorMode": "code",
+     "expr": "up{job=\"node\"}",
+     "instant": true,
+     "range": false,
+     "refId": "A"
+    }
+   ]
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "id": 237,
+   "title": "cAdvisor",
+   "type": "stat",
+   "description": "Сбор метрик/алертов. Недоступен — часть наблюдения слепа, см. Runbook §«Здоровье наблюдения».",
+   "gridPos": {
+    "h": 5,
+    "w": 3,
+    "x": 18,
+    "y": 22
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "text",
+        "value": null
+       }
+      ]
+     },
+     "mappings": [
+      {
+       "type": "value",
+       "options": {
+        "1": {
+         "text": "Работает",
+         "color": "green",
+         "index": 0
+        },
+        "0": {
+         "text": "Недоступен",
+         "color": "red",
+         "index": 1
+        }
+       }
+      }
+     ],
+     "noValue": "Нет данных"
+    },
+    "overrides": []
+   },
+   "options": {
+    "colorMode": "value",
+    "graphMode": "none",
+    "justifyMode": "auto",
+    "orientation": "auto",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "noValue": "Нет данных"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "editorMode": "code",
+     "expr": "up{job=\"cadvisor\"}",
+     "instant": true,
+     "range": false,
+     "refId": "A"
+    }
+   ]
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "id": 238,
+   "title": "Сборщик storage",
+   "type": "stat",
+   "description": "Обновляет метрики размеров папок/логов каждые 5 мин. «Устарел» — cron умер или сбор ошибочен.",
+   "gridPos": {
+    "h": 5,
+    "w": 3,
+    "x": 21,
+    "y": 22
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "text",
+        "value": null
+       }
+      ]
+     },
+     "mappings": [
+      {
+       "type": "value",
+       "options": {
+        "1": {
+         "text": "Работает",
+         "color": "green",
+         "index": 0
+        },
+        "0": {
+         "text": "Устарел",
+         "color": "orange",
+         "index": 1
+        }
+       }
+      }
+     ],
+     "noValue": "Нет данных"
+    },
+    "overrides": []
+   },
+   "options": {
+    "colorMode": "value",
+    "graphMode": "none",
+    "justifyMode": "auto",
+    "orientation": "auto",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "noValue": "Нет данных"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "editorMode": "code",
+     "expr": "(time() - portal_storage_collector_last_run_seconds) <= bool 1800",
+     "instant": true,
+     "range": false,
+     "refId": "A"
+    }
+   ]
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "id": 239,
+   "title": "Внешние пробы",
+   "type": "stat",
+   "description": "Проверка внешнего адреса через настоящий прокси (MON-14, pending). Пока целей нет — «Не настроено».",
+   "gridPos": {
+    "h": 5,
+    "w": 6,
+    "x": 0,
+    "y": 27
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "text",
+        "value": null
+       }
+      ]
+     },
+     "mappings": [
+      {
+       "type": "value",
+       "options": {
+        "1": {
+         "text": "Работает",
+         "color": "green",
+         "index": 0
+        },
+        "0": {
+         "text": "Недоступен",
+         "color": "red",
+         "index": 1
+        }
+       }
+      }
+     ],
+     "noValue": "Не настроено"
+    },
+    "overrides": []
+   },
+   "options": {
+    "colorMode": "value",
+    "graphMode": "none",
+    "justifyMode": "auto",
+    "orientation": "auto",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "noValue": "Не настроено"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "editorMode": "code",
+     "expr": "up{job=\"blackbox\"}",
+     "instant": true,
+     "range": false,
+     "refId": "A"
+    }
+   ]
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "id": 240,
+   "title": "",
+   "type": "text",
+   "gridPos": {
+    "h": 5,
+    "w": 13,
+    "x": 6,
+    "y": 27
+   },
+   "fieldConfig": {
+    "defaults": {},
+    "overrides": []
+   },
+   "options": {
+    "mode": "markdown",
+    "content": "**Внешний dead-man контроль** (тревога при пропаже самого мониторинга): приёмник `ALERT_DEADMAN_WEBHOOK_URL` **не настроен** — pending, решение владельца (ТЗ §14). Watchdog уже маршрутизируется в dead-man приёмник; после настройки внешний сервис будет тревожиться при пропаже пингов каждые ~5 мин.\n\n**Что делать при тревогах:** Runbook — `docs/runbooks.md` (ссылка в шапке). **Проверить доставку уведомлений:** Runbook, раздел «Проверка доставки». Переходы: **Logs / Infrastructure / Storage** (ссылки в шапке)."
+   },
+   "pluginVersion": "13.1.3"
+  },
+  {
+   "collapsed": false,
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 32
+   },
+   "id": 100,
+   "panels": [],
+   "title": "RED — Rate / Errors / Duration",
+   "type": "row"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "palette-classic"
+     },
+     "custom": {
+      "axisCenteredZero": false,
+      "axisColorMode": "text",
+      "axisLabel": "req/s",
+      "axisPlacement": "auto",
+      "barAlignment": 0,
+      "drawStyle": "line",
+      "fillOpacity": 15,
+      "gradientMode": "opacity",
+      "hideFrom": {
+       "legend": false,
+       "tooltip": false,
+       "viz": false
+      },
+      "insertNulls": false,
+      "lineInterpolation": "smooth",
+      "lineWidth": 2,
+      "pointSize": 5,
+      "scaleDistribution": {
+       "type": "linear"
+      },
+      "showPoints": "never",
+      "spanNulls": false,
+      "stacking": {
+       "group": "A",
+       "mode": "none"
+      },
+      "thresholdsStyle": {
+       "mode": "off"
+      }
+     },
+     "mappings": [],
+     "thresholds": {
+      "mode": "absolute",
+      "steps": []
+     },
+     "unit": "reqps"
+    },
+    "overrides": []
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 9,
+    "x": 0,
+    "y": 33
+   },
+   "id": 1,
+   "options": {
+    "legend": {
+     "calcs": [
+      "mean",
+      "max"
+     ],
+     "displayMode": "table",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "editorMode": "code",
+     "expr": "portal:http_request_rate5m{handler=~\"$handler\"}",
+     "legendFormat": "{{handler}}",
+     "range": true,
+     "refId": "A"
+    }
+   ],
+   "title": "Request rate по endpoints",
+   "type": "timeseries",
+   "description": "Частота входящих HTTP-запросов по endpoint'ам (req/s). Резкие всплески — аномалия трафика. Падение в ноль в рабочее время — признак недоступности портала. Предагрегация: recording rule portal:http_request_rate5m (alerts/recording.yml)."
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "thresholds"
+     },
+     "mappings": [],
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       },
+       {
+        "color": "yellow",
+        "value": 0.01
+       },
+       {
+        "color": "red",
+        "value": 0.05
+       }
+      ]
+     },
+     "unit": "percentunit",
+     "noValue": "Нет данных"
+    },
+    "overrides": []
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 5,
+    "x": 9,
+    "y": 33
+   },
+   "id": 2,
+   "options": {
+    "colorMode": "value",
+    "graphMode": "area",
+    "justifyMode": "auto",
+    "orientation": "horizontal",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "textMode": "auto",
+    "noValue": "Нет данных"
+   },
+   "pluginVersion": "11.0.0",
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "editorMode": "code",
+     "expr": "1 - portal:slo_availability_5m",
+     "refId": "A"
+    }
+   ],
+   "title": "Error rate (5xx)",
+   "type": "stat",
+   "description": "Доля 5xx-ответов от фактически наблюдаемых запросов. При малом трафике процент не занижается. No data означает нулевой трафик либо отсутствие scrape — сверить с Backend scrape. > 5% и минимум около 10 ошибок за 5 минут — смотреть логи backend."
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "thresholds"
+     },
+     "mappings": [],
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       },
+       {
+        "color": "yellow",
+        "value": 1
+       },
+       {
+        "color": "red",
+        "value": 5
+       }
+      ]
+     },
+     "unit": "s",
+     "noValue": "Нет данных"
+    },
+    "overrides": []
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 5,
+    "x": 14,
+    "y": 33
+   },
+   "id": 3,
+   "options": {
+    "colorMode": "value",
+    "graphMode": "area",
+    "justifyMode": "auto",
+    "orientation": "horizontal",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "textMode": "auto",
+    "noValue": "Нет данных"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "editorMode": "code",
+     "expr": "max(portal:http_latency_p99_5m{handler=~\"$handler\"})",
+     "refId": "A"
+    }
+   ],
+   "title": "p99 latency",
+   "type": "stat",
+   "description": "Латентность p99 — 99% запросов укладываются в это время. Норма: < 1с. > 5с — медленный SQL/блокировки/нехватка пула соединений. Худший handler (max по отфильтрованным)."
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "thresholds"
+     },
+     "custom": {
+      "axisCenteredZero": false,
+      "axisColorMode": "text",
+      "axisLabel": "latency (s)",
+      "axisPlacement": "auto",
+      "barAlignment": 0,
+      "drawStyle": "line",
+      "fillOpacity": 10,
+      "gradientMode": "opacity",
+      "hideFrom": {
+       "legend": false,
+       "tooltip": false,
+       "viz": false
+      },
+      "insertNulls": false,
+      "lineInterpolation": "smooth",
+      "lineWidth": 2,
+      "pointSize": 5,
+      "scaleDistribution": {
+       "type": "log"
+      },
+      "showPoints": "never",
+      "spanNulls": false,
+      "stacking": {
+       "group": "A",
+       "mode": "none"
+      },
+      "thresholdsStyle": {
+       "mode": "line"
+      }
+     },
+     "mappings": [],
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       },
+       {
+        "color": "yellow",
+        "value": 1
+       },
+       {
+        "color": "red",
+        "value": 5
+       }
+      ]
+     },
+     "unit": "s"
+    },
+    "overrides": []
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 24,
+    "x": 0,
+    "y": 41
+   },
+   "id": 4,
+   "options": {
+    "legend": {
+     "calcs": [
+      "mean",
+      "max"
+     ],
+     "displayMode": "table",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "editorMode": "code",
+     "expr": "portal:http_latency_p99_5m{handler=~\"$handler\"}",
+     "legendFormat": "p99 {{ handler }}",
+     "refId": "A"
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "editorMode": "code",
+     "expr": "portal:http_latency_p50_5m{handler=~\"$handler\"}",
+     "legendFormat": "p50 {{ handler }}",
+     "refId": "B"
+    }
+   ],
+   "title": "Latency p50/p99 по endpoints",
+   "type": "timeseries",
+   "description": "Латентность по endpoint'ам: p50 (медиана) и p99. p50 — типичный отклик, p99 — худший из 1%. Растёт — bottleneck на конкретном endpoint (медленный SQL, блокировки БД)."
+  },
+  {
+   "collapsed": false,
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 49
+   },
+   "id": 101,
+   "panels": [],
+   "title": "Audit pipeline — очередь Redis → PostgreSQL",
+   "type": "row"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "thresholds"
+     },
+     "custom": {
+      "axisCenteredZero": false,
+      "axisColorMode": "text",
+      "axisLabel": "events",
+      "axisPlacement": "auto",
+      "barAlignment": 0,
+      "drawStyle": "line",
+      "fillOpacity": 20,
+      "gradientMode": "opacity",
+      "hideFrom": {
+       "legend": false,
+       "tooltip": false,
+       "viz": false
+      },
+      "insertNulls": false,
+      "lineInterpolation": "stepAfter",
+      "lineWidth": 2,
+      "pointSize": 5,
+      "scaleDistribution": {
+       "type": "linear"
+      },
+      "showPoints": "never",
+      "spanNulls": true,
+      "stacking": {
+       "group": "A",
+       "mode": "none"
+      },
+      "thresholdsStyle": {
+       "mode": "area"
+      }
+     },
+     "mappings": [],
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       },
+       {
+        "color": "yellow",
+        "value": 100
+       },
+       {
+        "color": "red",
+        "value": 1000
+       }
+      ]
+     },
+     "unit": "short"
+    },
+    "overrides": []
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 16,
+    "x": 0,
+    "y": 50
+   },
+   "id": 5,
+   "options": {
+    "legend": {
+     "calcs": [
+      "lastNotNull",
+      "max"
+     ],
+     "displayMode": "table",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "editorMode": "code",
+     "expr": "portal_audit_queue_depth",
+     "legendFormat": "pending (audit_queue)",
+     "refId": "A"
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "editorMode": "code",
+     "expr": "portal_audit_processing_depth",
+     "legendFormat": "processing (audit_processing)",
+     "refId": "B"
+    }
+   ],
+   "title": "Глубина очереди аудита (Redis)",
+   "type": "timeseries",
+   "description": "События аудита, ожидающие записи в БД (буфер Redis→PostgreSQL). Норма: 0–50. > 1000 — ARQ-воркер не успевает flush'ить (упал worker или БД)."
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "palette-classic"
+     },
+     "custom": {
+      "axisCenteredZero": false,
+      "axisColorMode": "text",
+      "axisLabel": "events/s",
+      "axisPlacement": "auto",
+      "barAlignment": 0,
+      "drawStyle": "line",
+      "fillOpacity": 15,
+      "gradientMode": "opacity",
+      "hideFrom": {
+       "legend": false,
+       "tooltip": false,
+       "viz": false
+      },
+      "insertNulls": false,
+      "lineInterpolation": "smooth",
+      "lineWidth": 2,
+      "pointSize": 5,
+      "scaleDistribution": {
+       "type": "linear"
+      },
+      "showPoints": "never",
+      "spanNulls": false,
+      "stacking": {
+       "group": "A",
+       "mode": "none"
+      },
+      "thresholdsStyle": {
+       "mode": "off"
+      }
+     },
+     "mappings": [],
+     "thresholds": {
+      "mode": "absolute",
+      "steps": []
+     },
+     "unit": "ops"
+    },
+    "overrides": []
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 8,
+    "x": 16,
+    "y": 50
+   },
+   "id": 6,
+   "options": {
+    "legend": {
+     "calcs": [
+      "mean",
+      "max"
+     ],
+     "displayMode": "table",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "single",
+     "sort": "none"
+    }
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "editorMode": "code",
+     "expr": "sum(rate(portal_audit_events_pushed_total[5m])) by (event_type)",
+     "legendFormat": "{{event_type}}",
+     "refId": "A"
+    }
+   ],
+   "title": "Audit push rate по типам событий",
+   "type": "timeseries",
+   "description": "Скорость поступления событий аудита по типам (login, page_view, и т.д.). Резкое падение в ноль в рабочее время — портал не используется или сломался push."
+  },
+  {
+   "collapsed": false,
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 58
+   },
+   "id": 102,
+   "panels": [],
+   "title": "Worker & activity",
+   "type": "row"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "thresholds"
+     },
+     "mappings": [
+      {
+       "options": {
+        "0": {
+         "color": "red",
+         "index": 0,
+         "text": "Недоступен"
+        },
+        "1": {
+         "color": "green",
+         "index": 1,
+         "text": "Работает"
+        }
+       },
+       "type": "value"
+      }
+     ],
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "text",
+        "value": null
+       }
+      ]
+     },
+     "unit": "none",
+     "noValue": "Нет данных"
+    },
+    "overrides": []
+   },
+   "gridPos": {
+    "h": 5,
+    "w": 4,
+    "x": 0,
+    "y": 59
+   },
+   "id": 7,
+   "options": {
+    "colorMode": "background",
+    "graphMode": "none",
+    "justifyMode": "auto",
+    "orientation": "horizontal",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "textMode": "auto",
+    "noValue": "Нет данных"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "editorMode": "code",
+     "expr": "up{job=\"portal\"}",
+     "refId": "A"
+    }
+   ],
+   "title": "Backend scrape",
+   "type": "stat",
+   "description": "up{job=\"portal\"}: Prometheus достучался до /metrics. Живость процесса, не готовность зависимостей (см. «Готовность API»)."
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "palette-classic"
+     },
+     "mappings": [],
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "red",
+        "value": null
+       },
+       {
+        "color": "green",
+        "value": 1
+       }
+      ]
+     },
+     "unit": "none",
+     "noValue": "Нет данных"
+    },
+    "overrides": []
+   },
+   "gridPos": {
+    "h": 5,
+    "w": 4,
+    "x": 4,
+    "y": 59
+   },
+   "id": 8,
+   "options": {
+    "colorMode": "background",
+    "graphMode": "area",
+    "justifyMode": "auto",
+    "orientation": "horizontal",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "textMode": "auto",
+    "noValue": "Нет данных"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "editorMode": "code",
+     "expr": "portal_active_users_last_1h",
+     "refId": "A"
+    }
+   ],
+   "title": "Активные юзеры (1ч)",
+   "type": "stat",
+   "description": "Уникальные пользователи, проявившие активность за последний час (по событиям аудита). Индикатор живого использования портала. Резкое падение — проблема доступа."
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "thresholds"
+     },
+     "mappings": [],
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       },
+       {
+        "color": "yellow",
+        "value": 300
+       },
+       {
+        "color": "red",
+        "value": 500
+       }
+      ]
+     },
+     "unit": "none",
+     "noValue": "Нет данных"
+    },
+    "overrides": []
+   },
+   "gridPos": {
+    "h": 5,
+    "w": 4,
+    "x": 8,
+    "y": 59
+   },
+   "id": 9,
+   "options": {
+    "colorMode": "background",
+    "graphMode": "area",
+    "justifyMode": "auto",
+    "orientation": "horizontal",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "textMode": "auto",
+    "noValue": "Нет данных"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "editorMode": "code",
+     "expr": "portal_sse_connections",
+     "refId": "A"
+    }
+   ],
+   "title": "SSE connections",
+   "type": "stat",
+   "description": "Открытые SSE-стримы уведомлений. Норма для ~300 юзеров — десятки. > 500 — утечка (незакрытые вкладки/EventSource, вкладки-зомби)."
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "thresholds"
+     },
+     "mappings": [],
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       },
+       {
+        "color": "yellow",
+        "value": 0.001
+       },
+       {
+        "color": "red",
+        "value": 0.01
+       }
+      ]
+     },
+     "unit": "ops",
+     "noValue": "Нет данных"
+    },
+    "overrides": []
+   },
+   "gridPos": {
+    "h": 5,
+    "w": 8,
+    "x": 12,
+    "y": 59
+   },
+   "id": 10,
+   "options": {
+    "colorMode": "value",
+    "graphMode": "area",
+    "justifyMode": "auto",
+    "orientation": "horizontal",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "textMode": "auto",
+    "noValue": "Нет данных"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "editorMode": "code",
+     "expr": "sum(rate(portal_arq_jobs_total{status=~\"failed|result_failed\"}[5m])) or (0 * sum(rate(portal_arq_jobs_total{status=\"started\"}[5m])))",
+     "legendFormat": "{{function}}",
+     "refId": "A"
+    }
+   ],
+   "title": "ARQ job failures rate",
+   "type": "stat",
+   "description": "Частота исключений и явных неуспешных результатов фоновых задач. Ноль показывается только когда есть серии started; No data означает отсутствие ARQ-метрик. Значение > 0 — смотреть логи worker и соседние панели timeout/cancelled."
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "description": "Свежесть cross-process metrics:snapshot. FRESH означает: текущий scrape прочитал и гидрировал JSON из Redis, а worker завершил публикацию не более 120 секунд назад. STALE — проверить PortalMetricsSnapshotStale, worker и Redis.",
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "thresholds"
+     },
+     "mappings": [
+      {
+       "options": {
+        "0": {
+         "color": "orange",
+         "index": 0,
+         "text": "Данные устарели"
+        },
+        "1": {
+         "color": "green",
+         "index": 1,
+         "text": "Свежие"
+        }
+       },
+       "type": "value"
+      }
+     ],
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "text",
+        "value": null
+       }
+      ]
+     },
+     "unit": "none",
+     "noValue": "Нет данных"
+    },
+    "overrides": []
+   },
+   "gridPos": {
+    "h": 5,
+    "w": 4,
+    "x": 0,
+    "y": 1
+   },
+   "id": 133,
+   "options": {
+    "colorMode": "background",
+    "graphMode": "none",
+    "justifyMode": "auto",
+    "orientation": "horizontal",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "textMode": "auto",
+    "noValue": "Нет данных"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "editorMode": "code",
+     "expr": "(portal_metrics_snapshot_read_success == bool 1) * (((time() - portal_metrics_snapshot_generated_timestamp_seconds) <= bool 120) or (0 * portal_metrics_snapshot_read_success))",
+     "refId": "A"
+    }
+   ],
+   "title": "Метрики",
+   "type": "stat"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "palette-classic"
+     },
+     "custom": {
+      "axisCenteredZero": false,
+      "axisColorMode": "text",
+      "axisLabel": "jobs/s",
+      "axisPlacement": "auto",
+      "barAlignment": 0,
+      "drawStyle": "line",
+      "fillOpacity": 15,
+      "gradientMode": "opacity",
+      "hideFrom": {
+       "legend": false,
+       "tooltip": false,
+       "viz": false
+      },
+      "insertNulls": false,
+      "lineInterpolation": "smooth",
+      "lineWidth": 2,
+      "pointSize": 5,
+      "scaleDistribution": {
+       "type": "linear"
+      },
+      "showPoints": "never",
+      "spanNulls": false,
+      "stacking": {
+       "group": "A",
+       "mode": "none"
+      },
+      "thresholdsStyle": {
+       "mode": "off"
+      }
+     },
+     "mappings": [],
+     "thresholds": {
+      "mode": "absolute",
+      "steps": []
+     },
+     "unit": "ops"
+    },
+    "overrides": []
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 24,
+    "x": 0,
+    "y": 64
+   },
+   "id": 11,
+   "options": {
+    "legend": {
+     "calcs": [
+      "mean",
+      "max"
+     ],
+     "displayMode": "table",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "editorMode": "code",
+     "expr": "sum(rate(portal_arq_jobs_total{status=\"started\"}[5m])) by (function)",
+     "legendFormat": "{{function}}",
+     "refId": "A"
+    }
+   ],
+   "title": "ARQ jobs enqueued rate",
+   "type": "timeseries",
+   "description": "Частота запуска фоновых задач. Показывает активность фоновых процессов портала. Резкий рост — массовые операции (импорт фото, рассылка новостей)."
+  },
+  {
+   "collapsed": false,
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 72
+   },
+   "id": 103,
+   "panels": [],
+   "title": "Content & storage",
+   "type": "row"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "palette-classic"
+     },
+     "custom": {
+      "axisCenteredZero": false,
+      "axisColorMode": "text",
+      "axisLabel": "",
+      "axisPlacement": "auto",
+      "barAlignment": 0,
+      "drawStyle": "line",
+      "fillOpacity": 10,
+      "gradientMode": "opacity",
+      "hideFrom": {
+       "legend": false,
+       "tooltip": false,
+       "viz": false
+      },
+      "insertNulls": false,
+      "lineInterpolation": "smooth",
+      "lineWidth": 2,
+      "pointSize": 5,
+      "scaleDistribution": {
+       "type": "linear"
+      },
+      "showPoints": "never",
+      "spanNulls": false,
+      "stacking": {
+       "group": "A",
+       "mode": "none"
+      },
+      "thresholdsStyle": {
+       "mode": "off"
+      }
+     },
+     "mappings": [],
+     "thresholds": {
+      "mode": "absolute",
+      "steps": []
+     },
+     "unit": "short"
+    },
+    "overrides": []
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 8,
+    "x": 0,
+    "y": 73
+   },
+   "id": 12,
+   "options": {
+    "legend": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "displayMode": "table",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "none"
+    }
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "editorMode": "code",
+     "expr": "portal_kb_articles_total",
+     "legendFormat": "kb {{status}}",
+     "refId": "A"
+    }
+   ],
+   "title": "KB articles по статусам",
+   "type": "timeseries",
+   "description": "Статьи базы знаний по статусам (published/draft). Индикатор наполнения базы знаний."
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "palette-classic"
+     },
+     "custom": {
+      "axisCenteredZero": false,
+      "axisColorMode": "text",
+      "axisLabel": "",
+      "axisPlacement": "auto",
+      "barAlignment": 0,
+      "drawStyle": "line",
+      "fillOpacity": 10,
+      "gradientMode": "opacity",
+      "hideFrom": {
+       "legend": false,
+       "tooltip": false,
+       "viz": false
+      },
+      "insertNulls": false,
+      "lineInterpolation": "smooth",
+      "lineWidth": 2,
+      "pointSize": 5,
+      "scaleDistribution": {
+       "type": "linear"
+      },
+      "showPoints": "never",
+      "spanNulls": false,
+      "stacking": {
+       "group": "A",
+       "mode": "none"
+      },
+      "thresholdsStyle": {
+       "mode": "off"
+      }
+     },
+     "mappings": [],
+     "thresholds": {
+      "mode": "absolute",
+      "steps": []
+     },
+     "unit": "short"
+    },
+    "overrides": []
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 8,
+    "x": 8,
+    "y": 73
+   },
+   "id": 13,
+   "options": {
+    "legend": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "displayMode": "table",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "none"
+    }
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "editorMode": "code",
+     "expr": "portal_news_published_total",
+     "legendFormat": "news {{status}}",
+     "refId": "A"
+    }
+   ],
+   "title": "News по статусам",
+   "type": "timeseries",
+   "description": "Новости по статусам (published/draft). Индикатор контентной активности."
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "thresholds"
+     },
+     "custom": {
+      "axisCenteredZero": false,
+      "axisColorMode": "text",
+      "axisLabel": "",
+      "axisPlacement": "auto",
+      "barAlignment": 0,
+      "drawStyle": "line",
+      "fillOpacity": 10,
+      "gradientMode": "opacity",
+      "hideFrom": {
+       "legend": false,
+       "tooltip": false,
+       "viz": false
+      },
+      "insertNulls": false,
+      "lineInterpolation": "smooth",
+      "lineWidth": 2,
+      "pointSize": 5,
+      "scaleDistribution": {
+       "type": "linear"
+      },
+      "showPoints": "never",
+      "spanNulls": false,
+      "stacking": {
+       "group": "A",
+       "mode": "none"
+      },
+      "thresholdsStyle": {
+       "mode": "line"
+      }
+     },
+     "mappings": [],
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       },
+       {
+        "color": "yellow",
+        "value": 50000000000.0
+       },
+       {
+        "color": "red",
+        "value": 100000000000.0
+       }
+      ]
+     },
+     "unit": "bytes"
+    },
+    "overrides": []
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 8,
+    "x": 16,
+    "y": 73
+   },
+   "id": 14,
+   "options": {
+    "legend": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "displayMode": "table",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "single",
+     "sort": "none"
+    }
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "editorMode": "code",
+     "expr": "portal_photo_storage_bytes",
+     "legendFormat": "/data/photos/originals",
+     "refId": "A"
+    }
+   ],
+   "title": "Фото-хранилище (байты)",
+   "type": "timeseries",
+   "description": "Объём /data/photos/originals. Растёт монотонно — нужно планировать ёмкость диска. > 100 ГБ — рассмотреть retention/чистку."
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "id": 104,
+   "title": "ARQ job duration (avg, сек)",
+   "type": "timeseries",
+   "description": "Средняя длительность задач по функциям: rate(portal_arq_job_duration_ms_total)/rate(portal_arq_jobs_total) по завершённым статусам. Перцентили недоступны: Redis-агрегация хранит суммы, а не распределения (см. core/metrics.py).",
+   "gridPos": {
+    "h": 8,
+    "w": 24,
+    "x": 0,
+    "y": 82
+   },
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "thresholds"
+     },
+     "custom": {
+      "axisLabel": "seconds",
+      "drawStyle": "line",
+      "fillOpacity": 10,
+      "gradientMode": "opacity",
+      "lineInterpolation": "smooth",
+      "lineWidth": 2,
+      "showPoints": "never",
+      "stacking": {
+       "group": "A",
+       "mode": "none"
+      },
+      "thresholdsStyle": {
+       "mode": "line"
+      }
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       },
+       {
+        "color": "yellow",
+        "value": 30
+       },
+       {
+        "color": "red",
+        "value": 120
+       }
+      ]
+     },
+     "unit": "s"
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "calcs": [
+      "mean",
+      "max"
+     ],
+     "displayMode": "table",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "editorMode": "code",
+     "expr": "rate(portal_arq_job_duration_ms_total[5m]) / 1000 / clamp_min(sum by (function) (rate(portal_arq_jobs_total{status!=\"started\"}[5m])), 1e-9)",
+     "legendFormat": "{{ function }}",
+     "refId": "A"
+    }
+   ]
+  },
+  {
+   "datasource": null,
+   "id": 105,
+   "title": "Очереди и synthetic (детали)",
+   "type": "row",
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 91
+   },
+   "panels": [],
+   "collapsed": false
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "id": 106,
+   "title": "Email: очередь (PENDING)",
+   "type": "stat",
+   "description": "Письма, ожидающие отправки. Норма: 0–10 (пульс при batch-отправке). > 50 — SMTP недоступен или медленный. Растёт → письма не уходят.",
+   "gridPos": {
+    "h": 5,
+    "w": 6,
+    "x": 0,
+    "y": 92
+   },
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "thresholds"
+     },
+     "mappings": [],
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       },
+       {
+        "color": "yellow",
+        "value": 20
+       },
+       {
+        "color": "red",
+        "value": 50
+       }
+      ]
+     },
+     "unit": "none",
+     "noValue": "Нет данных"
+    },
+    "overrides": []
+   },
+   "options": {
+    "colorMode": "value",
+    "graphMode": "area",
+    "justifyMode": "auto",
+    "orientation": "horizontal",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "textMode": "auto",
+    "noValue": "Нет данных"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "editorMode": "code",
+     "expr": "portal_email_outbox_pending",
+     "refId": "A"
+    }
+   ]
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "id": 107,
+   "title": "Email: DLQ",
+   "type": "stat",
+   "description": "Письма в dead-letter (безвозвратно потеряны после 6 попыток). Любое значение > 0 требует разбора через Admin UI → email-outbox.",
+   "gridPos": {
+    "h": 5,
+    "w": 6,
+    "x": 6,
+    "y": 92
+   },
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "thresholds"
+     },
+     "mappings": [],
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       },
+       {
+        "color": "yellow",
+        "value": 1
+       },
+       {
+        "color": "red",
+        "value": 5
+       }
+      ]
+     },
+     "unit": "none",
+     "noValue": "Нет данных"
+    },
+    "overrides": []
+   },
+   "options": {
+    "colorMode": "value",
+    "graphMode": "area",
+    "justifyMode": "auto",
+    "orientation": "horizontal",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "textMode": "auto",
+    "noValue": "Нет данных"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "editorMode": "code",
+     "expr": "portal_email_outbox_dlq",
+     "refId": "A"
+    }
+   ]
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "id": 108,
+   "title": "MAX: очередь (PENDING)",
+   "type": "stat",
+   "description": "MAX-сообщения, ожидающие отправки. Норма: 0. > 50 — MAX API недоступен, неверный токен/chat_id, или rate-limit.",
+   "gridPos": {
+    "h": 5,
+    "w": 6,
+    "x": 12,
+    "y": 92
+   },
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "thresholds"
+     },
+     "mappings": [],
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       },
+       {
+        "color": "yellow",
+        "value": 20
+       },
+       {
+        "color": "red",
+        "value": 50
+       }
+      ]
+     },
+     "unit": "none",
+     "noValue": "Нет данных"
+    },
+    "overrides": []
+   },
+   "options": {
+    "colorMode": "value",
+    "graphMode": "area",
+    "justifyMode": "auto",
+    "orientation": "horizontal",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "textMode": "auto",
+    "noValue": "Нет данных"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "editorMode": "code",
+     "expr": "portal_messenger_outbox_pending",
+     "refId": "A"
+    }
+   ]
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "id": 109,
+   "title": "MAX: DLQ",
+   "type": "stat",
+   "description": "MAX-сообщения в dead-letter. Разобрать через Admin UI, проверить токен MAX-бота.",
+   "gridPos": {
+    "h": 5,
+    "w": 6,
+    "x": 18,
+    "y": 92
+   },
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "thresholds"
+     },
+     "mappings": [],
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       },
+       {
+        "color": "yellow",
+        "value": 1
+       },
+       {
+        "color": "red",
+        "value": 5
+       }
+      ]
+     },
+     "unit": "none",
+     "noValue": "Нет данных"
+    },
+    "overrides": []
+   },
+   "options": {
+    "colorMode": "value",
+    "graphMode": "area",
+    "justifyMode": "auto",
+    "orientation": "horizontal",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "textMode": "auto",
+    "noValue": "Нет данных"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "editorMode": "code",
+     "expr": "portal_messenger_outbox_dlq",
+     "refId": "A"
+    }
+   ]
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "id": 110,
+   "title": "Keycloak",
+   "type": "stat",
+   "description": "SSO IdP. 1 = достижим (OIDC discovery), 0 = упал. При 0: логин через SSO ломается (local-auth fallback работает). No data = Keycloak не сконфигурирован. Состояния: UP — свежий успех; DOWN — свежая ошибка; STALE — ожидаемая probe не завершилась >180с или результат отсутствует; DISABLED — модуль/настройки выключены; No data — expectation ещё не публиковался.",
+   "gridPos": {
+    "h": 5,
+    "w": 4,
+    "x": 0,
+    "y": 6
+   },
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "thresholds"
+     },
+     "mappings": [
+      {
+       "options": {
+        "0": {
+         "color": "gray",
+         "index": 0,
+         "text": "Отключено"
+        },
+        "1": {
+         "color": "yellow",
+         "index": 1,
+         "text": "Данные устарели"
+        },
+        "2": {
+         "color": "red",
+         "index": 2,
+         "text": "Недоступна"
+        },
+        "3": {
+         "color": "green",
+         "index": 3,
+         "text": "Работает"
+        }
+       },
+       "type": "value"
+      }
+     ],
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "text",
+        "value": null
+       }
+      ]
+     },
+     "unit": "none",
+     "noValue": "Нет данных"
+    },
+    "overrides": []
+   },
+   "options": {
+    "colorMode": "value",
+    "graphMode": "area",
+    "justifyMode": "auto",
+    "orientation": "horizontal",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "textMode": "auto",
+    "noValue": "Нет данных"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "editorMode": "code",
+     "expr": "(0 * (portal_integration_expected{integration=\"keycloak\"} == 0)) or (1 * (portal_integration_expected{integration=\"keycloak\"} == 1 and on (integration) (portal_integration_result_available{integration=\"keycloak\"} == 0 or on (integration) (time() - portal_integration_probe_last_completed_timestamp_seconds{integration=\"keycloak\"} > 180)))) or (((portal_integration_expected{integration=\"keycloak\"} == 1) and on (integration) (portal_integration_result_available{integration=\"keycloak\"} == 1) and on (integration) (time() - portal_integration_probe_last_completed_timestamp_seconds{integration=\"keycloak\"} <= 180) and on (integration) (portal_integration_up{integration=\"keycloak\"} == 0)) + 1) or (((portal_integration_expected{integration=\"keycloak\"} == 1) and on (integration) (portal_integration_result_available{integration=\"keycloak\"} == 1) and on (integration) (time() - portal_integration_probe_last_completed_timestamp_seconds{integration=\"keycloak\"} <= 180) and on (integration) (portal_integration_up{integration=\"keycloak\"} == 1)) + 2)",
+     "refId": "A"
+    }
+   ]
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "id": 111,
+   "title": "Nextcloud",
+   "type": "stat",
+   "description": "Файловое хранилище. 1 = status.php отвечает, 0 = недоступен. При 0: загрузка/просмотр файлов сломаны. No data = модуль выключен. Состояния: UP — свежий успех; DOWN — свежая ошибка; STALE — ожидаемая probe не завершилась >180с или результат отсутствует; DISABLED — модуль/настройки выключены; No data — expectation ещё не публиковался.",
+   "gridPos": {
+    "h": 5,
+    "w": 4,
+    "x": 4,
+    "y": 6
+   },
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "thresholds"
+     },
+     "mappings": [
+      {
+       "options": {
+        "0": {
+         "color": "gray",
+         "index": 0,
+         "text": "Отключено"
+        },
+        "1": {
+         "color": "yellow",
+         "index": 1,
+         "text": "Данные устарели"
+        },
+        "2": {
+         "color": "red",
+         "index": 2,
+         "text": "Недоступна"
+        },
+        "3": {
+         "color": "green",
+         "index": 3,
+         "text": "Работает"
+        }
+       },
+       "type": "value"
+      }
+     ],
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "text",
+        "value": null
+       }
+      ]
+     },
+     "unit": "none",
+     "noValue": "Нет данных"
+    },
+    "overrides": []
+   },
+   "options": {
+    "colorMode": "value",
+    "graphMode": "area",
+    "justifyMode": "auto",
+    "orientation": "horizontal",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "textMode": "auto",
+    "noValue": "Нет данных"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "editorMode": "code",
+     "expr": "(0 * (portal_integration_expected{integration=\"nextcloud\"} == 0)) or (1 * (portal_integration_expected{integration=\"nextcloud\"} == 1 and on (integration) (portal_integration_result_available{integration=\"nextcloud\"} == 0 or on (integration) (time() - portal_integration_probe_last_completed_timestamp_seconds{integration=\"nextcloud\"} > 180)))) or (((portal_integration_expected{integration=\"nextcloud\"} == 1) and on (integration) (portal_integration_result_available{integration=\"nextcloud\"} == 1) and on (integration) (time() - portal_integration_probe_last_completed_timestamp_seconds{integration=\"nextcloud\"} <= 180) and on (integration) (portal_integration_up{integration=\"nextcloud\"} == 0)) + 1) or (((portal_integration_expected{integration=\"nextcloud\"} == 1) and on (integration) (portal_integration_result_available{integration=\"nextcloud\"} == 1) and on (integration) (time() - portal_integration_probe_last_completed_timestamp_seconds{integration=\"nextcloud\"} <= 180) and on (integration) (portal_integration_up{integration=\"nextcloud\"} == 1)) + 2)",
+     "refId": "A"
+    }
+   ]
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "id": 112,
+   "title": "SMTP",
+   "type": "stat",
+   "description": "Почтовый сервер. 1 = TCP-connect успешен, 0 = недоступен. При 0: письма копятся в outbox. No data = SMTP не сконфигурирован. Состояния: UP — свежий успех; DOWN — свежая ошибка; STALE — ожидаемая probe не завершилась >180с или результат отсутствует; DISABLED — модуль/настройки выключены; No data — expectation ещё не публиковался.",
+   "gridPos": {
+    "h": 5,
+    "w": 4,
+    "x": 12,
+    "y": 6
+   },
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "thresholds"
+     },
+     "mappings": [
+      {
+       "options": {
+        "0": {
+         "color": "gray",
+         "index": 0,
+         "text": "Отключено"
+        },
+        "1": {
+         "color": "yellow",
+         "index": 1,
+         "text": "Данные устарели"
+        },
+        "2": {
+         "color": "red",
+         "index": 2,
+         "text": "Недоступна"
+        },
+        "3": {
+         "color": "green",
+         "index": 3,
+         "text": "Работает"
+        }
+       },
+       "type": "value"
+      }
+     ],
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "text",
+        "value": null
+       }
+      ]
+     },
+     "unit": "none",
+     "noValue": "Нет данных"
+    },
+    "overrides": []
+   },
+   "options": {
+    "colorMode": "value",
+    "graphMode": "area",
+    "justifyMode": "auto",
+    "orientation": "horizontal",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "textMode": "auto",
+    "noValue": "Нет данных"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "editorMode": "code",
+     "expr": "(0 * (portal_integration_expected{integration=\"smtp\"} == 0)) or (1 * (portal_integration_expected{integration=\"smtp\"} == 1 and on (integration) (portal_integration_result_available{integration=\"smtp\"} == 0 or on (integration) (time() - portal_integration_probe_last_completed_timestamp_seconds{integration=\"smtp\"} > 180)))) or (((portal_integration_expected{integration=\"smtp\"} == 1) and on (integration) (portal_integration_result_available{integration=\"smtp\"} == 1) and on (integration) (time() - portal_integration_probe_last_completed_timestamp_seconds{integration=\"smtp\"} <= 180) and on (integration) (portal_integration_up{integration=\"smtp\"} == 0)) + 1) or (((portal_integration_expected{integration=\"smtp\"} == 1) and on (integration) (portal_integration_result_available{integration=\"smtp\"} == 1) and on (integration) (time() - portal_integration_probe_last_completed_timestamp_seconds{integration=\"smtp\"} <= 180) and on (integration) (portal_integration_up{integration=\"smtp\"} == 1)) + 2)",
+     "refId": "A"
+    }
+   ]
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "id": 113,
+   "title": "Collabora",
+   "type": "stat",
+   "description": "Онлайн-редактор документов. 1 = Nextcloud публикует richdocuments wopi_url и сам Collabora /hosting/capabilities отвечает валидным productVersion; 0 = конфигурация или редактор недоступны. При 0: редактирование документов сломано. No data = NC выключен. Состояния: UP — свежий успех; DOWN — свежая ошибка; STALE — ожидаемая probe не завершилась >180с или результат отсутствует; DISABLED — модуль/настройки выключены; No data — expectation ещё не публиковался.",
+   "gridPos": {
+    "h": 5,
+    "w": 4,
+    "x": 8,
+    "y": 6
+   },
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "thresholds"
+     },
+     "mappings": [
+      {
+       "options": {
+        "0": {
+         "color": "gray",
+         "index": 0,
+         "text": "Отключено"
+        },
+        "1": {
+         "color": "yellow",
+         "index": 1,
+         "text": "Данные устарели"
+        },
+        "2": {
+         "color": "red",
+         "index": 2,
+         "text": "Недоступна"
+        },
+        "3": {
+         "color": "green",
+         "index": 3,
+         "text": "Работает"
+        }
+       },
+       "type": "value"
+      }
+     ],
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "text",
+        "value": null
+       }
+      ]
+     },
+     "unit": "none",
+     "noValue": "Нет данных"
+    },
+    "overrides": []
+   },
+   "options": {
+    "colorMode": "value",
+    "graphMode": "area",
+    "justifyMode": "auto",
+    "orientation": "horizontal",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "textMode": "auto",
+    "noValue": "Нет данных"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "editorMode": "code",
+     "expr": "(0 * (portal_integration_expected{integration=\"collabora\"} == 0)) or (1 * (portal_integration_expected{integration=\"collabora\"} == 1 and on (integration) (portal_integration_result_available{integration=\"collabora\"} == 0 or on (integration) (time() - portal_integration_probe_last_completed_timestamp_seconds{integration=\"collabora\"} > 180)))) or (((portal_integration_expected{integration=\"collabora\"} == 1) and on (integration) (portal_integration_result_available{integration=\"collabora\"} == 1) and on (integration) (time() - portal_integration_probe_last_completed_timestamp_seconds{integration=\"collabora\"} <= 180) and on (integration) (portal_integration_up{integration=\"collabora\"} == 0)) + 1) or (((portal_integration_expected{integration=\"collabora\"} == 1) and on (integration) (portal_integration_result_available{integration=\"collabora\"} == 1) and on (integration) (time() - portal_integration_probe_last_completed_timestamp_seconds{integration=\"collabora\"} <= 180) and on (integration) (portal_integration_up{integration=\"collabora\"} == 1)) + 2)",
+     "refId": "A"
+    }
+   ]
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "id": 114,
+   "title": "Вход",
+   "type": "stat",
+   "description": "Внутренняя browser-проба local-auth → HomePage marker → совпадающий local user в bootstrap, без pageerror. Не проверяет SSO и внешний TLS. DISABLED, STALE, DOWN или UP; No data означает недоступный/ещё не опрошенный screenshot-service.",
+   "gridPos": {
+    "h": 5,
+    "w": 4,
+    "x": 4,
+    "y": 1
+   },
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "thresholds"
+     },
+     "mappings": [
+      {
+       "options": {
+        "0": {
+         "color": "blue",
+         "index": 0,
+         "text": "Отключено"
+        },
+        "1": {
+         "color": "yellow",
+         "index": 1,
+         "text": "Данные устарели"
+        },
+        "2": {
+         "color": "red",
+         "index": 2,
+         "text": "Ошибка"
+        },
+        "3": {
+         "color": "green",
+         "index": 3,
+         "text": "Работает"
+        }
+       },
+       "type": "value"
+      }
+     ],
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "text",
+        "value": null
+       }
+      ]
+     },
+     "unit": "none",
+     "noValue": "Нет данных"
+    },
+    "overrides": []
+   },
+   "options": {
+    "colorMode": "value",
+    "graphMode": "none",
+    "justifyMode": "auto",
+    "orientation": "horizontal",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "textMode": "auto",
+    "noValue": "Нет данных"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "editorMode": "code",
+     "expr": "(0 * (portal_synthetic_probe_expected{job=\"screenshot-service\",flow=\"login_and_load\"} == 0)) or (1 * (portal_synthetic_probe_expected{job=\"screenshot-service\",flow=\"login_and_load\"} == 1 and on (flow) (portal_synthetic_probe_result_available{job=\"screenshot-service\",flow=\"login_and_load\"} == 0 or on (flow) (time() - portal_synthetic_probe_last_completed_timestamp_seconds{job=\"screenshot-service\",flow=\"login_and_load\"} > 900)))) or (((portal_synthetic_probe_expected{job=\"screenshot-service\",flow=\"login_and_load\"} == 1) and on (flow) (portal_synthetic_probe_result_available{job=\"screenshot-service\",flow=\"login_and_load\"} == 1) and on (flow) (time() - portal_synthetic_probe_last_completed_timestamp_seconds{job=\"screenshot-service\",flow=\"login_and_load\"} <= 900) and on (flow) (portal_synthetic_probe_up{job=\"screenshot-service\",flow=\"login_and_load\"} == 0)) + 1) or (((portal_synthetic_probe_expected{job=\"screenshot-service\",flow=\"login_and_load\"} == 1) and on (flow) (portal_synthetic_probe_result_available{job=\"screenshot-service\",flow=\"login_and_load\"} == 1) and on (flow) (time() - portal_synthetic_probe_last_completed_timestamp_seconds{job=\"screenshot-service\",flow=\"login_and_load\"} <= 900) and on (flow) (portal_synthetic_probe_up{job=\"screenshot-service\",flow=\"login_and_load\"} == 1)) + 2)",
+     "refId": "A"
+    }
+   ]
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "id": 115,
+   "title": "Synthetic: длительность",
+   "type": "stat",
+   "description": "Длительность только свежего завершённого synthetic-результата. Пусто при DISABLED или STALE.",
+   "gridPos": {
+    "h": 5,
+    "w": 8,
+    "x": 8,
+    "y": 101
+   },
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "thresholds"
+     },
+     "mappings": [],
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       },
+       {
+        "color": "yellow",
+        "value": 15
+       },
+       {
+        "color": "red",
+        "value": 30
+       }
+      ]
+     },
+     "unit": "s",
+     "noValue": "Нет данных"
+    },
+    "overrides": []
+   },
+   "options": {
+    "colorMode": "value",
+    "graphMode": "area",
+    "justifyMode": "auto",
+    "orientation": "horizontal",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "textMode": "auto",
+    "noValue": "Нет данных"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "editorMode": "code",
+     "expr": "portal_synthetic_probe_duration_seconds{job=\"screenshot-service\",flow=\"login_and_load\"} and on (flow) (portal_synthetic_probe_result_available{job=\"screenshot-service\",flow=\"login_and_load\"} == 1)",
+     "refId": "A"
+    }
+   ]
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "description": "Топ-5 endpoint'ов по точной доле 5xx при существующем трафике. Пусто может означать нулевой трафик или отсутствие scrape; состояние источника видно в Backend scrape.",
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "thresholds"
+     },
+     "mappings": [],
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       },
+       {
+        "color": "yellow",
+        "value": 0.01
+       },
+       {
+        "color": "red",
+        "value": 0.05
+       }
+      ]
+     },
+     "unit": "percentunit",
+     "noValue": "Нет данных"
+    },
+    "overrides": []
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 5,
+    "x": 19,
+    "y": 33
+   },
+   "id": 15,
+   "options": {
+    "colorMode": "value",
+    "graphMode": "area",
+    "justifyMode": "auto",
+    "orientation": "horizontal",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "textMode": "name",
+    "noValue": "Нет данных"
+   },
+   "pluginVersion": "11.0.0",
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "editorMode": "code",
+     "expr": "topk(5, portal:http_error_ratio5m)",
+     "legendFormat": "__auto",
+     "refId": "A"
+    }
+   ],
+   "title": "Топ-5 хендлеров по error-rate (5xx)",
+   "type": "stat"
+  },
+  {
+   "id": 116,
+   "type": "row",
+   "title": "Внешний периметр (blackbox)",
+   "description": "Внешние HTTP(S)-пробы (DNS→TLS→nginx) + срок TLS-сертификатов. Цели — BLACKBOX_TARGETS в .env. Алерты: PortalExternalProbeFailed, PortalCertExpirySoon/Critical.",
+   "collapsed": false,
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 106
+   },
+   "panels": []
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "id": 117,
+   "title": "Внешние пробы (up)",
+   "type": "stat",
+   "description": "probe_success по внешним целям (1 = доступен). Отличать от integration-probes выше — те проверяют сервисы изнутри, blackbox идёт полным путём пользователя.",
+   "gridPos": {
+    "h": 5,
+    "w": 12,
+    "x": 0,
+    "y": 107
+   },
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "thresholds"
+     },
+     "mappings": [],
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "red",
+        "value": null
+       },
+       {
+        "color": "green",
+        "value": 1
+       }
+      ]
+     },
+     "unit": "none",
+     "noValue": "Нет данных"
+    },
+    "overrides": []
+   },
+   "options": {
+    "colorMode": "value",
+    "graphMode": "area",
+    "justifyMode": "auto",
+    "orientation": "horizontal",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "textMode": "auto",
+    "noValue": "Нет данных"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "editorMode": "code",
+     "expr": "probe_success{job=\"blackbox\"}",
+     "legendFormat": "{{ target_name }}",
+     "refId": "A"
+    }
+   ]
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "id": 118,
+   "title": "TLS-сертификаты (дней до истечения)",
+   "type": "stat",
+   "description": "probe_ssl_earliest_cert_expiry - time(). Пороги: <14 дней warning, <3 critical (алерты PortalCertExpiry*).",
+   "gridPos": {
+    "h": 5,
+    "w": 12,
+    "x": 12,
+    "y": 107
+   },
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "thresholds"
+     },
+     "mappings": [],
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "red",
+        "value": null
+       },
+       {
+        "color": "orange",
+        "value": 7
+       },
+       {
+        "color": "yellow",
+        "value": 14
+       },
+       {
+        "color": "green",
+        "value": 30
+       }
+      ]
+     },
+     "unit": "none",
+     "noValue": "Нет данных"
+    },
+    "overrides": []
+   },
+   "options": {
+    "colorMode": "value",
+    "graphMode": "area",
+    "justifyMode": "auto",
+    "orientation": "horizontal",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "textMode": "auto",
+    "noValue": "Нет данных"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "editorMode": "code",
+     "expr": "(probe_ssl_earliest_cert_expiry{job=\"blackbox\"} - time()) / 86400",
+     "legendFormat": "{{ target_name }}",
+     "refId": "A"
+    }
+   ]
+  },
+  {
+   "id": 119,
+   "type": "row",
+   "title": "HTTP success ratio",
+   "description": "Техническая доля HTTP-ответов без 5xx. Не покрывает DNS/TLS/SSO/JS и не является утверждённым SLA. No data означает нулевой трафик либо отсутствие scrape.",
+   "collapsed": false,
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 112
+   },
+   "panels": []
+  },
+  {
+   "id": 120,
+   "type": "stat",
+   "title": "Доля успешных HTTP-ответов (5m) — техническая",
+   "description": "Это доля 2xx среди ответов API. НЕ полная доступность портала: не учитывает DNS/TLS/SSO/браузер. Пользовательский путь — панель «Вход сотрудников».",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "gridPos": {
+    "h": 6,
+    "w": 8,
+    "x": 0,
+    "y": 113
+   },
+   "options": {
+    "colorMode": "value",
+    "graphMode": "area",
+    "justifyMode": "auto",
+    "orientation": "horizontal",
+    "textMode": "auto",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "noValue": "Нет данных"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "thresholds"
+     },
+     "mappings": [],
+     "unit": "percentunit",
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "red",
+        "value": null
+       },
+       {
+        "color": "yellow",
+        "value": 0.99
+       },
+       {
+        "color": "green",
+        "value": 0.995
+       }
+      ]
+     },
+     "noValue": "Нет данных"
+    },
+    "overrides": []
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "editorMode": "code",
+     "expr": "portal:slo_availability_5m",
+     "legendFormat": "availability",
+     "refId": "A"
+    }
+   ]
+  },
+  {
+   "id": 121,
+   "type": "timeseries",
+   "title": "Доля успешных HTTP-ответов (5m, тренд) — не «доступность портала»",
+   "description": "Тренд технической HTTP success ratio; жёлтая зона ниже ориентировочных 99.5%. Разрывы означают нулевой трафик или отсутствие данных.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "gridPos": {
+    "h": 6,
+    "w": 16,
+    "x": 8,
+    "y": 113
+   },
+   "options": {
+    "legend": {
+     "calcs": [
+      "mean",
+      "min"
+     ],
+     "displayMode": "table",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "thresholds"
+     },
+     "unit": "percentunit",
+     "custom": {
+      "drawStyle": "line",
+      "fillOpacity": 10,
+      "gradientMode": "opacity",
+      "lineInterpolation": "smooth",
+      "lineWidth": 2,
+      "showPoints": "never",
+      "stacking": {
+       "group": "A",
+       "mode": "none"
+      },
+      "thresholdsStyle": {
+       "mode": "line+area"
+      }
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "red",
+        "value": null
+       },
+       {
+        "color": "yellow",
+        "value": 0.995
+       },
+       {
+        "color": "green",
+        "value": 0.9985
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "editorMode": "code",
+     "expr": "portal:slo_availability_5m",
+     "legendFormat": "availability",
+     "refId": "A"
+    }
+   ]
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "id": 122,
+   "title": "ERP sync",
+   "type": "stat",
+   "description": "Синхронизация с ERP. probe_integrations (каждую минуту): 1 = свежий успешный импорт, 0 = проблема. No data = интеграция не сконфигурирована. Состояния: UP — свежий успех; DOWN — свежая ошибка; STALE — ожидаемая probe не завершилась >180с или результат отсутствует; DISABLED — модуль/настройки выключены; No data — expectation ещё не публиковался.",
+   "gridPos": {
+    "h": 5,
+    "w": 4,
+    "x": 16,
+    "y": 6
+   },
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "thresholds"
+     },
+     "mappings": [
+      {
+       "options": {
+        "0": {
+         "color": "gray",
+         "index": 0,
+         "text": "Отключено"
+        },
+        "1": {
+         "color": "yellow",
+         "index": 1,
+         "text": "Данные устарели"
+        },
+        "2": {
+         "color": "red",
+         "index": 2,
+         "text": "Недоступна"
+        },
+        "3": {
+         "color": "green",
+         "index": 3,
+         "text": "Работает"
+        }
+       },
+       "type": "value"
+      }
+     ],
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "text",
+        "value": null
+       }
+      ]
+     },
+     "unit": "none",
+     "noValue": "Нет данных"
+    },
+    "overrides": []
+   },
+   "options": {
+    "colorMode": "value",
+    "graphMode": "area",
+    "justifyMode": "auto",
+    "orientation": "horizontal",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "textMode": "auto",
+    "noValue": "Нет данных"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "editorMode": "code",
+     "expr": "(0 * (portal_integration_expected{integration=\"erp_sync\"} == 0)) or (1 * (portal_integration_expected{integration=\"erp_sync\"} == 1 and on (integration) (portal_integration_result_available{integration=\"erp_sync\"} == 0 or on (integration) (time() - portal_integration_probe_last_completed_timestamp_seconds{integration=\"erp_sync\"} > 180)))) or (((portal_integration_expected{integration=\"erp_sync\"} == 1) and on (integration) (portal_integration_result_available{integration=\"erp_sync\"} == 1) and on (integration) (time() - portal_integration_probe_last_completed_timestamp_seconds{integration=\"erp_sync\"} <= 180) and on (integration) (portal_integration_up{integration=\"erp_sync\"} == 0)) + 1) or (((portal_integration_expected{integration=\"erp_sync\"} == 1) and on (integration) (portal_integration_result_available{integration=\"erp_sync\"} == 1) and on (integration) (time() - portal_integration_probe_last_completed_timestamp_seconds{integration=\"erp_sync\"} <= 180) and on (integration) (portal_integration_up{integration=\"erp_sync\"} == 1)) + 2)",
+     "refId": "A"
+    }
+   ]
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "id": 123,
+   "title": "Отпуска",
+   "type": "stat",
+   "description": "Импорт отсутствий из ERP. probe_integrations (каждую минуту): 1 = свежий успешный импорт, 0 = проблема. No data = интеграция не сконфигурирована. Состояния: UP — свежий успех; DOWN — свежая ошибка; STALE — ожидаемая probe не завершилась >180с или результат отсутствует; DISABLED — модуль/настройки выключены; No data — expectation ещё не публиковался.",
+   "gridPos": {
+    "h": 5,
+    "w": 4,
+    "x": 20,
+    "y": 6
+   },
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "thresholds"
+     },
+     "mappings": [
+      {
+       "options": {
+        "0": {
+         "color": "gray",
+         "index": 0,
+         "text": "Отключено"
+        },
+        "1": {
+         "color": "yellow",
+         "index": 1,
+         "text": "Данные устарели"
+        },
+        "2": {
+         "color": "red",
+         "index": 2,
+         "text": "Недоступна"
+        },
+        "3": {
+         "color": "green",
+         "index": 3,
+         "text": "Работает"
+        }
+       },
+       "type": "value"
+      }
+     ],
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "text",
+        "value": null
+       }
+      ]
+     },
+     "unit": "none",
+     "noValue": "Нет данных"
+    },
+    "overrides": []
+   },
+   "options": {
+    "colorMode": "value",
+    "graphMode": "area",
+    "justifyMode": "auto",
+    "orientation": "horizontal",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "textMode": "auto",
+    "noValue": "Нет данных"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "editorMode": "code",
+     "expr": "(0 * (portal_integration_expected{integration=\"erp_absences\"} == 0)) or (1 * (portal_integration_expected{integration=\"erp_absences\"} == 1 and on (integration) (portal_integration_result_available{integration=\"erp_absences\"} == 0 or on (integration) (time() - portal_integration_probe_last_completed_timestamp_seconds{integration=\"erp_absences\"} > 180)))) or (((portal_integration_expected{integration=\"erp_absences\"} == 1) and on (integration) (portal_integration_result_available{integration=\"erp_absences\"} == 1) and on (integration) (time() - portal_integration_probe_last_completed_timestamp_seconds{integration=\"erp_absences\"} <= 180) and on (integration) (portal_integration_up{integration=\"erp_absences\"} == 0)) + 1) or (((portal_integration_expected{integration=\"erp_absences\"} == 1) and on (integration) (portal_integration_result_available{integration=\"erp_absences\"} == 1) and on (integration) (time() - portal_integration_probe_last_completed_timestamp_seconds{integration=\"erp_absences\"} <= 180) and on (integration) (portal_integration_up{integration=\"erp_absences\"} == 1)) + 2)",
+     "refId": "A"
+    }
+   ]
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "id": 124,
+   "title": "Directum",
+   "type": "stat",
+   "description": "Интеграция с Directum. probe_integrations (каждую минуту): 1 = свежий успешный импорт, 0 = проблема. No data = интеграция не сконфигурирована. Состояния: UP — свежий успех; DOWN — свежая ошибка; STALE — ожидаемая probe не завершилась >180с или результат отсутствует; DISABLED — модуль/настройки выключены; No data — expectation ещё не публиковался.",
+   "gridPos": {
+    "h": 4,
+    "w": 4,
+    "x": 8,
+    "y": 120
+   },
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "thresholds"
+     },
+     "mappings": [
+      {
+       "options": {
+        "0": {
+         "color": "gray",
+         "index": 0,
+         "text": "Отключено"
+        },
+        "1": {
+         "color": "yellow",
+         "index": 1,
+         "text": "Данные устарели"
+        },
+        "2": {
+         "color": "red",
+         "index": 2,
+         "text": "Недоступна"
+        },
+        "3": {
+         "color": "green",
+         "index": 3,
+         "text": "Работает"
+        }
+       },
+       "type": "value"
+      }
+     ],
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "text",
+        "value": null
+       }
+      ]
+     },
+     "unit": "none",
+     "noValue": "Нет данных"
+    },
+    "overrides": []
+   },
+   "options": {
+    "colorMode": "value",
+    "graphMode": "area",
+    "justifyMode": "auto",
+    "orientation": "horizontal",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "textMode": "auto",
+    "noValue": "Нет данных"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "editorMode": "code",
+     "expr": "(0 * (portal_integration_expected{integration=\"directum\"} == 0)) or (1 * (portal_integration_expected{integration=\"directum\"} == 1 and on (integration) (portal_integration_result_available{integration=\"directum\"} == 0 or on (integration) (time() - portal_integration_probe_last_completed_timestamp_seconds{integration=\"directum\"} > 180)))) or (((portal_integration_expected{integration=\"directum\"} == 1) and on (integration) (portal_integration_result_available{integration=\"directum\"} == 1) and on (integration) (time() - portal_integration_probe_last_completed_timestamp_seconds{integration=\"directum\"} <= 180) and on (integration) (portal_integration_up{integration=\"directum\"} == 0)) + 1) or (((portal_integration_expected{integration=\"directum\"} == 1) and on (integration) (portal_integration_result_available{integration=\"directum\"} == 1) and on (integration) (time() - portal_integration_probe_last_completed_timestamp_seconds{integration=\"directum\"} <= 180) and on (integration) (portal_integration_up{integration=\"directum\"} == 1)) + 2)",
+     "refId": "A"
+    }
+   ]
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "id": 125,
+   "title": "Helpdesk: к архивации",
+   "type": "stat",
+   "description": "Закрытые заявки, ждущие переноса в immutable-архив (HELPDESK_ARCHIVE_AFTER_DAYS). Норма — 0.",
+   "gridPos": {
+    "h": 4,
+    "w": 4,
+    "x": 12,
+    "y": 120
+   },
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "thresholds"
+     },
+     "mappings": [],
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       },
+       {
+        "color": "yellow",
+        "value": 1
+       },
+       {
+        "color": "red",
+        "value": 50
+       }
+      ]
+     },
+     "unit": "none",
+     "noValue": "Нет данных"
+    },
+    "overrides": []
+   },
+   "options": {
+    "colorMode": "value",
+    "graphMode": "area",
+    "justifyMode": "auto",
+    "orientation": "horizontal",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "textMode": "auto",
+    "noValue": "Нет данных"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "editorMode": "code",
+     "expr": "portal_helpdesk_archive_backlog",
+     "refId": "A"
+    }
+   ]
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "id": 126,
+   "title": "Email: SENDING>10м",
+   "type": "stat",
+   "description": "Письма застряли в SENDING > 10 мин (worker взял, не закоммитил). Норма — 0; рост = смотреть requeue_stale_sending.",
+   "gridPos": {
+    "h": 4,
+    "w": 4,
+    "x": 16,
+    "y": 120
+   },
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "thresholds"
+     },
+     "mappings": [],
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       },
+       {
+        "color": "red",
+        "value": 1
+       }
+      ]
+     },
+     "unit": "none",
+     "noValue": "Нет данных"
+    },
+    "overrides": []
+   },
+   "options": {
+    "colorMode": "value",
+    "graphMode": "area",
+    "justifyMode": "auto",
+    "orientation": "horizontal",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "textMode": "auto",
+    "noValue": "Нет данных"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "editorMode": "code",
+     "expr": "portal_email_outbox_sending_stale",
+     "refId": "A"
+    }
+   ]
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "id": 127,
+   "title": "MAX: SENDING>10м",
+   "type": "stat",
+   "description": "MAX-сообщения застряли в SENDING > 10 мин. Норма — 0 (основа алерта PortalMessengerOutboxStuck).",
+   "gridPos": {
+    "h": 4,
+    "w": 4,
+    "x": 20,
+    "y": 120
+   },
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "thresholds"
+     },
+     "mappings": [],
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       },
+       {
+        "color": "red",
+        "value": 1
+       }
+      ]
+     },
+     "unit": "none",
+     "noValue": "Нет данных"
+    },
+    "overrides": []
+   },
+   "options": {
+    "colorMode": "value",
+    "graphMode": "area",
+    "justifyMode": "auto",
+    "orientation": "horizontal",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "textMode": "auto",
+    "noValue": "Нет данных"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "editorMode": "code",
+     "expr": "portal_messenger_outbox_sending_stale",
+     "refId": "A"
+    }
+   ]
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "id": 128,
+   "title": "ARQ: таймауты и прерывания задач (rate)",
+   "type": "timeseries",
+   "description": "Исходы попыток: timeout — TimeoutError внутри задачи; cancelled — прерывание (включая внешний deadline ARQ, shutdown и явную отмену). Причина cancelled неизвестна. Успешный повтор считается отдельной попыткой.",
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 0,
+    "y": 128
+   },
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "thresholds"
+     },
+     "custom": {
+      "axisLabel": "seconds",
+      "drawStyle": "line",
+      "fillOpacity": 10,
+      "gradientMode": "opacity",
+      "lineInterpolation": "smooth",
+      "lineWidth": 2,
+      "showPoints": "never",
+      "stacking": {
+       "group": "A",
+       "mode": "none"
+      },
+      "thresholdsStyle": {
+       "mode": "line"
+      }
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       },
+       {
+        "color": "yellow",
+        "value": 30
+       },
+       {
+        "color": "red",
+        "value": 120
+       }
+      ]
+     },
+     "unit": "ops"
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "calcs": [
+      "mean",
+      "max"
+     ],
+     "displayMode": "table",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "editorMode": "code",
+     "expr": "sum by (function, status) (rate(portal_arq_jobs_total{status=~\"timeout|cancelled\"}[15m]))",
+     "legendFormat": "{{ function }} · {{ status }}",
+     "refId": "A"
+    }
+   ]
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "id": 129,
+   "title": "HTTP client: p95 latency",
+   "type": "timeseries",
+   "description": "Исходящие HTTP-вызовы портала (Nextcloud/Keycloak/MAX/screenshot-service и т.д.) по target'ам. Растет → деградация внешней зависимости.",
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 12,
+    "y": 128
+   },
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "thresholds"
+     },
+     "custom": {
+      "axisLabel": "seconds",
+      "drawStyle": "line",
+      "fillOpacity": 10,
+      "gradientMode": "opacity",
+      "lineInterpolation": "smooth",
+      "lineWidth": 2,
+      "showPoints": "never",
+      "stacking": {
+       "group": "A",
+       "mode": "none"
+      },
+      "thresholdsStyle": {
+       "mode": "line"
+      }
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       },
+       {
+        "color": "yellow",
+        "value": 30
+       },
+       {
+        "color": "red",
+        "value": 120
+       }
+      ]
+     },
+     "unit": "s"
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "calcs": [
+      "mean",
+      "max"
+     ],
+     "displayMode": "table",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "editorMode": "code",
+     "expr": "histogram_quantile(0.95, sum by (le, target) (rate(portal_http_client_request_duration_seconds_bucket[5m])))",
+     "legendFormat": "{{ target }}",
+     "refId": "A"
+    }
+   ]
+  },
+  {
+   "collapsed": false,
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 136
+   },
+   "id": 130,
+   "panels": [],
+   "title": "Согласование 1С (ERP approvals)",
+   "type": "row"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "id": 131,
+   "title": "1С",
+   "type": "stat",
+   "description": "Доступность HTTP-сервиса согласования 1С. probe_integrations (каждую минуту): GETTokenByLogin с заведомо несопоставленным логином (токены не выдаются), 404 = сервис жив. 1 = up, 0 = down (алерт PortalIntegrationDown). No data = модуль выключен или подключение не настроено. Состояния: UP — свежий успех; DOWN — свежая ошибка; STALE — ожидаемая probe не завершилась >180с или результат отсутствует; DISABLED — модуль/настройки выключены; No data — expectation ещё не публиковался.",
+   "gridPos": {
+    "h": 5,
+    "w": 4,
+    "x": 20,
+    "y": 1
+   },
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "thresholds"
+     },
+     "mappings": [
+      {
+       "options": {
+        "0": {
+         "color": "gray",
+         "index": 0,
+         "text": "Отключено"
+        },
+        "1": {
+         "color": "yellow",
+         "index": 1,
+         "text": "Данные устарели"
+        },
+        "2": {
+         "color": "red",
+         "index": 2,
+         "text": "Недоступна"
+        },
+        "3": {
+         "color": "green",
+         "index": 3,
+         "text": "Работает"
+        }
+       },
+       "type": "value"
+      }
+     ],
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "text",
+        "value": null
+       }
+      ]
+     },
+     "unit": "none",
+     "noValue": "Нет данных"
+    },
+    "overrides": []
+   },
+   "options": {
+    "colorMode": "value",
+    "graphMode": "area",
+    "justifyMode": "auto",
+    "orientation": "horizontal",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "textMode": "auto",
+    "noValue": "Нет данных"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "editorMode": "code",
+     "expr": "(0 * (portal_integration_expected{integration=\"erp_approvals\"} == 0)) or (1 * (portal_integration_expected{integration=\"erp_approvals\"} == 1 and on (integration) (portal_integration_result_available{integration=\"erp_approvals\"} == 0 or on (integration) (time() - portal_integration_probe_last_completed_timestamp_seconds{integration=\"erp_approvals\"} > 180)))) or (((portal_integration_expected{integration=\"erp_approvals\"} == 1) and on (integration) (portal_integration_result_available{integration=\"erp_approvals\"} == 1) and on (integration) (time() - portal_integration_probe_last_completed_timestamp_seconds{integration=\"erp_approvals\"} <= 180) and on (integration) (portal_integration_up{integration=\"erp_approvals\"} == 0)) + 1) or (((portal_integration_expected{integration=\"erp_approvals\"} == 1) and on (integration) (portal_integration_result_available{integration=\"erp_approvals\"} == 1) and on (integration) (time() - portal_integration_probe_last_completed_timestamp_seconds{integration=\"erp_approvals\"} <= 180) and on (integration) (portal_integration_up{integration=\"erp_approvals\"} == 1)) + 2)",
+     "refId": "A"
+    }
+   ]
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "id": 132,
+   "title": "Согласования: действия (rate)",
+   "type": "timeseries",
+   "description": "Согласования/отклонения через портал (portal_approvals_actions_total). approve/reject — одиночные из карточки, bulk_approve — массовая партия (partial = часть партии). Полная история каждого документа — в 1С, портал-аудит — журнал Admin UI.",
+   "gridPos": {
+    "h": 5,
+    "w": 16,
+    "x": 8,
+    "y": 137
+   },
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "thresholds"
+     },
+     "custom": {
+      "axisLabel": "ops",
+      "drawStyle": "line",
+      "fillOpacity": 10,
+      "gradientMode": "opacity",
+      "lineInterpolation": "smooth",
+      "lineWidth": 2,
+      "showPoints": "never",
+      "stacking": {
+       "group": "A",
+       "mode": "normal"
+      },
+      "thresholdsStyle": {
+       "mode": "line"
+      }
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       }
+      ]
+     },
+     "unit": "ops"
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "calcs": [
+      "sum"
+     ],
+     "displayMode": "table",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "editorMode": "code",
+     "expr": "sum(rate(portal_approvals_actions_total{outcome=\"ok\"}[5m])) by (action)",
+     "legendFormat": "{{action}} · ok",
+     "refId": "A"
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "editorMode": "code",
+     "expr": "sum(rate(portal_approvals_actions_total{outcome!=\"ok\"}[5m])) by (action, outcome)",
+     "legendFormat": "{{action}} · {{outcome}}",
+     "refId": "B"
+    }
+   ]
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "id": 241,
+   "title": "Обновлено (UTC)",
+   "type": "stat",
+   "description": "Момент последней завершённой публикации снапшота метрик воркером (UTC). Свежесть — панель «Метрики».",
+   "gridPos": {
+    "h": 5,
+    "w": 5,
+    "x": 19,
+    "y": 27
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "dateTimeAsUtc",
+     "noValue": "Нет данных",
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "text",
+        "value": null
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "colorMode": "value",
+    "graphMode": "none",
+    "justifyMode": "auto",
+    "orientation": "auto",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "noValue": "Нет данных"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "editorMode": "code",
+     "expr": "portal_metrics_snapshot_generated_timestamp_seconds * 1000",
+     "instant": true,
+     "range": false,
+     "refId": "A"
+    }
+   ]
+  }
+ ],
+ "refresh": "30s",
+ "schemaVersion": 39,
+ "tags": [
+  "portal",
+  "overview"
+ ],
+ "templating": {
+  "list": [
+   {
+    "name": "env",
+    "label": "Окружение",
+    "type": "custom",
+    "query": "тест,прод",
+    "current": {
+     "text": "тест",
+     "value": "тест"
+    },
+    "options": [
+     {
+      "text": "тест",
+      "value": "тест",
+      "selected": true
+     },
+     {
+      "text": "прод",
+      "value": "прод",
+      "selected": false
+     }
+    ],
+    "hide": 0,
+    "description": "Контур, который смотрит этот дашборд. Значение информационное: каждый контур использует свой экземпляр Grafana."
+   },
+   {
+    "name": "service",
+    "label": "Сервис",
+    "type": "query",
+    "datasource": {
+     "type": "prometheus",
+     "uid": "prometheus"
+    },
+    "query": {
+     "query": "label_values(ALERTS, service)",
+     "refId": "PrometheusVariableQueryEditor-VariableQuery"
+    },
+    "multi": true,
+    "includeAll": true,
+    "allValue": ".*",
+    "current": {
+     "text": "All",
+     "value": "$__all"
+    },
+    "hide": 0,
+    "description": "Фильтр таблицы тревог по label service."
+   }
+  ]
+ },
+ "time": {
+  "from": "now-6h",
+  "to": "now"
+ },
+ "timepicker": {},
+ "timezone": "browser",
+ "title": "Portal — Overview",
+ "uid": "portal-overview",
+ "version": 7,
+ "weekStart": ""
+}

@@ -1,0 +1,349 @@
+"""Users business-logic layer: административные операции (/users/admin/*)."""
+
+from __future__ import annotations
+
+import uuid
+from datetime import UTC, datetime
+
+from fastapi import HTTPException, Request, UploadFile, status
+from redis.asyncio import Redis
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.security import hash_password_async
+from app.models.user import User
+from app.schemas.user import (
+    AdminPatchPreferencesRequest,
+    AdminPatchProfileRequest,
+    LocalUserCreateRequest,
+    PasswordResetRequest,
+    PatchRoleRequest,
+    UserRole,
+)
+from app.services.audit import make_audit_emitter
+from app.services.session import invalidate_all_user_sessions
+
+from . import avatar_service, users_repo
+from ._common import logger
+
+_emit_audit = make_audit_emitter("user")
+
+
+async def enqueue_keycloak_sync(request: Request, admin: User, redis: Redis) -> dict:
+    arq_pool = getattr(request.app.state, "arq_pool", None)
+    if arq_pool is None:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Job queue is not available")
+    job = await arq_pool.enqueue_job("sync_users_from_keycloak")
+    await _emit_audit(
+        redis,
+        event_type="user.sync_requested",
+        user_id=str(admin.id),
+        metadata={"job_id": job.job_id if job else None},
+    )
+    return {"job_id": job.job_id if job else None, "status": "queued"}
+
+
+async def change_user_role(
+    db: AsyncSession,
+    redis: Redis,
+    admin: User,
+    user_id: uuid.UUID,
+    body: PatchRoleRequest,
+) -> User:
+    if body.role not in UserRole.__members__.values():
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Invalid role"
+        )
+
+    if user_id == admin.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot change your own role",
+        )
+
+    user = await users_repo.fetch_user_any(db, user_id)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    old_role = user.role
+    await users_repo.update_user_fields(db, user_id, {"role": body.role})
+    await db.commit()
+    await db.refresh(user)
+    await _emit_audit(
+        redis,
+        event_type="user.role_changed",
+        user_id=str(admin.id),
+        resource_id=str(user_id),
+        metadata={"old_role": old_role, "new_role": body.role},
+    )
+
+    logger.info(
+        "admin.role_changed",
+        target_user_id=str(user_id),
+        new_role=body.role,
+        by=str(admin.id),
+    )
+    return user
+
+
+async def create_local_user(
+    db: AsyncSession,
+    redis: Redis,
+    admin: User,
+    body: LocalUserCreateRequest,
+) -> User:
+    from app.api import users as _users_pkg
+
+    if not _users_pkg.settings.local_auth_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Local authentication is disabled",
+        )
+
+    existing = await users_repo.find_active_by_email(db, body.email)
+    if existing:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
+
+    password_hash = await hash_password_async(body.password)
+    user = await users_repo.insert_local_user(
+        db,
+        email=body.email,
+        full_name=body.full_name,
+        password_hash=password_hash,
+        role=body.role,
+    )
+    await db.commit()
+    await _emit_audit(
+        redis,
+        event_type="user.created",
+        user_id=str(admin.id),
+        resource_id=str(user.id),
+        metadata={"auth_source": "local", "role": body.role},
+    )
+
+    logger.info("admin.local_user_created", new_user_email=body.email, by=str(admin.id))
+    return user
+
+
+async def get_user_groups(db: AsyncSession, user_id: uuid.UUID) -> dict:
+    target = await users_repo.fetch_active_user(db, user_id)
+    if not target:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    return {"groups": list(target.keycloak_groups or [])}
+
+
+async def admin_patch_profile(
+    db: AsyncSession,
+    redis: Redis,
+    admin: User,
+    user_id: uuid.UUID,
+    body: AdminPatchProfileRequest,
+) -> User:
+    target = await users_repo.fetch_active_user(db, user_id)
+    if not target:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    updates: dict = {}
+    if body.full_name is not None:
+        updates["full_name"] = body.full_name
+    if body.department is not None:
+        updates["department"] = body.department
+    if body.position is not None:
+        updates["position"] = body.position
+    if body.phone is not None:
+        updates["phone"] = body.phone
+    if body.birth_date is not None:
+        updates["birth_date"] = body.birth_date
+    if body.gender is not None:
+        updates["gender"] = body.gender
+
+    # Текстовые поля профиля — источник истины Keycloak, редактировать можно
+    # только локальные аккаунты. Фокал аватара — настройка портала, доступна
+    # для любых auth_source (как и загрузка аватара ниже).
+    if updates and target.auth_source != "local":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Profile editing is only available for local accounts",
+        )
+
+    if body.avatar_focal_x is not None:
+        updates["avatar_focal_x"] = body.avatar_focal_x
+    if body.avatar_focal_y is not None:
+        updates["avatar_focal_y"] = body.avatar_focal_y
+    if body.avatar_focal_zoom is not None:
+        updates["avatar_focal_zoom"] = body.avatar_focal_zoom
+
+    if not updates:
+        return target
+
+    updates["updated_at"] = datetime.now(UTC)
+    await users_repo.update_user_fields(db, user_id, updates)
+    await db.commit()
+    await db.refresh(target)
+    await _emit_audit(
+        redis,
+        event_type="user.profile_updated",
+        user_id=str(admin.id),
+        resource_id=str(user_id),
+        metadata={"fields": list(updates.keys())},
+    )
+    return target
+
+
+async def admin_upload_avatar(
+    db: AsyncSession,
+    redis: Redis,
+    admin: User,
+    user_id: uuid.UUID,
+    file: UploadFile,
+) -> User:
+    target = await users_repo.fetch_active_user(db, user_id)
+    if not target:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    updated = await avatar_service.save_avatar(db, target, file)
+    await _emit_audit(
+        redis,
+        event_type="user.avatar_changed",
+        user_id=str(admin.id),
+        resource_id=str(user_id),
+    )
+    logger.info("admin.user_avatar_changed", target_user_id=str(user_id), by=str(admin.id))
+    return updated
+
+
+async def admin_delete_avatar(
+    db: AsyncSession,
+    redis: Redis,
+    admin: User,
+    user_id: uuid.UUID,
+) -> User:
+    target = await users_repo.fetch_active_user(db, user_id)
+    if not target:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    updated = await avatar_service.remove_avatar(db, target)
+    await _emit_audit(
+        redis,
+        event_type="user.avatar_deleted",
+        user_id=str(admin.id),
+        resource_id=str(user_id),
+    )
+    logger.info("admin.user_avatar_deleted", target_user_id=str(user_id), by=str(admin.id))
+    return updated
+
+
+async def delete_user(db: AsyncSession, redis: Redis, admin: User, user_id: uuid.UUID) -> None:
+    if user_id == admin.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot delete your own account",
+        )
+
+    target = await users_repo.fetch_active_user(db, user_id)
+    if not target:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    news_versions_affected = await users_repo.count_news_versions_for_editor(db, user_id)
+
+    await users_repo.soft_delete_user(db, user_id)
+    await db.commit()
+    await invalidate_all_user_sessions(redis, str(user_id))
+    await _emit_audit(
+        redis,
+        event_type="user.deleted",
+        user_id=str(admin.id),
+        resource_id=str(user_id),
+        metadata={
+            "email": target.email,
+            "auth_source": target.auth_source,
+            "soft_delete": True,
+            "news_versions_editor_id_affected": news_versions_affected,
+        },
+    )
+    logger.info(
+        "admin.user_deleted",
+        target_user_id=str(user_id),
+        email=target.email,
+        by=str(admin.id),
+    )
+
+
+async def reset_user_password(
+    db: AsyncSession,
+    redis: Redis,
+    admin: User,
+    user_id: uuid.UUID,
+    body: PasswordResetRequest,
+) -> dict:
+    target = await users_repo.fetch_user_any(db, user_id)
+    if not target:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    if target.auth_source != "local":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Password reset is only available for local accounts",
+        )
+
+    new_hash = await hash_password_async(body.new_password)
+    await users_repo.update_user_fields(db, user_id, {"password_hash": new_hash})
+    await db.commit()
+    await invalidate_all_user_sessions(redis, str(user_id))
+    await _emit_audit(
+        redis,
+        event_type="user.password_reset",
+        user_id=str(admin.id),
+        resource_id=str(user_id),
+    )
+    logger.info("admin.password_reset", target_user_id=str(user_id), by=str(admin.id))
+    return {"ok": True}
+
+
+async def admin_get_notification_preferences(db: AsyncSession, user_id: uuid.UUID) -> dict:
+    """Флаги уведомлений пользователя для admin-профиля.
+
+    ``UserPublic`` preferences не отдаёт — админскому UI нужны только флаги
+    уведомлений, отдаём их явно (принцип минимальной поверхности).
+    """
+    target = await users_repo.fetch_active_user(db, user_id)
+    if not target:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    prefs = target.preferences or {}
+    return {"chat_notifications_enabled": bool(prefs.get("chat_notifications_enabled", False))}
+
+
+async def admin_patch_preferences(
+    db: AsyncSession,
+    redis: Redis,
+    admin: User,
+    user_id: uuid.UUID,
+    body: AdminPatchPreferencesRequest,
+) -> dict:
+    """Админ переключает флаги уведомлений пользователя (из его профиля).
+
+    Read-modify-write merge по образцу ``users_me_service.patch_my_preferences``:
+    перезаписывается только переданный ключ, остальные preferences не трогаем.
+    """
+    target = await users_repo.fetch_active_user(db, user_id)
+    if not target:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    if body.chat_notifications_enabled is not None:
+        prefs = dict(target.preferences or {})
+        prefs["chat_notifications_enabled"] = body.chat_notifications_enabled
+        await users_repo.update_user_fields(
+            db,
+            user_id,
+            {"preferences": prefs, "updated_at": datetime.now(UTC)},
+        )
+        await db.commit()
+        await db.refresh(target)
+        await _emit_audit(
+            redis,
+            event_type="user.notification_preferences_updated",
+            user_id=str(admin.id),
+            resource_id=str(user_id),
+            metadata={"chat_notifications_enabled": body.chat_notifications_enabled},
+        )
+
+    prefs = target.preferences or {}
+    return {"chat_notifications_enabled": bool(prefs.get("chat_notifications_enabled", False))}

@@ -1,0 +1,229 @@
+# =============================================================================
+# PROJECT — правила, актуальные для всех разработчиков проекта
+# =============================================================================
+
+# ===== Python =====
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+.eggs/
+dist/
+dist-learn/
+build/
+.build/
+*.whl                    # wheels в корне backend/ — только для offline-экспериментов, не в git
+
+# Virtual environments
+.venv/
+.venv-ci
+.venv-actions
+venv/
+env/
+ENV/
+
+# Type checking / linting
+.mypy_cache/
+.ruff_cache/
+.dmypy.json
+dmypy.json
+
+# Testing
+.pytest_cache/
+.coverage
+coverage/
+htmlcov/
+.tox/
+
+# ===== Node / Frontend =====
+node_modules/
+.pnp/
+.pnp.js
+
+# Generated OpenAPI types: types.gen.d.ts КОММИТИТСЯ и проверяется drift-гейтом
+# ci.yml (frontend-types-drift). run `npm run gen:types` to regenerate.
+# Легаси types.gen.ts (перестал генерироваться) СПЕЦИАЛЬНО не в ignore:
+# TS-резолвер предпочитает .ts над .d.ts — протухший остаток на старом
+# чекауте молча затенял бы закоммиченный .d.ts (аудит-4). Если нашёл у себя —
+# удали: rm frontend/src/api/types.gen.ts
+
+# Build output
+dist/
+.cache/
+.parcel-cache/
+.turbo/
+
+# ===== Environment & Secrets =====
+.env
+.env.local
+.env.*.local
+*.env
+secrets/redis.acl
+
+# ===== Docker =====
+docker-compose.override.yml
+docker-compose.dev.yml
+docker-compose.staging.yml
+docker-compose.test.yml
+# Артефакт bind-mount: при solo-запуске monitoring/docker-compose.monitoring.yml
+# (без основного -f docker-compose.yml) project_directory = monitoring/, пути
+# ./monitoring/... удваиваются до monitoring/monitoring/... и Docker создаёт
+# пустые root-owned директории вместо mount-src. Запускать только через setup.sh
+# (пункт 10) или `docker compose -f docker-compose.yml -f monitoring/...`.
+monitoring/monitoring/
+# Runtime-артефакт: storage-collector пишет monitoring/textfile/storage.prom
+# каждые 5 мин (du по папкам /data/* и Docker json-file логам), node-exporter
+# отдаёт его через --collector.textfile. В git — только .gitkeep (чтобы директория
+# существовала); сам .prom генерируется на каждом хосте.
+monitoring/textfile/*.prom
+
+# ===== Logs =====
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ===== TLS / Certificates (legacy nginx/certs/) =====
+nginx/certs/
+
+# ===== Databases / Volumes (local dev) =====
+base_data/
+upload_data/
+system_data/settings/
+system_data/secrets/
+system_data/nginx_conf/
+system_data/nginx_reload/
+system_data/certs/
+
+# ===== IDE =====
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ===== Alembic =====
+alembic/versions/__pycache__/
+
+# ===== Playwright =====
+test-results/
+playwright-report/
+playwright/.cache/
+playwright/.auth/
+e2e-shots/
+
+# ===== Dev tmp data (локальные bind mounts при разработке) =====
+backend/tmp_data/
+
+# ===== Runtime (setup.sh) =====
+.portal-mode
+.portal-profile
+.env.backup.*
+
+# ===== Test artifacts =====
+coverage.xml
+junit*.xml
+*-junit.xml
+test-results*.xml
+.coverage.*
+*_out.txt
+test_output.txt
+*_temp.js
+
+# ===== Certificate / key files =====
+*.pem
+*.key
+*.crt
+*.csr
+*.p12
+*.pfx
+
+# Исключения: публичные trust anchors, необходимые для сборки Docker-образа.
+# Russian Trusted Root CA (Минцифры) — публичный, выложен на gu-st.ru/content/Other/doc/russian_trusted_root_ca.cer;
+# не входит в Mozilla CA Bundle / Debian ca-certificates, поэтому должен быть в git,
+# иначе COPY certs/*.crt в backend/Dockerfile падает в CI (clean checkout). См. backend/certs/README.md.
+!backend/certs/russian_trusted_root_ca.crt
+
+# ===== Database dumps =====
+*.dump
+*.sql.gz
+*.pg_dump
+
+# ===== k6 / load test output =====
+load/results/
+load/output/
+
+# ===== Git merge artifacts =====
+*.orig
+*.rej
+*.bak
+
+# =============================================================================
+# PERSONAL — следы конкретных разработчиков / инструментов.
+# Рекомендуется вынести в ~/.gitignore_global, чтобы не засорять
+# проектный .gitignore. Оставлены здесь для защиты от случайных коммитов.
+# =============================================================================
+
+# ===== AI agent tooling =====
+.playwright-mcp/
+.zenflow/
+.zenflow-attachments/
+# Локальный контекст ZCode: plan-файлы (рабочие заметки сессий) не пушим в git —
+# в них бывают временные гипотезы/чувствительные данные (см. чистку mage.ru в
+# сессии 2026-07-29: домен утёк именно из plan-файла). config.json оставляем
+# отслеживаемым как референс настройки MCP-серверов (секретов там нет — токены
+# вызываются через wrapper-скрипты scripts/mcp/*).
+.zcode/*
+!.zcode/config.json
+# codebase-memory: граф кодовой базы (graph.db.zst, ~12 МБ бинарник) —
+# переиндексируется локально одной командой index_repository. Не коммитить:
+# в публичном репо это мёртвый вес, каждый clone таскал бы его в истории.
+.codebase-memory/
+# Semgrep Guardian: артефакты плагина (guardian.yml, локальный кэш). Плагин
+# отключён — это SaaS, конфликтующий с intranet/VPN-only контуром (нужен логин
+# на semgrep.dev). Игнорируем на случай случайного включения плагина.
+.semgrep/
+
+# ===== Временные файлы сессий =====
+_commit_msg.txt
+_check.py
+.git-commit-msg.tmp
+.commitmsg
+commit_msg.txt
+
+# ===== Windows dev helper scripts =====
+*.bat
+*.ps1
+
+# ===== Debug / ad-hoc SQL =====
+check_*.sql
+check_*.py
+check_*.cjs
+scratch_*.sql
+
+# ===== Python ad-hoc scripts =====
+do_*.py
+cleanup_*.py
+git_cmd.py
+git_*.py
+_tmp_*.py
+_write*.py
+
+# ===== Случайные медиа-файлы разработчиков =====
+mage-home.jpeg
+
+# ===== Monitoring — runtime-сгенерированные (содержат секреты!) =====
+# alertmanager.rendered.yml создаётся render-alertmanager.sh в рантайме
+# из alertmanager.yml (шаблон) и содержит РАСКРЫТЫЕ SMTP-credentials.
+# В коммите быть НЕ должно.
+monitoring/alerts/alertmanager.rendered.yml
+
+# Playwright storageState (содержит cookie сессии!)
+frontend/playwright/.auth/
+e2e-shots/

@@ -1,0 +1,27 @@
+# Default owner — fallback for anything not matched below.
+* @reydan
+
+# CI / infra
+/.forgejo/                @reydan
+/.gitea/                  @reydan
+/docker-compose.yml       @reydan
+/setup.sh                 @reydan
+/nginx/                   @reydan
+/postgres/                @reydan
+/scripts/                 @reydan
+
+# Backend
+/backend/                 @reydan
+/backend/tests/           @reydan
+/backend/migrations/      @reydan
+
+# Frontend
+/frontend/                @reydan
+/frontend/tests/          @reydan
+
+# Security / load
+/security/                @reydan
+/load/                    @reydan
+
+# Docs
+/docs/                    @reydan

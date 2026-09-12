@@ -1,0 +1,19 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": [
+    "src/main.ts",
+    "src/learn/main.ts",
+    "tests/e2e/**/*.ts"
+  ],
+  "project": [
+    "src/**/*.{ts,tsx,vue}",
+    "tests/**/*.{ts,tsx,vue}",
+    "vite.config.ts",
+    "vite.config.learn.ts",
+    "eslint.config.js"
+  ],
+  "ignore": [
+    "src/api/types.gen.d.ts"
+  ],
+  "playwright": false
+}

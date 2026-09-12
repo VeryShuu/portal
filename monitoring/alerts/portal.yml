@@ -1,0 +1,955 @@
+# Portal alerting rules — reference.
+#
+# Философия: алерт = «человек должен посмотреть СЕЙЧАС». Всё, что
+# самовосстанавливается (единичный 5xx, кратковременный lag снапшота), —
+# не алертим. Минимальный `for:` — 2–5 мин, чтобы дать системе settle.
+#
+# Метрики, на которые опираемся (см. backend/app/core/metrics.py):
+#   http_requests_total{status,handler}        — RED (prometheus_fastapi_instrumentator)
+#   http_request_duration_seconds_bucket       — latency histogram
+#   portal_audit_queue_depth                   — gauge (Redis audit_queue)
+#   portal_audit_processing_depth              — gauge (Redis audit_processing)
+#   portal_audit_events_pushed_total           — counter (rate push)
+#   portal_sse_connections                     — gauge (open SSE streams)
+#   portal_active_users_last_1h                — gauge
+#   up{job="portal"}                           — scrape success
+#   portal_backend_ready                       — gauge (1 = последняя /ready прошла; PA-023)
+#
+# Worker heartbeat — cron `worker_heartbeat` пишет unix-timestamp в Redis
+# (ключ `arq:heartbeat:mtime`), который гидрируется в gauge
+# `portal_worker_last_heartbeat_seconds`. Age = time() - gauge — прямой датчик
+# смерти воркера (см. PortalWorkerDown ниже). Отдельный TTL-key `arq:heartbeat`
+# (без timestamp) остаётся для Docker healthcheck.
+
+groups:
+  # ===================================================================
+  # Meta-monitoring — здоровье самого observability-стека.
+  # Если умирает Prometheus/Alertmanager/Grafana/Loki/Alloy, остальной
+  # алертинг молча гибнет. Watchdog — всегда-firing heartbeat: его пропажа
+  # из уведомлений = умер прометей или alertmanager. Down-алерты ловят
+  # каждый компонент по отдельности.
+  # ===================================================================
+  - name: portal-meta
+    interval: 30s
+    rules:
+      # Watchdog — всегда firing. Это «маяк»: если он перестал приходить в
+      # уведомления, значит Prometheus не eval'ит rules или Alertmanager не
+      # шлёт (т.е. умер один из них). Канонический паттерн из best-practices.
+      - alert: Watchdog
+        expr: vector(1)
+        labels:
+          severity: warning
+          service: monitoring
+        annotations:
+          summary: "Monitoring watchdog alive"
+          description: "Этот алерт всегда firing. Если он перестал приходить в уведомления — умер Prometheus или Alertmanager (остальные алерты тоже молча не уходят). Проверить `docker compose ps prometheus alertmanager` (overlay monitoring)."
+
+      # Worker обновляет metrics:snapshot каждые 30с. API выставляет
+      # read_success для текущего scrape и timestamp завершённой публикации.
+      # Старые gauges в памяти API больше не могут выглядеть свежими.
+      - alert: PortalMetricsSnapshotStale
+        expr: |
+          portal_metrics_snapshot_read_success == 0
+          or
+          (time() - portal_metrics_snapshot_generated_timestamp_seconds > 120)
+        for: 2m
+        labels:
+          severity: warning
+          service: portal-worker
+        annotations:
+          summary: "Снапшот метрик портала не обновляется"
+          description: "API не может прочитать актуальный metrics:snapshot из Redis или возраст последней завершённой публикации превысил 120с. Старые бизнес-метрики могут оставаться видимыми, но не считаются свежими. Проверить worker refresh_custom_metrics, Redis и логи metrics.snapshot_publish_failed/metrics.hydrate_failed."
+
+      # Prometheus — не отвечает на self-scrape. Без него весь алертинг мёртв.
+      - alert: PrometheusDown
+        expr: up{job="prometheus"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: monitoring
+        annotations:
+          summary: "Prometheus недоступен"
+          description: "Prometheus не отвечает на self-scrape (:9090/metrics). Весь остальной алертинг не работает, пока он мёртв. Проверить `docker compose ps prometheus` (overlay monitoring), логи `docker compose logs prometheus`, свободное место на диске (retention 30d)."
+
+      # Alertmanager — мёртв. Прометей eval'ит алерты, но некому их доставить.
+      - alert: AlertmanagerDown
+        expr: up{job="alertmanager"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: monitoring
+        annotations:
+          summary: "Alertmanager недоступен"
+          description: "Alertmanager не отвечает на scrape (:9093/-/ready). Prometheus eval'ит алерты, но некому доставить уведомления. Проверить `docker compose ps alertmanager` (overlay monitoring), логи, SMTP-настройки."
+
+      # Grafana — мёртв. UI observability недоступен (алерты при этом идут).
+      - alert: GrafanaDown
+        expr: up{job="grafana"} == 0
+        for: 5m
+        labels:
+          severity: warning
+          service: monitoring
+        annotations:
+          summary: "Grafana недоступна"
+          description: "Grafana не отвечает на scrape (:3000/metrics). UI observability (дашборды) недоступен. Алерты при этом работают (Alertmanager независим). Проверить `docker compose ps grafana` (overlay monitoring)."
+
+      # Loki — мёртв. Centralized-логи не принимаются (но Grafana-alternatives живы).
+      - alert: LokiDown
+        expr: up{job="loki"} == 0
+        for: 5m
+        labels:
+          severity: warning
+          service: monitoring
+        annotations:
+          summary: "Loki недоступен"
+          description: "Loki не отвечает на scrape (:3100/ready). Centralized-логи не принимаются (поиск по request_id и т.п. через Grafana нерабочий). Проверить `docker compose ps loki` (overlay monitoring), свободное место на volume loki-data."
+
+      # Alloy — мёртв. Сбор логов остановлен (логи контейнеров не доходят до Loki).
+      - alert: AlloyDown
+        expr: up{job="alloy"} == 0
+        for: 5m
+        labels:
+          severity: warning
+          service: monitoring
+        annotations:
+          summary: "Alloy (сборщик логов) недоступен"
+          description: "Alloy не отвечает на scrape (:12345/-/ready). Сбор Docker-логов остановлен — новые логи не поступают в Loki. Проверить `docker compose ps alloy` (overlay monitoring), Docker socket mount."
+
+      # cAdvisor — per-container метрики. Без него рестарт-лупы и OOM-kill'ы
+      # контейнеров невидимы (host-метрики node-exporter'а их не различают).
+      - alert: CadvisorDown
+        expr: up{job="cadvisor"} == 0
+        for: 5m
+        labels:
+          severity: warning
+          service: monitoring
+        annotations:
+          summary: "cAdvisor недоступен"
+          description: "cAdvisor не отвечает на scrape (:8080/metrics) — per-container метрики (CPU/RAM/рестарты) не собираются. Проверить `docker compose ps cadvisor` (overlay monitoring); частая причина после рестарта docker-daemon — устаревший /var/lib/docker mount."
+
+      # Blackbox — внешний периметр (доступность URL + TLS-сертификаты).
+      # NB: при пустых BLACKBOX_TARGETS job без целей — серия up отсутствует,
+      # алерт молчит корректно.
+      - alert: BlackboxDown
+        expr: up{job="blackbox"} == 0
+        for: 5m
+        labels:
+          severity: warning
+          service: monitoring
+        annotations:
+          summary: "Blackbox exporter недоступен"
+          description: "Prometheus не может опросить blackbox-exporter (:9115) — внешние пробы (доступность + TLS-сертификаты) не выполняются. Проверить `docker compose ps blackbox-exporter` (overlay monitoring)."
+
+      # Nginx exporter (stub_status) — соединения/req-rate. Слушает только
+      # :8080/8443 внутри сети (80 — лишь хостовый маппинг): неверный
+      # NGINX_SCRAPE_URI молча убивал все nginx-панели.
+      - alert: NginxDown
+        expr: up{job="nginx"} == 0
+        for: 5m
+        labels:
+          severity: warning
+          service: monitoring
+        annotations:
+          summary: "Nginx exporter недоступен"
+          description: "Prometheus не может опросить nginx-exporter (:9113) — метрики stub_status (соединения, request rate) не собираются. Проверить `docker compose ps nginx-exporter` (overlay monitoring) и достижимость NGINX_SCRAPE_URI изнутри сети: nginx слушает :8080, не :80."
+
+      # Экспортеры инфраструктуры. Их смерть не роняет сам сервис-источник
+      # (postgres/redis/host живы), но панели уходят в «No data», а связанные
+      # алерты (PortalPG*, PortalRedis*, PortalDiskSpaceLow/PortalCPUHigh/
+      # PortalRAMLow) слепнут. Аудит 2026-08: exporter-down-алерты были
+      # только у nginx/blackbox/cadvisor — эти три «тихо» отсутствовали.
+      - alert: PostgresExporterDown
+        expr: up{job="postgres"} == 0
+        for: 5m
+        labels:
+          severity: warning
+          service: monitoring
+        annotations:
+          summary: "PostgreSQL exporter недоступен"
+          description: "postgres-exporter не отвечает на scrape (:9187) — метрики пула/cache/wraparound не собираются, PG-алерты слепнут. Проверить `docker compose ps postgres-exporter` (overlay monitoring) и POSTGRES_PASSWORD в .env."
+
+      - alert: RedisExporterDown
+        expr: up{job="redis"} == 0
+        for: 5m
+        labels:
+          severity: warning
+          service: monitoring
+        annotations:
+          summary: "Redis exporter недоступен"
+          description: "redis-exporter не отвечает на scrape (:9121) — память/evictions/keyspace не собираются, Redis-алерты слепнут. Проверить `docker compose ps redis-exporter` (overlay monitoring) и REDIS_PASSWORD в .env."
+
+      - alert: NodeExporterDown
+        expr: up{job="node"} == 0
+        for: 5m
+        labels:
+          severity: warning
+          service: monitoring
+        annotations:
+          summary: "Node exporter недоступен"
+          description: "node-exporter не отвечает на scrape (:9100) — метрики хоста (диск/CPU/RAM) и textfile-метрики storage-collector'а не собираются; PortalDiskSpaceLow слепнет. Проверить `docker compose ps node-exporter` (overlay monitoring)."
+
+      # Доставка алертов: Alertmanager жив и принимает алерты, но уведомления
+      # не уходят (SMTP недоступен / TLS-несовместимость / неверные креды).
+      # Без этого алерта «молчание» неотличимо от «всё спокойно».
+      - alert: AlertmanagerNotificationsFailed
+        expr: sum(rate(alertmanager_notifications_failed_total[5m])) > 0
+        for: 10m
+        labels:
+          severity: warning
+          service: monitoring
+        annotations:
+          summary: "Alertmanager не доставляет уведомления"
+          description: "rate(alertmanager_notifications_failed_total) > 0 уже 10 мин — алерты принимаются, но письма/webhook не уходят. Проверить `docker compose logs alertmanager` (SMTP-ошибки), настройки ALERT_SMTP_* в .env (в т.ч. smtp_require_tls для plaintext-ретлея на :25 — см. alertmanager.yml)."
+
+      # Loki отбрасывает линии на ingestion (rate limits / слишком большие /
+      # слишком старые timestamps) — логи тихо теряются.
+      - alert: LokiDiscardedSamples
+        expr: sum(rate(loki_discarded_samples_total[5m])) > 0
+        for: 5m
+        labels:
+          severity: warning
+          service: monitoring
+        annotations:
+          summary: "Loki отбрасывает лог-линии"
+          description: "rate(loki_discarded_samples_total) > 0 — Loki теряет линии при приёме (ingestion_rate_mb, max строки, reject_old_samples). Проверить `docker compose logs loki`, limits_config в monitoring/loki/config.yml."
+
+      # Alloy дропает логи ДО отправки в Loki (внутренние rate-limits/очередь)
+      # — сборщик жив (AlloyDown молчит), но линии теряются.
+      - alert: AlloyDroppedLogEntries
+        expr: sum(rate(loki_write_dropped_entries_total[5m])) > 0
+        for: 5m
+        labels:
+          severity: warning
+          service: monitoring
+        annotations:
+          summary: "Alloy теряет лог-линии"
+          description: "rate(loki_write_dropped_entries_total) > 0 — Alloy не справляется с отправкой в Loki и дропает линии. Проверить UI Alloy (:12345, график loki.write) и доступность Loki."
+
+  # ===================================================================
+  # Availability — базовое «живо ли вообще»
+  # ===================================================================
+  - name: portal-availability
+    interval: 30s
+    rules:
+      # Backend не отвечает на scrape 3 подряд попытки (≈1.5 мин).
+      - alert: PortalBackendDown
+        expr: up{job="portal"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: portal-backend
+        annotations:
+          summary: "Portal backend недоступен для scrape"
+          description: "Prometheus не может получить /metrics от {{ $labels.instance }} уже {{ $value }} (up=0). Проверить `docker compose ps backend`, логи backend."
+
+      # Backend жив (up=1), но /ready падает дольше 3 минут. Docker НЕ
+      # рестартует unhealthy-контейнер (restart policy действует только на
+      # exit; PA-023: автоматического исключения из Nginx нет) — реакция
+      # за оператором. Если процесс умрёт целиком, сработает PortalBackendDown
+      # (gauge застынет на последнем значении).
+      - alert: PortalBackendUnhealthy
+        expr: portal_backend_ready == 0
+        for: 3m
+        labels:
+          severity: critical
+          service: portal-backend
+        annotations:
+          summary: "Backend жив, но /ready не проходит дольше 3 минут"
+          description: "Readiness-проверки (DB/Redis/Nextcloud/audit-partitions) падают при живом процессе (up{job=\"portal\"}=1). Docker не перезапустит unhealthy-контейнер сам. Диагностика: `docker compose logs backend | grep readiness_check`; `docker compose exec backend curl -sf http://localhost:8000/ready | jq .checks`. Runbook: docs/monitoring.md §«Backend unhealthy — runbook»."
+
+      # Multiple 5xx за окно — что-то системно сломалось.
+      # rate за 5 мин × 100% > 5% от всех запросов, при абсолютном минимуме 10 ошибок.
+      - alert: PortalHighErrorRate
+        expr: |
+          (
+            (
+              sum(rate(http_requests_total{job="portal", status=~"5.."}[5m])) by (service)
+              or
+              0 * sum(rate(http_requests_total{job="portal"}[5m])) by (service)
+            )
+            / sum(rate(http_requests_total{job="portal"}[5m])) by (service)
+          ) > 0.05
+          and
+          sum(rate(http_requests_total{job="portal", status=~"5.."}[5m])) by (service) > 0.03
+        for: 5m
+        labels:
+          severity: critical
+          service: portal-backend
+        annotations:
+          summary: "Высокий уровень 5xx ошибок на портале"
+          description: "Доля 5xx ответов > 5% при rate > 0.03/s (≈2/мин) в течение 5 мин. Смотреть логи backend (`docker compose logs backend`) и дашборд Grafana."
+
+  # ===================================================================
+  # Audit pipeline — буферизованная очередь Redis → PostgreSQL
+  # ===================================================================
+  - name: portal-audit-pipeline
+    interval: 30s
+    rules:
+      # Очередь растёт — воркер не успевает flush'ить (или вообще мёртв).
+      # >1000 событий pending — индикатор проблемы (обычно там 0–50).
+      - alert: PortalAuditQueueBacklog
+        expr: portal_audit_queue_depth > 1000
+        for: 5m
+        labels:
+          severity: warning
+          service: portal-audit
+        annotations:
+          summary: "Audit queue растёт ({{ $value }} событий)"
+          description: "Redis-очередь audit_queue > 1000 событий уже 5 мин. Проверить `docker compose ps worker`, логи `audit.flush_*`. Возможно упал flush_audit_queue cron."
+
+      # Processing list не очищается — воркер взял батч, но не закоммитил
+      # в БД. Может быть symptom упавшей PG-связности или deadlock.
+      - alert: PortalAuditFlushStuck
+        expr: portal_audit_processing_depth > 0
+        for: 10m
+        labels:
+          severity: warning
+          service: portal-audit
+        annotations:
+          summary: "Audit processing list завис ({{ $value }} событий)"
+          description: "Redis-список audit_processing > 0 уже 10 мин — батч взят воркером, но не закоммичен/не очищен. Проверить `audit:flush:lock` в Redis и БД-связность."
+
+      # Audit push rate упал в ноль — эмиссия событий сломана (Redis down /
+      # push_audit_event падает / умер конвейер снапшота метрик).
+      # ОДИН инстанс: sum() без by() — прежний per-event_type вариант фан-аутил
+      # отдельным алертом на каждый тип события и сыпал пачками писем в каждый
+      # тихий час (мутаций может не быть часами — это норма, а «никого нет» ≠
+      # «аудит сломан»). Окно 15м: счётчик включает auth.login, который
+      # поддерживается synthetic-пробой (каждые 5 мин) и реальными логинами —
+      # ноль за 15 мин означает реальный простой эмиссии, а не тихий час.
+      #
+      # ГЕЙТИНГ на synthetic-пробу (аудит 2026-08): пока PROBE_ADMIN_* не
+      # заданы, пробы нет — в ночные тихие часы increase()==0 давал ложный
+      # warning. Теперь алерт активен только когда проба СКОНФИГУРИРОВАНА и
+      # здорова (её логины каждые 5 мин должны двигать счётчик): нет пробы —
+      # нет и базовой линии «нулевого часа». Слепую зону без проб закрывает
+      # PortalSyntheticProbeFailed-дашборд (метрика отсутствует = no data).
+      - alert: PortalAuditPushRateZero
+        expr: |
+          sum(increase(portal_audit_events_pushed_total[15m])) == 0
+          and on() (max(portal_synthetic_probe_up) == 1)
+        for: 5m
+        labels:
+          severity: warning
+          service: portal-audit
+        annotations:
+          summary: "Audit-события не эмитятся"
+          description: "Счётчик portal_audit_events_pushed_total не растёт 15 мин — включая auth.login от synthetic-пробы и логинов пользователей. Значит сломан push_audit_event (Redis down?) или конвейер метрик (worker-снапшот metrics:snapshot не обновляется). Проверить логи backend на audit.push_failed, связность Redis, `docker compose ps worker`."
+
+  # ===================================================================
+  # Worker health — ARQ cron jobs и heartbeat
+  # ===================================================================
+  - name: portal-worker
+    interval: 30s
+    rules:
+      # PRIMARY — прямой датчик смерти воркера. Cron `worker_heartbeat` каждые
+      # 30с пишет unix-timestamp в Redis → gauge portal_worker_last_heartbeat_seconds
+      # (гидрируется из snapshot). Age = time() - gauge.
+      #
+      # Порог 120с = heartbeat-интервал (30с) × 4 + запас. Heartbeat-TTL в Redis
+      # 90с, но snapshot обновляется 30с, поэтому после смерти воркера gauge
+      # «замрёт» на последнем значении и age начнёт расти сразу. 120с покрывает:
+      # 1 пропущенный цикл (норма) + лаг snapshot + лаг scrape.
+      #
+      # В отличие от PortalWorkerStale (ниже), этот алерт сработает даже если
+      # очередь audit пуста (воркер умер в простое) — старая реализация была
+      # слепа в этом случае (false-negative на тихую смерть).
+      - alert: PortalWorkerDown
+        expr: time() - portal_worker_last_heartbeat_seconds > 120
+        for: 1m
+        labels:
+          severity: critical
+          service: portal-worker
+        annotations:
+          summary: "ARQ-воркер не подаёт признаков жизни"
+          description: "Heartbeat воркера не обновлялся уже {{ $value | humanizeDuration }} (> 120с). Воркер завис или упал — cron'ы (audit flush, outbox dispatch, integration probes) не выполняются. Проверить `docker compose ps worker`, логи `arq_worker.*`, ключ Redis `arq:heartbeat`."
+
+      # SECONDARY — воркер жив (heartbeat тикает), но refresh_custom_metrics
+      # завис: кастомные гейджи застывают. Ловит subtler case: event-loop
+      # блокирован долгой задачей, cron не крутится, но процесс отвечает.
+      # Оставлен как доп. сигнал; основной датчик — PortalWorkerDown выше.
+      - alert: PortalWorkerStale
+        expr: changes(portal_audit_queue_depth[3m]) == 0 and portal_audit_queue_depth > 0
+        for: 5m
+        labels:
+          severity: warning
+          service: portal-worker
+        annotations:
+          summary: "ARQ-воркер: кастомные гейджи застывают"
+          description: "Гейдж portal_audit_queue_depth не менялся 3 мин при ненулевой очереди — cron refresh_custom_metrics/flush_audit_queue не выполняется, хотя heartbeat жив. Event-loop возможно блокирован долгой задачей. Проверить логи worker."
+
+      # ARQ pending-queue растёт — воркер не успевает обрабатывать (медленные/
+      # мёртвые задачи), пока новые продолжают enqueue'иться. Норма на портале
+      # — 0; редкие пики (batch фото-загрузки) быстро разбираются. > 50 устойчиво
+      # 5 мин — системная проблема: либо воркер мёртв (но тогда сработает и
+      # PortalWorkerDown), либо задачи зависают (видно по timeout-статусу).
+      - alert: PortalArqQueueBacklog
+        expr: portal_arq_queue_depth > 50
+        for: 5m
+        labels:
+          severity: warning
+          service: portal-worker
+        annotations:
+          summary: "ARQ-очередь растёт ({{ $value }} задач pending)"
+          description: "Pending-задач в arq:queue > 50 уже 5 мин. Воркер не успевает (медленные/мёртвые задачи) или завис. Проверить `docker compose ps worker`, долю timeout'ов (portal_arq_jobs_total{status=\"timeout\"}) и логи worker."
+
+      # ARQ job failures — три неуспешные попытки за 10 минут. Считаем
+      # события, а не высокий rate: cron раз в минуту должен быть виден, если
+      # постоянно падает. result_failed — функция вернула явный бизнес-сбой
+      # ({"error": ...} / {"ok": false}) без исключения; ARQ retry/result
+      # semantics при этом не меняются. timeout/cancelled остаются отдельными.
+      - alert: PortalArqJobFailures
+        expr: sum(increase(portal_arq_jobs_total{status=~"failed|result_failed"}[10m])) by (function) >= 3
+        for: 1m
+        labels:
+          severity: warning
+          service: portal-worker
+        annotations:
+          summary: "ARQ-задача повторно неуспешна: {{ $labels.function }}"
+          description: "Не менее 3 исключений или явных неуспешных результатов за 10 минут для {{ $labels.function }}. Проверить логи worker (`docker compose logs worker`) и доступность upstream (SMTP/Nextcloud/БД)."
+
+  # ===================================================================
+  # Saturation — ресурсы и ёмкость
+  # ===================================================================
+  - name: portal-saturation
+    interval: 30s
+    rules:
+      # Медленные запросы — p99 latency > 5s на 5 мин окне.
+      # histogram_quantile по handler — находит конкретный медленный endpoint.
+      # NB: SSE-хендлер /api/v1/notifications/stream исключён из гистограммы
+      # на источнике (backend middleware/metrics.py): «длительность» долгоживущего
+      # стрима = время жизни соединения (by design), а не латентность обработки.
+      # Фильтр ниже оставлен как защита от случайной регрессии исключения.
+      # Здоровье стрима контролируют PortalSSEConnectionsHigh и synthetic-проба.
+      - alert: PortalHighLatencyP99
+        expr: |
+          histogram_quantile(0.99,
+            sum(rate(http_request_duration_seconds_bucket{job="portal",handler!="/api/v1/notifications/stream"}[5m])) by (le, handler)
+          ) > 5
+        for: 5m
+        labels:
+          severity: warning
+          service: portal-backend
+        annotations:
+          summary: "Высокая p99-латентность (handler={{ $labels.handler }})"
+          description: "p99 latency > 5s для handler={{ $labels.handler }} в течение 5 мин. Возможные причины: медленный SQL-запрос, блокировки БД, нехватка соединений пула."
+
+      # SSE-соединения (уведомления) — portal_sse_connections, обновляется
+      # раз в 30с из Redis ZSET sse:global. При ~300 юзеров норма — десятки
+      # открытых стримов. > 500 устойчиво — явный признак утечки: браузеры не
+      # закрывают EventSource (вкладки-зомби, обрыв сети без reconnect-логики).
+      - alert: PortalSSEConnectionsHigh
+        expr: portal_sse_connections > 500
+        for: 10m
+        labels:
+          severity: warning
+          service: portal-backend
+        annotations:
+          summary: "Аномальный рост SSE-соединений ({{ $value }})"
+          description: "Открыто > 500 SSE-стримов уведомлений уже 10 мин. Норма для ~300 юзеров — десятки. Вероятна утечка: незакрытые EventSource в браузерах, вкладки-зомби или обрывы сети без корректного reconnect. Проверить ZSET sse:global в Redis и логику закрытия стримов в frontend."
+
+      # Фото-хранилище > 100 ГБ — порог для планирования расширения.
+      # Низкий priority, чисто информационный.
+      - alert: PortalPhotoStorageHigh
+        expr: portal_photo_storage_bytes > 1e11  # 100 GB
+        for: 1h
+        labels:
+          severity: info
+          service: portal-photos
+        annotations:
+          summary: "Фото-хранилище большое ({{ $value | humanize1024 }})"
+          description: "/data/photos/originals превысил 100 ГБ. Планировать ёмкость или чистить по retention."
+
+  # ===================================================================
+  # PostgreSQL — пул соединений, cache hit ratio, XID wraparound
+  # ===================================================================
+  - name: portal-postgresql
+    interval: 30s
+    rules:
+      # Насыщение пула НА СТОРОНЕ ПРИЛОЖЕНИЯ (SQLAlchemy AsyncAdaptedQueuePool
+      # в API-процессах). Connection leak (незакрытая сессия) проявляется ЗДЕСЬ
+      # раньше, чем в pg_stat_activity ниже — пока только saturates app-pool,
+      # не доходя до PG. Дополнение к PortalPGConnectionsHigh (сторона БД).
+      # Каждый uvicorn-воркер экспортирует СВОЙ пул: per-pid liveall-ряды,
+      # фоновое обновление каждые 10с — насыщение видно в любом процессе,
+      # независимо от того, кто обслужил /metrics scrape (MON-09).
+      - alert: PortalDBPoolHigh
+        expr: |
+          portal_db_pool_size{state="in_use"}
+          / ignoring(state) clamp_min(portal_db_pool_limit, 1)
+          > 0.8
+        for: 5m
+        labels:
+          severity: warning
+          service: portal-backend
+        annotations:
+          summary: "Backend: пул соединений насыщен ({{ $value | humanizePercentage }})"
+          description: "in_use > 80% от (DB_POOL_SIZE + DB_MAX_OVERFLOW) уже 5 мин в API-процессе pid={{ $labels.pid }}. Connection leak (незакрытая SQLAlchemy-сессия) или нехватка пула под нагрузкой. Проверить pg_stat_activity (что держит), логи на 'pool timeout'. Поднять DB_POOL_SIZE/DB_MAX_OVERFLOW в .env (рестарт backend)."
+
+      # Телеметрия пула конкретного API-процесса устарела: обновитель (каждые
+      # 10с) молчит дольше 2 мин. Два случая: живой процесс с зависшим event
+      # loop ЛИБО воркер умер без graceful-завершения (SIGKILL/OOM — его
+      # per-pid ряды остаются в экспозиции до перезапуска backend; при
+      # graceful-остановке lifespan чистит их через mark_process_dead).
+      - alert: PortalDBPoolTelemetryStale
+        expr: time() - portal_db_pool_update_timestamp_seconds > 120
+        for: 5m
+        labels:
+          severity: warning
+          service: portal-backend
+        annotations:
+          summary: "Метрики пула БД устарели (pid={{ $labels.pid }})"
+          description: "API-процесс pid={{ $labels.pid }} не обновлял pool-гаuges более 2 мин (норма — каждые 10с): зависший event loop или смерть воркера без graceful-завершения (ряды остаются до перезапуска backend). Проверить docker compose logs backend, up{job=\"portal\"} и stack процесса (py-spy) при необходимости."
+
+      # Активные соединения к БД > 80% от max_connections (СТОРОНА Postgres).
+      # В отличие от PortalDBPoolHigh (app-pool), этот смотрит на реальные
+      # коннекты ко всем клиентским пулам (backend + worker + exporters).
+      - alert: PortalPGConnectionsHigh
+        expr: |
+          sum(pg_stat_activity_count)
+          / clamp_min(pg_settings_max_connections, 1)
+          > 0.8
+        for: 5m
+        labels:
+          severity: warning
+          service: portal-postgres
+        annotations:
+          summary: "PostgreSQL: соединения насыщены ({{ $value | humanizePercentage }})"
+          description: "Активных соединений > 80% от max_connections уже 5 мин. Проверить долгие транзакции (pg_stat_activity), какие пулы их держат (PortalDBPoolHigh для backend-пула), возможные connection leaks."
+
+      # Cache hit ratio < 90% — БД чаще читает с диска, чем из кэша.
+      # Индикатор нехватки shared_buffers или отсутствующих индексов.
+      - alert: PortalPGCacheHitLow
+        expr: |
+          (
+            sum(pg_stat_database_blks_hit)
+            / clamp_min(sum(pg_stat_database_blks_hit + pg_stat_database_blks_read), 1)
+          ) < 0.9
+          and sum(pg_stat_database_blks_hit + pg_stat_database_blks_read) > 10000
+        for: 10m
+        labels:
+          severity: warning
+          service: portal-postgres
+        annotations:
+          summary: "PostgreSQL: низкий cache hit ratio ({{ $value | humanizePercentage }})"
+          description: "Cache hit ratio < 90% при значимом объёме операций. Возможные причины: нехватка shared_buffers, отсутствующие индексы, большие seq-scan'ы. Проверить pg_stat_statements."
+
+      # XID wraparound — возраст старейшего незамороженного XID в секундах.
+      # autovacuum должен регулярно замораживать (freeze) старые XID. Если
+      # значение растёт (нет заморозки > 30 дней) — autovacuum не справляется,
+      # близко к read-only защите от wraparound. Метрика в секундах (НЕ XID count).
+      - alert: PortalPGWraparound
+        expr: pg_database_wraparound_age_datfrozenxid_seconds > 2592000  # 30 days
+        for: 10m
+        labels:
+          severity: warning
+          service: portal-postgres
+        annotations:
+          summary: "PostgreSQL: возраст незамороженного XID большой ({{ $value | humanizeDuration }})"
+          description: "Возраст старейшего незамороженного XID в БД {{ $labels.datname }} > 30 дней — autovacuum не замораживает старые транзакции. Запустить VACUUM FREEZE вручную, проверить autovacuum-настройки."
+
+      # Дедлоки — всегда баг в коде. Любой дедлок за окно — повод разобраться.
+      - alert: PortalPGDeadlocks
+        expr: rate(pg_stat_database_deadlocks[5m]) > 0
+        for: 2m
+        labels:
+          severity: warning
+          service: portal-postgres
+        annotations:
+          summary: "PostgreSQL: обнаружены дедлоки"
+          description: "rate(pg_stat_database_deadlocks) > 0 — параллельные транзакции конфликтуют. Проверить логи PG (`docker compose logs postgres`), выявить конкурирующие транзакции."
+
+  # ===================================================================
+  # Redis — память, evictions, keyspace
+  # ===================================================================
+  - name: portal-redis
+    interval: 30s
+    rules:
+      # Память Redis > 90% от maxmemory — близко к eviction-режиму.
+      # Redis критичен: сессии, SSE, audit-очередь, rate-limit, idempotency.
+      - alert: PortalRedisMemoryHigh
+        expr: |
+          redis_memory_used_bytes
+          / clamp_min(redis_memory_max_bytes, 1) > 0.9
+        for: 5m
+        labels:
+          severity: warning
+          service: portal-redis
+        annotations:
+          summary: "Redis: память близка к maxmemory ({{ $value | humanizePercentage }})"
+          description: "Использование памяти Redis > 90% от maxmemory. При превышении начнутся evictions (политика maxmemory-policy). Проверить большие ключи (`redis-cli --bigkeys`), увеличить REDIS_MAXMEMORY."
+
+      # Evictions — ключи удаляются по политике maxmemory. На портале Redis не
+      # должен evict'ить (сессии/audit терять нельзя). >10/min — проблема.
+      - alert: PortalRedisEvictions
+        expr: rate(redis_evicted_keys_total[5m]) > 0.17
+        for: 5m
+        labels:
+          severity: warning
+          service: portal-redis
+        annotations:
+          summary: "Redis: высокая скорость evictions ({{ $value }}/s)"
+          description: "Redis удаляет ключи по политике maxmemory — памяти не хватает. Критично: могут теряться сессии/audit-события. Увеличить REDIS_MAXMEMORY в .env (требует рестарта redis)."
+
+      # Keyspace hit ratio < 90% — диагностика вытеснения ключей из памяти.
+      #
+      # ВАЖНО: для этого приложения низкий keyspace hit ratio (30–50% в норме)
+      # НЕ является аномалией. Портал использует Redis одновременно как
+      # session-cache, rate-limiter (fastapi-limiter, Lua GET→SET per окно),
+      # idempotency-store (SET NX), view-dedup и lock-store — все эти паттерны
+      # по контракту создают miss. Поэтому «голый» hit ratio всегда будет низким.
+      #
+      # Реальная проблема — когда ключи вытесняются до повторного использования,
+      # что проявляется одновременно: (а) низкий hit ratio И (б) evictions > 0
+      # (Redis выбрасывает ключи по политике maxmemory). Только в этом случае
+      # нужны REDIS_MAXMEMORY / анализ eviction-policy.
+      - alert: PortalRedisKeyspaceLow
+        expr: |
+          portal:redis_keyspace_hit_ratio5m < 0.9
+          and
+          (
+            sum(rate(redis_keyspace_hits_total[5m]))
+            + sum(rate(redis_keyspace_misses_total[5m]))
+          ) > 10
+          and
+          sum(rate(redis_evicted_keys_total[5m])) > 0
+        for: 10m
+        labels:
+          severity: warning
+          service: portal-redis
+        annotations:
+          summary: "Redis: низкий keyspace hit ratio с eviction'ами ({{ $value | humanizePercentage }})"
+          description: "Keyspace hit ratio < 90% И eviction rate > 0 при трафике > 10/мин. Это реальная проблема: Redis вытесняет ключи до повторного использования (мало памяти). Низкий hit ratio сам по себе — норма для этого приложения (rate-limiter / idempotency / view-dedup создают miss по дизайну). Действие: увеличить REDIS_MAXMEMORY в .env, проверить maxmemory-policy."
+
+  # ===================================================================
+  # Host — диск, CPU, RAM (node_exporter)
+  # ===================================================================
+  - name: portal-host
+    interval: 30s
+    rules:
+      # Свободное место на диске < 15% — критично. /data хранит фото, БД
+      # (если volume), логи. Disk full = падение сервисов.
+      - alert: PortalDiskSpaceLow
+        expr: |
+          (1 -
+            node_filesystem_avail_bytes
+            / clamp_min(node_filesystem_size_bytes, 1)
+          ) > 0.85
+        for: 5m
+        labels:
+          severity: critical
+          service: portal-host
+        annotations:
+          summary: "Мало места на диске: {{ $labels.mountpoint }} (занято {{ $value | humanizePercentage }})"
+          description: "Файловая система {{ $labels.mountpoint }} ({{ $labels.device }}) заполнена > 85%. Критично — disk full ломает запись фото/БД/логов. Проверить `docker system df`, старые образы, /data/photos, логи."
+
+      # Loki-volume (named Docker volume portal_loki-data) растёт точечно.
+      # PortalDiskSpaceLow ловит только общую ФС; Loki может забить свой volume,
+      # не дотянув до 85% всего диска. Метрика — от storage-collector sidecar
+      # (portal_storage_docker_volume_bytes). 10 ГБ — щедрый порог для 30d
+      # retention интранет-портала; рост выше = или retention длиннее, чем нужно,
+      # или шумные лейбли/сервисы заливают логи.
+      - alert: PortalLokiStorageHigh
+        expr: portal_storage_docker_volume_bytes{volume="portal_loki-data"} > 10 * 1024 * 1024 * 1024
+        for: 30m
+        labels:
+          severity: warning
+          service: portal-monitoring
+        annotations:
+          summary: "Loki: объём логов большой ({{ $value | humanize1024 }})"
+          description: "Named volume portal_loki-data превысил 10 ГБ. Проверить retention (loki/config.yml retention_period=720h=30d) и шумные лейблы в Alloy. При исчерпании — снизить retention или отфильтровать шумные контейнеры в config.alloy."
+
+      # Freshness storage-collector'а: он пишет textfile раз в 5 минут; если
+      # cron внутри контейнера умер — portal_storage_* застывают навсегда,
+      # выглядя «актуальными» (gauge без встроенной метки времени). Метрику
+      # свежести пишет сам collect.sh: portal_storage_collector_last_run_seconds.
+      # Порог 1800с = 6 интервалов — щедрый запас на медленный du больших папок.
+      - alert: PortalStorageCollectorStale
+        expr: time() - portal_storage_collector_last_run_seconds > 1800
+        for: 10m
+        labels:
+          severity: warning
+          service: portal-monitoring
+        annotations:
+          summary: "Storage-collector не обновляет метрики ({{ $value | humanizeDuration }} с)"
+          description: "portal_storage_* (размеры папок/логов/volumes) не обновлялись > 30 мин — cron внутри контейнера storage-collector умер или завис. Проверить `docker compose ps storage-collector`, логи контейнера, свободное место на хосте (du мог упасть по ENOSPC/permission)."
+
+      # Нагрузка на CPU > 80% на 5 мин — деградация latency для всех сервисов.
+      - alert: PortalCPUHigh
+        expr: |
+          (1 - avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m]))) > 0.8
+        for: 5m
+        labels:
+          severity: warning
+          service: portal-host
+        annotations:
+          summary: "Высокая загрузка CPU ({{ $value | humanizePercentage }})"
+          description: "CPU utilization > 80% на хосте {{ $labels.instance }} уже 5 мин. Проверить `docker stats` — какой контейнер грузит, топ-процессы. Возможна нехватка ядер под нагрузку."
+
+      # Свободная RAM < 10% — близко к OOM-kill. Контейнеры начнут свопать.
+      - alert: PortalRAMLow
+        expr: |
+          node_memory_MemAvailable_bytes
+          / clamp_min(node_memory_MemTotal_bytes, 1) < 0.1
+        for: 5m
+        labels:
+          severity: warning
+          service: portal-host
+        annotations:
+          summary: "Мало свободной RAM ({{ $value | humanizePercentage }})"
+          description: "Доступная RAM < 10%. Возможен OOM-kill контейнеров. Проверить `docker stats`, настройки memory-limits сервисов, REDIS_MAXMEMORY/PostgreSQL shared_buffers."
+
+  # ===================================================================
+  # Контейнеры (cAdvisor) — per-container CPU/RAM/IO и рестарты. Хост-уровень
+  # — в группе portal-host; это про отдельные контейнеры portal-*.
+  # NB: OOM-коллектора в сборке cadvisor v0.55 нет (и memory-limits в базовом
+  # compose не заданы), поэтому OOM-kill детектится КОСВЕННО — рестарт-лупом:
+  # OOM → контейнер умирает → restart-политика поднимает → start_time прыгает.
+  # ===================================================================
+  - name: portal-containers
+    interval: 30s
+    rules:
+      # Рестарт-луп: >3 рестартов контейнера за 15 мин. Ловит crash-loop
+      # (в т.ч. OOM-kill). Единичные рестарты (deploy, config-change) — не
+      # будят: порог 3 и `for: 5m`.
+      - alert: PortalContainerRestartLoop
+        expr: changes(container_start_time_seconds{name=~"portal-.*"}[15m]) > 3
+        for: 5m
+        labels:
+          severity: critical
+          service: containers
+        annotations:
+          summary: "Рестарт-луп контейнера {{ $labels.name }}"
+          description: "Контейнер {{ $labels.name }} перезапускался >3 раз за 15 мин. Частые причины: crash-loop (смотреть `docker logs --tail 100 <name>`), OOM-kill (`docker inspect --format '{{.State.OOMKilled}}' <name>`) при нехватке RAM на хосте (см. PortalRAMLow). NB: исчезнувший НАВСЕГДА контейнер этот алерт не видит (cadvisor удаляет серию остановленного контейнера за ~20с; при restart-политике unless-stopped docker продолжает поднимать контейнер → флап виден как рестарт-луп)."
+
+  # ===================================================================
+  # Blackbox — внешний периметр: доступность URL + срок TLS-сертификатов.
+  # Цели — env BLACKBOX_TARGETS / BLACKBOX_TARGETS_INSECURE (.env, см.
+  # render-prometheus.sh). При пустых env job без целей — алерты молчат.
+  # Внутренние сервисы покрывают integration-probes (portal_integration_up)
+  # и synthetic-проба; blackbox проверяет ВНЕШНИЙ путь: DNS → TLS → nginx.
+  # ===================================================================
+  - name: portal-blackbox
+    interval: 30s
+    rules:
+      # Внешний URL недоступен (5 мин подряд). Это путь пользователя:
+      # браузер → DNS → TLS → nginx. Синтетика проверяет внутренний контур —
+      # здесь же ловим обрыв именно внешнего периметра.
+      - alert: PortalExternalProbeFailed
+        expr: probe_success{job="blackbox"} == 0
+        for: 5m
+        labels:
+          severity: critical
+          service: external
+        annotations:
+          summary: "Внешняя проба {{ $labels.target_name }} не проходит"
+          description: "blackbox-проба {{ $labels.target_name }} ({{ $labels.instance }}) не проходит 5 мин: DNS не резолвится / TLS невалиден / HTTP не 2xx. Отличать от PortalBackendDown (внутренний scrape): здесь путь пользователя целиком. Для module=http_2xx_insecure проверка сертификата отключена — смотреть HTTP/DNS."
+
+      # Сертификат истекает < 14 дней (warning) / < 3 дней (critical).
+      # На on-prem перевыпуск сертификата — ручной процесс: без алерта
+      # истечение обнаруживается по жалобам «сайт не открывается».
+      - alert: PortalCertExpirySoon
+        expr: (probe_ssl_earliest_cert_expiry{job="blackbox"} - time()) / 86400 < 14
+        for: 1h
+        labels:
+          severity: warning
+          service: external
+        annotations:
+          summary: "Сертификат {{ $labels.target_name }} истекает ({{ $value | humanize }} дн.)"
+          description: "TLS-сертификат для {{ $labels.instance }} истекает менее чем через {{ $value | humanize }} дней. Запустить перевыпуск по регламенту (см. docs/deploy.md, system_data/certs)."
+
+      - alert: PortalCertExpiryCritical
+        expr: (probe_ssl_earliest_cert_expiry{job="blackbox"} - time()) / 86400 < 3
+        for: 1h
+        labels:
+          severity: critical
+          service: external
+        annotations:
+          summary: "Сертификат {{ $labels.target_name }} истекает СРОЧНО ({{ $value | humanize }} дн.)"
+          description: "TLS-сертификат для {{ $labels.instance }} истекает менее чем через {{ $value | humanize }} дней — перевыпустить СЕЙЧАС, иначе портал станет недоступен для браузеров."
+
+  # ===================================================================
+  # Nginx — соединения (stub_status)
+  # ===================================================================
+  - name: portal-nginx
+    interval: 30s
+    rules:
+      # Active connections > 1000 — для ~300 юзеров аномально. Может быть
+      # признаком утечки keepalive-соединений или атаки.
+      - alert: PortalNginxConnectionsHigh
+        expr: nginx_connections_active > 1000
+        for: 5m
+        labels:
+          severity: warning
+          service: portal-nginx
+        annotations:
+          summary: "Nginx: много активных соединений ({{ $value }})"
+          description: "Active connections nginx > 1000 уже 5 мин. Норма для ~300 юзеров — десятки-сотни (с учётом keepalive). Проверить `nginx -T` keepalive_timeout, логи доступа на аномальный трафик."
+
+  # ===================================================================
+  # Outbox — email и messenger (MAX) рассылки
+  # Без этих алертов копящиеся/DLQ-ящиеся письма невидимы до жалоб юзеров.
+  # ===================================================================
+  - name: portal-outbox
+    interval: 30s
+    rules:
+      # Email outbox растёт — SMTP недоступен или медленный. Обычно PENDING ~0.
+      # > 50 устойчиво = письма не уходят.
+      - alert: PortalEmailOutboxBacklog
+        expr: portal_email_outbox_pending > 50
+        for: 5m
+        labels:
+          severity: warning
+          service: portal-email
+        annotations:
+          summary: "Email outbox растёт ({{ $value }} писем в очереди)"
+          description: "PENDING-писем > 50 уже 5 мин. SMTP недоступен или медленный. Проверить `docker compose logs worker` (email_outbox.dispatch.*), SMTP-настройки (email-settings.json), reachability SMTP-сервера."
+
+      # DLQ накопился — письма безвозвратно потеряны после 6 попыток.
+      # Любое значение > 0 требует разбора (почему упорные ошибки).
+      - alert: PortalEmailOutboxDLQ
+        expr: portal_email_outbox_dlq > 0
+        for: 10m
+        labels:
+          severity: warning
+          service: portal-email
+        annotations:
+          summary: "Email outbox: {{ $value }} писем в DLQ"
+          description: "Письма попали в dead-letter после 6 неудачных попыток. Безвозвратно потеряны. Разобрать через Admin UI (email-outbox) — посмотреть last_error, повторить вручную если нужно."
+
+      # Stale SENDING — worker взял батч, но завис/упал до commit.
+      # requeue_stale_sending лечит, но если повторяется — системная проблема.
+      - alert: PortalEmailOutboxStuck
+        expr: portal_email_outbox_sending_stale > 0
+        for: 10m
+        labels:
+          severity: warning
+          service: portal-email
+        annotations:
+          summary: "Email outbox: {{ $value }} писем застряли в SENDING"
+          description: "Письма в SENDING > 10 мин — worker взял их, но не закоммитил (краш mid-dispatch?). Watchdog requeue_stale_sending должен лечить; если повторяется — проверить логи worker."
+
+      # Messenger outbox (MAX) — аналогично email.
+      - alert: PortalMessengerOutboxBacklog
+        expr: portal_messenger_outbox_pending > 50
+        for: 5m
+        labels:
+          severity: warning
+          service: portal-messenger
+        annotations:
+          summary: "Messenger outbox (MAX) растёт ({{ $value }} сообщений)"
+          description: "PENDING-сообщений MAX > 50 уже 5 мин. MAX API недоступен, неверный токен/chat_id, или rate-limit. Проверить `docker compose logs worker` (messenger_outbox.*), настройки MAX-бота (helpdesk_max_bot_settings)."
+
+      - alert: PortalMessengerOutboxDLQ
+        expr: portal_messenger_outbox_dlq > 0
+        for: 10m
+        labels:
+          severity: warning
+          service: portal-messenger
+        annotations:
+          summary: "Messenger outbox: {{ $value }} сообщений в DLQ"
+          description: "MAX-сообщения в dead-letter после 6 попыток. Разобрать через Admin UI, проверить токен MAX-бота."
+
+      # Зеркало PortalEmailOutboxStuck для MAX-канала (аудит 2026-08: метрика
+      # portal_messenger_outbox_sending_stale собиралась, но алерта не было).
+      - alert: PortalMessengerOutboxStuck
+        expr: portal_messenger_outbox_sending_stale > 0
+        for: 10m
+        labels:
+          severity: warning
+          service: portal-messenger
+        annotations:
+          summary: "Messenger outbox: {{ $value }} сообщений застряли в SENDING"
+          description: "MAX-сообщения в SENDING > 10 мин — worker взял их, но не закоммитил (краш mid-dispatch?). Watchdog requeue_stale_sending должен лечить; если повторяется — проверить логи worker (messenger_outbox.*)."
+
+  # ===================================================================
+  # Integrations — Keycloak, Nextcloud, SMTP, Collabora probes
+  # probe_integrations cron проверяет каждые 60с. gauge=1(up)/0(down).
+  # Интеграции не сконфигурированы → gauge отсутствует (no data, не алерт).
+  # ===================================================================
+  - name: portal-integrations
+    interval: 30s
+    rules:
+      # Любая сконфигурированная интеграция упала > 3 мин.
+      - alert: PortalIntegrationDown
+        expr: |
+          portal_integration_up == 0
+          and on (integration)
+          (portal_integration_result_available == 1)
+          and on (integration)
+          (time() - portal_integration_probe_last_completed_timestamp_seconds <= 180)
+        for: 3m
+        labels:
+          severity: warning
+          service: portal-integration
+        annotations:
+          summary: "Интеграция недоступна: {{ $labels.integration }}"
+          description: "probe_integrations сообщает {{ $labels.integration }} = down уже 3 мин. Проверить: для keycloak — `docker compose logs backend` (keycloak.*), reachability IdP; для nextcloud — NC health (status.php), service account; для smtp — TCP-connect к host:port; для collabora — richdocuments app в NC; для erp_approvals — `docker compose logs worker | grep erp_approvals` + Admin → Согласование 1С → «Проверить подключение» (401 = пароль Portal, не-JSON = WAF/публикация IIS; см. docs/approvals.md §7)."
+
+      - alert: PortalIntegrationProbeStale
+        expr: |
+          portal_integration_expected == 1
+          and on (integration)
+          (
+            portal_integration_result_available == 0
+            or on (integration)
+            (time() - portal_integration_probe_last_completed_timestamp_seconds > 180)
+          )
+        for: 2m
+        labels:
+          severity: warning
+          service: portal-integration
+        annotations:
+          summary: "Проверка интеграции устарела: {{ $labels.integration }}"
+          description: "Ожидаемая probe {{ $labels.integration }} не завершалась более 180с или её результат истёк. Это состояние stale/no-data, а не OK и не disabled. Проверить worker, Redis и логи integration.probe_*."
+
+  # ===================================================================
+  # Synthetic internal local-auth flow (login + Home marker + bootstrap + pageerror).
+  # screenshot-service owns configuration, lifecycle timestamps and result.
+  # ===================================================================
+  - name: portal-synthetic
+    interval: 30s
+    rules:
+      - alert: PortalScreenshotServiceMetricsDown
+        expr: up{job="screenshot-service"} == 0
+        for: 2m
+        labels:
+          severity: warning
+          service: portal-synthetic
+        annotations:
+          summary: "Метрики synthetic-проверки недоступны"
+          description: "Prometheus не получает /metrics от screenshot-service более 2 минут. Проверить docker compose ps screenshot-service, /ready и логи контейнера."
+
+      - alert: PortalSyntheticProbeStale
+        expr: |
+          portal_synthetic_probe_expected{job="screenshot-service"} == 1
+          and on (flow)
+          (
+            portal_synthetic_probe_result_available{job="screenshot-service"} == 0
+            or on (flow)
+            (time() - portal_synthetic_probe_last_completed_timestamp_seconds{job="screenshot-service"} > 900)
+          )
+        for: 2m
+        labels:
+          severity: warning
+          service: portal-synthetic
+        annotations:
+          summary: "Synthetic-проверка не выдаёт свежий результат"
+          description: "Ожидаемая проба {{ $labels.flow }} не завершалась 15 минут или не имеет свежего результата. Проверить worker run_synthetic_probe, screenshot-service /probe и last_attempt/last_completed."
+
+      - alert: PortalSyntheticProbeFailed
+        expr: |
+          portal_synthetic_probe_expected{job="screenshot-service"} == 1
+          and on (flow)
+          (portal_synthetic_probe_result_available{job="screenshot-service"} == 1)
+          and on (flow)
+          (time() - portal_synthetic_probe_last_completed_timestamp_seconds{job="screenshot-service"} <= 900)
+          and on (flow)
+          (portal_synthetic_probe_up{job="screenshot-service"} == 0)
+        for: 10m
+        labels:
+          severity: warning
+          service: portal-synthetic
+        annotations:
+          summary: "Внутренний local-auth flow не работает"
+          description: "Свежая проверка local-auth → Home/bootstrap остаётся ошибочной более 10 минут. Проверить nginx, backend auth, screenshot-service и безопасный step_failed в логах synthetic.probed. SSO и внешний TLS контролируются отдельно."

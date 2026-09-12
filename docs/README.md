@@ -1,0 +1,179 @@
+# Документация Portal
+
+Оглавление каталога `./docs/`. Каждый `*.md` начинается с agent-заголовка
+(**Когда читать / Ключевой код / ADR**) — он даёт «прицел» без чтения всего файла.
+
+## Роутер: тип задачи → что читать
+
+| Задача | Сначала читай |
+|---|---|
+| Новая таблица / поле / миграция | `db-schema.md` |
+| Новый / изменённый REST endpoint | `api-contracts.md` |
+| Изменение прав доступа («кто что видит») | `roles-matrix.md` |
+| Спорное / новое архитектурное решение | `adr.md` |
+| Модуль Файлы / Nextcloud | `files.md` (+ `sharing.md`) |
+| Модуль База знаний | `knowledge-base.md` |
+| Модуль Фотогалерея | `photos.md` |
+| Модуль Переговорные | `meetings.md` |
+| Новости (лента, категории, лайки, комментарии) | `news.md` |
+| Опросы в новостях | `polls.md` |
+| Модуль Согласование (1С: документы на согласование) | `approvals.md` |
+| Ссылки и закладки | `links-bookmarks.md` |
+| Глобальный поиск (Cmd+K) | `search.md` |
+| Уведомления (in-app, SSE) | `notifications.md` |
+| Уведомления в корпоративный чат (Matrix) | `matrix.md` |
+| Аналитика (admin-дашборд) | `analytics.md` |
+| Атрибуты пользователя (карточка /staff, источник ФИО) | `user-attributes.md` |
+| Health-пробы / метрики / логи | `monitoring.md` |
+| **Пришёл алерт — что делать** | `runbooks.md` |
+| Главная страница и виджеты | `home-widgets.md` |
+| Брендинг / оформление | `branding.md` |
+| Вёрстка: брейкпоинты, ширины, адаптив | `ui-layout.md` |
+| Журнал аудита | `audit.md` |
+| Справочник сотрудников | `staff-directory-spec.md` |
+| Справочники объектов (Флот/Склады/…) | `directories.md` |
+| Генератор email-подписей | `signature.md` |
+| Обратная связь | `feedback.md` |
+| Модуль техподдержки (Helpdesk / заявки, IMAP, тикеты) | `helpdesk.md` |
+| Модуль обучения (LMS: курсы, тесты, сертификаты, learn-домен) | `learning.md` |
+| ERP-синхронизация (дни рождения/пол, импорт из 1С, mailbox, отчёты) | `erp-sync.md` |
+| Directum (СЭД: просроченные задачи → Matrix) | `directum.md` |
+| Согласование документов (1С: заказы на согласование) | `approvals.md` |
+| Экскурс по порталу | `onboarding.md` |
+| Отправка email | `email.md` |
+| Аутентификация (Keycloak/SSO) | `adr.md` (017/035/036) + `integration-keycloak-nextcloud.md` |
+| Runtime-настройка Keycloak + синк пользователей (Admin UI) | `integration-keycloak-nextcloud.md` (§2.5) |
+| Локальный запуск / окружение | `dev-onboarding.md` |
+| Настройка MCP-серверов ZCode (codebase-memory, postgres, github, docker, playwright) | `mcp-setup.md` |
+| Production-деплой / TLS / секреты | `deploy.md` |
+| Переход прода с GHCR → Forgejo registry | `migrate-ghcr-to-forgejo.md` |
+| Установка/настройка forgejo-runner (CI) | `forgejo-runner-setup.md` |
+| Тесты, команды, покрытие | `testing.md` |
+| Аудит кода: открытые задачи техдолга | [`../audit.md`](../audit.md) (корень репо) |
+| Незавершённая многосессионная задача | `wip/<feature>.md` (план) |
+
+> `*.generated.md` — **авто-генерация, руками не править** (баннер указан в самих файлах);
+> перегенерировать соответствующим скриптом.
+
+## Стратегия и архитектура
+
+- [`adr.md`](./adr.md) — активные ADR (001–052)
+- [`adr-archive.md`](./adr-archive.md) — архив устаревших / отменённых ADR
+- [`roles-matrix.md`](./roles-matrix.md) — матрица ролей и прав по модулям
+
+## API и схема данных
+
+- [`api-contracts.md`](./api-contracts.md) — curated-описание REST-контрактов
+- [`api-contracts.generated.md`](./api-contracts.generated.md) — авто-генерация
+  из OpenAPI (`backend/scripts/generate_api_contracts_doc.py`)
+- [`db-schema.md`](./db-schema.md) — curated-описание схемы БД
+- [`db-schema.generated.md`](./db-schema.generated.md) — авто-генерация
+  из SQLAlchemy-моделей (`backend/scripts/generate_db_schema_doc.py`)
+- [`../openapi.json`](../openapi.json) — экспорт FastAPI OpenAPI 3.1
+
+> Все `*.generated.md` и `openapi.json` пересобираются скриптами
+> `backend/scripts/export_openapi.py`, `generate_api_contracts_doc.py`,
+> `generate_db_schema_doc.py`. Запускать перед PR, если менялись
+> модели/роуты/схемы.
+
+## Модули
+
+- [`staff-directory-spec.md`](./staff-directory-spec.md) — справочник сотрудников
+- [`user-attributes.md`](./user-attributes.md) — маппинг атрибутов пользователя
+  (произвольные `users.attributes` из Keycloak → поля карточки /staff, discover
+  незамапленных ключей, назначение атрибута источником `users.full_name`)
+- [`directories.md`](./directories.md) — справочники объектов (вкладки в /staff)
+  (универсальный движок Флот/Склады/…: 3 таблицы, конструктор полей/каналов,
+  аватары, экспорт CSV/XLSX/PDF, двухуровневый гейтинг, поиск Cmd+K)
+- [`signature.md`](./signature.md) — модуль «Генератор email-подписей»
+  (перенос legacy `./sign`: stateless-рендер HTML-подписи, матрица
+  устройство×язык→логотип/вёрстка, внешние логотипы mage.ru, предзаполнение из
+  профиля, admin-настройки городов/телефонов)
+- [`feedback.md`](./feedback.md) — модуль обратной связи
+- [`helpdesk.md`](./helpdesk.md) — модуль техподдержки (замена OTRS): тикеты,
+  переписка, IMAP-ingress, статус-машина, локальные вложения, архив, mailbox-settings,
+  оповещения о новых заявках в MAX-messenger (`messenger_outbox`, миграция 081)
+- [`matrix.md`](./matrix.md) — персональные уведомления в корпоративный чат
+  Matrix (Synapse+MAS): бот без пароля/по токену `mct_`, MXID-конвенция из
+  email, DM + кэш `m.direct`, движок messenger_outbox (миграция 097),
+  вкладки админки, opt-in переключатель в профиле, инструкция для сервера
+- [`erp-sync.md`](./erp-sync.md) — модуль ERP-синхронизации (дни рождения и пол):
+  импорт из 1С-выгрузки (mailbox-poll + ручной upload), FIO-матчинг,
+  multi-channel отчёты админу (email + in-app + Grafana), watchdog «письма не
+  приходят», миграции 087–088
+- [`directum.md`](./directum.md) — интеграция с СЭД Directum (просроченные
+  задачи): OData-опрос по расписанию, ФИО-матчинг исполнителей, дайджесты в
+  личный чат Matrix (opt-in), email-сводки админам, watchdog, миграция 098
+- [`approvals.md`](./approvals.md) — модуль «Согласование документов»:
+  прокси к HTTP-сервисам 1С (GETTokenByLogin + токены), список/карточка/
+  согласование/отклонение/массовое, настройки Admin UI, миграция 115
+
+- [`integration-keycloak-nextcloud.md`](./integration-keycloak-nextcloud.md) —
+  настройка Keycloak realm и Nextcloud service account
+- [`email.md`](./email.md) — общая для портала email-инфраструктура
+  (outbox-таблица, классификация ошибок, диспетчер, админ-UI)
+- [`onboarding.md`](./onboarding.md) — модуль «Экскурс по порталу»
+  (системные настройки, admin API, дельта-режим `is_new`, операционные процедуры)
+- [`polls.md`](./polls.md) — модуль опросов для новостей
+  (схема БД, жизненный цикл, Backend API, управление правами, голосование, фронтенд-компоненты)
+- [`knowledge-base.md`](./knowledge-base.md) — модуль «База знаний»
+  (структура кода, модель данных, ACL, REST API, хранилище файлов, безопасность, аудит, тесты)
+- [`meetings.md`](./meetings.md) — модуль «Переговорные»
+  (бронирование комнат, серии, iCal-уведомления, конфликт-чек, фронтенд)
+- [`photos.md`](./photos.md) — модуль «Фотогалерея»
+  (иерархия папок, per-folder ACL, миниатюры WebP/AVIF, ARQ-воркер, SSE)
+- [`files.md`](./files.md) — модуль «Файлы»
+  (витрина над Nextcloud, service account, теневое дерево папок, per-folder ACL,
+  загрузка/превью, bulk-операции, согласованность БД↔NC, sync)
+- [`sharing.md`](./sharing.md) — пофайловый шеринг (ADR-032)
+  (таблица `file_shares`, уровни viewer/editor, drift-реконсиляция, admin-реестр)
+- [`news.md`](./news.md) — модуль «Новости»
+  (лента, категории, обложки, галерея, вложения, inline-медиа, версии, экспорт, корзина, лайки ♥, комментарии)
+- [`links-bookmarks.md`](./links-bookmarks.md) — сервисные ярлыки + личные закладки
+  (SSO-редирект, reorder, favicon-кэш)
+- [`search.md`](./search.md) — глобальный поиск
+  (FTS hunspell + pg_trgm, Cmd+K палитра, поиск по KB/новостям/ссылкам/пользователям)
+- [`notifications.md`](./notifications.md) — in-app уведомления
+  (SSE-стрим, продюсеры news/kb/meetings, отметка прочтения)
+- [`analytics.md`](./analytics.md) — admin-аналитика (read-only)
+  (дашборд, топ статей/новостей/файлов, активность отделов)
+- [`home-widgets.md`](./home-widgets.md) — главная страница и виджеты
+  (редизайн: HeroBlock с фонами по времени суток/focal-point и `HeroWorldClock`,
+  виджеты meetings/photos/birthdays/quick-links, Open-Meteo, ADR-038)
+- [`branding.md`](./branding.md) — оформление портала
+  (логотип, favicon, фон логина, email-настройки; `/data/branding/`, ADR-037)
+- [`ui-layout.md`](./ui-layout.md) — вёрстка и адаптив
+  (шкала брейкпоинтов, три класса ширины контента, `.u-page-wrap`, intrinsic-сетки,
+  `useBreakpoints`)
+- [`audit.md`](./audit.md) — журнал аудита
+  (audit_log с партициями по месяцам, Redis-очередь + ARQ-воркер, CSV-экспорт)
+- [`learning.md`](./learning.md) — модуль обучения (LMS): курсы/тесты/
+  сертификаты, внешние учётки, публичный контур `learn.<домен>` (ADR-051);
+  отдельная DB-роль `learning_app` (грабль грантов), full ТЗ — `wip/learning.md`
+
+## Эксплуатация и тесты
+
+- [`dev-onboarding.md`](./dev-onboarding.md) — quickstart для разработчика
+  (локальный запуск, минимальные env, создание тестового пользователя)
+- [`monitoring.md`](./monitoring.md) — мониторинг и наблюдаемость
+- [`runbooks.md`](./runbooks.md) — что делать при тревогах (по группам алертов + чек-лист владельца)
+  (health/ready-пробы, `/metrics` с токен-защитой и кросс-процессным снапшотом
+  кастомных гейджей, heartbeat воркера, уровень логов, вкладка «Мониторинг»;
+  reference-стек Grafana + Loki + Prometheus + Alloy в `monitoring/`, ADR-044)
+- [`deploy.md`](./deploy.md) — production-чеклист, TLS, бэкапы, ротация секретов
+- [`migrate-ghcr-to-forgejo.md`](./migrate-ghcr-to-forgejo.md) — разовая процедура
+  перевода существующего прода с GHCR-образов на Forgejo Container Registry
+  (bootstrap нового `setup.sh`, токен, смена `IMAGE_PREFIX`/`IMAGE_TAG`, откат)
+- [`testing.md`](./testing.md) — стратегия тестов, команды, CI
+- [`../audit.md`](../audit.md) — план работ аудита кода: открытые задачи
+  техдолга + runbook'и для прод-действий (выполненные карточки удаляются
+  после верификации; история — в git)
+- [`tests.generated.md`](./tests.generated.md) — авто-генерация списка тестов
+  (`scripts/list_tests.sh`)
+- [`../SECURITY.md`](../SECURITY.md) — политика disclosure
+
+## Работа между сессиями
+
+- [`wip/`](./wip/) — планы активных многосессионных фич (handoff). Один файл на фичу,
+  удаляется после завершения. Шаблон — [`wip/_TEMPLATE.md`](./wip/_TEMPLATE.md).
+  Правила — раздел «Работа между сессиями» в [`../AGENTS.md`](../AGENTS.md).

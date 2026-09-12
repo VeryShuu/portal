@@ -1,0 +1,190 @@
+name: nightly-flakes
+# Переведено с GitHub Actions → Forgejo Actions. actions/* берутся из
+# https://code.forgejo.org/actions/* (SHA-pins сохранены). См. docs/forgejo-runner-setup.md.
+# Образы инструментов (gitleaks/trivy/zaproxy) и базовый act-образ — зеркала в
+# собственном registry forgejo.mage.ru/mage/*: ghcr.io с раннера недостижим
+# (DNS SERVFAIL + evicted после prune, инцидент 2026-08-24 — прогоны #829-831).
+# Обслуживание зеркал — docs/forgejo-runner-setup.md §«Зеркало ghcr-образов».
+#
+# Матрица из 5 независимых job: самозапущенный runner убивает job спустя 30 минут
+# («maximum run time»), а полный suite идёт ~12 минут — цикл из 5 прогонов в одной
+# job отменялся на 3-м прогоне и отчёт не формировался. Каждый прогон теперь —
+# отдельная job со своим стеком; красная часть матрицы = flake (order-dependent
+# или плавающий), полностью зелёная матрица = стабильный suite.
+
+on:
+  schedule:
+    - cron: "17 2 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: nightly-flakes-${{ github.ref }}
+  cancel-in-progress: true
+
+# Workflow только читает код и аплоадит артефакт (тестовые логи) —
+# дефолтные права сужаем до contents: read (principle of least privilege).
+# Закрывает CodeQL actions/missing-workflow-permissions.
+
+jobs:
+  flake-run:
+    name: backend / pytest flake run ${{ matrix.run }}/5
+    runs-on: [ubuntu-latest, ci-services]
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        run: [1, 2, 3, 4, 5]
+    steps:
+      - uses: https://code.forgejo.org/actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: https://code.forgejo.org/actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/pyproject.toml
+      - name: Install backend (dev)
+        working-directory: backend
+        run: pip install -e ".[dev]"
+
+      - name: Install nightly tools (envsubst, jq)
+        # nginx render-config.sh smoke-тесты (@pytest.mark.nightly) требуют
+        # envsubst + jq; в образе runner'а (catthehacker) их нет → 6 вечных
+        # skip'ов в каждом nightly-прогоне (аудит 2026-08-21, P0.5). Теперь
+        # NIGHTLY-прогон с skip'ами проваливается (conftest-guard) — инструменты
+        # обязаны стоять. Сломанный git-lfs repo мешает apt — убираем (как в e2e).
+        run: |
+          sudo rm -f /etc/apt/sources.list.d/*git-lfs* /etc/apt/sources.list.d/*packagecloud* || true
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq gettext-base jq
+
+      - name: Set isolated service scope
+        run: |
+          scope="portal-nightly-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-flakes-${{ matrix.run }}"
+          printf '%s\n' "CI_SCOPE=${scope}" "PG_CONTAINER=${scope}-pg" \
+            "REDIS_CONTAINER=${scope}-redis" \
+            "POSTGRES_IMAGE=portal-postgres:ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-flakes-${{ matrix.run }}" \
+            >> "$GITHUB_ENV"
+
+      # Только уникальный тег: migration tests получают его через
+      # PORTAL_POSTGRES_IMAGE. Общий :16 на shared Docker daemon позволял
+      # пяти nightly jobs перезаписывать образ друг друга.
+      - name: Build postgres image with hunspell
+        run: docker build -t "$POSTGRES_IMAGE" -f postgres/Dockerfile .
+
+      - name: Start postgres
+        run: |
+          set -o pipefail
+          docker run -d --name "$PG_CONTAINER" \
+            --label portal.ci.managed=true --label "portal.ci.scope=$CI_SCOPE" \
+            -e POSTGRES_USER=portal \
+            -e POSTGRES_PASSWORD=portal \
+            -e POSTGRES_DB=portal \
+            -p 127.0.0.1::5432 "$POSTGRES_IMAGE"
+          # Аудит-4 (P3): упавший docker port без pipefail давал пустой порт и
+          # кривой DATABASE_URL — шаг зелёный, падало дальше с невнятной диагностикой.
+          pg_port=$(docker port "$PG_CONTAINER" 5432/tcp | sed -E 's/.*:([0-9]+)$/\1/')
+          : "${pg_port:?docker port не отдал порт postgres}"
+          echo "DATABASE_URL=postgresql+asyncpg://portal:portal@127.0.0.1:${pg_port}/portal" >> "$GITHUB_ENV"
+          for i in $(seq 1 60); do
+            if docker exec "$PG_CONTAINER" pg_isready -h 127.0.0.1 -p 5432 -U portal -d portal >/dev/null 2>&1; then
+              echo "postgres is ready"
+              break
+            fi
+            if [ "$i" -eq 60 ]; then
+              echo "postgres did not become ready in time" >&2
+              docker logs "$PG_CONTAINER" || true
+              exit 1
+            fi
+            sleep 1
+          done
+
+      - name: Start redis
+        run: |
+          set -o pipefail
+          docker run -d --name "$REDIS_CONTAINER" \
+            --label portal.ci.managed=true --label "portal.ci.scope=$CI_SCOPE" \
+            -p 127.0.0.1::6379 redis:7
+          redis_port=$(docker port "$REDIS_CONTAINER" 6379/tcp | sed -E 's/.*:([0-9]+)$/\1/')
+          : "${redis_port:?docker port не отдал порт redis}"
+          echo "REDIS_URL=redis://127.0.0.1:${redis_port}/0" >> "$GITHUB_ENV"
+          # fail-closed (аудит 2026-08-23, P2): прежний цикл `grep && break` после
+          # 30 неудачных попыток заканчивался на `sleep` (exit 0) — зелёный шаг
+          # при так и не поднявшемся Redis. Теперь без готовности — exit 1.
+          for i in $(seq 1 30); do
+            if docker exec "$REDIS_CONTAINER" redis-cli ping | grep -q PONG; then
+              echo "redis is ready"
+              break
+            fi
+            if [ "$i" -eq 30 ]; then
+              echo "redis did not become ready in time" >&2
+              docker logs "$REDIS_CONTAINER" || true
+              exit 1
+            fi
+            sleep 1
+          done
+
+      - name: Alembic upgrade head
+        working-directory: backend
+        env:
+          SECRET_KEY: ci-secret-key-for-tests-only-not-used-anywhere-else-32+chars
+          ENVIRONMENT: test
+        run: alembic upgrade head
+
+      - name: Run full suite once, report failures
+        working-directory: backend
+        env:
+          INTEGRATION_DB: "true"
+          INTEGRATION_REDIS: "true"
+          # Включает @pytest.mark.nightly-тесты: stepwise-прогон миграций,
+          # fresh-upgrade на чистом кластере, nginx render-config.sh.
+          # Больше нигде они не запускаются — без этого флага контур мёртв.
+          NIGHTLY: "true"
+          PORTAL_POSTGRES_IMAGE: ${{ env.POSTGRES_IMAGE }}
+          SECRET_KEY: ci-secret-key-for-tests-only-not-used-anywhere-else-32+chars
+          ENVIRONMENT: test
+          ADMIN_EMAIL: admin@example.com
+          ADMIN_PASSWORD: admin12345
+        run: |
+          # pipefail ОБЯЗАТЕЛЕН вместе с set +e: без него rc=$? после
+          # `pytest | tee` — это код tee (всегда 0), и матрица flakes не может
+          # покраснеть от упавших тестов (аудит-3, P1). Смысл workflow —
+          # красная ячейка = флак.
+          set +e
+          set -o pipefail
+          mkdir -p flake-reports
+          # Случайный порядок тестов НЕ отключаем (раньше был -p no:randomly):
+          # каждый прогон получает свой сид — так ловятся order-dependent flakes.
+          pytest tests/unit tests/security tests/integration \
+            -p no:cacheprovider \
+            --no-cov -q \
+            --junit-xml="flake-reports/run-${{ matrix.run }}.xml" \
+            -o "junit_suite_name=run-${{ matrix.run }}" \
+            | tee "flake-reports/run-${{ matrix.run }}.log"
+          rc=$?
+
+          {
+            echo "## Flake run ${{ matrix.run }}/5"
+            echo
+            if [ "$rc" -ne 0 ]; then
+              echo "Run failed (exit $rc). Failed tests:"
+              echo
+              echo '```'
+              grep -E '^FAILED ' "flake-reports/run-${{ matrix.run }}.log" || true
+              echo '```'
+            else
+              echo "Run passed."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          exit "$rc"
+
+      - name: Upload flake reports
+        if: always()
+        uses: https://code.forgejo.org/actions/upload-artifact@ff15f0306b3f739f7b6fd43fb5d26cd321bd4de5 # v3.2.1: Forgejo-compatible SHA pin
+        with:
+          name: flake-reports-run-${{ matrix.run }}
+          path: backend/flake-reports/
+          retention-days: 30
+
+      - name: Stop containers
+        if: always()
+        run: docker rm -f "$PG_CONTAINER" "$REDIS_CONTAINER" || true

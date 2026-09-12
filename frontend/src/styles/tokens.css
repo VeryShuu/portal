@@ -1,0 +1,214 @@
+/* Design tokens — based on MAGE brandbook (mage.ru) */
+
+@font-face {
+  font-family: 'Inter';
+  src: url('/fonts/InterVariable.woff2') format('woff2-variations'),
+       url('/fonts/InterVariable.woff2') format('woff2');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  /* Brand palette */
+  --color-brand-red: #d8262c;
+  --color-brand-red-hover: #bd2026;
+  --color-brand-red-pressed: #a11a1f;
+  --color-brand-red-soft: #fde8e9;
+
+  --color-brand-navy: #0b2a4a;
+  --color-brand-navy-2: #143a66;
+  --color-brand-navy-3: #1f4e85;
+
+  --color-brand-sky: #4a90c4;
+  --color-brand-sky-2: #6faed8;
+  --color-brand-ice: #e8f1f8;
+
+  /* Semantic (light) */
+  --color-surface: #ffffff;
+  --color-bg: #f5f7fa;
+  --color-bg-muted: #eef2f7;
+  --color-border: #e2e8f0;
+  --color-border-strong: #cbd5e1;
+  --color-text: #0f172a;
+  --color-text-muted: #475569;
+  --color-text-subtle: #64748b;
+
+  /* Status */
+  --color-success: #16a34a;
+  --color-warning: #f59e0b;
+  /* Danger — decoupled from brand red so destructive ≠ primary CTA.
+     Canonical source; mirrored in naive-theme.ts (errorColor ramp). */
+  --color-danger: #be123c;
+  --color-danger-hover: #9f1239;
+  --color-danger-pressed: #881337;
+  --color-danger-soft: #fff1f3;
+  --color-info: var(--color-brand-sky);
+
+  /* Presence ring (вокруг аватарки) — вычисляемый статус из ERP (миграция 093).
+     working — нет отсутствия (ring опционален, тонкий); vacation — отпуск/отгул;
+     sick — больничный; business_trip — командировка. */
+  --presence-ring-working: var(--color-success);
+  --presence-ring-vacation: var(--color-warning);
+  --presence-ring-sick: var(--color-danger);
+  --presence-ring-business_trip: #8b5cf6;
+
+  /* Category badges (pastel) */
+  --badge-hr-bg: #ffe4e1;
+  --badge-hr-fg: #a8322a;
+  --badge-it-bg: #e0eafc;
+  --badge-it-fg: #1a4b8c;
+  --badge-finance-bg: #ede4ff;
+  --badge-finance-fg: #5b21b6;
+  --badge-general-bg: #f1f5f9;
+  --badge-general-fg: #334155;
+  --badge-important-bg: #fef2f2;
+  --badge-important-fg: #b91c1c;
+
+  /* Typography */
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+    'Helvetica Neue', Arial, sans-serif;
+  --font-display: var(--font-sans);
+
+  /* Radius */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-pill: 9999px;
+
+  /* Shadows (cool navy tone) */
+  --shadow-sm: 0 1px 2px rgba(11, 42, 74, 0.06);
+  --shadow-md: 0 1px 2px rgba(11, 42, 74, 0.06),
+    0 4px 16px rgba(11, 42, 74, 0.08);
+  --shadow-lg: 0 8px 32px rgba(11, 42, 74, 0.12);
+  --shadow-hero: 0 16px 48px rgba(11, 42, 74, 0.18);
+
+  /* Layout */
+  --layout-sider-width: 240px;
+  --layout-sider-collapsed: 64px;
+  --layout-header-height: 60px;
+
+  /* Responsive scale — industrial breakpoints (Tailwind), mobile-first */
+  --bp-sm: 640px;
+  --bp-md: 768px;
+  --bp-lg: 1024px;
+  --bp-xl: 1280px;
+  --bp-2xl: 1536px;
+
+  /* Content widths — four deliberate classes */
+  --content-reading: 768px;   /* prose: KB article, news detail (45–75 chars/line) */
+  --content-narrow: 1080px;    /* ticketing / conversation UIs: helpdesk lists & detail */
+  --content-standard: 1280px; /* lists / most pages */
+  --content-wide: 1600px;     /* dense grids & tables: staff, photos, files, admin */
+
+  /* Fluid page gutter */
+  --page-gutter: clamp(16px, 4vw, 48px);
+
+  /* Backwards-compat alias for legacy code */
+  --layout-content-max: var(--content-standard);
+
+  /* Motion */
+  --t-fast: 0.12s ease;
+  --t-base: 0.18s ease;
+  --t-slow: 0.28s ease;
+
+  /* Hero gradient */
+  --gradient-hero: linear-gradient(135deg, #0b2a4a 0%, #143a66 55%, #1f4e85 100%);
+  --gradient-login: linear-gradient(180deg, #ffffff 0%, #e8f1f8 100%);
+
+  /* ── MAGE homepage redesign palette (эксперимент, ветка feat/homepage-redesign) ──
+     Отдельный визуальный слой для редизайна главной. НЕ заменяет brand-red/navy:
+     красный #d8262c остаётся global primary (кнопки, активные пункты меню),
+     navy ниже — декоративный фон Hero и акценты секций главной страницы.
+     Палитра зафиксирована ТЗ редизайна (фирменный стиль МАГЭ). */
+  --color-mage-primary: #1f4e8c;        /* navy — декоративный primary редизайна */
+  --color-mage-secondary: #2f6cb5;      /* светлее, hover/акценты */
+  --color-mage-bg: #f6f8fc;             /* фон страницы редизайна (концепт) */
+  --color-mage-card: #ffffff;           /* фон карточек */
+  --color-mage-border: #e6edf5;         /* границы (концепт) */
+  --color-mage-text: #1f2937;           /* основной текст */
+  --color-mage-text-secondary: #6b7280; /* вторичный текст */
+
+  /* Радиусы редизайна (концепт: Hero 20 / карточки 16 / кнопки 10 / мини-карточки 12) */
+  --radius-card: 16px;
+  --radius-button: 10px;
+  --radius-hero: 20px;
+  --radius-mini: 12px;
+
+  /* Минимальная тень редизайна (концепт: 0 6px 18px rgba(31,78,140,.06)) */
+  --shadow-soft: 0 6px 18px rgba(31, 78, 140, 0.06);
+
+  /* Типографическая шкала редизайна (концепт: hero 42 / section 28 / card 20 / body 16) */
+  --fs-hero-title: 42px;
+  --fs-section-title: 28px;
+  --fs-card-title: 20px;
+  --fs-body: 16px;
+  --fs-meta: 13px;
+
+  /* Сетка отступов редизайна: внешние 24 / между карточками 20 / внутри 20 */
+  --space-outer: 24px;
+  --space-card-gap: 20px;
+  --space-card-inner: 20px;
+
+  /* Hero-градиенты по времени суток (fallback, когда нет загруженного фото) */
+  --gradient-hero-morning: linear-gradient(135deg, #1a3a5c 0%, #2f6cb5 60%, #4a90c4 100%);
+  --gradient-hero-day: linear-gradient(135deg, #0b2a4a 0%, #143a66 55%, #1f4e85 100%);
+  --gradient-hero-evening: linear-gradient(135deg, #0a1633 0%, #142a5c 50%, #1f3a6e 100%);
+}
+
+/* Dark theme overrides (applied via [data-theme="dark"]) */
+[data-theme='dark'] {
+  --color-surface: #0f1e33;
+  --color-bg: #071426;
+  --color-bg-muted: #0a1c33;
+  --color-border: #1e3252;
+  --color-border-strong: #2a4571;
+  --color-text: #e6eef8;
+  --color-text-muted: #94a9c4;
+  --color-text-subtle: #64809a;
+
+  /* Danger (dark) — lighter crimson so it stays legible on dark surfaces */
+  --color-danger: #f43f5e;
+  --color-danger-hover: #fb7185;
+  --color-danger-pressed: #e11d48;
+  --color-danger-soft: #3a1420;
+
+  /* Presence ring (dark) — осветляем фиолетовый для контраста на тёмном.
+     success/warning/danger уже переопределены выше или наследуются. */
+  --presence-ring-business_trip: #a78bfa;
+
+  --color-brand-ice: #152a44;
+
+  --badge-hr-bg: #3a1f1c;
+  --badge-hr-fg: #fca5a1;
+  --badge-it-bg: #1c2b4a;
+  --badge-it-fg: #a6c4ed;
+  --badge-finance-bg: #2b1f4a;
+  --badge-finance-fg: #c8b6ff;
+  --badge-general-bg: #1c2838;
+  --badge-general-fg: #cbd5e1;
+  --badge-important-bg: #3a1a1a;
+  --badge-important-fg: #fca5a5;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 1px 2px rgba(0, 0, 0, 0.3), 0 4px 16px rgba(0, 0, 0, 0.35);
+  --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.45);
+  --shadow-hero: 0 16px 48px rgba(0, 0, 0, 0.5);
+
+  --gradient-hero: linear-gradient(135deg, #071426 0%, #0b2a4a 55%, #143a66 100%);
+  --gradient-login: linear-gradient(180deg, #071426 0%, #0f1e33 100%);
+
+  /* MAGE homepage redesign (dark) — карта поверхностностей/текста следует
+     существующей dark-теме; только mage-специфичные корректировки. */
+  --color-mage-bg: #071426;
+  --color-mage-card: var(--color-surface);
+  --color-mage-border: var(--color-border);
+  --color-mage-text: var(--color-text);
+  --color-mage-text-secondary: var(--color-text-muted);
+  --shadow-soft: 0 6px 18px rgba(0, 0, 0, 0.35);
+
+  --gradient-hero-morning: linear-gradient(135deg, #0a1f33 0%, #1a3a5c 60%, #2f6cb5 100%);
+  --gradient-hero-day: linear-gradient(135deg, #071426 0%, #0b2a4a 55%, #143a66 100%);
+  --gradient-hero-evening: linear-gradient(135deg, #050d1f 0%, #0a1633 50%, #142a5c 100%);
+}

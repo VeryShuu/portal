@@ -1,0 +1,1578 @@
+"""Unit-тесты для api/branding.py.
+
+Покрытие:
+- BrandingSettings: дефолты, валидация полей
+- EmailSettings / EmailSettingsIn / EmailSettingsOut: дефолты, поля
+- email_settings_to_out: маскирование пароля (только флаг password_set)
+- load_settings / save_settings: чтение файла, fallback к дефолту, ошибочный JSON
+- load_email_settings / save_email_settings: аналогично
+- find_file: поиск файла по расширению
+- delete_files: удаление файлов
+- _upload_image: неверный MIME → 422
+- GET /branding/settings: структура ответа, has_* флаги
+- PUT /admin/branding/settings: 403 для non-admin, 200 для admin
+- DELETE /admin/branding/logo|favicon|login-bg: 403 non-admin, 200 admin
+- GET /admin/email-settings: 403 non-admin, 200 admin (password_set)
+- PUT /admin/email-settings: сохранение пароля (null/mask/новый)
+- POST /admin/email-settings/test: 422 без host, 200 с host
+"""
+
+from __future__ import annotations
+
+import json
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _clear_email_settings_cache():
+    """Сбрасывать TTL-кеш email-settings между тестами (audit [H4])."""
+    from app.services.email_settings import invalidate_email_settings_cache
+
+    invalidate_email_settings_cache()
+    yield
+    invalidate_email_settings_cache()
+
+
+pytest.importorskip("fastapi", reason="fastapi not installed locally")
+pytest.importorskip("httpx", reason="httpx not installed locally")
+
+
+# ── BrandingSettings model ────────────────────────────────────────────────────
+
+
+class TestBrandingSettingsModel:
+    def test_defaults(self):
+        from app.api.branding import BrandingSettings
+
+        s = BrandingSettings()
+        assert s.portal_name == "Корпоративный портал"
+        assert s.accent_color == "#d8262c"
+        assert s.banner_enabled is False
+        assert s.banner_type == "info"
+        assert s.banner_expires_at is None
+
+    def test_custom_values(self):
+        from app.api.branding import BrandingSettings
+
+        s = BrandingSettings(
+            portal_name="Мой Портал",
+            accent_color="#ff0000",
+            banner_enabled=True,
+            banner_type="warning",
+        )
+        assert s.portal_name == "Мой Портал"
+        assert s.accent_color == "#ff0000"
+        assert s.banner_enabled is True
+        assert s.banner_type == "warning"
+
+    def test_invalid_banner_type(self):
+        from pydantic import ValidationError
+
+        from app.api.branding import BrandingSettings
+
+        with pytest.raises(ValidationError):
+            BrandingSettings(banner_type="invalid")
+
+
+# ── Hero hour validation (BrandingSettings.hero_*_hour, 0..23) ────────────────
+
+
+class TestHeroHourValidation:
+    def test_hero_hour_defaults(self):
+        from app.api.branding import BrandingSettings
+
+        s = BrandingSettings()
+        assert (s.hero_morning_hour, s.hero_day_hour, s.hero_evening_hour) == (6, 12, 18)
+
+    def test_hero_subtitle_mode_defaults_auto(self):
+        from app.api.branding import BrandingSettings
+
+        s = BrandingSettings()
+        assert s.hero_subtitle_mode == "auto"
+        # 4 custom-текста пустые по умолчанию
+        assert (
+            s.hero_subtitle_morning,
+            s.hero_subtitle_day,
+            s.hero_subtitle_evening,
+            s.hero_subtitle_night,
+        ) == (
+            "",
+            "",
+            "",
+            "",
+        )
+
+    @pytest.mark.parametrize("mode", ["auto", "custom", "hidden"])
+    def test_hero_subtitle_mode_valid_values_accepted(self, mode):
+        from app.api.branding import BrandingSettings
+
+        assert BrandingSettings(hero_subtitle_mode=mode).hero_subtitle_mode == mode
+
+    @pytest.mark.parametrize("bad", ["", "off", "none", "AUTO"])
+    def test_hero_subtitle_mode_invalid_rejected(self, bad):
+        from pydantic import ValidationError
+
+        from app.api.branding import BrandingSettings
+
+        with pytest.raises(ValidationError):
+            BrandingSettings(hero_subtitle_mode=bad)  # type: ignore[arg-type]
+
+    def test_hero_subtitle_mode_roundtrip_through_save_load(self, tmp_path):
+        """save→load сохраняет hero_subtitle_mode (JSON round-trip)."""
+        from app.services.branding_assets import (
+            BrandingSettings,
+            load_settings,
+            save_settings,
+        )
+
+        settings_file = tmp_path / "settings.json"
+        with (
+            patch("app.services.branding_assets.SETTINGS_FILE", settings_file),
+            patch("app.services.branding_assets.BRANDING_DIR", tmp_path),
+        ):
+            save_settings(BrandingSettings(hero_subtitle_mode="hidden"))
+            assert load_settings().hero_subtitle_mode == "hidden"
+
+    def test_hero_subtitle_custom_texts_roundtrip(self, tmp_path):
+        """save→load сохраняет 4 custom-текста подзаголовка (JSON round-trip)."""
+        from app.services.branding_assets import (
+            BrandingSettings,
+            load_settings,
+            save_settings,
+        )
+
+        settings_file = tmp_path / "settings.json"
+        with (
+            patch("app.services.branding_assets.SETTINGS_FILE", settings_file),
+            patch("app.services.branding_assets.BRANDING_DIR", tmp_path),
+        ):
+            save_settings(
+                BrandingSettings(
+                    hero_subtitle_mode="custom",
+                    hero_subtitle_morning="Доброе утро!",
+                    hero_subtitle_day="Добрый день!",
+                    hero_subtitle_evening="Добрый вечер!",
+                    hero_subtitle_night="Доброй ночи!",
+                )
+            )
+            loaded = load_settings()
+        assert loaded.hero_subtitle_mode == "custom"
+        assert (
+            loaded.hero_subtitle_morning,
+            loaded.hero_subtitle_day,
+            loaded.hero_subtitle_evening,
+            loaded.hero_subtitle_night,
+        ) == ("Доброе утро!", "Добрый день!", "Добрый вечер!", "Доброй ночи!")
+
+    # ── Hero-bg focal (позиционирование фоновых фото) ──────────────────────────
+
+    def test_hero_bg_focal_defaults_none(self):
+        from app.api.branding import BrandingSettings
+
+        s = BrandingSettings()
+        # Все 9 focal-полей null по умолчанию (= центрирование без zoom)
+        assert s.hero_bg_morning_focal_x is None
+        assert s.hero_bg_morning_focal_y is None
+        assert s.hero_bg_morning_focal_zoom is None
+        assert s.hero_bg_day_focal_x is None
+        assert s.hero_bg_evening_focal_zoom is None
+
+    def test_hero_bg_focal_valid_values_accepted(self):
+        from app.api.branding import BrandingSettings
+
+        s = BrandingSettings(
+            hero_bg_morning_focal_x=30,
+            hero_bg_morning_focal_y=70,
+            hero_bg_morning_focal_zoom=150,
+        )
+        assert (
+            s.hero_bg_morning_focal_x,
+            s.hero_bg_morning_focal_y,
+            s.hero_bg_morning_focal_zoom,
+        ) == (
+            30,
+            70,
+            150,
+        )
+
+    @pytest.mark.parametrize("bad", [-1, 101])
+    def test_hero_bg_focal_xy_out_of_range_rejected(self, bad):
+        from pydantic import ValidationError
+
+        from app.api.branding import BrandingSettings
+
+        with pytest.raises(ValidationError):
+            BrandingSettings(hero_bg_morning_focal_x=bad)
+
+    @pytest.mark.parametrize("bad", [99, 301])
+    def test_hero_bg_focal_zoom_out_of_range_rejected(self, bad):
+        from pydantic import ValidationError
+
+        from app.api.branding import BrandingSettings
+
+        with pytest.raises(ValidationError):
+            BrandingSettings(hero_bg_morning_focal_zoom=bad)
+
+    def test_hero_bg_focal_roundtrip_through_save_load(self, tmp_path):
+        """save→load сохраняет focal-настройки Hero-фона (JSON round-trip)."""
+        from app.services.branding_assets import (
+            BrandingSettings,
+            load_settings,
+            save_settings,
+        )
+
+        settings_file = tmp_path / "settings.json"
+        with (
+            patch("app.services.branding_assets.SETTINGS_FILE", settings_file),
+            patch("app.services.branding_assets.BRANDING_DIR", tmp_path),
+        ):
+            save_settings(
+                BrandingSettings(
+                    hero_bg_morning_focal_x=25,
+                    hero_bg_morning_focal_y=75,
+                    hero_bg_morning_focal_zoom=180,
+                )
+            )
+            loaded = load_settings()
+        assert (
+            loaded.hero_bg_morning_focal_x,
+            loaded.hero_bg_morning_focal_y,
+            loaded.hero_bg_morning_focal_zoom,
+        ) == (
+            25,
+            75,
+            180,
+        )
+
+    @pytest.mark.parametrize("bad", [-1, 24, 100])
+    def test_hero_morning_hour_out_of_range_rejected(self, bad):
+        from pydantic import ValidationError
+
+        from app.api.branding import BrandingSettings
+
+        with pytest.raises(ValidationError):
+            BrandingSettings(hero_morning_hour=bad)
+
+    @pytest.mark.parametrize("bad", [-1, 24])
+    def test_hero_day_hour_out_of_range_rejected(self, bad):
+        from pydantic import ValidationError
+
+        from app.api.branding import BrandingSettings
+
+        with pytest.raises(ValidationError):
+            BrandingSettings(hero_day_hour=bad)
+
+    @pytest.mark.parametrize("bad", [-1, 24])
+    def test_hero_evening_hour_out_of_range_rejected(self, bad):
+        from pydantic import ValidationError
+
+        from app.api.branding import BrandingSettings
+
+        with pytest.raises(ValidationError):
+            BrandingSettings(hero_evening_hour=bad)
+
+    @pytest.mark.parametrize("ok", [0, 12, 23])
+    def test_hero_hour_boundary_values_accepted(self, ok):
+        from app.api.branding import BrandingSettings
+
+        s = BrandingSettings(hero_morning_hour=ok, hero_day_hour=ok, hero_evening_hour=ok)
+        assert (s.hero_morning_hour, s.hero_day_hour, s.hero_evening_hour) == (ok, ok, ok)
+
+    def test_hero_hour_roundtrip_through_save_load(self, tmp_path):
+        """save_settings→load_settings сохраняет кастомные час-границы (JSON round-trip)."""
+        from app.services.branding_assets import (
+            BrandingSettings,
+            load_settings,
+            save_settings,
+        )
+
+        settings_file = tmp_path / "settings.json"
+        with (
+            patch("app.services.branding_assets.SETTINGS_FILE", settings_file),
+            patch("app.services.branding_assets.BRANDING_DIR", tmp_path),
+        ):
+            save_settings(
+                BrandingSettings(hero_morning_hour=7, hero_day_hour=13, hero_evening_hour=20)
+            )
+            loaded = load_settings()
+        assert (loaded.hero_morning_hour, loaded.hero_day_hour, loaded.hero_evening_hour) == (
+            7,
+            13,
+            20,
+        )
+
+
+# ── EmailSettings models ──────────────────────────────────────────────────────
+
+
+class TestEmailSettingsModels:
+    def test_email_settings_defaults(self):
+        from app.api.branding import EmailSettings
+
+        s = EmailSettings()
+        assert s.host == ""
+        assert s.port == 25
+        assert s.use_tls is False
+        assert s.use_starttls is False
+
+    def test_email_settings_in_port_validation(self):
+        from pydantic import ValidationError
+
+        from app.api.branding import EmailSettingsIn
+
+        with pytest.raises(ValidationError):
+            EmailSettingsIn(port=0)
+        with pytest.raises(ValidationError):
+            EmailSettingsIn(port=70000)
+
+    def test_email_settings_in_password_nullable(self):
+        from app.api.branding import EmailSettingsIn
+
+        s = EmailSettingsIn(password=None)
+        assert s.password is None
+
+    def test_email_settings_to_out_masks_password(self):
+        from app.services.email_settings import EmailSettings, email_settings_to_out
+
+        s = EmailSettings(host="smtp.local", port=587, password="secret123")
+        out = email_settings_to_out(s)
+        assert out.password_set is True
+        assert not hasattr(out, "password") or not getattr(out, "password", None)
+
+    def test_email_settings_to_out_no_password(self):
+        from app.services.email_settings import EmailSettings, email_settings_to_out
+
+        s = EmailSettings(host="smtp.local", port=25, password="")
+        out = email_settings_to_out(s)
+        assert out.password_set is False
+
+    # ── IMAP-блок (ADR-048: общий приёмник почты) ──────────────────────────────
+
+    def test_imap_defaults(self):
+        from app.api.branding import EmailSettings
+
+        s = EmailSettings()
+        assert s.imap_host == ""
+        assert s.imap_port == 993
+        assert s.imap_use_ssl is True
+        assert s.imap_username == ""
+        assert s.imap_password == ""
+        assert s.imap_folder == "INBOX"
+
+    def test_imap_to_out_masks_password(self):
+        from app.services.email_settings import EmailSettings, email_settings_to_out
+
+        s = EmailSettings(imap_host="imap.local", imap_username="u", imap_password="secret")
+        out = email_settings_to_out(s)
+        assert out.imap_host == "imap.local"
+        assert out.imap_username == "u"
+        assert out.imap_password_set is True
+        assert not hasattr(out, "imap_password")
+
+    def test_imap_configured_requires_host_username_password(self):
+        from app.services.email_settings import EmailSettings, imap_configured
+
+        assert imap_configured(EmailSettings()) is False
+        assert imap_configured(EmailSettings(imap_host="h", imap_username="u")) is False
+        assert (
+            imap_configured(EmailSettings(imap_host="h", imap_username="u", imap_password="p"))
+            is True
+        )
+
+    def test_imap_password_fernet_roundtrip(self, tmp_path):
+        """save→read: imap_password хранится Fernet-шифром (imap_password_enc на
+        диске), plaintext не утекает, после reload расшифровывается обратно."""
+        import json
+
+        from app.services import email_settings as es_mod
+        from app.services.email_settings import (
+            EmailSettings,
+            load_email_settings,
+            save_email_settings,
+        )
+
+        f = tmp_path / "email-settings.json"
+        with (
+            patch.object(es_mod, "EMAIL_SETTINGS_FILE", f),
+            patch.object(es_mod, "BRANDING_DIR", tmp_path),
+        ):
+            save_email_settings(
+                EmailSettings(
+                    host="smtp.local",
+                    password="smtp-pw",
+                    imap_host="imap.local",
+                    imap_username="u",
+                    imap_password="imap-secret",
+                    imap_folder="INBOX",
+                )
+            )
+
+            # На диске — imap_password_enc (Fernet), НЕ plaintext imap_password.
+            on_disk = json.loads(f.read_text("utf-8"))
+            assert "imap_password_enc" in on_disk
+            assert "imap_password" not in on_disk
+            # SMTP-пароль остаётся plaintext (намеренно, ADR-048).
+            assert on_disk["password"] == "smtp-pw"
+
+            # После reload — imap_password расшифрован обратно, SMTP как есть.
+            loaded = load_email_settings()
+            assert loaded.imap_password == "imap-secret"
+            assert loaded.imap_host == "imap.local"
+            assert loaded.password == "smtp-pw"
+
+    def test_imap_password_keep_semantics_on_save(self, tmp_path):
+        """load→save без изменений сохраняет тот же imap-пароль (round-trip stable)."""
+        from app.services import email_settings as es_mod
+        from app.services.email_settings import (
+            EmailSettings,
+            load_email_settings,
+            save_email_settings,
+        )
+
+        f = tmp_path / "email-settings.json"
+        with (
+            patch.object(es_mod, "EMAIL_SETTINGS_FILE", f),
+            patch.object(es_mod, "BRANDING_DIR", tmp_path),
+        ):
+            save_email_settings(
+                EmailSettings(imap_host="imap.local", imap_username="u", imap_password="p1")
+            )
+            # Reload и save без правок — пароль сохраняется.
+            s = load_email_settings()
+            save_email_settings(s)
+            assert load_email_settings().imap_password == "p1"
+
+
+# ── load_settings / save_settings ──────────────────────────────────────────
+
+
+class TestLoadSaveSettings:
+    def test_load_settings_fallback_when_file_missing(self, tmp_path):
+        from app.services.branding_assets import DEFAULT_SETTINGS, BrandingSettings
+
+        with patch("app.services.branding_assets.SETTINGS_FILE", tmp_path / "nonexistent.json"):
+            from app.services.branding_assets import load_settings
+
+            result = load_settings()
+        assert isinstance(result, BrandingSettings)
+        assert result.portal_name == DEFAULT_SETTINGS.portal_name
+
+    def test_load_settings_from_valid_file(self, tmp_path):
+
+        settings_file = tmp_path / "settings.json"
+        settings_file.write_text(
+            json.dumps({"portal_name": "Custom", "accent_color": "#123456"}), encoding="utf-8"
+        )
+        with (
+            patch("app.services.branding_assets.SETTINGS_FILE", settings_file),
+            patch("app.services.branding_assets.BRANDING_DIR", tmp_path),
+        ):
+            from app.services.branding_assets import load_settings
+
+            result = load_settings()
+        assert result.portal_name == "Custom"
+        assert result.accent_color == "#123456"
+
+    def test_load_settings_fallback_on_invalid_json(self, tmp_path):
+
+        settings_file = tmp_path / "settings.json"
+        settings_file.write_text("{not valid json}", encoding="utf-8")
+        with patch("app.services.branding_assets.SETTINGS_FILE", settings_file):
+            from app.services.branding_assets import DEFAULT_SETTINGS, load_settings
+
+            result = load_settings()
+        assert result.portal_name == DEFAULT_SETTINGS.portal_name
+
+    def test_save_and_reload_settings(self, tmp_path):
+        from app.services.branding_assets import BrandingSettings, load_settings, save_settings
+
+        settings_file = tmp_path / "settings.json"
+        with (
+            patch("app.services.branding_assets.SETTINGS_FILE", settings_file),
+            patch("app.services.branding_assets.BRANDING_DIR", tmp_path),
+        ):
+            s = BrandingSettings(portal_name="Сохранённый", accent_color="#aabbcc")
+            save_settings(s)
+            loaded = load_settings()
+        assert loaded.portal_name == "Сохранённый"
+        assert loaded.accent_color == "#aabbcc"
+
+
+# ── load_email_settings / save_email_settings ───────────────────────────────
+
+
+class TestLoadSaveEmailSettings:
+    def test_load_email_defaults_when_missing(self, tmp_path):
+
+        with patch("app.services.email_settings.EMAIL_SETTINGS_FILE", tmp_path / "no.json"):
+            from app.services.email_settings import load_email_settings
+
+            result = load_email_settings()
+        assert result.host == ""
+        assert result.port == 25
+
+    def test_save_and_reload_email_settings(self, tmp_path):
+        from app.services.email_settings import (
+            EmailSettings,
+            load_email_settings,
+            save_email_settings,
+        )
+
+        email_file = tmp_path / "email-settings.json"
+        with (
+            patch("app.services.email_settings.EMAIL_SETTINGS_FILE", email_file),
+            patch("app.services.email_settings.BRANDING_DIR", tmp_path),
+        ):
+            s = EmailSettings(host="smtp.example.com", port=465, password="pass123", use_tls=True)
+            save_email_settings(s)
+            loaded = load_email_settings()
+        assert loaded.host == "smtp.example.com"
+        assert loaded.port == 465
+        assert loaded.password == "pass123"
+        assert loaded.use_tls is True
+
+
+class TestEmailSettingsCache:
+    """Characterization тесты для TTL-кеша `read_email_settings` (audit [H4])."""
+
+    def test_second_read_uses_cache_no_second_disk_read(self, tmp_path):
+        from app.services import email_settings as es_mod
+        from app.services.email_settings import read_email_settings
+
+        f = tmp_path / "email-settings.json"
+        f.write_text(
+            json.dumps(
+                {"host": "smtp.example.com", "port": 465, "password": "pass123", "use_tls": True}
+            ),
+            encoding="utf-8",
+        )
+        with patch.object(es_mod, "EMAIL_SETTINGS_FILE", f):
+            read_email_settings()  # warm cache
+            # Если кеш работает, второй вызов НЕ дойдёт до _read_from_disk.
+            with patch.object(
+                es_mod, "_read_from_disk", side_effect=AssertionError("disk read on cache hit")
+            ):
+                result = read_email_settings()
+        assert result is not None
+        assert result.host == "smtp.example.com"
+
+    def test_save_invalidates_cache(self, tmp_path):
+        from app.services import email_settings as es_mod
+        from app.services.email_settings import (
+            EmailSettings,
+            load_email_settings,
+            save_email_settings,
+        )
+
+        email_file = tmp_path / "email-settings.json"
+        with (
+            patch.object(es_mod, "EMAIL_SETTINGS_FILE", email_file),
+            patch.object(es_mod, "BRANDING_DIR", tmp_path),
+        ):
+            save_email_settings(EmailSettings(host="smtp1.example.com", port=25))
+            assert load_email_settings().host == "smtp1.example.com"
+            save_email_settings(EmailSettings(host="smtp2.example.com", port=25))
+            assert load_email_settings().host == "smtp2.example.com"
+
+    def test_none_cached_when_file_missing(self, tmp_path):
+        """None тоже кешируется — иначе каждый тик worker'а стучит на диск."""
+        from app.services import email_settings as es_mod
+        from app.services.email_settings import read_email_settings
+
+        with patch.object(es_mod, "EMAIL_SETTINGS_FILE", tmp_path / "missing.json"):
+            assert read_email_settings() is None
+            with patch.object(
+                es_mod,
+                "_read_from_disk",
+                side_effect=AssertionError("disk read on cache miss-stub"),
+            ):
+                assert read_email_settings() is None
+
+    def test_returns_deep_copy(self, tmp_path):
+        from app.services import email_settings as es_mod
+        from app.services.email_settings import read_email_settings
+
+        f = tmp_path / "email-settings.json"
+        f.write_text(json.dumps({"host": "smtp.example.com", "port": 25}), encoding="utf-8")
+        with patch.object(es_mod, "EMAIL_SETTINGS_FILE", f):
+            first = read_email_settings()
+            assert first is not None
+            first.host = "mutated.example.com"
+            second = read_email_settings()
+            assert second is not None
+            assert second.host == "smtp.example.com"  # cache was not poisoned
+
+
+# ── find_file / delete_files ────────────────────────────────────────────────
+
+
+class TestFindDeleteFiles:
+    def test_find_file_returns_none_when_missing(self, tmp_path):
+
+        with patch("app.services.branding_assets.BRANDING_DIR", tmp_path):
+            from app.services.branding_assets import find_file
+
+            result = find_file("logo", [".png", ".jpg"])
+        assert result is None
+
+    def test_find_file_returns_path_when_exists(self, tmp_path):
+
+        logo = tmp_path / "logo.png"
+        logo.write_bytes(b"fakepng")
+        with patch("app.services.branding_assets.BRANDING_DIR", tmp_path):
+            from app.services.branding_assets import find_file
+
+            result = find_file("logo", [".png", ".jpg"])
+        assert result == logo
+
+    def test_find_file_picks_first_existing(self, tmp_path):
+
+        logo_jpg = tmp_path / "logo.jpg"
+        logo_jpg.write_bytes(b"fakejpg")
+        with patch("app.services.branding_assets.BRANDING_DIR", tmp_path):
+            from app.services.branding_assets import find_file
+
+            result = find_file("logo", [".png", ".jpg"])
+        assert result == logo_jpg
+
+    def test_delete_files_removes_existing(self, tmp_path):
+
+        logo = tmp_path / "logo.png"
+        logo.write_bytes(b"fakepng")
+        with patch("app.services.branding_assets.BRANDING_DIR", tmp_path):
+            from app.services.branding_assets import delete_files
+
+            delete_files("logo", [".png", ".jpg"])
+        assert not logo.exists()
+
+    def test_delete_files_no_error_on_missing(self, tmp_path):
+
+        with patch("app.services.branding_assets.BRANDING_DIR", tmp_path):
+            from app.services.branding_assets import delete_files
+
+            delete_files("logo", [".png", ".jpg", ".webp"])
+
+
+# Дефолт iframe-origin'ов (system.json → video_iframe_origins).
+_IFRAME_ORIGINS_FIXTURE = [
+    "https://video.mage.ru",
+    "https://www.youtube-nocookie.com",
+    "https://rutube.ru",
+    "https://vk.com",
+    "https://vkvideo.ru",
+    "https://player.vimeo.com",
+]
+
+
+# ── API endpoints ─────────────────────────────────────────────────────────────
+
+
+class TestGetBrandingSettings:
+    async def test_returns_200_unauthenticated(self, client):
+        with (
+            patch("app.services.branding_assets.find_file", return_value=None),
+            patch(
+                "app.api.branding.load_system_settings",
+                return_value=MagicMock(
+                    video_gallery_url=None,
+                    video_iframe_origins=_IFRAME_ORIGINS_FIXTURE,
+                ),
+            ),
+            patch(
+                "app.services.branding_assets.load_settings",
+                return_value=__import__(
+                    "app.api.branding", fromlist=["BrandingSettings"]
+                ).BrandingSettings(),
+            ),
+        ):
+            r = await client.get("/api/v1/branding/settings")
+        assert r.status_code == 200
+        body = r.json()
+        assert "portal_name" in body
+        assert "has_favicon" in body
+        assert "has_logo" in body
+        assert body["allowed_iframe_origins"] == [
+            "https://video.mage.ru",
+            "https://www.youtube-nocookie.com",
+            "https://rutube.ru",
+            "https://vk.com",
+            "https://vkvideo.ru",
+            "https://player.vimeo.com",
+        ]
+
+    async def test_has_flags_when_files_exist(self, client):
+        fake_path = MagicMock()
+        fake_path.__bool__ = lambda self: True
+
+        def _mock_find(prefix, exts):
+            if prefix in ("logo", "favicon", "login-bg"):
+                return fake_path
+            return None
+
+        with (
+            patch("app.services.branding_assets.find_file", side_effect=_mock_find),
+            patch(
+                "app.api.branding.load_system_settings",
+                return_value=MagicMock(
+                    video_gallery_url=None,
+                    video_iframe_origins=_IFRAME_ORIGINS_FIXTURE,
+                ),
+            ),
+            patch(
+                "app.services.branding_assets.load_settings",
+                return_value=__import__(
+                    "app.api.branding", fromlist=["BrandingSettings"]
+                ).BrandingSettings(),
+            ),
+        ):
+            r = await client.get("/api/v1/branding/settings")
+        assert r.status_code == 200
+        body = r.json()
+        assert body["has_logo"] is True
+        assert body["has_favicon"] is True
+        assert body["has_login_bg"] is True
+
+    async def test_has_hero_bg_flags_reflect_files(self, client):
+        """has_hero_bg_morning/day/evening вычисляются из наличия файлов на диске."""
+        fake_path = MagicMock()
+        fake_path.__bool__ = lambda self: True
+
+        def _mock_find(prefix, exts):
+            if prefix in ("hero-bg-morning", "hero-bg-day", "hero-bg-evening"):
+                return fake_path
+            return None
+
+        with (
+            patch("app.services.branding_assets.find_file", side_effect=_mock_find),
+            patch(
+                "app.api.branding.load_system_settings",
+                return_value=MagicMock(
+                    video_gallery_url=None,
+                    video_iframe_origins=_IFRAME_ORIGINS_FIXTURE,
+                ),
+            ),
+            patch(
+                "app.services.branding_assets.load_settings",
+                return_value=__import__(
+                    "app.api.branding", fromlist=["BrandingSettings"]
+                ).BrandingSettings(),
+            ),
+        ):
+            r = await client.get("/api/v1/branding/settings")
+        assert r.status_code == 200
+        body = r.json()
+        assert body["has_hero_bg_morning"] is True
+        assert body["has_hero_bg_day"] is True
+        assert body["has_hero_bg_evening"] is True
+
+    async def test_hero_hour_settings_returned_in_response(self, client):
+        """GET /branding/settings возвращает кастомные hero_*_hour в ответе."""
+        from app.api.branding import BrandingSettings
+
+        with (
+            patch("app.services.branding_assets.find_file", return_value=None),
+            patch(
+                "app.api.branding.load_system_settings",
+                return_value=MagicMock(
+                    video_gallery_url=None,
+                    video_iframe_origins=_IFRAME_ORIGINS_FIXTURE,
+                ),
+            ),
+            patch(
+                "app.services.branding_assets.load_settings",
+                return_value=BrandingSettings(hero_morning_hour=7, hero_evening_hour=21),
+            ),
+        ):
+            r = await client.get("/api/v1/branding/settings")
+        assert r.status_code == 200
+        body = r.json()
+        assert body["hero_morning_hour"] == 7
+        assert body["hero_day_hour"] == 12  # default
+        assert body["hero_evening_hour"] == 21
+
+
+class TestPutBrandingSettings:
+    async def test_non_admin_gets_403(self, authed_client_factory):
+        ac, _ = authed_client_factory(role="reader")
+        r = await ac.put(
+            "/api/v1/admin/branding/settings",
+            json={"portal_name": "Test"},
+        )
+        assert r.status_code == 403
+
+    async def test_admin_saves_settings(self, authed_client_factory):
+        ac, _ = authed_client_factory(role="admin")
+        with (
+            patch("app.services.branding_assets.save_settings"),
+            patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
+        ):
+            r = await ac.put(
+                "/api/v1/admin/branding/settings",
+                json={"portal_name": "Новый Портал", "accent_color": "#0000ff"},
+            )
+        assert r.status_code == 200
+        assert r.json()["portal_name"] == "Новый Портал"
+
+    async def test_admin_saves_hero_hours(self, authed_client_factory):
+        """PUT /admin/branding/settings принимает и возвращает hero_*_hour."""
+        ac, _ = authed_client_factory(role="admin")
+        with (
+            patch("app.services.branding_assets.save_settings"),
+            patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
+        ):
+            r = await ac.put(
+                "/api/v1/admin/branding/settings",
+                json={"hero_morning_hour": 7, "hero_day_hour": 13, "hero_evening_hour": 20},
+            )
+        assert r.status_code == 200
+        body = r.json()
+        assert body["hero_morning_hour"] == 7
+        assert body["hero_day_hour"] == 13
+        assert body["hero_evening_hour"] == 20
+
+    async def test_admin_rejects_invalid_hero_hour(self, authed_client_factory):
+        """PUT с hero_*_hour вне 0..23 → 422."""
+        ac, _ = authed_client_factory(role="admin")
+        r = await ac.put(
+            "/api/v1/admin/branding/settings",
+            json={"hero_morning_hour": 24},
+        )
+        assert r.status_code == 422
+
+
+class TestDeleteBrandingFiles:
+    async def test_reset_logo_non_admin_403(self, authed_client_factory):
+        ac, _ = authed_client_factory(role="reader")
+        r = await ac.delete("/api/v1/admin/branding/logo")
+        assert r.status_code == 403
+
+    async def test_reset_logo_admin_200(self, authed_client_factory):
+        ac, _ = authed_client_factory(role="admin")
+        with (
+            patch("app.services.branding_assets.delete_files"),
+            patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
+        ):
+            r = await ac.delete("/api/v1/admin/branding/logo")
+        assert r.status_code == 200
+        assert "detail" in r.json()
+
+    async def test_reset_favicon_admin_200(self, authed_client_factory):
+        ac, _ = authed_client_factory(role="admin")
+        with (
+            patch("app.services.branding_assets.delete_files"),
+            patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
+        ):
+            r = await ac.delete("/api/v1/admin/branding/favicon")
+        assert r.status_code == 200
+
+    async def test_reset_login_bg_admin_200(self, authed_client_factory):
+        ac, _ = authed_client_factory(role="admin")
+        with (
+            patch("app.services.branding_assets.delete_files"),
+            patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
+        ):
+            r = await ac.delete("/api/v1/admin/branding/login-bg")
+        assert r.status_code == 200
+
+
+class TestGetLogo:
+    async def test_404_when_no_logo(self, client):
+        with patch("app.services.branding_assets.find_file", return_value=None):
+            r = await client.get("/api/v1/branding/logo")
+        assert r.status_code == 404
+
+    async def test_404_when_no_favicon(self, client):
+        with patch("app.services.branding_assets.find_file", return_value=None):
+            r = await client.get("/api/v1/branding/favicon")
+        assert r.status_code == 404
+
+    async def test_404_when_no_login_bg(self, client):
+        with patch("app.services.branding_assets.find_file", return_value=None):
+            r = await client.get("/api/v1/branding/login-bg")
+        assert r.status_code == 404
+
+
+class TestGetEmailSettings:
+    async def test_non_admin_gets_403(self, authed_client_factory):
+        ac, _ = authed_client_factory(role="reader")
+        r = await ac.get("/api/v1/admin/email-settings")
+        assert r.status_code == 403
+
+    async def test_admin_returns_settings(self, authed_client_factory):
+        from app.api.branding import EmailSettings
+
+        ac, _ = authed_client_factory(role="admin")
+        with patch(
+            "app.services.email_settings.load_email_settings",
+            return_value=EmailSettings(host="smtp.local", port=587, password="secret"),
+        ):
+            r = await ac.get("/api/v1/admin/email-settings")
+        assert r.status_code == 200
+        body = r.json()
+        assert body["host"] == "smtp.local"
+        assert body["password_set"] is True
+        assert "password" not in body
+
+    async def test_password_set_false_when_empty(self, authed_client_factory):
+        from app.api.branding import EmailSettings
+
+        ac, _ = authed_client_factory(role="admin")
+        with patch(
+            "app.services.email_settings.load_email_settings",
+            return_value=EmailSettings(host="smtp.local", password=""),
+        ):
+            r = await ac.get("/api/v1/admin/email-settings")
+        assert r.status_code == 200
+        assert r.json()["password_set"] is False
+
+
+class TestPutEmailSettings:
+    async def test_non_admin_gets_403(self, authed_client_factory):
+        ac, _ = authed_client_factory(role="editor")
+        r = await ac.put(
+            "/api/v1/admin/email-settings",
+            json={"host": "smtp.local", "port": 25},
+        )
+        assert r.status_code == 403
+
+    async def test_null_password_keeps_existing(self, authed_client_factory):
+        from app.api.branding import EmailSettings
+
+        existing = EmailSettings(host="old.host", password="old_pass")
+        ac, _ = authed_client_factory(role="admin")
+        saved = {}
+
+        def _mock_save(s):
+            saved["password"] = s.password
+
+        with (
+            patch("app.services.email_settings.load_email_settings", return_value=existing),
+            patch("app.services.email_settings.save_email_settings", side_effect=_mock_save),
+            patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
+        ):
+            r = await ac.put(
+                "/api/v1/admin/email-settings",
+                json={"host": "new.host", "port": 587, "password": None},
+            )
+        assert r.status_code == 200
+        assert saved["password"] == "old_pass"
+
+    async def test_mask_password_keeps_existing(self, authed_client_factory):
+        from app.api.branding import EmailSettings
+
+        existing = EmailSettings(host="old.host", password="real_pass")
+        ac, _ = authed_client_factory(role="admin")
+        saved = {}
+
+        def _mock_save(s):
+            saved["password"] = s.password
+
+        with (
+            patch("app.services.email_settings.load_email_settings", return_value=existing),
+            patch("app.services.email_settings.save_email_settings", side_effect=_mock_save),
+            patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
+        ):
+            r = await ac.put(
+                "/api/v1/admin/email-settings",
+                json={"host": "new.host", "port": 587, "password": "***"},
+            )
+        assert r.status_code == 200
+        assert saved["password"] == "real_pass"
+
+    async def test_new_password_replaces_existing(self, authed_client_factory):
+        from app.api.branding import EmailSettings
+
+        existing = EmailSettings(host="old.host", password="old_pass")
+        ac, _ = authed_client_factory(role="admin")
+        saved = {}
+
+        def _mock_save(s):
+            saved["password"] = s.password
+
+        with (
+            patch("app.services.email_settings.load_email_settings", return_value=existing),
+            patch("app.services.email_settings.save_email_settings", side_effect=_mock_save),
+            patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
+        ):
+            r = await ac.put(
+                "/api/v1/admin/email-settings",
+                json={"host": "new.host", "port": 587, "password": "brand_new_pass"},
+            )
+        assert r.status_code == 200
+        assert saved["password"] == "brand_new_pass"
+
+    async def test_empty_string_password_clears(self, authed_client_factory):
+        from app.api.branding import EmailSettings
+
+        existing = EmailSettings(host="old.host", password="old_pass")
+        ac, _ = authed_client_factory(role="admin")
+        saved = {}
+
+        def _mock_save(s):
+            saved["password"] = s.password
+
+        with (
+            patch("app.services.email_settings.load_email_settings", return_value=existing),
+            patch("app.services.email_settings.save_email_settings", side_effect=_mock_save),
+            patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
+        ):
+            r = await ac.put(
+                "/api/v1/admin/email-settings",
+                json={"host": "new.host", "port": 587, "password": ""},
+            )
+        assert r.status_code == 200
+        assert saved["password"] == ""
+
+
+class TestTestEmailSettings:
+    async def test_non_admin_gets_403(self, authed_client_factory):
+        ac, _ = authed_client_factory(role="reader")
+        r = await ac.post(
+            "/api/v1/admin/email-settings/test",
+            json={"to": "test@example.com"},
+        )
+        assert r.status_code == 403
+
+    async def test_no_host_returns_422(self, authed_client_factory):
+        from app.api.branding import EmailSettings
+
+        ac, _ = authed_client_factory(role="admin")
+        with patch(
+            "app.services.email_settings.load_email_settings",
+            return_value=EmailSettings(host=""),
+        ):
+            r = await ac.post(
+                "/api/v1/admin/email-settings/test",
+                json={"to": "test@example.com"},
+            )
+        assert r.status_code == 422
+
+    async def test_with_host_returns_200(self, authed_client_factory):
+        from app.api.branding import EmailSettings
+
+        ac, _ = authed_client_factory(role="admin")
+        with (
+            patch(
+                "app.services.email_settings.load_email_settings",
+                return_value=EmailSettings(host="smtp.example.com", port=25),
+            ),
+            patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
+        ):
+            r = await ac.post(
+                "/api/v1/admin/email-settings/test",
+                json={"to": "admin@example.com"},
+            )
+        assert r.status_code == 200
+        body = r.json()
+        assert body["to"] == "admin@example.com"
+
+
+# ── load_email_settings: exception branch ────────────────────────────────────
+
+
+class TestLoadEmailSettingsCorrupted:
+    def test_fallback_on_bad_schema(self, tmp_path):
+
+        email_file = tmp_path / "email-settings.json"
+        email_file.write_text('{"port": "not_a_number"}', encoding="utf-8")
+        with patch("app.services.email_settings.EMAIL_SETTINGS_FILE", email_file):
+            from app.services.email_settings import load_email_settings
+
+            result = load_email_settings()
+        assert result.host == ""
+        assert result.port == 25
+
+
+# ── save_email_settings: chmod 0o600 ────────────────────────────────────────
+
+
+class TestSaveEmailSettingsChmod:
+    def test_chmod_600_applied(self, tmp_path):
+        import stat
+
+        from app.services.email_settings import EmailSettings, save_email_settings
+
+        email_file = tmp_path / "email-settings.json"
+        with (
+            patch("app.services.email_settings.EMAIL_SETTINGS_FILE", email_file),
+            patch("app.services.email_settings.BRANDING_DIR", tmp_path),
+        ):
+            save_email_settings(EmailSettings(host="smtp.local", password="secret"))
+        mode = email_file.stat().st_mode
+        assert stat.S_IMODE(mode) == 0o600
+
+
+# ── GET /branding/settings: logo_updated_at ───────────────────────────────────
+
+
+class TestLogoUpdatedAt:
+    async def test_logo_updated_at_included_when_logo_exists(self, client):
+        fake_logo = MagicMock()
+        fake_logo.stat.return_value.st_mtime = 1700000000.0
+
+        def _mock_find(prefix, exts):
+            if prefix == "logo":
+                return fake_logo
+            return None
+
+        with (
+            patch("app.services.branding_assets.find_file", side_effect=_mock_find),
+            patch(
+                "app.api.branding.load_system_settings",
+                return_value=MagicMock(
+                    video_gallery_url=None,
+                    video_iframe_origins=_IFRAME_ORIGINS_FIXTURE,
+                ),
+            ),
+            patch(
+                "app.services.branding_assets.load_settings",
+                return_value=__import__(
+                    "app.api.branding", fromlist=["BrandingSettings"]
+                ).BrandingSettings(),
+            ),
+        ):
+            r = await client.get("/api/v1/branding/settings")
+        assert r.status_code == 200
+        assert r.json()["logo_updated_at"] == "1700000000"
+
+    async def test_logo_updated_at_none_when_no_logo(self, client):
+        with (
+            patch("app.services.branding_assets.find_file", return_value=None),
+            patch(
+                "app.api.branding.load_system_settings",
+                return_value=MagicMock(
+                    video_gallery_url=None,
+                    video_iframe_origins=_IFRAME_ORIGINS_FIXTURE,
+                ),
+            ),
+            patch(
+                "app.services.branding_assets.load_settings",
+                return_value=__import__(
+                    "app.api.branding", fromlist=["BrandingSettings"]
+                ).BrandingSettings(),
+            ),
+        ):
+            r = await client.get("/api/v1/branding/settings")
+        assert r.status_code == 200
+        assert r.json()["logo_updated_at"] is None
+
+
+# ── HEAD branches for image endpoints ─────────────────────────────────────────
+
+
+class TestHeadImageEndpoints:
+    async def test_head_logo_returns_cache_headers(self, client):
+        fake_logo = MagicMock()
+        fake_logo.suffix = ".png"
+        with patch("app.services.branding_assets.find_file", return_value=fake_logo):
+            r = await client.head("/api/v1/branding/logo")
+        assert r.status_code == 200
+        assert "Cache-Control" in r.headers
+        assert "immutable" in r.headers["Cache-Control"]
+
+    async def test_head_logo_404_when_missing(self, client):
+        with patch("app.services.branding_assets.find_file", return_value=None):
+            r = await client.head("/api/v1/branding/logo")
+        assert r.status_code == 404
+
+    async def test_head_favicon_returns_cache_headers(self, client):
+        fake_fav = MagicMock()
+        fake_fav.suffix = ".ico"
+        with patch("app.services.branding_assets.find_file", return_value=fake_fav):
+            r = await client.head("/api/v1/branding/favicon")
+        assert r.status_code == 200
+        assert "Cache-Control" in r.headers
+
+    async def test_head_login_bg_returns_cache_headers(self, client):
+        fake_bg = MagicMock()
+        fake_bg.suffix = ".jpg"
+        with patch("app.services.branding_assets.find_file", return_value=fake_bg):
+            r = await client.head("/api/v1/branding/login-bg")
+        assert r.status_code == 200
+        assert "Cache-Control" in r.headers
+
+
+# ── POST /admin/branding/logo ─────────────────────────────────────────────────
+
+
+class TestUploadLogo:
+    async def test_invalid_mime_returns_422(self, authed_client_factory):
+        ac, _ = authed_client_factory(role="admin")
+        files = {"file": ("logo.bmp", b"fakebmp", "image/bmp")}
+        r = await ac.post("/api/v1/admin/branding/logo", files=files)
+        assert r.status_code == 422
+
+    async def test_upload_png_success_returns_url(self, authed_client_factory, tmp_path):
+
+        ac, _ = authed_client_factory(role="admin")
+        with (
+            patch("app.services.branding_assets.BRANDING_DIR", tmp_path),
+            patch(
+                "app.services.branding_assets.stream_upload_to_segments",
+                new_callable=AsyncMock,
+                return_value=(1024, "image/png"),
+            ),
+            patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
+        ):
+            files = {"file": ("logo.png", b"fakepng", "image/png")}
+            r = await ac.post("/api/v1/admin/branding/logo", files=files)
+        assert r.status_code == 200
+        assert r.json()["url"] == "/api/v1/branding/logo"
+
+    async def test_upload_jpeg_success_returns_url(self, authed_client_factory, tmp_path):
+
+        ac, _ = authed_client_factory(role="admin")
+        with (
+            patch("app.services.branding_assets.BRANDING_DIR", tmp_path),
+            patch(
+                "app.services.branding_assets.stream_upload_to_segments",
+                new_callable=AsyncMock,
+                return_value=(2048, "image/jpeg"),
+            ),
+            patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
+        ):
+            files = {"file": ("logo.jpg", b"fakejpg", "image/jpeg")}
+            r = await ac.post("/api/v1/admin/branding/logo", files=files)
+        assert r.status_code == 200
+        assert r.json()["url"] == "/api/v1/branding/logo"
+
+    async def test_non_editor_gets_403(self, authed_client_factory):
+        ac, _ = authed_client_factory(role="reader")
+        files = {"file": ("logo.png", b"fakepng", "image/png")}
+        r = await ac.post("/api/v1/admin/branding/logo", files=files)
+        assert r.status_code == 403
+
+
+# ── POST /admin/branding/favicon ──────────────────────────────────────────────
+
+
+class TestUploadFavicon:
+    async def test_invalid_mime_returns_422(self, authed_client_factory):
+        ac, _ = authed_client_factory(role="admin")
+        files = {"file": ("favicon.gif", b"fakegif", "image/gif")}
+        r = await ac.post("/api/v1/admin/branding/favicon", files=files)
+        assert r.status_code == 422
+
+    async def test_upload_ico_success_returns_url(self, authed_client_factory, tmp_path):
+
+        ac, _ = authed_client_factory(role="admin")
+        with (
+            patch("app.services.branding_assets.BRANDING_DIR", tmp_path),
+            patch(
+                "app.services.branding_assets.stream_upload_to_segments",
+                new_callable=AsyncMock,
+                return_value=(256, "image/x-icon"),
+            ),
+            patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
+        ):
+            files = {"file": ("favicon.ico", b"fakeico", "image/x-icon")}
+            r = await ac.post("/api/v1/admin/branding/favicon", files=files)
+        assert r.status_code == 200
+        assert r.json()["url"] == "/api/v1/branding/favicon"
+
+    async def test_upload_png_favicon_success(self, authed_client_factory, tmp_path):
+
+        ac, _ = authed_client_factory(role="admin")
+        with (
+            patch("app.services.branding_assets.BRANDING_DIR", tmp_path),
+            patch(
+                "app.services.branding_assets.stream_upload_to_segments",
+                new_callable=AsyncMock,
+                return_value=(512, "image/png"),
+            ),
+            patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
+        ):
+            files = {"file": ("favicon.png", b"fakepng", "image/png")}
+            r = await ac.post("/api/v1/admin/branding/favicon", files=files)
+        assert r.status_code == 200
+        assert r.json()["url"] == "/api/v1/branding/favicon"
+
+
+# ── POST /admin/branding/login-bg ─────────────────────────────────────────────
+
+
+class TestUploadLoginBg:
+    async def test_invalid_mime_returns_422(self, authed_client_factory):
+        ac, _ = authed_client_factory(role="admin")
+        files = {"file": ("bg.tiff", b"faketiff", "image/tiff")}
+        r = await ac.post("/api/v1/admin/branding/login-bg", files=files)
+        assert r.status_code == 422
+
+    async def test_upload_jpeg_success_returns_url(self, authed_client_factory, tmp_path):
+
+        ac, _ = authed_client_factory(role="admin")
+        with (
+            patch("app.services.branding_assets.BRANDING_DIR", tmp_path),
+            patch(
+                "app.services.branding_assets.stream_upload_to_segments",
+                new_callable=AsyncMock,
+                return_value=(1024, "image/jpeg"),
+            ),
+            patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
+        ):
+            files = {"file": ("bg.jpg", b"fakejpg", "image/jpeg")}
+            r = await ac.post("/api/v1/admin/branding/login-bg", files=files)
+        assert r.status_code == 200
+        assert r.json()["url"] == "/api/v1/branding/login-bg"
+
+    async def test_upload_webp_success_returns_url(self, authed_client_factory, tmp_path):
+
+        ac, _ = authed_client_factory(role="admin")
+        with (
+            patch("app.services.branding_assets.BRANDING_DIR", tmp_path),
+            patch(
+                "app.services.branding_assets.stream_upload_to_segments",
+                new_callable=AsyncMock,
+                return_value=(800, "image/webp"),
+            ),
+            patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
+        ):
+            files = {"file": ("bg.webp", b"fakewebp", "image/webp")}
+            r = await ac.post("/api/v1/admin/branding/login-bg", files=files)
+        assert r.status_code == 200
+        assert r.json()["url"] == "/api/v1/branding/login-bg"
+
+
+# ── POST/GET/DELETE /admin/branding/hero-bg-{morning,day,evening} ────────────
+
+
+# Hero-фоны повторяют механизм login-bg. Тест параметризован по трём слотам.
+_HERO_BG_KINDS = ["morning", "day", "evening"]
+
+
+class TestHeroBgEndpoints:
+    @pytest.mark.parametrize("slot", _HERO_BG_KINDS)
+    async def test_get_404_when_missing(self, client, slot):
+        with patch("app.services.branding_assets.find_file", return_value=None):
+            r = await client.get(f"/api/v1/branding/hero-bg-{slot}")
+        assert r.status_code == 404
+
+    @pytest.mark.parametrize("slot", _HERO_BG_KINDS)
+    async def test_head_returns_cache_headers_when_present(self, client, slot):
+        fake_bg = MagicMock()
+        fake_bg.suffix = ".jpg"
+        with patch("app.services.branding_assets.find_file", return_value=fake_bg):
+            r = await client.head(f"/api/v1/branding/hero-bg-{slot}")
+        assert r.status_code == 200
+        assert "Cache-Control" in r.headers
+
+    @pytest.mark.parametrize("slot", _HERO_BG_KINDS)
+    async def test_upload_invalid_mime_returns_422(self, authed_client_factory, slot):
+        ac, _ = authed_client_factory(role="admin")
+        files = {"file": (f"hero-{slot}.bmp", b"fakebmp", "image/bmp")}
+        r = await ac.post(f"/api/v1/admin/branding/hero-bg-{slot}", files=files)
+        assert r.status_code == 422
+
+    @pytest.mark.parametrize("slot", _HERO_BG_KINDS)
+    async def test_upload_jpeg_success_returns_url(self, authed_client_factory, tmp_path, slot):
+        ac, _ = authed_client_factory(role="admin")
+        with (
+            patch("app.services.branding_assets.BRANDING_DIR", tmp_path),
+            patch(
+                "app.services.branding_assets.stream_upload_to_segments",
+                new_callable=AsyncMock,
+                return_value=(1024, "image/jpeg"),
+            ),
+            patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
+        ):
+            files = {"file": (f"hero-{slot}.jpg", b"fakejpg", "image/jpeg")}
+            r = await ac.post(f"/api/v1/admin/branding/hero-bg-{slot}", files=files)
+        assert r.status_code == 200
+        assert r.json()["url"] == f"/api/v1/branding/hero-bg-{slot}"
+
+    @pytest.mark.parametrize("slot", _HERO_BG_KINDS)
+    async def test_upload_webp_success_returns_url(self, authed_client_factory, tmp_path, slot):
+        ac, _ = authed_client_factory(role="admin")
+        with (
+            patch("app.services.branding_assets.BRANDING_DIR", tmp_path),
+            patch(
+                "app.services.branding_assets.stream_upload_to_segments",
+                new_callable=AsyncMock,
+                return_value=(800, "image/webp"),
+            ),
+            patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
+        ):
+            files = {"file": (f"hero-{slot}.webp", b"fakewebp", "image/webp")}
+            r = await ac.post(f"/api/v1/admin/branding/hero-bg-{slot}", files=files)
+        assert r.status_code == 200
+        assert r.json()["url"] == f"/api/v1/branding/hero-bg-{slot}"
+
+    @pytest.mark.parametrize("slot", _HERO_BG_KINDS)
+    async def test_upload_non_editor_gets_403(self, authed_client_factory, slot):
+        ac, _ = authed_client_factory(role="reader")
+        files = {"file": (f"hero-{slot}.jpg", b"fakejpg", "image/jpeg")}
+        r = await ac.post(f"/api/v1/admin/branding/hero-bg-{slot}", files=files)
+        assert r.status_code == 403
+
+    @pytest.mark.parametrize("slot", _HERO_BG_KINDS)
+    async def test_reset_non_admin_403(self, authed_client_factory, slot):
+        ac, _ = authed_client_factory(role="reader")
+        r = await ac.delete(f"/api/v1/admin/branding/hero-bg-{slot}")
+        assert r.status_code == 403
+
+    @pytest.mark.parametrize("slot", _HERO_BG_KINDS)
+    async def test_reset_admin_200(self, authed_client_factory, slot):
+        ac, _ = authed_client_factory(role="admin")
+        with (
+            patch("app.services.branding_assets.delete_files"),
+            patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
+        ):
+            r = await ac.delete(f"/api/v1/admin/branding/hero-bg-{slot}")
+        assert r.status_code == 200
+        assert "detail" in r.json()
+
+    @pytest.mark.parametrize("slot", _HERO_BG_KINDS)
+    async def test_upload_emits_audit(self, authed_client_factory, tmp_path, slot):
+        """Успешная загрузка эмитит audit-событие с target=hero_bg_<slot>."""
+        ac, _ = authed_client_factory(role="admin")
+        audit_mock = AsyncMock()
+        with (
+            patch("app.services.branding_assets.BRANDING_DIR", tmp_path),
+            patch(
+                "app.services.branding_assets.stream_upload_to_segments",
+                new_callable=AsyncMock,
+                return_value=(1024, "image/jpeg"),
+            ),
+            patch("app.services.audit.push_audit_event", new_callable=lambda: audit_mock),
+        ):
+            files = {"file": (f"hero-{slot}.jpg", b"fakejpg", "image/jpeg")}
+            r = await ac.post(f"/api/v1/admin/branding/hero-bg-{slot}", files=files)
+        assert r.status_code == 200
+        audit_mock.assert_awaited_once()
+        # metadata.target = "hero_bg_<slot>"
+        call_kwargs = audit_mock.await_args.kwargs
+        assert call_kwargs.get("metadata", {}).get("target") == f"hero_bg_{slot}"
+
+
+# ── send_test_email: SMTP kwargs / exception path ───────────────────────────
+
+
+class TestSendTestEmail:
+    async def test_tls_flag_passed_to_smtp(self):
+        from app.services.email_settings import EmailSettings, send_test_email
+
+        settings = EmailSettings(host="smtp.example.com", port=465, use_tls=True)
+        with patch("aiosmtplib.send", new_callable=AsyncMock) as mock_send:
+            await send_test_email(settings=settings, to="user@example.com", sender_name="Admin")
+        call_kwargs = mock_send.call_args.kwargs
+        assert call_kwargs.get("use_tls") is True
+        assert "start_tls" not in call_kwargs
+
+    async def test_starttls_flag_passed_to_smtp(self):
+        from app.services.email_settings import EmailSettings, send_test_email
+
+        settings = EmailSettings(host="smtp.example.com", port=587, use_starttls=True)
+        with patch("aiosmtplib.send", new_callable=AsyncMock) as mock_send:
+            await send_test_email(settings=settings, to="user@example.com", sender_name="Admin")
+        call_kwargs = mock_send.call_args.kwargs
+        assert call_kwargs.get("start_tls") is True
+        assert "use_tls" not in call_kwargs
+
+    async def test_credentials_passed_when_both_set(self):
+        from app.services.email_settings import EmailSettings, send_test_email
+
+        settings = EmailSettings(
+            host="smtp.example.com", port=25, username="user@domain.com", password="s3cr3t"
+        )
+        with patch("aiosmtplib.send", new_callable=AsyncMock) as mock_send:
+            await send_test_email(settings=settings, to="dest@example.com", sender_name="Admin")
+        call_kwargs = mock_send.call_args.kwargs
+        assert call_kwargs.get("username") == "user@domain.com"
+        assert call_kwargs.get("password") == "s3cr3t"
+
+    async def test_no_credentials_when_password_empty(self):
+        from app.services.email_settings import EmailSettings, send_test_email
+
+        settings = EmailSettings(host="smtp.example.com", port=25, username="user", password="")
+        with patch("aiosmtplib.send", new_callable=AsyncMock) as mock_send:
+            await send_test_email(settings=settings, to="dest@example.com", sender_name="Admin")
+        call_kwargs = mock_send.call_args.kwargs
+        assert "username" not in call_kwargs
+        assert "password" not in call_kwargs
+
+    async def test_base_smtp_kwargs_always_set(self):
+        from app.services.email_settings import EmailSettings, send_test_email
+
+        settings = EmailSettings(host="smtp.host.local", port=2525)
+        with patch("aiosmtplib.send", new_callable=AsyncMock) as mock_send:
+            await send_test_email(settings=settings, to="r@example.com", sender_name="Test")
+        call_kwargs = mock_send.call_args.kwargs
+        assert call_kwargs["hostname"] == "smtp.host.local"
+        assert call_kwargs["port"] == 2525
+
+    async def test_exception_logged_not_raised(self):
+        from app.services.email_settings import EmailSettings, send_test_email
+
+        settings = EmailSettings(host="smtp.example.com", port=25)
+        with patch("aiosmtplib.send", side_effect=ConnectionRefusedError("refused")):
+            await send_test_email(settings=settings, to="user@example.com", sender_name="Admin")
+
+
+# ── Cross-module SMTP file-format compatibility ───────────────────────────────
+
+
+class TestEmailSettingsFileCompatibility:
+    def test_saved_format_compatible_with_email_utils(self, tmp_path):
+        from app.services.email_settings import EmailSettings, save_email_settings
+        from app.worker.tasks.email_utils import load_smtp_config
+
+        email_file = tmp_path / "email-settings.json"
+        s = EmailSettings(
+            host="smtp.example.com",
+            port=587,
+            from_address="portal@example.com",
+            username="user@example.com",
+            password="secret_pass",
+            use_tls=False,
+            use_starttls=True,
+        )
+        with (
+            patch("app.services.email_settings.EMAIL_SETTINGS_FILE", email_file),
+            patch("app.services.email_settings.BRANDING_DIR", tmp_path),
+        ):
+            save_email_settings(s)
+
+        with patch("app.services.email_settings.EMAIL_SETTINGS_FILE", email_file):
+            cfg = load_smtp_config()
+
+        assert cfg["host"] == "smtp.example.com"
+        assert cfg["port"] == 587
+        assert cfg["from_address"] == "portal@example.com"
+        assert cfg["username"] == "user@example.com"
+        assert cfg["password"] == "secret_pass"
+        assert cfg["use_tls"] is False
+        assert cfg["use_starttls"] is True
+
+    def test_saved_password_is_plaintext_not_masked(self, tmp_path):
+        from app.services.email_settings import (
+            EmailSettings,
+            load_email_settings,
+            save_email_settings,
+        )
+
+        email_file = tmp_path / "email-settings.json"
+        with (
+            patch("app.services.email_settings.EMAIL_SETTINGS_FILE", email_file),
+            patch("app.services.email_settings.BRANDING_DIR", tmp_path),
+        ):
+            save_email_settings(EmailSettings(host="h", password="original_password"))
+            loaded = load_email_settings()
+        assert loaded.password == "original_password"
+
+    def test_empty_string_password_persisted_as_empty(self, tmp_path):
+        from app.services.email_settings import (
+            EmailSettings,
+            load_email_settings,
+            save_email_settings,
+        )
+
+        email_file = tmp_path / "email-settings.json"
+        with (
+            patch("app.services.email_settings.EMAIL_SETTINGS_FILE", email_file),
+            patch("app.services.email_settings.BRANDING_DIR", tmp_path),
+        ):
+            save_email_settings(EmailSettings(host="h", password=""))
+            loaded = load_email_settings()
+        assert loaded.password == ""

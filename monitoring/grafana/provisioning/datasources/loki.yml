@@ -1,0 +1,28 @@
+# Auto-provisioned Loki datasource for Grafana.
+# Загружается при старте — ручная настройка UI не требуется.
+# http://docs.grafana.org/administration/provisioning/#data-sources
+
+apiVersion: 1
+
+datasources:
+  - name: Loki
+    type: loki
+    access: proxy
+    uid: loki               # фиксированный UID — на него ссылаются дашборды
+    url: http://loki:3100   # внутри сети portal_internal
+    isDefault: false        # Prometheus остаётся default (метрики чаще нужны)
+    editable: true
+    jsonData:
+      maxLines: 1000        # лимит строк на запрос — защита от перегрузки UI
+      # Клик по request_id в любой лог-строке открывает дашборд «Portal — Logs»
+      # с подставленной переменной request_id (сквозная трассировка nginx ↔
+      # backend). Regex матчит JSON structlog/nginx-строки ("request_id":"...").
+      # NB: Grafana вычисляет matcherRegex в БРАУЗЕРЕ (JavaScript RegExp) —
+      # именованные группы (?P<value>...) здесь нелегальны («Invalid group»,
+      # ломает ВСЕ лог-панели). Значение поля = первая обычная группа захвата.
+      derivedFields:
+        - name: request_id
+          matcherRegex: '"request_id":"([^"]+)"'
+          # $$ — экранирование: provisioning Grafana раскрывает ${...} как
+          # env-переменную (пустую) — в датасорс попадает одиночный ${__value.raw}.
+          url: '/d/portal-logs/portal-logs?orgId=1&var-request_id=$${__value.raw}'

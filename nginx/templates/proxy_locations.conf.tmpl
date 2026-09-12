@@ -1,0 +1,229 @@
+
+    set $backend_host  "backend:8000";
+    set $frontend_host "frontend:80";
+
+    # Prevent duplicate security headers: nginx is the single source of truth.
+    # The FastAPI security_headers middleware also sets these; hide its copies
+    # so that only the nginx-level headers (with dynamic frame-src) are sent.
+    proxy_hide_header Content-Security-Policy;
+    proxy_hide_header X-Frame-Options;
+    proxy_hide_header X-Content-Type-Options;
+    proxy_hide_header X-XSS-Protection;
+    proxy_hide_header Referrer-Policy;
+    proxy_hide_header Permissions-Policy;
+    proxy_hide_header Strict-Transport-Security;
+
+    # Static media served directly from disk (no FastAPI hop).
+    # Cache policy: when the request carries a version query (?v=...), the URL
+    # itself changes on update, so we can mark responses immutable for 1 year.
+    # Without ?v= we fall back to a shorter cache to avoid stale assets.
+    location /media/avatars/ {
+        alias /data/avatars/;
+        set $cc "public, max-age=604800";
+        if ($arg_v) { set $cc "public, max-age=31536000, immutable"; }
+        add_header Cache-Control $cc always;
+        add_header X-Content-Type-Options "nosniff" always;
+        try_files $uri =404;
+    }
+
+    location /media/news/ {
+        alias /data/news_media/;
+        set $cc "public, max-age=604800";
+        if ($arg_v) { set $cc "public, max-age=31536000, immutable"; }
+        add_header Cache-Control $cc always;
+        add_header X-Content-Type-Options "nosniff" always;
+        try_files $uri =404;
+    }
+
+    location /media/link_icons/ {
+        alias /data/link_icons/;
+        set $cc "public, max-age=604800";
+        if ($arg_v) { set $cc "public, max-age=31536000, immutable"; }
+        add_header Cache-Control $cc always;
+        add_header X-Content-Type-Options "nosniff" always;
+        try_files $uri =404;
+    }
+
+    # Auth-эндпоинты — отдельная жёсткая зона (audit M18). Regex-location
+    # выигрывает у префиксного /api/ (приоритет nginx: regex > prefix).
+    # 30 r/m + burst 20: пропускает multi-tab silent-refresh (раз в 4 мин
+    # на вкладку) и разовые OIDC-callback, режет лавину brute-force.
+    location ~ ^/api/v1/auth/ {
+        limit_req zone=auth burst=20 nodelay;
+        proxy_pass         http://$backend_host;
+        proxy_http_version 1.1;
+        proxy_set_header   Upgrade $http_upgrade;
+        proxy_set_header   Connection "";
+        proxy_set_header   Host $host;
+        proxy_set_header   X-Real-IP $remote_addr;
+        proxy_set_header   X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto $scheme;
+        proxy_set_header   X-Request-Id $req_id;
+        proxy_connect_timeout 10s;
+        proxy_read_timeout  300s;
+        proxy_send_timeout  300s;
+        proxy_buffers       16 64k;
+        proxy_buffer_size   64k;
+    }
+
+    location /api/ {
+        limit_req zone=api burst=200 nodelay;
+        proxy_pass         http://$backend_host;
+        proxy_http_version 1.1;
+        proxy_set_header   Upgrade $http_upgrade;
+        proxy_set_header   Connection "";
+        proxy_set_header   Host $host;
+        proxy_set_header   X-Real-IP $remote_addr;
+        proxy_set_header   X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto $scheme;
+        proxy_set_header   X-Request-Id $req_id;
+        # Быстрый fail при зависании backend в accept-фазе (OOM-recovery и т.д.):
+        # default proxy_connect_timeout=60s слишком долго для readiness-фаза.
+        proxy_connect_timeout 10s;
+        proxy_read_timeout  300s;
+        proxy_send_timeout  300s;
+        proxy_buffers       16 64k;
+        proxy_buffer_size   64k;
+    }
+
+    location ~ ^/(health|ready)$ {
+        proxy_pass         http://$backend_host;
+        proxy_http_version 1.1;
+        proxy_set_header   Host $host;
+        proxy_set_header   X-Real-IP $remote_addr;
+        proxy_set_header   X-Request-Id $req_id;
+    }
+
+    # nginx stub_status — метрики для nginx-prometheus-exporter.
+    # Точное совпадение (=) имеет приоритет над location /. Доступен только из
+    # внутренней сети (Docker bridge 172.16.0.0/12) и localhost; exporter
+    # скрейпит http://nginx:8080/stub_status. Не светится наружу.
+    location = /stub_status {
+        stub_status;
+        allow 172.16.0.0/12;
+        allow 127.0.0.1;
+        deny all;
+        access_log off;
+    }
+
+    location /api/v1/notifications/stream {
+        proxy_pass             http://$backend_host;
+        proxy_http_version     1.1;
+        proxy_set_header       Connection "";
+        proxy_set_header       Host $host;
+        proxy_set_header       X-Real-IP $remote_addr;
+        proxy_set_header       X-Request-Id $req_id;
+        proxy_read_timeout     3600s;
+        proxy_buffering        off;
+        proxy_cache            off;
+        chunked_transfer_encoding on;
+    }
+
+    location /metrics {
+        allow 10.0.0.0/8;
+        allow 172.16.0.0/12;
+        allow 192.168.0.0/16;
+        allow 127.0.0.1;
+        deny all;
+        proxy_pass http://$backend_host;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+    }
+
+    location /internal/kb-media/ {
+        internal;
+        alias /data/kb/media/;
+        expires 7d;
+        add_header Cache-Control "public, max-age=604800, immutable";
+    }
+
+    location /internal/news-media/ {
+        internal;
+        alias /data/news_media/;
+        expires 7d;
+        add_header Cache-Control "public, max-age=604800, immutable";
+    }
+
+    location /internal/kb-files/ {
+        internal;
+        alias /data/kb/files/;
+        add_header Cache-Control "no-store";
+    }
+
+    location /internal/feedback-files/ {
+        internal;
+        alias /data/feedback/files/;
+        add_header Cache-Control "no-store";
+        add_header X-Content-Type-Options "nosniff";
+    }
+
+    location /internal/helpdesk-media/ {
+        internal;
+        alias /data/helpdesk/;
+        add_header Cache-Control "no-store";
+        add_header X-Content-Type-Options "nosniff";
+    }
+
+    location /internal/photos-thumbs/ {
+        internal;
+        alias /data/photos/thumbs/;
+        expires 7d;
+        add_header Cache-Control "public, max-age=604800, immutable";
+    }
+
+    location /internal/photos-originals/ {
+        internal;
+        alias /data/photos/originals/;
+        add_header Cache-Control "no-store";
+        add_header X-Content-Type-Options "nosniff";
+    }
+
+    location /internal/photos-import/ {
+        internal;
+        alias /data/photos/import/;
+        add_header Cache-Control "no-store";
+        add_header X-Content-Type-Options "nosniff";
+    }
+
+    location /internal/photos-zips/ {
+        internal;
+        alias /data/photos/zips/;
+        add_header Cache-Control "no-store";
+        add_header X-Content-Type-Options "nosniff";
+    }
+
+    # Server-to-server callback from Nextcloud richdocuments federation
+    location = /ocs/v2.php/apps/richdocuments/api/v1/federation {
+        proxy_pass         http://$backend_host;
+        proxy_http_version 1.1;
+        proxy_set_header   Host $host;
+        proxy_set_header   X-Real-IP $remote_addr;
+        proxy_set_header   X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto $scheme;
+        proxy_set_header   X-Request-Id $req_id;
+    }
+
+    location = /favicon.ico {
+        proxy_pass         http://$backend_host/api/v1/branding/favicon;
+        proxy_http_version 1.1;
+        proxy_set_header   Host $host;
+        proxy_set_header   X-Real-IP $remote_addr;
+        proxy_intercept_errors on;
+        error_page 404 = @favicon_empty;
+    }
+
+    location @favicon_empty {
+        return 204;
+    }
+
+    location / {
+        proxy_pass         http://$frontend_host;
+        proxy_http_version 1.1;
+        proxy_set_header   Upgrade $http_upgrade;
+        proxy_set_header   Connection "upgrade";
+        proxy_set_header   Host $host;
+        proxy_set_header   X-Real-IP $remote_addr;
+        proxy_buffers       16 64k;
+        proxy_buffer_size   64k;
+    }
+}

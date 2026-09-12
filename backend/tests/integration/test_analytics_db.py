@@ -1,0 +1,219 @@
+"""Integration tests for analytics endpoints with a real PostgreSQL database.
+
+Requires INTEGRATION_DB=true and a running PostgreSQL with migrations applied.
+Each test runs inside a SAVEPOINT that is rolled back after the test.
+"""
+
+from __future__ import annotations
+
+import os
+import uuid
+
+import pytest
+import pytest_asyncio
+
+pytestmark = pytest.mark.integration
+
+
+def _skip_if_no_db():
+    if os.environ.get("INTEGRATION_DB", "false").lower() not in ("1", "true", "yes"):
+        pytest.skip("INTEGRATION_DB=true required")
+
+
+@pytest_asyncio.fixture
+async def db(real_db_session):
+    return real_db_session
+
+
+@pytest.mark.asyncio
+async def test_analytics_dashboard_structure(db):
+    """Dashboard endpoint возвращает ожидаемую структуру без ошибок."""
+    _skip_if_no_db()
+
+    from app.api.analytics import get_dashboard
+
+    class _FakeAdmin:
+        pass
+
+    result = await get_dashboard(_admin=_FakeAdmin(), db=db)
+
+    # get_dashboard возвращает типизированную Pydantic-схему DashboardOut
+    # (refactor 5af4822), а не dict — доступ через атрибуты.
+    assert result.users.total >= 0
+    assert result.users.active_30d >= 0
+    assert result.users.new_30d >= 0
+    assert result.users.active_1h >= 0
+
+    assert result.content.news_published_30d >= 0
+    assert result.content.kb_articles_published_30d >= 0
+
+    assert result.activity.audit_events_24h >= 0
+    assert result.activity.logins_24h >= 0
+
+    assert isinstance(result.series.daily_logins_14d, list)
+    assert isinstance(result.series.daily_publications_14d, list)
+
+    assert result.approvals.approved >= 0
+    assert result.approvals.rejected >= 0
+    assert result.approvals.active_users >= 0
+    assert isinstance(result.approvals.daily, list)
+
+
+@pytest.mark.asyncio
+async def test_analytics_approvals_counts_documents(db):
+    """События approvals.* учитываются как документы: bulk_approved добавляет
+    metadata->>'approved' (партия), rejected — по одному; active_users —
+    уникальные согласующие. Прочие события аудита не попадают."""
+    _skip_if_no_db()
+
+    from sqlalchemy import text
+
+    from app.api.analytics import get_dashboard
+
+    class _FakeAdmin:
+        pass
+
+    u1, u2 = str(uuid.uuid4()), str(uuid.uuid4())
+    await db.execute(
+        text(
+            """
+            INSERT INTO audit_log (event_type, user_id, user_email, metadata, created_at)
+            VALUES
+                ('approvals.approved',      :u1, 'a@test.local', '{}',                           NOW() - interval '2 hours'),
+                ('approvals.approved',      :u1, 'a@test.local', '{}',                           NOW() - interval '1 hour'),
+                ('approvals.bulk_approved', :u2, 'b@test.local', '{"approved": 3, "failed": 1}', NOW() - interval '3 hours'),
+                ('approvals.rejected',      :u2, 'b@test.local', '{}',                           NOW() - interval '90 minutes'),
+                ('auth.login',              NULL, NULL,          '{}',                           NOW() - interval '10 minutes')
+            """
+        ),
+        {"u1": u1, "u2": u2},
+    )
+    await db.flush()
+
+    result = await get_dashboard(_admin=_FakeAdmin(), db=db)
+    ap = result.approvals
+    assert ap.approved == 5  # 2 одиночных + 3 документа из партии
+    assert ap.rejected == 1
+    assert ap.active_users == 2
+    assert ap.last_event_at is not None
+    assert sum(p.approved for p in ap.daily) == 5
+    assert sum(p.rejected for p in ap.daily) == 1
+
+
+@pytest.mark.asyncio
+async def test_analytics_counts_reflect_seeded_users(db):
+    """total_users включает пользователей, созданных в тесте."""
+    _skip_if_no_db()
+
+    from sqlalchemy import text
+
+    from app.api.analytics import get_dashboard
+
+    class _FakeAdmin:
+        pass
+
+    baseline = await get_dashboard(_admin=_FakeAdmin(), db=db)
+    baseline_total = baseline.users.total
+
+    new_email = f"analytics-test-{uuid.uuid4().hex[:8]}@test.local"
+    await db.execute(
+        text(
+            """
+            INSERT INTO users
+                (id, email, full_name, auth_source, role,
+                 notify_email, notify_inapp, lang, preferences, keycloak_groups,
+                 attributes, created_at, updated_at)
+            VALUES
+                (gen_random_uuid(), :email, 'Analytics Test User',
+                 'local', 'reader', true, true, 'ru',
+                 '{}'::jsonb, '{}'::text[], '{}'::jsonb, NOW(), NOW())
+            """
+        ),
+        {"email": new_email},
+    )
+    await db.flush()
+
+    result = await get_dashboard(_admin=_FakeAdmin(), db=db)
+    assert result.users.total == baseline_total + 1
+
+
+@pytest.mark.asyncio
+async def test_analytics_new_users_30d(db):
+    """new_users_30d учитывает пользователей, созданных в течение 30 дней."""
+    _skip_if_no_db()
+
+    from sqlalchemy import text
+
+    from app.api.analytics import get_dashboard
+
+    class _FakeAdmin:
+        pass
+
+    baseline = await get_dashboard(_admin=_FakeAdmin(), db=db)
+    baseline_new = baseline.users.new_30d
+
+    new_email = f"new-user-{uuid.uuid4().hex[:8]}@test.local"
+    await db.execute(
+        text(
+            """
+            INSERT INTO users
+                (id, email, full_name, auth_source, role,
+                 notify_email, notify_inapp, lang, preferences, keycloak_groups,
+                 attributes, created_at, updated_at)
+            VALUES
+                (gen_random_uuid(), :email, 'New User 30d',
+                 'local', 'reader', true, true, 'ru',
+                 '{}'::jsonb, '{}'::text[], '{}'::jsonb,
+                 NOW() - INTERVAL '10 days', NOW())
+            """
+        ),
+        {"email": new_email},
+    )
+
+    old_email = f"old-user-{uuid.uuid4().hex[:8]}@test.local"
+    await db.execute(
+        text(
+            """
+            INSERT INTO users
+                (id, email, full_name, auth_source, role,
+                 notify_email, notify_inapp, lang, preferences, keycloak_groups,
+                 attributes, created_at, updated_at)
+            VALUES
+                (gen_random_uuid(), :email, 'Old User 60d',
+                 'local', 'reader', true, true, 'ru',
+                 '{}'::jsonb, '{}'::text[], '{}'::jsonb,
+                 NOW() - INTERVAL '60 days', NOW())
+            """
+        ),
+        {"email": old_email},
+    )
+    await db.flush()
+
+    result = await get_dashboard(_admin=_FakeAdmin(), db=db)
+    assert result.users.new_30d == baseline_new + 1, (
+        "Only the user created within 30 days should count"
+    )
+
+
+@pytest.mark.asyncio
+async def test_analytics_counts_non_negative(db):
+    """Все числовые агрегаты должны быть >= 0."""
+    _skip_if_no_db()
+
+    from app.api.analytics import get_dashboard
+
+    class _FakeAdmin:
+        pass
+
+    result = await get_dashboard(_admin=_FakeAdmin(), db=db)
+
+    assert result.users.total >= 0
+    assert result.users.active_30d >= 0
+    assert result.users.new_30d >= 0
+    assert result.users.active_1h >= 0
+    assert result.content.news_published_30d >= 0
+    assert result.content.kb_articles_published_30d >= 0
+    assert result.activity.audit_events_24h >= 0
+    assert result.activity.logins_24h >= 0
+    assert isinstance(result.series.daily_logins_14d, list)
+    assert isinstance(result.series.daily_publications_14d, list)

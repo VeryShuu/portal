@@ -1,0 +1,4 @@
+# Каждые 5 минут — сбор размеров папок/логов/volumes в /textfile/storage.prom.
+# busybox crond формат: min hour dom mon dow command
+# PATH нужен, т.к. окружение cron минимальное (нет /usr/local/bin по умолчанию).
+*/5 * * * * PATH=/usr/local/bin:/usr/bin:/bin /usr/local/bin/collect.sh >/dev/null 2>&1

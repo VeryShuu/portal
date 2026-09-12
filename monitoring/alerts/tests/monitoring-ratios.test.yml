@@ -1,0 +1,522 @@
+rule_files:
+  - ../recording.yml
+  - ../portal.yml
+
+evaluation_interval: 1m
+
+tests:
+  - name: low traffic ratios use the observed request rate
+    interval: 1m
+    input_series:
+      - series: 'http_requests_total{job="portal",service="portal-backend",handler="/all-errors",status="5xx"}'
+        values: '0+1x10'
+      - series: 'http_requests_total{job="portal",service="portal-backend",handler="/half-errors",status="5xx"}'
+        values: '0+1x10'
+      - series: 'http_requests_total{job="portal",service="portal-backend",handler="/half-errors",status="2xx"}'
+        values: '0+1x10'
+      - series: 'http_requests_total{job="portal",service="portal-backend",handler="/no-errors",status="2xx"}'
+        values: '0+1x10'
+      - series: 'redis_keyspace_hits_total{instance="redis:9121"}'
+        values: '0+1x10'
+      - series: 'redis_keyspace_misses_total{instance="redis:9121"}'
+        values: '0+0x10'
+    promql_expr_test:
+      - expr: 'portal:http_error_ratio5m{handler="/all-errors"}'
+        eval_time: 6m
+        exp_samples:
+          - labels: '{__name__="portal:http_error_ratio5m",handler="/all-errors"}'
+            value: 1
+      - expr: 'portal:http_error_ratio5m{handler="/half-errors"}'
+        eval_time: 6m
+        exp_samples:
+          - labels: '{__name__="portal:http_error_ratio5m",handler="/half-errors"}'
+            value: 0.5
+      - expr: 'portal:http_error_ratio5m{handler="/no-errors"}'
+        eval_time: 6m
+        exp_samples:
+          - labels: '{__name__="portal:http_error_ratio5m",handler="/no-errors"}'
+            value: 0
+      - expr: portal:slo_availability_5m
+        eval_time: 6m
+        exp_samples:
+          - labels: '{__name__="portal:slo_availability_5m"}'
+            value: 0.5
+      - expr: portal:redis_keyspace_hit_ratio5m
+        eval_time: 6m
+        exp_samples:
+          - labels: '{__name__="portal:redis_keyspace_hit_ratio5m"}'
+            value: 1
+
+  - name: low absolute error volume does not alert
+    interval: 1m
+    input_series:
+      - series: 'http_requests_total{job="portal",service="portal-backend",handler="/rare",status="5xx"}'
+        values: '0+1x15'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: PortalHighErrorRate
+        exp_alerts: []
+
+  - name: sustained absolute error volume can alert
+    interval: 1m
+    input_series:
+      - series: 'http_requests_total{job="portal",service="portal-backend",handler="/broken",status="5xx"}'
+        values: '0+2x15'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: PortalHighErrorRate
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              service: portal-backend
+            exp_annotations:
+              summary: Высокий уровень 5xx ошибок на портале
+              description: 'Доля 5xx ответов > 5% при rate > 0.03/s (≈2/мин) в течение 5 мин. Смотреть логи backend (`docker compose logs backend`) и дашборд Grafana.'
+
+  - name: zero traffic is unknown rather than healthy
+    interval: 1m
+    input_series:
+      - series: 'http_requests_total{job="portal",service="portal-backend",handler="/idle",status="2xx"}'
+        values: '7+0x10'
+      - series: 'redis_keyspace_hits_total{instance="redis:9121"}'
+        values: '7+0x10'
+      - series: 'redis_keyspace_misses_total{instance="redis:9121"}'
+        values: '3+0x10'
+    promql_expr_test:
+      - expr: 'portal:http_error_ratio5m{handler="/idle"}'
+        eval_time: 6m
+        exp_samples: []
+      - expr: portal:slo_availability_5m
+        eval_time: 6m
+        exp_samples: []
+      - expr: portal:redis_keyspace_hit_ratio5m
+        eval_time: 6m
+        exp_samples: []
+
+  - name: missing scrape is unknown rather than healthy
+    interval: 1m
+    promql_expr_test:
+      - expr: portal:http_error_ratio5m
+        eval_time: 6m
+        exp_samples: []
+      - expr: portal:slo_availability_5m
+        eval_time: 6m
+        exp_samples: []
+      - expr: portal:redis_keyspace_hit_ratio5m
+        eval_time: 6m
+        exp_samples: []
+
+  - name: stale metrics snapshot alerts after grace
+    interval: 1m
+    input_series:
+      - series: portal_metrics_snapshot_read_success
+        values: "1+0x8"
+      - series: portal_metrics_snapshot_generated_timestamp_seconds
+        values: "1+0x8"
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: PortalMetricsSnapshotStale
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              service: portal-worker
+            exp_annotations:
+              summary: Снапшот метрик портала не обновляется
+              description: "API не может прочитать актуальный metrics:snapshot из Redis или возраст последней завершённой публикации превысил 120с. Старые бизнес-метрики могут оставаться видимыми, но не считаются свежими. Проверить worker refresh_custom_metrics, Redis и логи metrics.snapshot_publish_failed/metrics.hydrate_failed."
+
+  - name: current metrics snapshot stays quiet
+    interval: 1m
+    input_series:
+      - series: portal_metrics_snapshot_read_success
+        values: "1+0x8"
+      - series: portal_metrics_snapshot_generated_timestamp_seconds
+        values: "0+60x8"
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: PortalMetricsSnapshotStale
+        exp_alerts: []
+
+  - name: snapshot read failure alerts even with a current old gauge
+    interval: 1m
+    input_series:
+      - series: portal_metrics_snapshot_read_success
+        values: "0+0x8"
+      - series: portal_metrics_snapshot_generated_timestamp_seconds
+        values: "0+60x8"
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: PortalMetricsSnapshotStale
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              service: portal-worker
+            exp_annotations:
+              summary: Снапшот метрик портала не обновляется
+              description: "API не может прочитать актуальный metrics:snapshot из Redis или возраст последней завершённой публикации превысил 120с. Старые бизнес-метрики могут оставаться видимыми, но не считаются свежими. Проверить worker refresh_custom_metrics, Redis и логи metrics.snapshot_publish_failed/metrics.hydrate_failed."
+
+  - name: expected stale integration probe alerts
+    interval: 1m
+    input_series:
+      - series: 'portal_integration_expected{integration="keycloak"}'
+        values: "1+0x10"
+      - series: 'portal_integration_result_available{integration="keycloak"}'
+        values: "1+0x10"
+      - series: 'portal_integration_probe_last_completed_timestamp_seconds{integration="keycloak"}'
+        values: "1+0x10"
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: PortalIntegrationProbeStale
+        exp_alerts:
+          - exp_labels:
+              integration: keycloak
+              severity: warning
+              service: portal-integration
+            exp_annotations:
+              summary: "Проверка интеграции устарела: keycloak"
+              description: "Ожидаемая probe keycloak не завершалась более 180с или её результат истёк. Это состояние stale/no-data, а не OK и не disabled. Проверить worker, Redis и логи integration.probe_*."
+      - eval_time: 6m
+        alertname: PortalIntegrationDown
+        exp_alerts: []
+
+
+  - name: missing expected integration result alerts
+    interval: 1m
+    input_series:
+      - series: 'portal_integration_expected{integration="smtp"}'
+        values: "1+0x6"
+      - series: 'portal_integration_result_available{integration="smtp"}'
+        values: "0+0x6"
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: PortalIntegrationProbeStale
+        exp_alerts:
+          - exp_labels:
+              integration: smtp
+              severity: warning
+              service: portal-integration
+            exp_annotations:
+              summary: "Проверка интеграции устарела: smtp"
+              description: "Ожидаемая probe smtp не завершалась более 180с или её результат истёк. Это состояние stale/no-data, а не OK и не disabled. Проверить worker, Redis и логи integration.probe_*."
+
+  - name: disabled and fresh integration probes stay quiet
+    interval: 1m
+    input_series:
+      - series: 'portal_integration_expected{integration="disabled"}'
+        values: "0+0x8"
+      - series: 'portal_integration_result_available{integration="disabled"}'
+        values: "0+0x8"
+      - series: 'portal_integration_expected{integration="fresh"}'
+        values: "1+0x8"
+      - series: 'portal_integration_result_available{integration="fresh"}'
+        values: "1+0x8"
+      - series: 'portal_integration_probe_last_completed_timestamp_seconds{integration="fresh"}'
+        values: "0+60x8"
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: PortalIntegrationProbeStale
+        exp_alerts: []
+
+  - name: integration dashboard state mapping is unambiguous
+    interval: 1m
+    input_series:
+      - series: 'portal_integration_expected{integration="disabled"}'
+        values: "0+0x8"
+      - series: 'portal_integration_result_available{integration="disabled"}'
+        values: "0+0x8"
+      - series: 'portal_integration_expected{integration="stale"}'
+        values: "1+0x8"
+      - series: 'portal_integration_result_available{integration="stale"}'
+        values: "1+0x8"
+      - series: 'portal_integration_probe_last_completed_timestamp_seconds{integration="stale"}'
+        values: "1+0x8"
+      - series: 'portal_integration_expected{integration="down"}'
+        values: "1+0x8"
+      - series: 'portal_integration_result_available{integration="down"}'
+        values: "1+0x8"
+      - series: 'portal_integration_probe_last_completed_timestamp_seconds{integration="down"}'
+        values: "0+60x8"
+      - series: 'portal_integration_up{integration="down"}'
+        values: "0+0x8"
+      - series: 'portal_integration_expected{integration="up"}'
+        values: "1+0x8"
+      - series: 'portal_integration_result_available{integration="up"}'
+        values: "1+0x8"
+      - series: 'portal_integration_probe_last_completed_timestamp_seconds{integration="up"}'
+        values: "0+60x8"
+      - series: 'portal_integration_up{integration="up"}'
+        values: "1+0x8"
+    promql_expr_test:
+      - expr: '(0 * (portal_integration_expected == 0)) or (1 * (portal_integration_expected == 1 and on (integration) (portal_integration_result_available == 0 or on (integration) (time() - portal_integration_probe_last_completed_timestamp_seconds > 180)))) or (((portal_integration_expected == 1) and on (integration) (portal_integration_result_available == 1) and on (integration) (time() - portal_integration_probe_last_completed_timestamp_seconds <= 180) and on (integration) (portal_integration_up == 0)) + 1) or (((portal_integration_expected == 1) and on (integration) (portal_integration_result_available == 1) and on (integration) (time() - portal_integration_probe_last_completed_timestamp_seconds <= 180) and on (integration) (portal_integration_up == 1)) + 2)'
+        eval_time: 6m
+        exp_samples:
+          - labels: '{integration="disabled"}'
+            value: 0
+          - labels: '{integration="stale"}'
+            value: 1
+          - labels: '{integration="down"}'
+            value: 2
+          - labels: '{integration="up"}'
+            value: 3
+
+
+  - name: missing expected synthetic result alerts as stale
+    interval: 1m
+    input_series:
+      - series: 'portal_synthetic_probe_expected{job="screenshot-service",flow="login_and_load"}'
+        values: "1+0x6"
+      - series: 'portal_synthetic_probe_result_available{job="screenshot-service",flow="login_and_load"}'
+        values: "0+0x6"
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: PortalSyntheticProbeStale
+        exp_alerts:
+          - exp_labels:
+              flow: login_and_load
+              job: screenshot-service
+              severity: warning
+              service: portal-synthetic
+            exp_annotations:
+              summary: "Synthetic-проверка не выдаёт свежий результат"
+              description: "Ожидаемая проба login_and_load не завершалась 15 минут или не имеет свежего результата. Проверить worker run_synthetic_probe, screenshot-service /probe и last_attempt/last_completed."
+      - eval_time: 3m
+        alertname: PortalSyntheticProbeFailed
+        exp_alerts: []
+
+  - name: fresh failed synthetic result alerts without stale duplicate
+    interval: 1m
+    input_series:
+      - series: 'portal_synthetic_probe_expected{job="screenshot-service",flow="login_and_load"}'
+        values: "1+0x15"
+      - series: 'portal_synthetic_probe_result_available{job="screenshot-service",flow="login_and_load"}'
+        values: "1+0x15"
+      - series: 'portal_synthetic_probe_last_completed_timestamp_seconds{job="screenshot-service",flow="login_and_load"}'
+        values: "0+60x15"
+      - series: 'portal_synthetic_probe_up{job="screenshot-service",flow="login_and_load"}'
+        values: "0+0x15"
+    alert_rule_test:
+      - eval_time: 12m
+        alertname: PortalSyntheticProbeFailed
+        exp_alerts:
+          - exp_labels:
+              flow: login_and_load
+              job: screenshot-service
+              severity: warning
+              service: portal-synthetic
+            exp_annotations:
+              summary: "Внутренний local-auth flow не работает"
+              description: "Свежая проверка local-auth → Home/bootstrap остаётся ошибочной более 10 минут. Проверить nginx, backend auth, screenshot-service и безопасный step_failed в логах synthetic.probed. SSO и внешний TLS контролируются отдельно."
+      - eval_time: 12m
+        alertname: PortalSyntheticProbeStale
+        exp_alerts: []
+
+  - name: screenshot metrics target outage alerts independently
+    interval: 1m
+    input_series:
+      - series: 'up{job="screenshot-service",instance="screenshot-service:9000"}'
+        values: "0+0x6"
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: PortalScreenshotServiceMetricsDown
+        exp_alerts:
+          - exp_labels:
+              instance: screenshot-service:9000
+              job: screenshot-service
+              severity: warning
+              service: portal-synthetic
+            exp_annotations:
+              summary: "Метрики synthetic-проверки недоступны"
+              description: "Prometheus не получает /metrics от screenshot-service более 2 минут. Проверить docker compose ps screenshot-service, /ready и логи контейнера."
+
+  - name: synthetic dashboard state mapping is unambiguous
+    interval: 1m
+    input_series:
+      - series: 'portal_synthetic_probe_expected{job="screenshot-service",flow="disabled"}'
+        values: "0+0x8"
+      - series: 'portal_synthetic_probe_result_available{job="screenshot-service",flow="disabled"}'
+        values: "0+0x8"
+      - series: 'portal_synthetic_probe_expected{job="screenshot-service",flow="stale"}'
+        values: "1+0x8"
+      - series: 'portal_synthetic_probe_result_available{job="screenshot-service",flow="stale"}'
+        values: "0+0x8"
+      - series: 'portal_synthetic_probe_expected{job="screenshot-service",flow="down"}'
+        values: "1+0x8"
+      - series: 'portal_synthetic_probe_result_available{job="screenshot-service",flow="down"}'
+        values: "1+0x8"
+      - series: 'portal_synthetic_probe_last_completed_timestamp_seconds{job="screenshot-service",flow="down"}'
+        values: "0+60x8"
+      - series: 'portal_synthetic_probe_up{job="screenshot-service",flow="down"}'
+        values: "0+0x8"
+      - series: 'portal_synthetic_probe_expected{job="screenshot-service",flow="up"}'
+        values: "1+0x8"
+      - series: 'portal_synthetic_probe_result_available{job="screenshot-service",flow="up"}'
+        values: "1+0x8"
+      - series: 'portal_synthetic_probe_last_completed_timestamp_seconds{job="screenshot-service",flow="up"}'
+        values: "0+60x8"
+      - series: 'portal_synthetic_probe_up{job="screenshot-service",flow="up"}'
+        values: "1+0x8"
+    promql_expr_test:
+      - expr: '(0 * (portal_synthetic_probe_expected{job="screenshot-service"} == 0)) or (1 * (portal_synthetic_probe_expected{job="screenshot-service"} == 1 and on (flow) (portal_synthetic_probe_result_available{job="screenshot-service"} == 0 or on (flow) (time() - portal_synthetic_probe_last_completed_timestamp_seconds{job="screenshot-service"} > 900)))) or (((portal_synthetic_probe_expected{job="screenshot-service"} == 1) and on (flow) (portal_synthetic_probe_result_available{job="screenshot-service"} == 1) and on (flow) (time() - portal_synthetic_probe_last_completed_timestamp_seconds{job="screenshot-service"} <= 900) and on (flow) (portal_synthetic_probe_up{job="screenshot-service"} == 0)) + 1) or (((portal_synthetic_probe_expected{job="screenshot-service"} == 1) and on (flow) (portal_synthetic_probe_result_available{job="screenshot-service"} == 1) and on (flow) (time() - portal_synthetic_probe_last_completed_timestamp_seconds{job="screenshot-service"} <= 900) and on (flow) (portal_synthetic_probe_up{job="screenshot-service"} == 1)) + 2)'
+        eval_time: 6m
+        exp_samples:
+          - labels: '{flow="disabled",job="screenshot-service"}'
+            value: 0
+          - labels: '{flow="stale",job="screenshot-service"}'
+            value: 1
+          - labels: '{flow="down",job="screenshot-service"}'
+            value: 2
+          - labels: '{flow="up",job="screenshot-service"}'
+            value: 3
+
+  # MON-13: Watchdog — всегда-firing маяк для внешнего dead-man контроля.
+  # Фиксируем контракт: маяк горит при ЛЮБОМ состоянии остальных серий
+  # (здесь даже up=0), поэтому его пропажа на внешнем приёмнике однозначно
+  # означает отказ Prometheus/Alertmanager, а не «нет данных».
+  - name: watchdog beacon always fires for dead-man control
+    interval: 1m
+    input_series:
+      - series: 'up{job="portal",instance="backend:8000"}'
+        values: "0+0x6"
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: Watchdog
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              service: monitoring
+            exp_annotations:
+              summary: "Monitoring watchdog alive"
+              description: "Этот алерт всегда firing. Если он перестал приходить в уведомления — умер Prometheus или Alertmanager (остальные алерты тоже молча не уходят). Проверить `docker compose ps prometheus alertmanager` (overlay monitoring)."
+
+  - name: rare ARQ failures alert by event count including result failures
+    interval: 1m
+    input_series:
+      - series: 'portal_arq_jobs_total{function="exception_cron",status="failed"}'
+        values: "0+1x12"
+      - series: 'portal_arq_jobs_total{function="business_cron",status="result_failed"}'
+        values: "0+1x12"
+      - series: 'portal_arq_jobs_total{function="occasional_job",status="failed"}'
+        values: "0 1 2 2 2 2 2 2 2 2 2 2 2"
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: PortalArqJobFailures
+        exp_alerts:
+          - exp_labels:
+              function: exception_cron
+              severity: warning
+              service: portal-worker
+            exp_annotations:
+              summary: "ARQ-задача повторно неуспешна: exception_cron"
+              description: "Не менее 3 исключений или явных неуспешных результатов за 10 минут для exception_cron. Проверить логи worker (`docker compose logs worker`) и доступность upstream (SMTP/Nextcloud/БД)."
+          - exp_labels:
+              function: business_cron
+              severity: warning
+              service: portal-worker
+            exp_annotations:
+              summary: "ARQ-задача повторно неуспешна: business_cron"
+              description: "Не менее 3 исключений или явных неуспешных результатов за 10 минут для business_cron. Проверить логи worker (`docker compose logs worker`) и доступность upstream (SMTP/Nextcloud/БД)."
+      - eval_time: 8m
+        alertname: PortalArqJobFailures
+        exp_alerts:
+          - exp_labels:
+              function: exception_cron
+              severity: warning
+              service: portal-worker
+            exp_annotations:
+              summary: "ARQ-задача повторно неуспешна: exception_cron"
+              description: "Не менее 3 исключений или явных неуспешных результатов за 10 минут для exception_cron. Проверить логи worker (`docker compose logs worker`) и доступность upstream (SMTP/Nextcloud/БД)."
+          - exp_labels:
+              function: business_cron
+              severity: warning
+              service: portal-worker
+            exp_annotations:
+              summary: "ARQ-задача повторно неуспешна: business_cron"
+              description: "Не менее 3 исключений или явных неуспешных результатов за 10 минут для business_cron. Проверить логи worker (`docker compose logs worker`) и доступность upstream (SMTP/Nextcloud/БД)."
+
+  # MON-09/AT-09: насыщение пула в ОДНОМ из двух API-процессов обнаруживается
+  # независимо от того, кто обслужил scrape; второй (свежий и свободный) молчит.
+  - name: db pool saturation in one process alerts with pid attribution
+    interval: 1m
+    input_series:
+      - series: 'portal_db_pool_size{state="in_use",pid="101"}'
+        values: "9+0x12"
+      - series: 'portal_db_pool_size{state="idle",pid="101"}'
+        values: "1+0x12"
+      - series: 'portal_db_pool_size{state="in_use",pid="202"}'
+        values: "1+0x12"
+      - series: 'portal_db_pool_size{state="idle",pid="202"}'
+        values: "9+0x12"
+      - series: 'portal_db_pool_limit{pid="101"}'
+        values: "10+0x12"
+      - series: 'portal_db_pool_limit{pid="202"}'
+        values: "10+0x12"
+      - series: 'portal_db_pool_update_timestamp_seconds{pid="101"}'
+        values: "0+60x12"
+      - series: 'portal_db_pool_update_timestamp_seconds{pid="202"}'
+        values: "0+60x12"
+    alert_rule_test:
+      - eval_time: 8m
+        alertname: PortalDBPoolHigh
+        exp_alerts:
+          - exp_labels:
+              pid: "101"
+              severity: warning
+              service: portal-backend
+            exp_annotations:
+              summary: "Backend: пул соединений насыщен (90%)"
+              description: "in_use > 80% от (DB_POOL_SIZE + DB_MAX_OVERFLOW) уже 5 мин в API-процессе pid=101. Connection leak (незакрытая SQLAlchemy-сессия) или нехватка пула под нагрузкой. Проверить pg_stat_activity (что держит), логи на 'pool timeout'. Поднять DB_POOL_SIZE/DB_MAX_OVERFLOW в .env (рестарт backend)."
+      - eval_time: 8m
+        alertname: PortalDBPoolTelemetryStale
+        exp_alerts: []
+
+  - name: stale per-process pool telemetry alerts while fresh process stays quiet
+    interval: 1m
+    input_series:
+      - series: 'portal_db_pool_update_timestamp_seconds{pid="101"}'
+        values: "1+0x12"
+      - series: 'portal_db_pool_update_timestamp_seconds{pid="202"}'
+        values: "0+60x12"
+      - series: 'portal_db_pool_size{state="in_use",pid="101"}'
+        values: "1+0x12"
+      - series: 'portal_db_pool_size{state="in_use",pid="202"}'
+        values: "1+0x12"
+      - series: 'portal_db_pool_limit{pid="101"}'
+        values: "10+0x12"
+      - series: 'portal_db_pool_limit{pid="202"}'
+        values: "10+0x12"
+    alert_rule_test:
+      - eval_time: 9m
+        alertname: PortalDBPoolTelemetryStale
+        exp_alerts:
+          - exp_labels:
+              pid: "101"
+              severity: warning
+              service: portal-backend
+            exp_annotations:
+              summary: "Метрики пула БД устарели (pid=101)"
+              description: "API-процесс pid=101 не обновлял pool-гаuges более 2 мин (норма — каждые 10с): зависший event loop или смерть воркера без graceful-завершения (ряды остаются до перезапуска backend). Проверить docker compose logs backend, up{job=\"portal\"} и stack процесса (py-spy) при необходимости."
+      - eval_time: 9m
+        alertname: PortalDBPoolHigh
+        exp_alerts: []
+
+  - name: healthy per-process pool telemetry stays quiet
+    interval: 1m
+    input_series:
+      - series: 'portal_db_pool_size{state="in_use",pid="101"}'
+        values: "3+0x10"
+      - series: 'portal_db_pool_size{state="in_use",pid="202"}'
+        values: "2+0x10"
+      - series: 'portal_db_pool_limit{pid="101"}'
+        values: "10+0x10"
+      - series: 'portal_db_pool_limit{pid="202"}'
+        values: "10+0x10"
+      - series: 'portal_db_pool_update_timestamp_seconds{pid="101"}'
+        values: "0+60x10"
+      - series: 'portal_db_pool_update_timestamp_seconds{pid="202"}'
+        values: "0+60x10"
+    alert_rule_test:
+      - eval_time: 8m
+        alertname: PortalDBPoolHigh
+        exp_alerts: []
+      - eval_time: 8m
+        alertname: PortalDBPoolTelemetryStale
+        exp_alerts: []

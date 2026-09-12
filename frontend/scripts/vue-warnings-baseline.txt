@@ -1,0 +1,17 @@
+# Vue-warnings ratchet (аудит тестирования 2026-08-21, этап 6).
+# Максимум предупреждений [Vue warn] в выводе vitest unit-прогона.
+#
+# 2026-08-22: 109 → 0. Все опасные классы починены (не занесены в allowlist):
+#   - Template ref "fileInputRef" non-ref — моки отдавали { value: null }
+#     вместо настоящего ref() (rich-editor*.spec);
+#   - lifecycle (onMounted/onBeforeUnmount/onUnmounted вне setup) — композаблы
+#     photos/zip/import звались в тестах напрямую, обёрнуты в withSetup;
+#   - Missing required prop (canManage/activeTag) — пропущены в mount-опциях;
+#   - Failed setting prop "size" on <input> — стабы NInput не объявляли size;
+#   - Failed to resolve component (n-tooltip/n-switch) — глобальная
+#     регистрация в тесте вместо локального импорта компонентом;
+#   - Invalid watch source — моки query-результатов плейс-объектами и
+#     отсутствующий isError в моке useQuery.
+#
+# Понижать можно и нужно. Повышать — только с явным обоснованием.
+0

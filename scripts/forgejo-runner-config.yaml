@@ -1,0 +1,63 @@
+# =============================================================================
+# forgejo-runner config — portal CI.
+#
+# ПРОВЕРЕНО на forgejo 16.0.2 + runner v13.0.0 (forgejo в docker, runner контейнером).
+# Три ГЕМОРа, на которые наступили (см. docs/forgejo-runner-setup.md):
+#
+#  1. НЕ монтируй docker.sock через `options` — runner монтирует его САМ
+#     (т.к. docker_host = unix-сокет). Явный `-v /var/run/docker.sock` в options
+#     → "Duplicate mount point: /var/run/docker.sock" → `docker create` падает.
+#     Сокет только в valid_volumes (allow-list) + docker_host.
+#
+#  2. `network: "host"` — обязателен для service-job'ов (integration/e2e/
+#     compose-smoke): они стартуют postgres/redis через `docker run -p 5432/6379`
+#     (биндят ПОРТЫ ХОСТА) и коннектятся по localhost. Только host-сеть даёт job-
+#     контейнеру localhost = хост. На bridge-сети эти job'ы падают на
+#     `Connection refused localhost:5432`. (host-сеть + alias бегуна НЕ конфликтуют —
+#     empirically; ранние подозрения были из-за п.1.)
+#
+#  3. `options: --add-host=forgejo:<ip>` — job-контейнеры живут на отдельной сети и
+#     НЕ резолвят compose-имя `forgejo` (runner зарегистрирован на http://forgejo:3000).
+#     Без маппинга checkout падает: `Could not resolve host: forgejo`.
+#     • runner контейнером + host-сеть у job'ов → `forgejo:127.0.0.1`
+#       (forgejo опубликован на host:3000).
+#     • runner контейнером + bridge у job'ов → `forgejo:host-gateway`.
+#     • runner бинарником на хосте → `forgejo:<внутренний-ip-хоста>`.
+# =============================================================================
+log:
+  level: info
+
+runner:
+  # Только service jobs (integration/e2e/compose/ZAP). Uvicorn E2E и ZAP пока
+  # используют общий host-порт 8000, поэтому capacity остаётся 1.
+  capacity: 1
+  timeout: 30m
+  insecure: false
+  # Формат лейблов в v13 — ЧЕРЕЗ ДВОЕТОЧИЕ: «имя:schema://образ» (НЕ через «=»).
+  # Service runner: workflows требуют оба labels — ubuntu-latest и ci-services.
+  # Базовый образ — зеркало в собственном registry: ghcr.io с раннера недостижим
+  # (DNS SERVFAIL, инцидент 2026-08-24, прогоны #829-831; кэш evicted после
+  # docker prune). Для pull на хосте раннера нужен разовый
+  # `docker login forgejo.mage.ru` — см. docs/forgejo-runner-setup.md
+  # §«Зеркало ghcr-образов в свой registry».
+  # @sha256 — иммутабельный пин зеркала act-ubuntu (аудит-3, P2): тег в своём
+  # registry мутабелен, перезапись тихо подменила бы базовый образ всех job'ов.
+  # При обновлении зеркала — заменить digest здесь И в конфиге живых раннеров
+  # (docs/forgejo-runner-setup.md §«Обновление зеркал»).
+  labels:
+    - "ubuntu-latest:docker://forgejo.mage.ru/mage/act-ubuntu:22.04@sha256:be3b065b90a7a029ea30aa8ce897a62bfc8bd4d6698951b2527e1f11ba70cc6c"
+    - "ubuntu-22.04:docker://forgejo.mage.ru/mage/act-ubuntu:22.04@sha256:be3b065b90a7a029ea30aa8ce897a62bfc8bd4d6698951b2527e1f11ba70cc6c"
+    - "ci-services"
+
+cache:
+  enabled: true
+  # Контейнер-runner: /data/cache (том ./runner-data). Бинарник на хосте: /var/lib/forgejo-runner/cache.
+  dir: /data/cache
+
+container:
+  network: "host"
+  valid_volumes:
+    - '/var/run/docker.sock'
+  docker_host: "unix:///var/run/docker.sock"
+  # НЕ добавляй сюда `-v /var/run/docker.sock` (см. п.1). Только add-host для forgejo.
+  options: "--add-host=forgejo:127.0.0.1"

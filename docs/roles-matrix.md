@@ -1,0 +1,677 @@
+# Матрица прав доступа
+
+> **Когда читать:** меняешь права доступа / «кто что видит» в любом модуле.
+> **Ключевой код:** `app/api/deps.py` (`require_role`), `app/services/*_acl*`.
+> **Роли:** reader / editor / admin + per-module ACL.
+
+> Корпоративный интранет-портал
+> Последнее обновление: июль 2026 (v1.13) — к v1.5 добавлены **Helpdesk**
+> (отдельная сущность агентов `helpdesk_agents`, module-gate, mailbox/digest/MAX-bot
+> settings — см. отдельную матрицу ниже и [`./helpdesk.md`](./helpdesk.md) §5),
+> `mailing_recipients` + `POST /news/{id}/share-email`, лайки/комментарии
+> новостей, справочники объектов, пофайловый шеринг файлов.
+
+## Роли
+
+| Роль | Описание | Источник |
+|------|---------|---------|
+| `reader` | Все авторизованные сотрудники | поле `users.role` (БД) |
+| `editor` | Сотрудники, создающие контент | поле `users.role` (БД) |
+| `admin` | Администраторы портала | поле `users.role` (БД) |
+
+> Роль хранится в БД (`users.role`). Источники назначения:
+> - **Keycloak-пользователи** — роль устанавливается при первом upsert из JWT claim `role` (если присутствует) и затем поддерживается только через admin-API (`PATCH /users/admin/{id}/role`). Изменение роли в Keycloak без явного admin-действия портала на роль в БД **не влияет**.
+> - **Local-пользователи (включая bootstrap-admin)** — роль присваивается при создании (`POST /users/admin/local`) или из env (`ADMIN_EMAIL`/`ADMIN_PASSWORD`), затем меняется только через admin-API.
+>
+> Каждый запрос читает роль из БД через `CurrentUser` (см. `backend/app/api/deps.py`). Это позволяет администратору моментально понизить/повысить роль без ожидания refresh-токена и единообразно работает для обоих `auth_source`.
+
+---
+
+## FastAPI dependency
+
+```python
+# backend/app/api/deps.py
+
+def require_role(*roles: str):
+    """Dependency: проверяет, что роль пользователя входит в список допустимых."""
+    async def _check(current_user: User = Depends(get_current_user)) -> User:
+        if current_user.role not in roles:
+            raise HTTPException(status_code=403, detail="Недостаточно прав")
+        return current_user
+    return _check
+
+# Использование:
+# Depends(require_role("editor", "admin"))  ← editor+
+# Depends(require_role("admin"))            ← только admin
+# AdminDep = Annotated[User, Depends(require_role("admin"))]
+```
+
+---
+
+## Матрица: Аутентификация
+
+| Endpoint | reader | editor | admin | Примечание |
+|---------|:------:|:------:|:-----:|-----------|
+| `GET /auth/login` | ✅ | ✅ | ✅ | Открытый (redirect на Keycloak) |
+| `GET /auth/callback` | ✅ | ✅ | ✅ | Открытый (OIDC callback) |
+| `POST /auth/logout` | ✅ | ✅ | ✅ | Авторизованный пользователь |
+| `GET /auth/logout` | ✅ | ✅ | ✅ | Открытый (SLO front-channel от Keycloak) |
+| `GET /auth/me` | ✅ | ✅ | ✅ | Свой профиль |
+| `GET /bootstrap` | ✅ | ✅ | ✅ | Агрегация данных для SPA (reader+) |
+| `POST /auth/local/login` | ✅ | ✅ | ✅ | Открытый; только `auth_source=local`; rate limit 5/15min/IP |
+| `POST /auth/refresh` | ✅ | ✅ | ✅ | Только Keycloak-сессии; rate limit 30/мин/user |
+
+---
+
+## Матрица: Пользователи
+
+| Endpoint | reader | editor | admin | Примечание |
+|---------|:------:|:------:|:-----:|-----------|
+| `GET /users` | ✅ | ✅ | ✅ | Список сотрудников — доступен всем |
+| `GET /users/{id}` | ✅ | ✅ | ✅ | Профиль любого сотрудника |
+| `GET /users/departments` | ✅ | ✅ | ✅ | Список отделов |
+| `GET /users/offices` | ✅ | ✅ | ✅ | Список офисов |
+| `GET /users/export` | ✅ | ✅ | ✅ | Экспорт справочника в CSV/XLSX |
+| `PATCH /users/me/profile` | ✅ | ✅ | ✅ | Только свой профиль (уведомления, lang; фокал аватара — `avatar_focal_x/y/zoom`, x/y∈[0,100], zoom∈[100,300]) |
+| `PATCH /users/me/preferences` | ✅ | ✅ | ✅ | Только свои настройки уведомлений |
+| `POST /users/me/avatar` | ✅ | ✅ | ✅ | Загрузка своего аватара (WebP ≤512px, версионированный URL) |
+| `DELETE /users/me/avatar` | ✅ | ✅ | ✅ | Удаление своего аватара |
+| `PATCH /users/me/password` | ✅ | ✅ | ✅ | Только `auth_source=local`; иначе 403 |
+| `POST /users/admin/local` | ❌ | ❌ | ✅ | Создать локального пользователя |
+| `PATCH /users/admin/{id}/password` | ❌ | ❌ | ✅ | Сброс пароля; только `auth_source=local` |
+| `POST /users/admin/sync` | ❌ | ❌ | ✅ | Ручная синхронизация из Keycloak (P2-41) |
+| `PATCH /users/admin/{id}/role` | ❌ | ❌ | ✅ | Изменение роли пользователя (P2-41) |
+| `DELETE /users/admin/{user_id}` | ❌ | ❌ | ✅ | Soft-delete пользователя |
+| `PATCH /users/admin/{user_id}/profile` | ❌ | ❌ | ✅ | Редактирование профиля: `full_name`/`department`/`position`/`phone` + `birth_date`/`gender` (миграция 087, только `auth_source=local`); фокал аватара `avatar_focal_x/y/zoom` — для любых `auth_source` |
+| `POST /users/admin/{user_id}/avatar` | ❌ | ❌ | ✅ | Загрузка аватара любому пользователю (audit `user.avatar_changed`) |
+| `DELETE /users/admin/{user_id}/avatar` | ❌ | ❌ | ✅ | Удаление аватара любого пользователя (audit `user.avatar_deleted`) |
+| `GET /users/admin/{user_id}/groups` | ❌ | ❌ | ✅ | Список Keycloak-групп пользователя |
+| `GET /users/admin/staff-order` | ❌ | ❌ | ✅ | Текущий порядок отделов и скрытые пользователи |
+| `PUT /users/admin/staff-order` | ❌ | ❌ | ✅ | Сохранить порядок отделов и список скрытых |
+
+---
+
+## Матрица: База знаний (KB)
+
+> **Двухуровневая система прав KB:**
+> 1. **Роль портала** (`users.role`) — контролирует возможность создавать разделы/статьи
+> 2. **KB ACL** (`kb_section_permissions`, `kb_article_permissions`) — контролирует доступ к конкретному разделу/статье
+>
+> Обозначения в столбцах: `✅` — разрешено, `❌` — запрещено, `⚙` — требует KB ACL права.
+> `kb_viewer` / `kb_editor` / `kb_manager` — права назначаются на конкретный раздел/статью (независимо от роли портала).
+
+### Разделы
+
+| Endpoint | reader | editor | admin | Примечание |
+|---------|:------:|:------:|:-----:|-----------|
+| `GET /kb/sections` | ⚙ viewer+ | ⚙ viewer+ | ✅ | Только доступные по ACL |
+| `POST /kb/sections` | ✅ | ✅ | ✅ | Создать раздел может любой; корневой — без ограничений, вложенный — editor+ на родителе; создатель получает manager |
+| `PUT /kb/sections/{id}` | ❌ | ⚙ manager | ✅ | Переименовать/описание |
+| `DELETE /kb/sections/{id}` | ❌ | ❌ | ✅ | Soft delete |
+| `DELETE /kb/sections/{id}?force=true` | ❌ | ❌ | ✅ | Удалить с содержимым |
+| `GET /kb/sections/{id}/permissions` | ❌ | ⚙ manager | ✅ | Список прав раздела |
+| `POST /kb/sections/{id}/permissions` | ❌ | ⚙ manager | ✅ | Добавить/обновить право |
+| `DELETE /kb/sections/{id}/permissions/{sid}` | ❌ | ⚙ manager | ✅ | Отозвать право |
+| `PATCH /kb/sections/{id}/inherit` | ❌ | ⚙ manager | ✅ | Переключить наследование прав раздела |
+| `GET /kb/sections/{id}/export/zip` | ⚙ viewer+ | ⚙ viewer+ | ✅ | ZIP раздела (Obsidian-совместимый) |
+| `GET /kb/users/search` | ❌ | ✅ | ✅ | Поиск пользователей/групп для picker |
+
+### Статьи
+
+| Endpoint | reader | editor | admin | Примечание |
+|---------|:------:|:------:|:-----:|-----------|
+| `GET /kb/articles` | ⚙ viewer+ | ⚙ viewer+ | ✅ | Только доступные по ACL |
+| `GET /kb/articles?status=draft` | ❌ | ⚙ editor+ (свои) | ✅ | Черновики — только свои у editor |
+| `GET /kb/articles/{id}` | ⚙ viewer+ | ⚙ viewer+ | ✅ | Проверка ACL + статус published для reader |
+| `POST /kb/articles` | ✅ | ✅ | ✅ | Создать статью может любой; без раздела/в свой раздел — без ограничений, в чужой раздел — editor+ на разделе; создатель → manager |
+| `PUT /kb/articles/{id}` | ❌ | ⚙ editor+ | ✅ | Требует kb_editor-право |
+| `PUT /kb/articles/{id}/draft` | ❌ | ⚙ editor+ | ✅ | Автосохранение черновика |
+| `DELETE /kb/articles/{id}` | ❌ | ❌ | ✅ | Soft delete |
+| `POST /kb/articles/{id}/restore` | ❌ | ❌ | ✅ | Восстановить удалённую |
+| `GET /kb/articles/{id}/versions` | ⚙ viewer+ | ⚙ viewer+ | ✅ | История версий |
+| `POST /kb/articles/{id}/versions/{n}/restore` | ❌ | ⚙ editor+ | ✅ | Откат к версии |
+| `GET /kb/articles/{id}/versions/{v1}/diff/{v2}` | ⚙ viewer+ | ⚙ viewer+ | ✅ | Diff между версиями |
+| `GET /kb/articles/{id}/permissions` | ❌ | ⚙ manager | ✅ | Список прав статьи |
+| `POST /kb/articles/{id}/permissions` | ❌ | ⚙ manager | ✅ | Добавить/обновить право |
+| `DELETE /kb/articles/{id}/permissions/{sid}` | ❌ | ⚙ manager | ✅ | Отозвать право |
+| `PATCH /kb/articles/{id}/inherit` | ❌ | ⚙ manager | ✅ | Переключить наследование прав |
+| `GET /kb/articles/{id}/export/pdf` | ⚙ viewer+ | ⚙ viewer+ | ✅ | Экспорт PDF |
+| `GET /kb/articles/{id}/export/docx` | ⚙ viewer+ | ⚙ viewer+ | ✅ | Экспорт DOCX |
+| `GET /kb/articles/{id}/export/md` | ⚙ viewer+ | ⚙ viewer+ | ✅ | Экспорт Markdown (YAML frontmatter) |
+| `GET /kb/articles/{id}/comments` | ⚙ viewer+ | ⚙ viewer+ | ✅ | Комментарии |
+| `POST /kb/articles/{id}/comments` | ⚙ viewer+ | ⚙ viewer+ | ✅ | Добавить комментарий |
+| `DELETE /kb/articles/{id}/comments/{cid}` | ❌ | ⚙ viewer+ (свои) | ✅ | Удалить свой комментарий |
+| `POST /kb/articles/{id}/suggest` | ⚙ viewer+ | ⚙ viewer+ | ✅ | Предложить правку |
+| `GET /kb/articles/{id}/suggestions` | ❌ | ⚙ editor+ | ✅ | Список правок |
+| `POST /kb/suggestions/{id}/review` | ❌ | ⚙ editor+ | ✅ | Одобрить/отклонить правку |
+| `POST /kb/articles/{id}/feedback` | ⚙ viewer+ | ⚙ viewer+ | ✅ | «Статья полезна?» |
+| `GET /kb/tags` | ✅ | ✅ | ✅ | Список тегов (viewer+) |
+
+### Медиа и вложения
+
+| Endpoint | reader | editor | admin | Примечание |
+|---------|:------:|:------:|:-----:|-----------|
+| `POST /kb/articles/{id}/media` | ❌ | ⚙ editor+ | ✅ | Загрузка изображения в тело статьи |
+| `GET /kb/media/{article_id}/{filename}` | ⚙ viewer+ | ⚙ viewer+ | ✅ | Nginx X-Accel-Redirect, ACL-проверка |
+| `GET /kb/articles/{id}/files` | ⚙ viewer+ | ⚙ viewer+ | ✅ | Список вложений |
+| `POST /kb/articles/{id}/files` | ❌ | ⚙ editor+ | ✅ | Загрузить вложение |
+| `GET /kb/files/{article_id}/{filename}` | ⚙ viewer+ | ⚙ viewer+ | ✅ | Скачать вложение |
+| `DELETE /kb/articles/{id}/files/{fid}` | ❌ | ⚙ editor+ (автор) | ✅ | Удалить вложение |
+
+### Импорт / Экспорт KB
+
+| Endpoint | reader | editor | admin | Примечание |
+|---------|:------:|:------:|:-----:|-----------|
+| `POST /kb/articles/import` | ❌ | ✅ | ✅ | Импорт `.md` файла |
+| `POST /kb/import/vault` | ❌ | ✅ | ✅ | Импорт Obsidian vault `.zip` |
+| `GET /kb/export/vault.zip` | ✅ | ✅ | ✅ | Экспорт всей KB (только доступные разделы) |
+
+---
+
+## Матрица: Новости
+
+| Endpoint | reader | editor | admin | Примечание |
+|---------|:------:|:------:|:-----:|-----------|
+| `GET /news` | ✅ | ✅ | ✅ | С таргетингом по отделу/роли |
+| `GET /news/{id}` | ✅ (опубликованные) | ✅ | ✅ | reader не видит черновики |
+| `GET /news/limits` | ✅ | ✅ | ✅ | Лимиты загрузки (любой авторизованный) |
+| `POST /news` | ❌ | ✅ | ✅ | Создать новость |
+| `PUT /news/{id}` | ❌ | ✅ (свои) | ✅ | editor редактирует только свои |
+| `PUT /news/{id}/draft` | ❌ | ✅ (свои) | ✅ | Автосохранение |
+| `DELETE /news/{id}` | ❌ | ✅ | ✅ | Soft delete (editor может удалять) |
+| `GET /news/trash` | ❌ | ❌ | ✅ | Список удалённых новостей |
+| `POST /news/{id}/restore` | ❌ | ❌ | ✅ | Восстановить |
+| `DELETE /news/{id}/purge` | ❌ | ❌ | ✅ | Hard-delete (только из корзины) |
+| `GET /news/{id}/versions` | ❌ | ✅ | ✅ | История версий |
+| `POST /news/{id}/cover` | ❌ | ✅ | ✅ | Загрузка обложки (JPEG/PNG/WebP/GIF, ≤10 МБ) |
+| `DELETE /news/{id}/cover` | ❌ | ✅ | ✅ | Удаление обложки |
+| `GET /news/{id}/gallery` | ✅ (опубл.) | ✅ | ✅ | Черновики — только editor/admin |
+| `POST /news/{id}/gallery` | ❌ | ✅ | ✅ | Загрузить изображение в галерею |
+| `PATCH /news/{id}/gallery/reorder` | ❌ | ✅ | ✅ | Drag-and-drop сортировка |
+| `DELETE /news/{id}/gallery/{img_id}` | ❌ | ✅ | ✅ | Удалить из галереи |
+| `GET /news/{id}/attachments` | ✅ (опубл.) | ✅ | ✅ | Черновики — только editor/admin |
+| `POST /news/{id}/attachments` | ❌ | ✅ | ✅ | Загрузить вложение |
+| `GET /news/{id}/attachments/{att_id}/download` | ✅ (опубл.) | ✅ | ✅ | Скачивание с RFC 5987 именем |
+| `DELETE /news/{id}/attachments/{att_id}` | ❌ | ✅ | ✅ | Удалить вложение |
+| `GET /news/{id}/export/html` | ✅ (опубл.) | ✅ | ✅ | Standalone HTML (base64 media) |
+| `GET /news/{id}/export/markdown` | ✅ (опубл.) | ✅ | ✅ | Standalone Markdown (base64 media) |
+| `GET /news/{id}/export/pdf` | ✅ (опубл.) | ✅ | ✅ | PDF через Playwright/Chromium |
+| `POST /news/{id}/like` | ✅ | ✅ | ✅ | Поставить лайк (идемпотентно, уважает таргетинг) |
+| `DELETE /news/{id}/like` | ✅ | ✅ | ✅ | Снять лайк (идемпотентно) |
+| `GET /news/{id}/comments` | ✅ (опубл.) | ✅ | ✅ | Список комментариев |
+| `POST /news/{id}/comments` | ✅ | ✅ | ✅ | Добавить комментарий (любой с read-доступом) |
+| `PATCH /news/{id}/comments/{cid}` | ✅ (свои) | ✅ (свои) | ✅ (свои) | Inline-редактирование только автором |
+| `DELETE /news/{id}/comments/{cid}` | ✅ (свои) | ✅ (свои) | ✅ | Soft delete: автор — свои, admin — любые |
+| `POST /news/{id}/share-email` | ❌ | ✅ | ✅ | Рассылка опубликованной новости получателям из справочника (rate-limited 10/min); 409 для черновика/архива |
+
+---
+
+## Матрица: Справочник получателей рассылки
+
+> Курируемая адресная книга для рассылки новостей по email. Чтение списка
+> требует `editor+` (используется только в модалке рассылки), мутации — `editor+`.
+> Ad-hoc-ввод адреса в модалке запрещён — выбор строго из справочника (анти-спам).
+
+| Endpoint | reader | editor | admin | Примечание |
+|---------|:------:|:------:|:-----:|-----------|
+| `GET /mailing-recipients` | ❌ | ✅ | ✅ | Список получателей (для дропдауна рассылки) |
+| `POST /mailing-recipients` | ❌ | ✅ | ✅ | Создать получателя |
+| `PUT /mailing-recipients/{id}` | ❌ | ✅ | ✅ | Обновить получателя |
+| `DELETE /mailing-recipients/{id}` | ❌ | ✅ | ✅ | Soft delete |
+
+---
+
+## Матрица: Категории новостей
+
+| Endpoint | reader | editor | admin | Примечание |
+|---------|:------:|:------:|:-----:|-----------|
+| `GET /news-categories` | ✅ | ✅ | ✅ | Список категорий (все авторизованные) |
+| `POST /news-categories` | ❌ | ✅ | ✅ | Создать категорию (editor+) |
+| `PATCH /news-categories/{name}/color` | ❌ | ✅ | ✅ | Изменить цвет категории (editor+) |
+| `PATCH /news-categories/{name}` | ❌ | ✅ | ✅ | Переименовать категорию (editor+) |
+| `DELETE /news-categories/{name}` | ❌ | ✅ | ✅ | Удалить категорию (editor+) |
+
+---
+
+## Матрица: Поиск
+
+| Endpoint | reader | editor | admin | Примечание |
+|---------|:------:|:------:|:-----:|-----------|
+| `GET /search` | ✅ | ✅ | ✅ | Результаты с учётом прав (не показывает черновики reader); `type=directory_entry` — поиск объектов справочников по `name` (если мастер-флаг включён) |
+| `GET /search/suggest` | ✅ | ✅ | ✅ | Typeahead по заголовкам |
+
+---
+
+## Матрица: Ярлыки
+
+| Endpoint | reader | editor | admin | Примечание |
+|---------|:------:|:------:|:-----:|-----------|
+| `GET /links` | ✅ | ✅ | ✅ | Все активные ярлыки (с учётом `hidden_link_ids` пользователя) |
+| `GET /links/{id}` | ✅ | ✅ | ✅ | Получить ярлык |
+| `GET /links/{link_id}/sso-redirect` | ✅ | ✅ | ✅ | 302-редирект с `id_token_hint` в Location если `supports_sso=true` |
+| `POST /links` | ❌ | ✅ | ✅ | Создать ярлык |
+| `PUT /links/{id}` | ❌ | ✅ | ✅ | Изменить ярлык |
+| `DELETE /links/{id}` | ❌ | ✅ | ✅ | Удалить ярлык |
+| `PATCH /links/reorder` | ❌ | ✅ | ✅ | Изменить порядок ярлыков |
+| `POST /links/{link_id}/icon` | ❌ | ✅ | ✅ | Загрузить иконку ярлыка |
+| `DELETE /links/{link_id}/icon` | ❌ | ✅ | ✅ | Удалить иконку ярлыка |
+
+---
+
+## Матрица: Закладки
+
+| Endpoint | reader | editor | admin | Примечание |
+|---------|:------:|:------:|:-----:|-----------|
+| `GET /bookmarks` | ✅ | ✅ | ✅ | Только свои закладки |
+| `POST /bookmarks` | ✅ | ✅ | ✅ | Добавить в избранное |
+| `DELETE /bookmarks/{id}` | ✅ (свои) | ✅ (свои) | ✅ | Удалить свою закладку |
+| `PATCH /bookmarks/reorder` | ✅ (свои) | ✅ (свои) | ✅ | Сортировка |
+| `GET /bookmarks/favicon` | ✅ | ✅ | ✅ | Проксировать favicon сайта (с кэшем 7 дней) |
+
+---
+
+## Матрица: Уведомления
+
+| Endpoint | reader | editor | admin | Примечание |
+|---------|:------:|:------:|:-----:|-----------|
+| `GET /notifications` | ✅ | ✅ | ✅ | Только свои уведомления |
+| `POST /notifications/{id}/read` | ✅ | ✅ | ✅ | Пометить своё как прочитанное |
+| `POST /notifications/read-all` | ✅ | ✅ | ✅ | Все свои |
+| `GET /notifications/stream` | ✅ | ✅ | ✅ | SSE — только свои события |
+| `GET /notifications/unread-count` | ✅ | ✅ | ✅ | Количество непрочитанных уведомлений |
+
+---
+
+## Матрица: Оформление (Branding)
+
+| Endpoint | reader | editor | admin | Примечание |
+|---------|:------:|:------:|:-----:|-----------|
+| `GET /branding/settings` | 🌐 | 🌐 | 🌐 | Публичный — нужен до авторизации (portal_name, accent_color) |
+| `GET /branding/logo` | 🌐 | 🌐 | 🌐 | Публичный — используется в AppLayout и LoginPage |
+| `GET /branding/favicon` | 🌐 | 🌐 | 🌐 | Публичный — используется браузером |
+| `GET /branding/login-bg` | 🌐 | 🌐 | 🌐 | Публичный — используется LoginPage |
+| `PUT /admin/branding/settings` | ❌ | ✅ | ✅ | Название, слоган, accent color, welcome text, баннер |
+| `POST /admin/branding/logo` | ❌ | ✅ | ✅ | PNG/JPEG/WebP, max 2 МБ |
+| `DELETE /admin/branding/logo` | ❌ | ✅ | ✅ | Сброс к SVG-дефолту |
+| `POST /admin/branding/favicon` | ❌ | ✅ | ✅ | ICO/PNG/JPEG/WebP, max 2 МБ |
+| `DELETE /admin/branding/favicon` | ❌ | ✅ | ✅ | Сброс к дефолту браузера |
+| `POST /admin/branding/login-bg` | ❌ | ✅ | ✅ | PNG/JPEG/WebP, max 2 МБ |
+| `DELETE /admin/branding/login-bg` | ❌ | ✅ | ✅ | Сброс — скрывает BG, показывает SVG-волны |
+| `GET /admin/email-settings` | ❌ | ❌ | ✅ | Пароль возвращается только как `password_set: bool` |
+| `PUT /admin/email-settings` | ❌ | ❌ | ✅ | SMTP hostname/port/tls/starttls/credentials |
+| `POST /admin/email-settings/test` | ❌ | ❌ | ✅ | Тестовое письмо на указанный адрес |
+
+> 🌐 — доступен без JWT (но только из внутренней сети / VPN по Nginx IP-restrict)
+
+---
+
+## Матрица: Системные настройки (Admin UI)
+
+| Endpoint | reader | editor | admin | Примечание |
+|---------|:------:|:------:|:-----:|-----------|
+| `GET /admin/system/settings` | ❌ | ❌ | ✅ | Nextcloud URL, CIDR, лимиты, log_level |
+| `PUT /admin/system/settings` | ❌ | ❌ | ✅ | Автогенерация Nginx limits.conf/allowlist.conf + reload |
+| `PATCH /admin/system/settings` | ❌ | ❌ | ✅ | Частичное обновление настроек |
+| `POST /admin/system/nginx/reload` | ❌ | ❌ | ✅ | Принудительный reload Nginx |
+| `GET /admin/system/tls/status` | ❌ | ❌ | ✅ | Наличие и срок действия сертификата |
+| `POST /admin/system/tls/cert` | ❌ | ❌ | ✅ | Загрузка PEM-сертификата |
+| `POST /admin/system/tls/key` | ❌ | ❌ | ✅ | Загрузка PEM приватного ключа |
+| `DELETE /admin/system/tls/cert` | ❌ | ❌ | ✅ | Удалить сертификат |
+| `DELETE /admin/system/tls/key` | ❌ | ❌ | ✅ | Удалить ключ |
+
+---
+
+## Матрица: Настройки Keycloak (Admin UI)
+
+| Endpoint | reader | editor | admin | Примечание |
+|---------|:------:|:------:|:-----:|-----------|
+| `GET /admin/keycloak/settings` | ❌ | ❌ | ✅ | Секреты маскируются (`*_secret_set: bool`) |
+| `PUT /admin/keycloak/settings` | ❌ | ❌ | ✅ | Сохраняется в `/data/secrets/`, кеш сервиса сбрасывается |
+| `POST /admin/keycloak/test/oidc` | ❌ | ❌ | ✅ | Проверка discovery + client_credentials |
+| `POST /admin/keycloak/test/sync` | ❌ | ❌ | ✅ | Получение токена sync-клиента + 1 пользователь |
+| `GET /admin/keycloak/sync/status` | ❌ | ❌ | ✅ | Дата/количество/статус последней синхронизации |
+| `POST /users/admin/sync` | ❌ | ❌ | ✅ | Ручной запуск ARQ-задачи синхронизации |
+
+---
+
+## Матрица: Фотогалерея (собственный модуль)
+
+> Доступ к ресурсу определяется per-folder ACL (`viewer` / `uploader` / `manager`) с наследованием вверх по дереву. Portal admin = manager везде; создатель папки / автор фото = manager на своём ресурсе.
+
+| Endpoint | reader | editor | admin | Примечание |
+|---------|:------:|:------:|:-----:|-----------|
+| `GET /photos/folders/tree` | ✅ | ✅ | ✅ | Возвращает только доступные пользователю узлы |
+| `GET /photos/folders/{id}` | viewer | viewer | ✅ | 403 если нет ACL |
+| `POST /photos/folders` | manager-of-parent | manager-of-parent | ✅ | Корневые папки — только admin |
+| `PATCH /photos/folders/{id}` | manager | manager | ✅ | |
+| `DELETE /photos/folders/{id}` | manager | manager | ✅ | Soft-delete |
+| `GET /photos/folders/{id}/photos` | viewer | viewer | ✅ | Постраничный список |
+| `POST /photos/folders/{id}/upload` | uploader | uploader | ✅ | Multipart; лимиты из настроек модуля |
+| `GET /photos/{id}` | viewer | viewer | ✅ | |
+| `PATCH /photos/{id}` | uploader | uploader | ✅ | Перенос требует uploader на целевой папке |
+| `DELETE /photos/{id}` | uploaded_by | uploaded_by | ✅ | Иначе — manager на папке |
+| `GET /photos/recent` | ✅ | ✅ | ✅ | Виджет; ACL-фильтрация после выборки |
+| `GET /photos/thumbnail/{id}/{size}` | viewer | viewer | ✅ | X-Accel-Redirect; 200/400/600/1000/1600; `?format=webp\|avif` |
+| `GET /photos/original/{id}` | viewer | viewer | ✅ | X-Accel-Redirect; `?download=1` для attachment |
+| `POST /photos/{id}/share` | uploader | uploader | ✅ | Создание публичного токена (TTL 1..365 дн или без срока); audit `photos.share_created` |
+| `GET /photos/public/{token}/info` | public | public | public | Без auth; 410 если истёк, 404 если отозван |
+| `GET /photos/public/{token}/thumbnail/{size}` | public | public | public | X-Accel-Redirect; синхронная генерация при первом обращении |
+| `GET /photos/public/{token}/file` | public | public | public | `?download=1` поддерживается |
+| `POST /photos/folders/{id}/share` | manager | manager | ✅ | Создать публичный токен для папки |
+| `GET /photos/folders/{id}/shares` | manager | manager | ✅ | Список токенов папки |
+| `GET /photos/my-shares` | ✅ | ✅ | ✅ | Мои активные photo- и folder-токены |
+| `DELETE /photos/my-shares/photo/{token_id}` | ✅ (свои) | ✅ (свои) | ✅ | Отозвать photo-токен |
+| `DELETE /photos/my-shares/folder/{token_id}` | ✅ (свои) | ✅ (свои) | ✅ | Отозвать folder-токен |
+| `GET /photos/public-folder/{token}/info` | public | public | public | Без auth; метаданные папки |
+| `GET /photos/public-folder/{token}/photos` | public | public | public | Постраничный список фото |
+| `GET /photos/public-folder/{token}/thumbnail/{size}` | public | public | public | X-Accel-Redirect |
+| `GET /photos/folders/{id}/permissions` | manager | manager | ✅ | Список grant'ов на папке |
+| `POST /photos/folders/{id}/permissions` | manager | manager | ✅ | Upsert по `(folder_id, subject_type, subject_id)` (миграция 056) |
+| `DELETE /photos/folders/{id}/permissions/{subject_id}` | manager | manager | ✅ | Инвалидация Redis-кэша |
+| `PUT /admin/modules/photos` | ❌ | ❌ | ✅ | Toggle/widget_limit/max_size/allowed_mime/strip_gps |
+
+---
+
+## Матрица: Модули (Admin UI)
+
+| Endpoint | reader | editor | admin | Примечание |
+|---------|:------:|:------:|:-----:|-----------|
+| `GET /modules` | ✅ | ✅ | ✅ | Состояние модулей для UI (все авторизованные) |
+| `GET /admin/modules` | ❌ | ❌ | ✅ | Все модули с полными настройками |
+| `PUT /admin/modules/nextcloud` | ❌ | ❌ | ✅ | Placeholder; только флаг `enabled` |
+| `PUT /admin/modules/photos` | ❌ | ❌ | ✅ | Toggle/widget_limit/max_size_mb/allowed_mime/strip_gps; пустой `allowed_mime` не очищает |
+| `PUT /admin/modules/meetings` | ❌ | ❌ | ✅ | Toggle/calendar_start_hour/calendar_end_hour/max_recurrence_horizon_days/min_search_chars |
+| `PUT /admin/modules/directories` | ❌ | ❌ | ✅ | Мастер-флаг раздела «Справочники объектов»; off → весь `/directories/*` 404 + скрыт из поиска |
+
+---
+
+## Матрица: Атрибуты пользователей (User Attribute Mappings)
+
+| Endpoint | reader | editor | admin | Примечание |
+|---------|:------:|:------:|:-----:|-----------|
+| `GET /user-attribute-mappings` | ❌ | ❌ | ✅ | Список маппингов атрибутов |
+| `POST /user-attribute-mappings` | ❌ | ❌ | ✅ | Создать маппинг |
+| `PUT /user-attribute-mappings/{id}` | ❌ | ❌ | ✅ | Обновить маппинг |
+| `DELETE /user-attribute-mappings/{id}` | ❌ | ❌ | ✅ | Удалить маппинг |
+| `GET /user-attribute-mappings/discover` | ❌ | ❌ | ✅ | Найти атрибуты из `users.attributes` без маппинга |
+| `GET /user-attribute-mappings/schema` | ✅ | ✅ | ✅ | Любой авторизованный (`CurrentUser`): видимые поля для карточки `/staff` — только `enabled` маппинги, без атрибута-источника ФИО |
+
+---
+
+## Матрица: Аналитика и Аудит
+
+| Endpoint | reader | editor | admin | Примечание |
+|---------|:------:|:------:|:-----:|-----------|
+| `GET /analytics/dashboard` | ❌ | ❌ | ✅ | Только admin |
+| `GET /analytics/top-articles` | ❌ | ❌ | ✅ | |
+| `GET /analytics/top-news` | ❌ | ❌ | ✅ | |
+| `GET /analytics/top-files` | ❌ | ❌ | ✅ | |
+| `GET /analytics/departments` | ❌ | ❌ | ✅ | |
+| `GET /audit` | ❌ | ❌ | ✅ | Полный лог всех действий |
+| `GET /audit/export.csv` | ❌ | ❌ | ✅ | |
+
+---
+
+## Матрица: Health & Metrics
+
+| Endpoint | reader | editor | admin | Примечание |
+|---------|:------:|:------:|:-----:|-----------|
+| `GET /health` | 🌐 | 🌐 | 🌐 | Публичный (только внутренняя сеть) |
+| `GET /ready` | 🌐 | 🌐 | 🌐 | Публичный (только внутренняя сеть) |
+| `GET /metrics` | ❌ | ❌ | ❌ | Только внутренняя сеть (Nginx IP-restrict), без JWT |
+
+---
+
+## Матрица: Файлы (§3.6 Phase 5)
+
+> Доступ к папкам определяется ACL в `file_folder_permissions` (viewer/editor/manager). Роль портала даёт базовый доступ к модулю; `admin` автоматически получает `manager` на все папки.
+
+| Endpoint | reader | editor | admin | Примечание |
+|---------|:------:|:------:|:-----:|-----------|
+| `GET /files/tree` | viewer+ | viewer+ | ✅ | Только доступные папки |
+| `GET /files/folders/{id}` | viewer+ | viewer+ | ✅ | viewer+ по ACL |
+| `POST /files/folders` | ✅ | ✅ | ✅ | Создать папку может любой; корневую — без ограничений, вложенную — editor+ на родителе; создатель → manager |
+| `PATCH /files/folders/{id}` | ❌ | manager* | ✅ | manager по ACL |
+| `DELETE /files/folders/{id}` | ❌ | manager* | ✅ | manager по ACL |
+| `POST /files/folders/{id}/upload` | ❌ | editor+ | ✅ | editor+ по ACL; rate-limit 20/мин |
+| `GET /files/download` | viewer+ | viewer+ | ✅ | `require_file_access` = max(folder ACL, file share); `?folder_id=&filename=` |
+| `GET /files/preview` | viewer+ | viewer+ | ✅ | `require_file_access` = max(folder ACL, file share); inline PDF/изображения |
+| `DELETE /files/file` | ❌ | editor+ | ✅ | editor+ по ACL |
+| `POST /files/folders/{id}/bulk-delete` | ❌ | editor+ | ✅ | editor+ по ACL; 3/мин; in-flight-guard |
+| `POST /files/folders/{id}/bulk-move` | ❌ | editor+ | ✅ | editor+ на src и target; 3/мин |
+| `POST /files/open` | viewer+ | viewer+ | ✅ | `require_file_access`; `can_write` при эффективном editor+ |
+| `POST /files/sync` | ❌ | ❌ | ✅ | Синхронизация из Nextcloud (admin) |
+| `GET /files/folders/{id}/permissions` | ❌ | manager* | ✅ | manager по ACL; создатель первым (`is_creator`) |
+| `POST /files/folders/{id}/permissions` | ❌ | manager* | ✅ | manager по ACL; создателя нельзя — 409 |
+| `DELETE /files/folders/{id}/permissions/{id}` | ❌ | manager* | ✅ | manager по ACL; создателя нельзя — 409 |
+| `PATCH /files/folders/{id}/inheritance` | ❌ | manager* | ✅ | Переключить наследование прав |
+| `POST /files/folders/{fid}/files/{filename}/shares` | ❌ | manager* | ✅ | Поделиться файлом; upsert; 20/мин |
+| `GET /files/folders/{fid}/files/{filename}/shares` | ❌ | manager* | ✅ | Список шар файла |
+| `DELETE /files/folders/{fid}/files/{filename}/shares/{sid}` | ❌ | manager* | ✅ | Отозвать шару файла (мягко) |
+| `GET /files/shares/my` | ✅ | ✅ | ✅ | Мои шеры (что я выдал) |
+| `GET /files/shares/shared-with-me` | ✅ | ✅ | ✅ | Доступные мне файлы |
+| `GET /files/admin/shares` | ❌ | ❌ | ✅ | Реестр всех шеров (фильтры + пагинация) |
+| `GET /files/users/search` | ❌ | editor/admin | ✅ | Поиск users/groups (Keycloak) |
+
+> `viewer+` / `editor+` / `manager*` — уровень определяется `file_folder_permissions`, не глобальной ролью. Управление шарами файла (`.../shares`) требует `manager` на папке-контейнере (или admin); re-sharing получателем невозможен by design.
+
+---
+
+## Матрица: Справочники объектов (`/directories`)
+
+> Вкладки в `/staff`. Чтение — любой авторизованный; все мутации (типы, объекты, контакты, аватары) — `editor`/`admin`. Двухуровневый гейтинг: мастер-флаг `modules.json` (`directories.enabled`) выключен → весь раздел 404; тип с `enabled=false` скрыт для не-editor. Каждая мутация → `audit_log` (`resource_type=directory`).
+
+| Endpoint | reader | editor | admin | Примечание |
+|---------|:------:|:------:|:-----:|-----------|
+| `GET /directories` | ✅ | ✅ | ✅ | Список типов-вкладок; editor/admin видят и `enabled=false` |
+| `POST /directories` | ❌ | ✅ | ✅ | Создать тип + его `field_schema`/`channels` |
+| `PATCH /directories/{id}` | ❌ | ✅ | ✅ | Обновить тип |
+| `DELETE /directories/{id}` | ❌ | ✅ | ✅ | Soft-delete типа |
+| `GET /directories/{slug}/entries` | ✅ | ✅ | ✅ | Список объектов; поиск `?q=` по `name` |
+| `GET /directories/{slug}/entries/{id}` | ✅ | ✅ | ✅ | Объект с контактами |
+| `POST /directories/{slug}/entries` | ❌ | ✅ | ✅ | Создать объект; валидация `attributes`/`channel` |
+| `PATCH /directories/{slug}/entries/{id}` | ❌ | ✅ | ✅ | Обновить объект |
+| `DELETE /directories/{slug}/entries/{id}` | ❌ | ✅ | ✅ | Soft-delete объекта |
+| `POST /directories/{slug}/entries/{id}/avatar` | ❌ | ✅ | ✅ | Загрузить фото (streaming + python-magic, `/data`) |
+| `DELETE /directories/{slug}/entries/{id}/avatar` | ❌ | ✅ | ✅ | Удалить фото |
+| `GET /directories/{slug}/export` | ✅ | ✅ | ✅ | Экспорт `?format=csv\|xlsx\|pdf` |
+
+---
+
+## Матрица: Техподдержка (Helpdesk)
+
+> **Полное описание прав/ACL — в [`./helpdesk.md`](./helpdesk.md) §5.** Здесь —
+> сводная матрица. Префикс `/api/v1/helpdesk`. Весь роутер обёрнут в
+> `require_helpdesk_module` → 404 при `modules.json → helpdesk.enabled=false`.
+>
+> **Auth-deps** (поверх роли):
+> - `CurrentUser` — любой авторизованный (создание/чтение своих заявок).
+> - `HelpdeskAgentDep` (`require_helpdesk_agent`) — проверка в `helpdesk_agents`
+>   на каждый запрос; **admin всегда проходит как суперсет**. Источник прав —
+>   только БД, косметический флаг `is_helpdesk_agent` из bootstrap не доверяется.
+> - `AdminDep` — только admin (settings, agents CRUD).
+>
+> Запросы инициатора к чужим тикетам — 404 (не раскрывает существование).
+> `internal`-сообщения отсекаются в mapper'е для requester-view.
+
+Обозначения: `👤` — инициатор (свой тикет), `🛠` — helpdesk-агент (или admin),
+`⚙` — admin-only, `🌐` — module-gate (404 при выключенном модуле).
+
+### Заявки (инициатор — `CurrentUser`)
+
+| Endpoint | reader | editor | admin | Примечание |
+|---------|:------:|:------:|:-----:|-----------|
+| `POST /tickets` | ✅ | ✅ | ✅ | Создать заявку (rate-limit 5/мин); мутация пишется в audit только при назначении/смене статуса |
+| `GET /tickets/my` | ✅ | ✅ | ✅ | Свои заявки (фильтры `status`/`unassigned`/`assigned`, пагинация) |
+| `GET /tickets/my/counts` | ✅ | ✅ | ✅ | Лёгкий `{active: N}` для бейджа «Поддержка» |
+| `GET /tickets/my/{id}` | ✅ (свои) | ✅ (свои) | ✅ | Свой тикет с публичными сообщениями + `requester_profile`; чужой → 404 |
+| `POST /tickets/my/{id}/read` | ✅ (свои) | ✅ (свои) | ✅ | Снять подсветку ответов агентов (UPSERT read-state); без audit/rate-limit |
+| `POST /tickets/my/{id}/messages` | ✅ (свои) | ✅ (свои) | ✅ | Ответ инициатора (rate-limit 20/мин); `inbound`/`public` |
+| `GET /attachments/{id}` | ✅ (свои) | ✅ (свои) | ✅ | Скачать вложение; автор/агент/админ, иначе 404 |
+
+### Инбокс и операции агента (`HelpdeskAgentDep` — агент или admin)
+
+| Endpoint | reader | editor | admin | Примечание |
+|---------|:------:|:------:|:-----:|-----------|
+| `GET /tickets` | 🛠 | 🛠 | ✅ | Инбокс: фильтры + FTS `q` (миграция 078) + `unread: bool` per row |
+| `GET /tickets/counts` | 🛠 | 🛠 | ✅ | `{active: N}` — тикеты, назначенные агенту, в new/open/pending |
+| `GET /tickets/{id}` | 🛠 | 🛠 | ✅ | Карточка (`TicketAgentOut`): все сообщения + служебные поля |
+| `POST /tickets/{id}/messages` | 🛠 | 🛠 | ✅ | Ответ (`visibility` public/internal); public → `pending` + outbound email |
+| `POST /tickets/{id}/inline-media` | 🛠\|👤 | 🛠\|👤 | ✅ | Загрузка inline-картинки TipTap (автор тикета ИЛИ агент/админ) |
+| `GET /tickets/{id}/inline-media/{file}` | 🛠\|👤 | 🛠\|👤 | ✅ | Отдача inline-картинки (ACL тот же); no-store+nosniff |
+| `POST /tickets/{id}/assign` | 🛠 | 🛠 | ✅ | Назначить `assignee_user_id` + email инициатору |
+| `POST /tickets/{id}/take` | 🛠 | 🛠 | ✅ | Взять на себя (409 если уже назначен) |
+| `PATCH /tickets/{id}/status` | 🛠 | 🛠 | ✅ | Сменить статус (409 на запрещённый переход) |
+| `POST /tickets/{id}/reopen` | 🛠 | 🛠 | ✅ | Reopen из `closed` (409 иначе) |
+| `POST /tickets/{id}/read` | 🛠 | 🛠 | ✅ | UPSERT read-state для пары `(ticket, agent)` |
+
+### Управление (`AdminDep` — только admin)
+
+| Endpoint | reader | editor | admin | Примечание |
+|---------|:------:|:------:|:-----:|-----------|
+| `GET /agents` | ❌ | ❌ | ✅ | Список агентов поддержки |
+| `POST /agents` | ❌ | ❌ | ✅ | Добавить агента (`user_id`, `notify_new`); 409 если уже агент |
+| `PATCH /agents/{user_id}` | ❌ | ❌ | ✅ | Изменить `notify_new` |
+| `DELETE /agents/{user_id}` | ❌ | ❌ | ✅ | Удалить агента |
+| `GET /settings/mailbox` | ❌ | ❌ | ✅ | Singleton IMAP-настроек support-ящика |
+| `PUT /settings/mailbox` | ❌ | ❌ | ✅ | Создать/обновить; `imap_password_enc` Fernet (write-only) |
+| `POST /settings/mailbox/test` | ❌ | ❌ | ✅ | Проверка IMAP-соединения; маскированная ошибка |
+| `GET /settings/digest` | ❌ | ❌ | ✅ | Singleton расписания сводки |
+| `PUT /settings/digest` | ❌ | ❌ | ✅ | Обновить расписание (аудит `helpdesk.digest_settings_changed`) |
+| `GET /settings/max-bot` | ❌ | ❌ | ✅ | Singleton MAX-бота (`enabled`, `bot_token_set`, `chat_id`, `configured`) |
+| `PUT /settings/max-bot` | ❌ | ❌ | ✅ | Обновить; токен write-only. При `enabled=True` требует токен+chat_id (400 иначе). |
+| `POST /settings/max-bot/test` | ❌ | ❌ | ✅ | End-to-end: реальное сообщение в чат через MAX Bot API |
+
+> Module-gate (`require_helpdesk_module`): всё, что не 404 при выключенном
+> `helpdesk.enabled`. Настройки MAX-бота (`/settings/max-bot*`) доступны только
+> при включённом модуле (входят в общий helpdesk-роутер).
+
+---
+
+## Матрица: Переговорные (`/meetings`)
+
+> Module-gate: при выключенном `meetings.enabled` весь раздел 404.
+
+| Endpoint | reader | editor | admin | Примечание |
+|---------|:------:|:------:|:-----:|-----------|
+| `GET /meetings/rooms` | ✅ | ✅ | ✅ | Список активных комнат |
+| `POST/PUT/DELETE /meetings/rooms/{id}` | ❌ | ❌ | ✅ | Управление комнатами |
+| `GET /meetings/bookings`, `/bookings/my` | ✅ | ✅ | ✅ | Списки бронирований |
+| `POST /meetings/bookings` | ✅ | ✅ | ✅ | Создать бронирование (конфликт-чек PG EXCLUDE) |
+| `GET/PUT/DELETE /meetings/bookings/{id}` | ✅* | ✅* | ✅ | CRUD — только владелец (`*` чужие → 403) |
+| `GET /meetings/participants/search` | ✅ | ✅ | ✅ | Поиск участников (Keycloak + внешние по email) |
+| `PUT/DELETE /meetings/series/{id}`, `GET .../count` | ✅* | ✅* | ✅ | Серия — только владелец |
+
+---
+
+## Матрица: Обратная связь (`/feedback`)
+
+| Endpoint | reader | editor | admin | Примечание |
+|---------|:------:|:------:|:-----:|-----------|
+| `POST /feedback` | ✅ | ✅ | ✅ | Создать обращение |
+| `GET /feedback/my`, `/feedback/my/{id}` | ✅ | ✅ | ✅ | Только свои обращения |
+| `GET /feedback`, `/feedback/{id}` | ❌ | ❌ | ✅ | Лента всех обращений + карточка |
+| `POST /feedback/{id}/reply` | ❌ | ❌ | ✅ | Ответ админа |
+| `PATCH /feedback/{id}/status` | ❌ | ❌ | ✅ | Смена статуса |
+| `POST /feedback/{id}/attachments` | ✅* | ✅* | ✅ | Автор обращения или admin |
+| `GET /feedback/{id}/attachments/{aid}` | ✅* | ✅* | ✅ | Автор или admin |
+| `DELETE /feedback/{id}/attachments/{aid}` | ❌ | ❌ | ✅ | Удаление вложения |
+
+---
+
+## Матрица: Генератор email-подписей (`/signature`)
+
+> Module-gate: при выключенном `signature.enabled` весь раздел 404.
+
+| Endpoint | reader | editor | admin | Примечание |
+|---------|:------:|:------:|:-----:|-----------|
+| `GET /signature/config` | ✅ | ✅ | ✅ | Публичная конфигурация формы |
+| `POST /signature/generate` | ✅ | ✅ | ✅ | Сгенерировать HTML (preview) |
+| `POST /signature/download` | ✅ | ✅ | ✅ | Скачать `.htm` |
+| `GET/PUT /signature/admin/settings` | ❌ | ❌ | ✅ | Города/телефоны/домен |
+
+---
+
+## Матрица: Опросы в новостях (`/news/{id}/poll/*`)
+
+> Опросы живут внутри модуля новостей — права наследуются от news (создание/редактирование опроса = `editor+`; голосование = любой `CurrentUser`).
+
+| Endpoint | reader | editor | admin | Примечание |
+|---------|:------:|:------:|:-----:|-----------|
+| `GET /news/{id}/poll` | ✅ | ✅ | ✅ | Просмотр опроса (результаты — по `results_visibility`) |
+| `POST/PATCH/DELETE /news/{id}/poll` | ❌ | ✅ | ✅ | CRUD опроса — автор новости или admin |
+| `POST /news/{id}/poll/close`, `/reopen` | ❌ | ✅ | ✅ | Управление статусом опроса |
+| `POST /news/{id}/poll/vote`, `DELETE .../vote` | ✅ | ✅ | ✅ | Голосование / отзыв голоса (один пользователь — один голос) |
+| `GET /news/{id}/poll/voters` | ❌ | ✅ | ✅ | Кто проголосовал (только при открытой `results_visibility`) |
+
+---
+
+## Матрица: Онбординг (`/portal/onboarding`, `/admin/system/onboarding`)
+
+> Системные шаги экскурса по порталу. Module-gate не нужен (базовый модуль).
+
+| Endpoint | reader | editor | admin | Примечание |
+|---------|:------:|:------:|:-----:|-----------|
+| `GET /portal/onboarding` | ✅ | ✅ | ✅ | Публичные шаги + дельта-режим (`is_new`) |
+| `GET /admin/system/onboarding/steps` | ❌ | ❌ | ✅ | Список шагов (admin) |
+| `PUT /admin/system/onboarding/steps/{id}` | ❌ | ❌ | ✅ | Редактировать шаг |
+| `POST /admin/system/onboarding/reset-views` | ❌ | ❌ | ✅ | Сбросить счётчик просмотров шага |
+
+---
+
+## Матрица: Модуль обучения (`/learning`, `/auth/learning`)
+
+> Текущее ТЗ — [`../docs/wip/learning.md`](./wip/learning.md) §3. Префиксы
+> `/api/v1/learning` и `/api/v1/auth/learning`. Весь контур обёрнут в
+> `require_learning_module` → 404 при `modules.json → learning.enabled=false`
+> (**включая auth/learning** — при выключенном модуле вход/восстановление тоже 404).
+>
+> **Auth-deps** (поверх роли):
+> - `CurrentLearningParticipant` — сотрудник (портальная сессия) ИЛИ внешняя
+>   учётка (cookie `learning_session`);learner-cookie на портал-эндпоинтах → 401 и наоборот.
+> - `CurrentLearner` — только внешняя учётка (auth/learning/change-password).
+> - `LearningAdminDep` (`require_learning_admin`) — членство в `learning_admins`
+>   на каждый запрос; **admin всегда проходит как суперсет** (паттерн helpdesk_agents).
+> - `AdminDep` — только admin (назначение/снятие методистов).
+>
+> Внешние учётки живут в `learning_accounts`, вне `users` и Keycloak. DB-контур —
+> отдельная роль `learning_app` (гранты только на `learning_*` + INSERT `email_outbox`).
+
+| Endpoint-группа | learner/участник | методист | admin | Примечание |
+|---------|:------:|:------:|:-----:|-----------|
+| `POST /auth/learning/login` (запрос кода) · `verify` · `logout` | 🌐 публично | — | — | Только внешние учётки; rate-limits IP+email; анти-enumeration (паролей нет — миграция 113) |
+| `GET /learning/me/*` (курсы, попытки, complete, file) | ✅ участник | ✅ | ✅ | Участник = зачисленный сотрудник или внешняя учётка; не участник → 404 «Курс недоступен» |
+| `POST /learning/me/tests/{id}/attempts` · `/submit` | ✅ участник | ✅ | ✅ | Лимит попыток по отправленным; правильные ответы не отдаются |
+| `learning/admin/courses*` (CRUD, publish, элементы, тесты, вопросы) | ❌ | ✅ | ✅ | Замок правок теста при наличии попыток (§15, 409) |
+| `learning/admin/courses/{id}/participants` · `progress` | ❌ | ✅ | ✅ | Зачисление staff/external (XOR), soft-исключение, прогресс одним списком |
+| `learning/admin/accounts*` (создание, xlsx-шаблон/импорт, ручная выдача кода `login-code`, block/unblock) | ❌ | ✅ | ✅ | Учетки passwordless: вход по одноразовому коду из письма; plaintext кода — только в ответе `login-code`; импорт ≤1000 строк |
+| `learning/admins` (GET/POST/DELETE — назначение методистов) | ❌ | ❌ | ✅ | §3 ТЗ: методиста назначает только глобальный админ |
+| `PUT /admin/modules/learning` | ❌ | ❌ | ✅ | Мастер-флаг модуля (Admin UI → «Модули») |
+
+---
+
+## Матрица: Согласование документов (`/approvals`, 1С)
+
+> Модуль-гейт `modules.approvals.enabled` — при выключении весь
+> `/api/v1/approvals/*` → 404. Видимость документов определяет 1С: список
+> фильтрован по токену пользователя; карточка/действия ищут документ только
+> в своём списке (чужой GUID → 404), после пакета доработок 1С дополнительно
+> перепроверяет токен. Полностью — [`./approvals.md`](./approvals.md).
+
+| Endpoint | reader/editor/admin | Примечание |
+|---------|:------:|-----------|
+| `GET /approvals`, `GET /approvals/{uuid}`, `GET …/attachments/{index}` | ✅ все авторизованные | Список/карточка/вложение; пусто у кого нет документов |
+| `POST /approvals/{uuid}/approve` · `/reject` | ✅ все авторизованные | Отклонение — только с непустым комментарием (422); `requires_manager` → обязателен `manager_guid` из списка документа (422) |
+| `POST /approvals/bulk-approve` | ✅ все авторизованные | ≤50 uuid; `requires_manager`-документы не согласуются (per-item `ok=false`) |
+| `GET|PUT /approvals/settings` · `POST /approvals/test` | ❌ ❌ ✅ | Подключение к 1С (пароль write-only); audit `approvals.settings_updated` |
+| `PUT /admin/modules/approvals` | ❌ ❌ ✅ | Мастер-флаг модуля (Admin UI → «Модули») |
+
+---
+
+## Правила применения в коде
+
+1. **Всегда использовать `Depends(require_role(...))`** — не проверять роль внутри функции endpoint
+2. **«Свои» ресурсы** (`editor` редактирует только свои): дополнительная проверка `resource.created_by == current_user.id` внутри endpoint
+3. **Soft-deleted ресурсы** не возвращаются никому без `?include_deleted=true` (только `admin`)
+4. **Файловые операции** — авторизация через ACL портала (`file_folder_permissions`). Nextcloud используется как хранилище через service account `portal-svc` (ADR-032)
+5. **Audit log пишется для всех операций** — включая неудачные (403, 404) с event_type `access_denied`

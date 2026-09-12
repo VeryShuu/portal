@@ -1,0 +1,9 @@
+{
+  "threshold": 4,
+  "minTokens": 70,
+  "path": ["src"],
+  "ignore": ["**/types.gen.d.ts"],
+  "reporters": ["console"],
+  "gitignore": true,
+  "absolute": true
+}

@@ -1,0 +1,157 @@
+"""Shared DB fixtures for tests that need real PostgreSQL.
+
+Изначально жили в ``tests/integration/conftest.py``. Вынесены в отдельный модуль,
+чтобы их можно было импортировать и в ``tests/unit/`` для пометки
+``@pytest.mark.unit_with_db`` (см. REVIEW-2.1: поэтапный перенос mock-heavy
+unit-тестов на реальную БД).
+
+Все фикстуры пропускают тест через ``pytest.skip``, если ``INTEGRATION_DB`` не
+выставлен в true — это значит, что в обычном unit-прогоне они безопасны.
+"""
+
+from __future__ import annotations
+
+import contextlib
+import os
+import uuid
+from datetime import UTC, datetime
+
+import pytest
+import pytest_asyncio
+
+
+@pytest_asyncio.fixture(scope="session")
+async def real_db_engine():
+    """Единственный engine на весь прогон (session-scoped).
+
+    Создание/dispose engine на каждый тест стоило ~0.1s на тест (×41 файл
+    integration-тестов). Безопасно, потому что весь прогон живёт в одном
+    event loop (`asyncio_default_fixture_loop_scope = "session"` в
+    pyproject.toml) — cross-loop соединений из пула не бывает.
+    """
+    if os.environ.get("INTEGRATION_DB", "false").lower() not in ("1", "true", "yes"):
+        pytest.skip("INTEGRATION_DB=true required")
+
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    from app.core.config import get_settings
+
+    settings = get_settings()
+    engine = create_async_engine(
+        settings.database_url,
+        pool_pre_ping=True,
+        connect_args={"server_settings": {"statement_timeout": "30000"}},
+    )
+    try:
+        yield engine
+    finally:
+        await engine.dispose()
+
+
+@pytest_asyncio.fixture
+async def real_db_session(real_db_engine):
+    """Сессия с изоляцией через SAVEPOINT/ROLLBACK.
+
+    Каждый тест выполняется внутри SAVEPOINT, который откатывается в конце —
+    данные не остаются в БД, не нужен TRUNCATE и нет конфликтов блокировок.
+
+    Тесты могут вызывать session.flush() для получения id и проверки constraints.
+    Не используйте session.commit() — он переносит изменения на уровень выше SAVEPOINT.
+    """
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    conn = await real_db_engine.connect()
+    await conn.begin()
+    savepoint = await conn.begin_nested()
+    session = AsyncSession(
+        bind=conn, expire_on_commit=False, join_transaction_mode="create_savepoint"
+    )
+
+    try:
+        yield session
+    finally:
+        await session.close()
+        with contextlib.suppress(Exception):
+            await savepoint.rollback()
+        with contextlib.suppress(Exception):
+            await conn.rollback()
+        await conn.close()
+
+
+@pytest_asyncio.fixture
+async def real_user(real_db_session):
+    """Реальный пользователь в БД."""
+    from app.models.user import User
+
+    user = User(
+        email=f"user-{uuid.uuid4().hex[:8]}@portal.local",
+        full_name="Integration User",
+        department="IT",
+        position="Engineer",
+        phone="101",
+        role="reader",
+        auth_source="local",
+        password_hash=None,
+        current_status="working",
+        notify_email=True,
+        notify_inapp=True,
+        lang="ru",
+        preferences={},
+        attributes={"city": "Москва", "mobile": "+7 900 000-00-01"},
+        updated_at=datetime.now(UTC),
+    )
+    real_db_session.add(user)
+    await real_db_session.commit()
+    await real_db_session.refresh(user)
+    return user
+
+
+@pytest_asyncio.fixture
+async def real_editor(real_db_session):
+    from app.models.user import User
+
+    user = User(
+        email=f"editor-{uuid.uuid4().hex[:8]}@portal.local",
+        full_name="Integration Editor",
+        department="HR",
+        position="Manager",
+        phone="202",
+        role="editor",
+        auth_source="local",
+        current_status="working",
+        notify_email=True,
+        notify_inapp=True,
+        lang="ru",
+        preferences={},
+        attributes={"city": "Санкт-Петербург", "mobile": "+7 900 000-00-02"},
+        updated_at=datetime.now(UTC),
+    )
+    real_db_session.add(user)
+    await real_db_session.commit()
+    await real_db_session.refresh(user)
+    return user
+
+
+@pytest_asyncio.fixture
+async def real_admin(real_db_session):
+    from app.core.security import hash_password
+    from app.models.user import User
+
+    user = User(
+        email=f"admin-{uuid.uuid4().hex[:8]}@portal.local",
+        full_name="Integration Admin",
+        department="IT",
+        role="admin",
+        auth_source="local",
+        password_hash=hash_password("Adm1nP@ss!"),
+        current_status="working",
+        notify_email=True,
+        notify_inapp=True,
+        lang="ru",
+        preferences={},
+        updated_at=datetime.now(UTC),
+    )
+    real_db_session.add(user)
+    await real_db_session.commit()
+    await real_db_session.refresh(user)
+    return user

@@ -1,0 +1,126 @@
+import uuid
+from datetime import date, datetime
+
+from sqlalchemy import (
+    ARRAY,
+    Boolean,
+    CheckConstraint,
+    Date,
+    DateTime,
+    Index,
+    Integer,
+    SmallInteger,
+    String,
+    Text,
+    UniqueConstraint,
+    text,
+)
+from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.orm import Mapped, mapped_column
+
+from app.core.database import Base
+
+
+class User(Base):
+    __tablename__ = "users"
+    __table_args__ = (
+        CheckConstraint("role IN ('reader', 'editor', 'admin')", name="ck_users_role"),
+        CheckConstraint("lang IN ('ru', 'en')", name="ck_users_lang"),
+        CheckConstraint(
+            "auth_source IN ('keycloak', 'local')",
+            name="ck_users_auth_source",
+        ),
+        # ERP-синхронизация (миграция 087): пол сотрудника из ERP-выгрузки.
+        CheckConstraint("gender IS NULL OR gender IN ('male', 'female')", name="ck_users_gender"),
+        # ERP-синхронизация (миграция 093): вычисляемый статус присутствия из
+        # отсутствий (erp_absences). Источник истины — только ERP; ручной выбор
+        # убран. См. app/services/erp_sync/absences_status.py.
+        CheckConstraint(
+            "current_status IN ('working', 'vacation', 'sick', 'business_trip')",
+            name="ck_users_current_status",
+        ),
+        # Фокальная точка + зум аватара (миграция 096) — тот же паттерн, что у
+        # news.cover_focal_*: NULL = центр/без зума, отрисовка на фронтенде CSS'ом.
+        CheckConstraint(
+            "avatar_focal_x IS NULL OR (avatar_focal_x BETWEEN 0 AND 100)",
+            name="ck_users_avatar_focal_x_range",
+        ),
+        CheckConstraint(
+            "avatar_focal_y IS NULL OR (avatar_focal_y BETWEEN 0 AND 100)",
+            name="ck_users_avatar_focal_y_range",
+        ),
+        CheckConstraint(
+            "avatar_focal_zoom IS NULL OR (avatar_focal_zoom BETWEEN 100 AND 300)",
+            name="ck_users_avatar_focal_zoom_range",
+        ),
+        UniqueConstraint("keycloak_id", name="uq_users_keycloak_id"),
+        # Уникальность email на уровне БД — case-insensitive и только для
+        # активных (не soft-deleted) пользователей (миграции 030/037).
+        # Раньше модель декларировала обычный case-sensitive uq_users_email,
+        # которого в БД уже нет → расхождение модель↔миграции.
+        Index(
+            "idx_users_email_ci_active",
+            text("lower(email)"),
+            unique=True,
+            postgresql_where=text("deleted_at IS NULL"),
+        ),
+        Index("idx_users_email_lower", text("lower(email)")),
+        Index(
+            "idx_users_directory_active",
+            "department",
+            "full_name",
+            postgresql_where=text("deleted_at IS NULL"),
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    keycloak_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    auth_source: Mapped[str] = mapped_column(String(20), nullable=False, default="keycloak")
+    password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    email: Mapped[str] = mapped_column(String(255), nullable=False)
+    full_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    department: Mapped[str | None] = mapped_column(String(255))
+    position: Mapped[str | None] = mapped_column(String(255))
+    phone: Mapped[str | None] = mapped_column(String(50))
+    role: Mapped[str] = mapped_column(String(20), nullable=False, default="reader")
+    avatar_url: Mapped[str | None] = mapped_column(String(512))
+    # Фокальная точка + зум аватара (миграция 096): NULL = центр 50/50, зум 100.
+    # Пользователь подгоняет после загрузки (drag + слайдер, как у news-cover).
+    avatar_focal_x: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    avatar_focal_y: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    avatar_focal_zoom: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    # Вычисляемый статус присутствия (миграция 093): working/vacation/sick/
+    # business_trip. Пересчитывается импортёром erp_absences и ежедневным cron'ом.
+    current_status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="working", server_default=text("'working'")
+    )
+    current_status_until: Mapped[date | None] = mapped_column(Date, nullable=True)
+    notify_email: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    notify_inapp: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    lang: Mapped[str] = mapped_column(String(5), nullable=False, default="ru")
+    preferences: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    keycloak_groups: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), nullable=False, server_default="{}"
+    )
+    attributes: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb"), default=dict
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("NOW()")
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("NOW()")
+    )
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    staff_sort_order: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    staff_hidden: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false"), default=False
+    )
+    # ERP-синхронизация (миграция 087): дата рождения и пол из ERP-выгрузки.
+    # Nullable — у существующих пользователей этих данных изначально нет.
+    # Видны всем авторизованным в карточке /staff (аналогично position/phone).
+    birth_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    gender: Mapped[str | None] = mapped_column(String(10), nullable=True)

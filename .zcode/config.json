@@ -1,0 +1,40 @@
+{
+  "mcp": {
+    "servers": {
+      "playwright": {
+        "type": "stdio",
+        "command": "npx",
+        "args": [
+          "-y",
+          "@playwright/mcp@0.0.79",
+          "--isolated",
+          "--headless",
+          "--browser",
+          "firefox",
+          "--user-agent",
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.6422.112 Safari/537.3"
+        ]
+      },
+      "postgres": {
+        "type": "stdio",
+        "command": "bash",
+        "args": ["/home/snow/portal/scripts/mcp/postgres-run.sh"]
+      },
+      "grafana": {
+        "type": "stdio",
+        "command": "bash",
+        "args": ["/home/snow/portal/scripts/mcp/grafana-run.sh"]
+      },
+      "docker": {
+        "type": "stdio",
+        "command": "npx",
+        "args": ["-y", "mcp-docker-server@1.0.1"]
+      },
+      "context7": {
+        "type": "stdio",
+        "command": "npx",
+        "args": ["-y", "@upstash/context7-mcp@4.0.4"]
+      }
+    }
+  }
+}

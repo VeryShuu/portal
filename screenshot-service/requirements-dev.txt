@@ -1,0 +1,10 @@
+# Dev/test deps for screenshot-service unit tests.
+# Pinned lower bounds to match backend's pytest stack (pyproject.toml).
+pytest>=9.1.1
+pytest-asyncio>=1.0.0
+# test_main.py тестирует aiohttp-приложение и модуль main.py, который
+# импортирует playwright.async_api на верхнем уровне (аудит 2026-08-23, P1.4).
+# Версии совпадают с requirements.txt (prod).
+aiohttp==3.14.3
+playwright==1.61.0
+prometheus-client==0.26.0

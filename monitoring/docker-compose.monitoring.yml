@@ -1,0 +1,480 @@
+# Docker Compose overlay для observability-стека
+# (Prometheus + Alertmanager + Grafana + Loki + Alloy).
+#
+# НЕ подключается автоматически к основному docker-compose.yml — это overlay,
+# который поднимается явно через `-f`. Так тяжёлые образы (~900 МБ суммарно)
+# не тащатся в базовый деплой портала.
+#
+# Запуск (полный observability-стек — метрики + логи + алерты + UI):
+#   docker compose \
+#     -f docker-compose.yml \
+#     -f monitoring/docker-compose.monitoring.yml \
+#     up -d prometheus alertmanager grafana loki alloy
+#
+# Запуск с scrape-токеном (если metrics_token задан в system.json):
+#   PORTAL_METRICS_TOKEN="$(jq -r .metrics_token // empty system_data/settings/system.json)" \
+#     docker compose \
+#       -f docker-compose.yml \
+#       -f monitoring/docker-compose.monitoring.yml \
+#       up -d prometheus
+#
+# Сервисы подключаются к существующей сети `portal_internal` (объявлена в
+# основном docker-compose.yml), поэтому видят `backend`, `redis`, `postgres`.
+# Alloy дополнительно монтирует Docker socket (read-only) для discovery
+# контейнеров и attach к их stdout/stderr.
+#
+# Volumes (данные переживают restart):
+#   - prometheus-data      — TSDB (≈30 дней retention по умолчанию)
+#   - alertmanager-data    — state алертов (silences, notifications)
+#   - grafana-data         — пользователи, дашборды (правленные через UI)
+#   - loki-data            — чанки логов (retention 30d, compactor чистит)
+#
+# UI (на хосте, проброшены на 127.0.0.1 — через SSH-туннель или reverse-proxy):
+#   Prometheus :9090  Alertmanager :9093  Grafana :3001  Loki :3100  Alloy :12345
+
+services:
+  prometheus:
+    image: prom/prometheus:v3.13.2
+    container_name: portal-prometheus
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    # Prometheus (Go) не умеет раскрывать ${VAR} в конфиге — как и Alertmanager,
+    # конфиг рендерится при старте (render-prometheus.sh): подставляет
+    # PORTAL_METRICS_TOKEN, при пустом токене вырезает authorization-блок,
+    # проверяет результат promtool'ом и exec'ает /bin/prometheus.
+    entrypoint: ["/usr/local/bin/render-prometheus.sh"]
+    command:
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=30d"
+      - "--storage.tsdb.retention.size=10GB"
+      - "--web.console.libraries=/usr/share/prometheus/console_libraries"
+      - "--web.console.templates=/usr/share/prometheus/consoles"
+      - "--web.enable-lifecycle"   # позволяет POST /-/reload без restart
+    volumes:
+      # Шаблон (рендерится при старте) + сам render-скрипт.
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.tmpl:ro
+      - ./monitoring/prometheus/render-prometheus.sh:/usr/local/bin/render-prometheus.sh:ro
+      # Alert-rules (portal.yml) + recording-rules (recording.yml);
+      # НЕ alertmanager.yml — это config alertmanager-сервиса, для
+      # Prometheus это невалидный rules-файл.
+      - ./monitoring/alerts/portal.yml:/etc/prometheus/rules/portal.yml:ro
+      - ./monitoring/alerts/recording.yml:/etc/prometheus/rules/recording.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      # По умолчанию — только localhost (безопасно: web UI без auth).
+      # Для доступа из Windows в WSL2: MONITORING_BIND=0.0.0.0 в .env.
+      - "${MONITORING_BIND:-127.0.0.1}:9090:9090"
+    environment:
+      # Подставляется в prometheus.yml::scrape_configs.authorization.credentials.
+      # Пустая строка → /metrics открыт (закрытый периметр/VPN).
+      PORTAL_METRICS_TOKEN: ${PORTAL_METRICS_TOKEN:-}
+      # Цели blackbox-проб (file_sd, см. render-prometheus.sh и .env.example).
+      BLACKBOX_TARGETS: ${BLACKBOX_TARGETS:-}
+      BLACKBOX_TARGETS_INSECURE: ${BLACKBOX_TARGETS_INSECURE:-}
+    networks:
+      - internal
+      - external
+    logging: &default-logging
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
+        compress: "true"
+
+  alertmanager:
+    image: prom/alertmanager:v0.33.1
+    container_name: portal-alertmanager
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    # Alertmanager (Go) не умеет раскрывать ${VAR} в YAML, а Docker Compose
+    # интерполирует ${VAR} только в своих own .yml, не в смонтированных файлах.
+    # Образ prom/alertmanager — busybox-only (без envsubst). Поэтому монтируем
+    # alertmanager.yml как ШАБЛОН и рендерим скриптом render-alertmanager.sh
+    # (awk; срезает внешние кавычки из env-значений, переживая спецсимволы в
+    # паролях) при старте контейнера → готовый конфиг в /tmp/alertmanager.yml.
+    entrypoint: ["/usr/local/bin/render-alertmanager.sh"]
+    environment:
+      ALERT_SMTP_HOST: ${ALERT_SMTP_HOST:-}
+      ALERT_SMTP_PORT: ${ALERT_SMTP_PORT:-25}
+      ALERT_SMTP_FROM: ${ALERT_SMTP_FROM:-portal-alerts@localhost}
+      ALERT_SMTP_USER: ${ALERT_SMTP_USER:-}
+      ALERT_SMTP_PASSWORD: ${ALERT_SMTP_PASSWORD:-}
+      # Пусто → render-alertmanager.sh вычислит сам: false при :25 (plaintext
+      # relay), true иначе. Дефолт Alertmanager — всегда true (см. alertmanager.yml).
+      ALERT_SMTP_REQUIRE_TLS: ${ALERT_SMTP_REQUIRE_TLS:-}
+      ALERT_ADMINS_EMAIL: ${ALERT_ADMINS_EMAIL:-}
+      # Webhook-дубль алертов в Matrix (bridge matrix-alertmanager ниже,
+      # profile `matrix`). Пусто → render-скрипт вырезает webhook-блок,
+      # email остаётся единственным каналом.
+      ALERT_MATRIX_WEBHOOK_URL: ${ALERT_MATRIX_WEBHOOK_URL:-}
+      # Dead-man приёмник Watchdog (MON-13): внешний контроль пропажи
+      # самого мониторинга. Пусто = no-op приёмник (pending_external).
+      ALERT_DEADMAN_WEBHOOK_URL: ${ALERT_DEADMAN_WEBHOOK_URL:-}
+    volumes:
+      - ./monitoring/alerts/alertmanager.yml:/etc/alertmanager/alertmanager.tmpl:ro
+      - ./monitoring/alerts/render-alertmanager.sh:/usr/local/bin/render-alertmanager.sh:ro
+      - alertmanager-data:/alertmanager
+    ports:
+      - "${MONITORING_BIND:-127.0.0.1}:9093:9093"
+    networks:
+      - internal
+      - external
+    logging: *default-logging
+
+  grafana:
+    image: grafana/grafana:13.1.3
+    container_name: portal-grafana
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      # Учётка admin создаётся при ПЕРВОМ старте на свежем volume grafana-data
+      # (на существующем volume смена env-пароля эффекта не даёт).
+      # OAuth/auth-proxy — через runtime-настройки Grafana, не через env.
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      # root_url Grafana использует для абсолютных ссылок (share-ссылки на
+      # дашборды, ссылки из alert-уведомлений). При доступе из сети указать
+      # реальный адрес: GRAFANA_ROOT_URL=http://<host-или-IP>:3001 в .env.
+      GF_SERVER_ROOT_URL: "${GRAFANA_ROOT_URL:-http://localhost:3001}"
+      # Плагины из Grafana catalog качаются при старте (нужен доступ к
+      # grafana.com). Для Logs Drilldown (Patterns): grafana-lokiexplore-app.
+      GF_INSTALL_PLUGINS: ${GRAFANA_INSTALL_PLUGINS:-}
+    volumes:
+      # Provisioning — datasources и dashboards загружаются при старте.
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/portal-overview.json:/var/lib/grafana/dashboards/portal-overview.json:ro
+      - ./monitoring/grafana/portal-logs.json:/var/lib/grafana/dashboards/portal-logs.json:ro
+      - ./monitoring/grafana/portal-infrastructure.json:/var/lib/grafana/dashboards/portal-infrastructure.json:ro
+      - ./monitoring/grafana/portal-storage.json:/var/lib/grafana/dashboards/portal-storage.json:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      # Grafana — единственный UI мониторинга с собственной авторизацией,
+      # поэтому привязывается отдельной переменной и по умолчанию смотрит
+      # в сеть. Остальные UI (без auth) — на loopback через MONITORING_BIND.
+      # Заблокировать обратно: GRAFANA_BIND=127.0.0.1 в .env.
+      - "${GRAFANA_BIND:-0.0.0.0}:3001:3000"
+    networks:
+      - internal
+      - external
+    logging: *default-logging
+
+  # ---------------------------------------------------------------------
+  # Loki — централизованное хранилище логов. Приём push от Alloy на :3100.
+  # Single-binary (monolith) — достаточно для ~300 сотрудников. Retention 30d.
+  # ---------------------------------------------------------------------
+  loki:
+    image: grafana/loki:3.7.6
+    container_name: portal-loki
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    command:
+      - "-config.file=/etc/loki/config.yml"
+      # pattern-ingester — отдельный target (в `all` не входит): агрегация
+      # шаблонов логов для Grafana Logs Drilldown → Patterns. Работает только
+      # на логах, принятых после включения.
+      - "-target=all,pattern-ingester"
+    volumes:
+      - ./monitoring/loki/config.yml:/etc/loki/config.yml:ro
+      # Rules для ruler (см. monitoring/loki/rules/fake/portal-loki-rules.yaml).
+      # Bind-mount перекрывает путь /loki/rules внутри volume loki-data — это
+      # безопасно: ruler только читает rules, рабочий путь /loki/rules-tmp.
+      # Конвенция путей: при auth_enabled: false tenant = `fake` → поддиректория
+      # fake/ обязательна (файл прямо в rules/ загружен НЕ будет).
+      - ./monitoring/loki/rules:/loki/rules:ro
+      - loki-data:/loki
+    ports:
+      - "${MONITORING_BIND:-127.0.0.1}:3100:3100"
+    # NB: с Loki 3.6.0 busybox убран из образа — wget/curl недоступны,
+    # встроенный HTTP-healthcheck (/ready) сделать нечем (upstream issue
+    # grafana/loki#20149). Готовность обеспечивается restart: unless-stopped;
+    # ручная проверка: curl http://localhost:3100/ready с хоста.
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1g
+    networks:
+      - internal
+      - external
+    logging: *default-logging
+
+  # ---------------------------------------------------------------------
+  # Alloy — сборщик логов. Discovery через Docker socket, attach к stdout/
+  # stderr контейнеров portal-*, push в Loki. Заменяет Promtail (maintenance).
+  # ---------------------------------------------------------------------
+  alloy:
+    image: grafana/alloy:v1.18.1
+    container_name: portal-alloy
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    command:
+      - "run"
+      - "/etc/alloy/config.alloy"
+      - "--server.http.listen-addr=0.0.0.0:12345"
+      - "--stability.level=generally-available"
+    volumes:
+      - ./monitoring/alloy/config.alloy:/etc/alloy/config.alloy:ro
+      # Docker socket — discovery контейнеров + attach к stdout/stderr.
+      # Read-only: discovery + attach работают на чтение; alloy не управляет
+      # контейнерами (не start/stop), только читает логи.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    ports:
+      - "${MONITORING_BIND:-127.0.0.1}:12345:12345"
+    depends_on:
+      - loki    # без service_healthy — у Loki нет встроенного healthcheck (см. выше)
+    # NB: образ alloy не содержит wget/curl (upstream #477) — встроенный
+    # healthcheck невозможен. Готовность: restart + ручная проверка
+    # http://localhost:12345/-/ready с хоста.
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512m
+    networks:
+      - internal
+      - external
+    logging: *default-logging
+
+  # ---------------------------------------------------------------------
+  # Exporter'ы — инфраструктурные метрики (PostgreSQL, Redis, Host, Nginx).
+  # Подключаются к portal_internal → видят postgres/redis/nginx по DNS.
+  # Секреты (POSTGRES_PASSWORD, REDIS_PASSWORD) интерполируются из .env.
+  # ---------------------------------------------------------------------
+
+  # PostgreSQL exporter — пул соединений, cache hit ratio, XID wraparound,
+  # размер БД, долгие транзакции, дедлоки.
+  # Дефолтные коллекторы НЕ включают stat_activity/stat_database — поэтому
+  # включаем явно, иначе панели пула/cache/deadlocks показывают "No data".
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.20.1
+    container_name: portal-postgres-exporter
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    command:
+      - "--collector.stat_activity"
+      - "--collector.stat_database"
+      - "--collector.database_wraparound"
+      - "--collector.long_running_transactions"
+      - "--collector.stat_bgwriter"
+    environment:
+      DATA_SOURCE_NAME: postgresql://${POSTGRES_USER:-portal}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-portal}?sslmode=disable
+    ports:
+      - "${MONITORING_BIND:-127.0.0.1}:9187:9187"
+    networks:
+      - internal
+      - external
+    logging: *default-logging
+
+  # Redis exporter — память/evictions, клиенты, keyspace hit rate, persistence.
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.89.0
+    container_name: portal-redis-exporter
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      REDIS_ADDR: redis://redis:6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    ports:
+      - "${MONITORING_BIND:-127.0.0.1}:9121:9121"
+    networks:
+      - internal
+      - external
+    logging: *default-logging
+
+  # node_exporter — метрики хоста: диск (критично — /data/photos), CPU, RAM, load.
+  # Bind-mount хостовых /proc /sys / через read-only — стандартный паттерн.
+  node-exporter:
+    image: prom/node-exporter:v1.12.1
+    container_name: portal-node-exporter
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    command:
+      - "--path.procfs=/host/proc"
+      - "--path.sysfs=/host/sys"
+      - "--path.rootfs=/rootfs"
+      - "--collector.filesystem.mount-points-exclude=^/(dev|proc|sys|var/lib/docker/.+)($|/)"
+      # Textfile collector — читает *.prom из /textfile, куда пишет sidecar
+      # storage-collector (размеры папок /data/*, Docker json-file логов,
+      # named volumes). См. monitoring/node-exporter-textfile/.
+      - "--collector.textfile"
+      - "--collector.textfile.directory=/textfile"
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+      # Shared с storage-collector: sidecar пишет storage.prom, node-exporter читает.
+      - ./monitoring/textfile:/textfile:ro
+    ports:
+      - "${MONITORING_BIND:-127.0.0.1}:9100:9100"
+    networks:
+      - internal
+      - external
+    logging: *default-logging
+
+  # Nginx exporter — active connections, request rate, reading/writing/waiting.
+  # Скрейпит stub_status (см. nginx/templates/proxy_locations.conf.tmpl).
+  nginx-exporter:
+    image: nginx/nginx-prometheus-exporter:1.5.3
+    container_name: portal-nginx-exporter
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    command:
+      # Внутри контейнерной сети nginx слушает :8080/8443 на любом контуре —
+      # 80/443 существуют только как хостовый маппинг портов в compose.
+      - "-nginx.scrape-uri=${NGINX_SCRAPE_URI:-http://nginx:8080/stub_status}"
+    ports:
+      - "${MONITORING_BIND:-127.0.0.1}:9113:9113"
+    networks:
+      - internal
+      - external
+    logging: *default-logging
+
+  # ---------------------------------------------------------------------
+  # cAdvisor — per-container метрики Docker: CPU/RAM/сеть/IO по каждому
+  # контейнеру + container_start_time_seconds (детект рестарт-лупов; OOM-kill
+  # детектируется косвенно — контейнер умирает, restart-политика поднимает).
+  # Хост целиком — node-exporter; это про отдельные контейнеры.
+  #
+  # NB: образы новее v0.55.x в gcr.io не публикуются (GitHub-релизы идут без
+  # docker-image). /dev/kmsg — device (не volume); на WSL2 существует.
+  # ---------------------------------------------------------------------
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.55.1
+    container_name: portal-cadvisor
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    command:
+      - "--docker_only"             # только docker-контейнеры, без systemd-cgroups
+      - "--housekeeping_interval=15s"
+      # Тримминг коллекторов — минус тысячи ненужных серий в TSDB (сетевые
+      # таблицы, per-cpu, hugetlb и т.п.). Набор значений проверен для v0.55.1:
+      # referenced/cpuTopology/memoryNuma/oomEvent в этой сборке ОТСУТСТВУЮТ
+      # (флаг их отвергает), поэтому OOM-метрики от cadvisor нет.
+      - "--disable_metrics=tcp,udp,advtcp,sched,hugetlb,resctrl,percpu,cpuLoad,process,cpuset,disk"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    devices:
+      - /dev/kmsg
+    ports:
+      - "${MONITORING_BIND:-127.0.0.1}:8081:8080"
+    networks:
+      - internal
+      - external
+    logging: *default-logging
+
+  # ---------------------------------------------------------------------
+  # Blackbox exporter — внешние HTTP(S)-пробы + TLS-сертификаты (срок
+  # действия). Prometheus ходит на /probe?target=<url>&module=...; сами
+  # цели задаются в .env (BLACKBOX_TARGETS) и рендерятся в
+  # /tmp/blackbox-targets.json (file_sd) скриптом render-prometheus.sh.
+  # ---------------------------------------------------------------------
+  blackbox-exporter:
+    image: prom/blackbox-exporter:v0.28.0
+    container_name: portal-blackbox
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      # NB: дефолтный --config.file образа — /etc/blackbox_exporter/config.yml
+      # (не blackbox.yml!) — монтируем именно туда, иначе грузится встроенный конфиг.
+      - ./monitoring/blackbox/blackbox.yml:/etc/blackbox_exporter/config.yml:ro
+    ports:
+      - "${MONITORING_BIND:-127.0.0.1}:9115:9115"
+    networks:
+      - internal
+      - external
+    logging: *default-logging
+
+  # ---------------------------------------------------------------------
+  # storage-collector — sidecar для node-exporter textfile collector.
+  # Раз в 5 минут делает du по папкам данных портала (upload_data/*,
+  # base_data/*, system_data/*) и по Docker json-file логам контейнеров,
+  # пишет результат в /textfile/storage.prom. node-exporter отдаёт это как
+  # метрики portal_storage_folder_bytes / portal_storage_docker_logs_bytes /
+  # portal_storage_docker_volume_bytes (см. дашборд «Portal — Storage»).
+  #
+  # НЕ открывает портов. Монтирует /:/host:ro — для du по host-папкам и
+  # чтения config.v2.json контейнеров (имя сервиса по container id).
+  #
+  # Образ публикуется в Forgejo Registry CI'ем (MON-19, как и сервисы базового
+  # compose): прод-контур тянет готовый образ (${IMAGE_PREFIX} из профиля —
+  # ADR-045/046), dev-контур собирает локально через build-блок ниже.
+  # ---------------------------------------------------------------------
+  storage-collector:
+    build:
+      context: ./monitoring/node-exporter-textfile
+    image: ${IMAGE_PREFIX:-}portal-storage-collector:${IMAGE_TAG:-latest}
+    container_name: portal-storage-collector
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      # Абсолютный путь к корню портала НА ХОСТЕ — все пути сбора внутри
+      # контейнера пересчитываются как /host + PORTAL_HOST_PATH.
+      PORTAL_HOST_PATH: ${PORTAL_HOST_PATH:-/home/snow/portal}
+    volumes:
+      - /:/host:ro
+      - ./monitoring/textfile:/textfile
+    networks:
+      - internal
+    logging: *default-logging
+
+  # ---------------------------------------------------------------------
+  # matrix-alertmanager — bridge алертов в Matrix (опционально, compose-
+  # profile `matrix`: поднимается только при COMPOSE_PROFILES=matrix).
+  # Alertmanager webhook_configs шлёт POST /alerts?secret=<SECRET>; bridge
+  # постит в комнату по ИМЕНИ RECEIVER'а (MATRIX_ROOMS="admins-email/!room:...").
+  #
+  # Отдельный контейнер (НЕ через portal messenger_outbox) намеренно: алерты
+  # обязаны доходить при упавшем портале — как и прямой SMTP в alertmanager.
+  # Image :latest — upstream (jaywink/matrix-alertmanager) не публикует
+  # версионируемых тегов.
+  # ---------------------------------------------------------------------
+  matrix-alertmanager:
+    image: jaywink/matrix-alertmanager:latest
+    container_name: portal-matrix-alertmanager
+    profiles: ["matrix"]
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      MATRIX_HOMESERVER_URL: ${ALERT_MATRIX_HOMESERVER_URL:-}
+      MATRIX_USER: ${ALERT_MATRIX_USER:-}
+      MATRIX_TOKEN: ${ALERT_MATRIX_TOKEN:-}
+      MATRIX_ROOMS: ${ALERT_MATRIX_ROOMS:-}
+      MENTION_ROOM: "0"
+      APP_ALERTMANAGER_SECRET: ${ALERT_MATRIX_SECRET:-}
+    ports:
+      - "${MONITORING_BIND:-127.0.0.1}:3002:3000"
+    networks:
+      - internal
+      - external
+    logging: *default-logging
+
+volumes:
+  prometheus-data:
+  alertmanager-data:
+  grafana-data:
+  loki-data:
+
+networks:
+  internal:
+    external: true
+    name: portal_internal
+  external:
+    external: true
+    name: portal_external

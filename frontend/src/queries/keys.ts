@@ -1,0 +1,186 @@
+export const queryKeys = {
+  admin: {
+    all: ['admin'] as const,
+    users: (params?: Record<string, unknown>) => ['admin', 'users', params ?? {}] as const,
+    audit: (params?: Record<string, unknown>) => ['admin', 'audit', params ?? {}] as const,
+    auditEventTypes: () => ['admin', 'audit-event-types'] as const,
+    auditQueue: () => ['admin', 'audit-queue'] as const,
+    analyticsDashboard: (days?: number) => ['admin', 'analytics', 'dashboard', days ?? 14] as const,
+    analyticsTopArticles: (days?: number) => ['admin', 'analytics', 'top-articles', days ?? 30] as const,
+    analyticsTopNews: (days?: number) => ['admin', 'analytics', 'top-news', days ?? 30] as const,
+    analyticsTopFiles: (days?: number) => ['admin', 'analytics', 'top-files', days ?? 30] as const,
+    analyticsTopLinks: (days?: number) => ['admin', 'analytics', 'top-links', days ?? 30] as const,
+    analyticsDepartments: (days?: number) => ['admin', 'analytics', 'departments', days ?? 30] as const,
+    analyticsStaleContent: (days?: number) => ['admin', 'analytics', 'stale-content', days ?? 90] as const,
+    analyticsFeedback: (days?: number) => ['admin', 'analytics', 'feedback', days ?? 30] as const,
+    analyticsResourceTrend: (kind: string, resourceId: string, days?: number) =>
+      ['admin', 'analytics', 'resource-trend', kind, resourceId, days ?? 30] as const,
+    emailSettings: () => ['admin', 'email-settings'] as const,
+    systemSettings: () => ['admin', 'system-settings'] as const,
+    tlsStatus: () => ['admin', 'tls-status'] as const,
+    keycloakSettings: () => ['admin', 'keycloak-settings'] as const,
+    keycloakSyncStatus: () => ['admin', 'keycloak-sync-status'] as const,
+    modules: () => ['admin', 'modules-config'] as const,
+    userAttributes: () => ['admin', 'user-attributes'] as const,
+    discoverAttributes: () => ['admin', 'discover-attributes'] as const,
+    links: () => ['admin', 'links'] as const,
+    emailOutbox: (params?: Record<string, unknown>) => ['admin', 'email-outbox', params ?? {}] as const,
+    emailOutboxItem: (id: string) => ['admin', 'email-outbox', 'item', id] as const,
+    emailOutboxStats: () => ['admin', 'email-outbox', 'stats'] as const,
+    matrixBot: () => ['admin', 'matrix-bot'] as const,
+    messengerOutbox: (params?: Record<string, unknown>) => ['admin', 'messenger-outbox', params ?? {}] as const,
+    messengerOutboxItem: (id: string) => ['admin', 'messenger-outbox', 'item', id] as const,
+  },
+  photos: {
+    all: ['photos'] as const,
+    myShares: () => ['photos', 'my-shares'] as const,
+    recent: (limit?: number) => ['photos', 'recent', limit ?? 8] as const,
+    folderTree: () => ['photos', 'folder-tree'] as const,
+    folder: (id: string) => ['photos', 'folder', id] as const,
+    folderPhotos: (id: string, params?: Record<string, unknown>) => ['photos', 'folder', id, 'photos', params ?? {}] as const,
+    tags: () => ['photos', 'tags'] as const,
+    photoTags: (id: string) => ['photos', 'photo-tags', id] as const,
+  },
+  news: {
+    all: ['news'] as const,
+    list: (params?: Record<string, unknown>) => ['news', 'list', params ?? {}] as const,
+    detail: (id: string) => ['news', 'detail', id] as const,
+    poll: (id: string) => ['news', 'poll', id] as const,
+    pollVoters: (id: string) => ['news', 'poll', id, 'voters'] as const,
+    comments: (id: string) => ['news', 'comments', id] as const,
+    gallery: (id: string) => ['news', 'gallery', id] as const,
+    attachments: (id: string) => ['news', 'attachments', id] as const,
+    categories: () => ['news', 'categories'] as const,
+    limits: () => ['news', 'limits'] as const,
+  },
+  mailingRecipients: {
+    all: ['mailing-recipients'] as const,
+    list: (params?: Record<string, unknown>) => ['mailing-recipients', 'list', params ?? {}] as const,
+  },
+  kb: {
+    all: ['kb'] as const,
+    articles: (params?: Record<string, unknown>) => ['kb', 'articles', params ?? {}] as const,
+    article: (id: string) => ['kb', 'article', id] as const,
+    tags: () => ['kb', 'tags'] as const,
+    sections: () => ['kb', 'sections'] as const,
+    comments: (articleId: string) => ['kb', 'comments', articleId] as const,
+    versions: (articleId: string) => ['kb', 'versions', articleId] as const,
+  },
+  users: {
+    all: ['users'] as const,
+    list: (params?: Record<string, unknown>) => ['users', 'list', params ?? {}] as const,
+    departments: (ordered = false) => ['users', 'departments', ordered] as const,
+    offices: () => ['users', 'offices'] as const,
+    detail: (id: string) => ['users', 'detail', id] as const,
+    attributeSchema: () => ['users', 'attribute-schema'] as const,
+    keycloakGroups: (id: string) => ['users', 'keycloak-groups', id] as const,
+    birthdays: () => ['users', 'birthdays'] as const,
+  },
+  links: {
+    all: ['links'] as const,
+    list: (params?: Record<string, unknown>) => ['links', 'list', params ?? {}] as const,
+    bookmarks: () => ['links', 'bookmarks'] as const,
+  },
+  notifications: {
+    all: ['notifications'] as const,
+    list: (params?: Record<string, unknown>) => ['notifications', 'list', params ?? {}] as const,
+    unreadCount: () => ['notifications', 'unread-count'] as const,
+  },
+  modules: {
+    all: ['modules'] as const,
+    settings: () => ['modules', 'settings'] as const,
+  },
+  files: {
+    all: ['files'] as const,
+    tree: () => ['files', 'tree'] as const,
+    folder: (id: string) => ['files', 'folder', id] as const,
+    fileShares: (folderId: string, filename: string) =>
+      ['files', 'shares', 'file', folderId, filename] as const,
+    myShares: () => ['files', 'shares', 'my'] as const,
+    sharedWithMe: () => ['files', 'shares', 'shared-with-me'] as const,
+    adminShares: (params?: Record<string, unknown>) =>
+      ['files', 'shares', 'admin', params ?? {}] as const,
+  },
+  portal: {
+    staffSettings: () => ['portal', 'staff-settings'] as const,
+  },
+  directories: {
+    all: ['directories'] as const,
+    list: () => ['directories', 'list'] as const,
+    entries: (slug: string, params?: Record<string, unknown>) =>
+      ['directories', 'entries', slug, params ?? {}] as const,
+    entry: (slug: string, id: string) => ['directories', 'entry', slug, id] as const,
+  },
+  signature: {
+    all: ['signature'] as const,
+    config: () => ['signature', 'config'] as const,
+    settings: () => ['signature', 'settings'] as const,
+  },
+  meetings: {
+    all: ['meetings'] as const,
+    rooms: (params?: Record<string, unknown>) => ['meetings', 'rooms', params ?? {}] as const,
+    room: (id: string) => ['meetings', 'room', id] as const,
+    bookings: (params?: Record<string, unknown>) => ['meetings', 'bookings', params ?? {}] as const,
+    booking: (id: string) => ['meetings', 'booking', id] as const,
+    myBookings: (params?: Record<string, unknown>) => ['meetings', 'my-bookings', params ?? {}] as const,
+    seriesCount: (seriesId: string) => ['meetings', 'series-count', seriesId] as const,
+  },
+  helpdesk: {
+    all: ['helpdesk'] as const,
+    agents: () => ['helpdesk', 'agents'] as const,
+    // Список активных агентов для смены ответственного (агентский endpoint
+    // ``GET /tickets/assignable-agents``, рендерится простым списком в popover).
+    // Отдельный ключ от ``agents`` (admin-only список с notify_new-флагами) —
+    // здесь компактный PII-минимизированный список для операции смены, доступный
+    // любому агенту.
+    assignableAgents: () => ['helpdesk', 'assignable-agents'] as const,
+    mailbox: () => ['helpdesk', 'mailbox'] as const,
+    myTickets: (params?: Record<string, unknown>) => ['helpdesk', 'my-tickets', params ?? {}] as const,
+    myTicket: (id: string) => ['helpdesk', 'my-ticket', id] as const,
+    // Счётчики для бейджей в меню — отдельный стабильный ключ (без params),
+    // чтобы polling и инвалидация после мутаций шли в одну кеш-запись.
+    myTicketCounts: () => ['helpdesk', 'my-ticket-counts'] as const,
+    inbox: (params?: Record<string, unknown>) => ['helpdesk', 'inbox', params ?? {}] as const,
+    agentTicket: (id: string) => ['helpdesk', 'agent-ticket', id] as const,
+    agentTicketCounts: () => ['helpdesk', 'agent-ticket-counts'] as const,
+    maxBot: () => ['helpdesk', 'max-bot'] as const,
+    // Singleton расписания сводки (как mailbox/maxBot — без params).
+    digest: () => ['helpdesk', 'digest'] as const,
+  },
+  erpSync: {
+    all: ['erp-sync'] as const,
+    settings: () => ['erp-sync', 'settings'] as const,
+    runs: (params?: Record<string, unknown>) => ['erp-sync', 'runs', params ?? {}] as const,
+    absencesRuns: (params?: Record<string, unknown>) =>
+      ['erp-sync', 'absences-runs', params ?? {}] as const,
+  },
+  directum: {
+    all: ['directum'] as const,
+    settings: () => ['directum', 'settings'] as const,
+    runs: (params?: Record<string, unknown>) => ['directum', 'runs', params ?? {}] as const,
+  },
+  approvals: {
+    all: ['approvals'] as const,
+    list: () => ['approvals', 'list'] as const,
+    document: (uuid: string) => ['approvals', 'document', uuid] as const,
+    settings: () => ['approvals', 'settings'] as const,
+  },
+  learning: {
+    all: ['learning'] as const,
+    myCourses: () => ['learning', 'my-courses'] as const,
+    adminCourses: (params?: Record<string, unknown>) =>
+      ['learning', 'admin-courses', params ?? {}] as const,
+    adminCourse: (id: string) => ['learning', 'admin-course', id] as const,
+    adminProgress: (id: string) => ['learning', 'admin-progress', id] as const,
+    participantItems: (courseId: string, participantId: string) =>
+      ['learning', 'participant-items', courseId, participantId] as const,
+    adminTest: (itemId: string) => ['learning', 'admin-test', itemId] as const,
+    adminAccounts: (params?: Record<string, unknown>) =>
+      ['learning', 'admin-accounts', params ?? {}] as const,
+    admins: () => ['learning', 'admins'] as const,
+    categories: () => ['learning', 'categories'] as const,
+    myCourse: (slug: string) => ['learning', 'my-course', slug] as const,
+    myAttempts: (itemId: string) => ['learning', 'my-attempts', itemId] as const,
+    meta: () => ['learning', 'meta'] as const,
+  },
+} as const

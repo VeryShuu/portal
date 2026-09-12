@@ -1,0 +1,27 @@
+# CI override для compose-smoke на forgejo-runner (docker-executor + docker.sock).
+#
+# Проблема: base docker-compose.yml и dev-overlay bind-mount'ят ./upload_data/*,
+# ./system_data/*, ./backend/app в контейнеры. На docker-socket runner'е host
+# Docker-демон НЕ видит ФС job-контейнера (act workspace /workspace/mage/portal/...),
+# поэтому bind-mount'и падают: «not a directory: Are you trying to mount a directory
+# onto a file» (демон создаёт пустую директорию на несуществующем host-пути).
+#
+# Фикс: !reset volumes у сервисов smoke-стека → данные живут в анонимных томах /
+# внутри образа (для smoke-проверки «стек поднялся здоровым» персистентность не нужна).
+# Требует Docker Compose v2.24+ (поддержка тега !reset).
+#
+# Применение: docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d --build
+services:
+  postgres:
+    volumes: !reset []
+  redis:
+    volumes: !reset []
+  backend:
+    volumes: !reset []
+    # base compose (prod) НЕ экспозит backend:8000 (за nginx). Smoke-чеки ходят на
+    # Адрес назначается Docker динамически, чтобы параллельные smoke jobs не
+    # конфликтовали на host network; job получает его через `docker compose port`.
+    ports:
+      - "127.0.0.1::8000"
+  migrations:
+    volumes: !reset []

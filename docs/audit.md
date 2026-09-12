@@ -1,0 +1,205 @@
+# Модуль «Аудит» (Журнал действий)
+
+> **Когда читать:** Требуется понять, как устроен лог аудита действий пользователей и администраторов, как работает буферизованная запись через Redis и ARQ-воркер, как устроено ежемесячное партиционирование таблиц в PostgreSQL.
+> **Ключевой код:** `./backend/app/api/audit.py`, `./backend/app/services/audit.py`, `./backend/app/worker/tasks/audit.py`, `./backend/app/services/audit_partitions.py`, `./backend/scripts/create_audit_partitions.py`, `./frontend/src/pages/admin/tabs/AuditTab.vue`.
+> **ADR:** —. **См. также:** `./docs/db-schema.md`.
+
+> Модуль лога аудита предназначен для гарантированной и производительной фиксации значимых действий пользователей и администраторов на портале. Для исключения накладных расходов при обработке HTTP-запросов используется асинхронный паттерн с буферизацией событий в Redis-очереди и последующей батч-вставкой через фоновые задачи ARQ.
+
+---
+
+## 1. Обзор
+
+| Аспект | Значение |
+|---|---|
+| **Backend** | FastAPI (`./backend/app/api/audit.py`), SQLAlchemy, asyncpg |
+| **Frontend** | Vue 3 + Pinia + Naive UI (`./frontend/src/pages/admin/tabs/AuditTab.vue`, `./frontend/src/api/audit.ts`) |
+| **Воркер** | ARQ (`./backend/app/worker/tasks/audit.py`), задача `flush_audit_queue` запускается периодически для сброса буфера |
+| **Хранилище** | PostgreSQL (партиционированная по месяцам таблица `audit_log`, хранение за 12 месяцев), Redis (буфер очереди с ключами `audit_queue` и `audit_processing`) |
+| **Префикс API** | `/api/v1/audit` |
+| **ACL-кэш** | Redis lock `audit:flush:lock` (TTL 30 сек) для предотвращения параллельного сброса очереди |
+
+---
+
+## 2. Структура кода
+
+| Слой | Путь | Назначение |
+|---|---|---|
+| Router | `./backend/app/api/audit.py` (эндпойнты просмотра/экспорта) + `./backend/app/api/audit_repo.py` (repository: `count_events`/`list_events`/`list_event_types`/`stream_events` — SQL-запросы с фильтрами/пагинацией/стримингом) |
+| Service | `./backend/app/services/audit.py` (вставка событий в очередь), `./backend/app/services/audit_events.py` (реестр `KNOWN_EVENT_TYPES` — frozenset строк), `./backend/app/services/audit_partitions.py` (управление партициями) |
+| Model | — | Модель отсутствует, используется сырой SQL-мапинг / DDL в миграциях |
+| Schema | — | Схемы отсутствуют, используются сырые JSON/словари |
+| Worker | `./backend/app/worker/tasks/audit.py` | Cron-задачи: `flush_audit_queue` (каждые 5с — сброс буфера), `create_next_audit_partition` / `drop_old_audit_partitions` (1-го числа месяца в 02:00 / 03:00 — партиции на 3 мес. вперёд / удаление старше 12 мес.), `cleanup_idempotency_keys` (ежедневно в 03:30 — уборка просроченных записей idempotency из соседнего модуля) |
+| Frontend | `./frontend/src/pages/admin/tabs/AuditTab.vue`, `./frontend/src/api/audit.ts` | Компоненты панели администратора и API-клиент |
+
+---
+
+## 3. Модель данных
+
+Таблица `audit_log` является партиционированной по диапазонам (range partitioning) даты создания записи `created_at`.
+
+### Схема таблицы `audit_log`
+
+```sql
+CREATE TABLE audit_log (
+    id             BIGSERIAL,
+    event_type     VARCHAR(50)  NOT NULL,
+    user_id        UUID,        -- Нет внешнего ключа (FK) к users из-за удаления старых партиций
+    user_email     VARCHAR(255),
+    resource_type  VARCHAR(50),
+    resource_id    VARCHAR(255),
+    resource_title VARCHAR(500),
+    ip_address     INET,
+    user_agent     TEXT,
+    metadata       JSONB        NOT NULL DEFAULT '{}',
+    created_at     TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (id, created_at)
+) PARTITION BY RANGE (created_at);
+```
+
+### Наложенные индексы
+Индексы создаются на родительской таблице PostgreSQL и автоматически наследуются дочерними партициями (начиная с PG16):
+- **`idx_audit_user_time`**: `audit_log(user_id, created_at DESC)` — быстрый поиск событий по конкретному пользователю.
+- **`idx_audit_event_time`**: `audit_log(event_type, created_at DESC)` — поиск по типу события.
+- **`idx_audit_resource`**: `audit_log(resource_type, resource_id)` — выборка логов для конкретного ресурса.
+- **`idx_audit_log_metadata_gin`**: GIN-индекс `audit_log USING gin(metadata jsonb_path_ops)` — оптимизация поиска по вложенным JSONB-полям метаданных (описано в `./backend/migrations/versions/033_audit_log_metadata_gin_index.py`).
+
+---
+
+## 4. Модель прав (ACL)
+
+Все эндпойнты администрирования аудита требуют авторизации с правами глобального администратора (`AdminDep`).
+Обычные пользователи не имеют прав на просмотр и экспорт журнала аудита.
+
+---
+
+## 5. REST API
+
+Базовый путь: `/api/v1/audit`
+
+| Метод | Путь | Назначение | Права | Идемпотентность |
+|---|---|---|---|---|
+| **GET** | `` (без trailing slash) | Получение пагинированного списка событий аудита с фильтрацией (роутер `@router.get("")` под `prefix="/audit"`) | `admin` (`AdminDep`) | Да |
+| **GET** | `/event-types` | Список уникальных типов событий, зафиксированных за последние 90 дней | `admin` (`AdminDep`) | Да |
+| **GET** | `/queue/depth` | Текущая глубина очереди событий в Redis (ожидающие и обрабатываемые) | `admin` (`AdminDep`) | Да |
+| **GET** | `/export.csv` | Стриминговый экспорт отфильтрованных событий лога в формате CSV | `admin` (`AdminDep`) | Да |
+
+---
+
+## 6. Как пишутся события
+
+Запись логов аудита спроектирована по отказоустойчивой асинхронной схеме, исключающей влияние сбоев БД на транзакции бизнес-логики:
+
+```mermaid
+flowchart TD
+    A[Мутирующее событие в API] -->|1. Успешный DB commit| B[push_audit_event]
+    B -->|2. Сериализация в JSON| C[(Redis list: audit_queue)]
+    C -->|3. Инкремент метрики| D[Prometheus: audit_events_pushed]
+
+    E[ARQ-воркер: flush_audit_queue] -->|4. Захват блокировки| F[Redis lock: audit:flush:lock]
+    F -->|5. LMOVE LEFT->RIGHT| G[(Redis list: audit_processing)]
+    G -->|6. Батч-вставка executemany| H[(PostgreSQL: audit_log)]
+    H -->|7. Удаление копии| I[(Очистка audit_processing)]
+```
+
+### Шаг 1: Инициация записи (`push_audit_event`)
+После каждого успешно закомиченного мутирующего действия (создание, изменение, удаление, вход и т.д.) вызывается функция `push_audit_event` из модуля `./backend/app/services/audit.py`:
+- Формирует словарь со всеми атрибутами события (`event_type`, `user_id`, `user_email`, `ip_address`, `metadata` и др.).
+- Сериализует событие в JSON и добавляет в конец списка Redis `rpush("audit_queue", json_data)`.
+- Инкременирует счётчик Prometheus-метрик `audit_events_pushed` по переданному типу события.
+- Действие изолировано блоком `try/except`. При сбоях Redis ошибка логируется через `logger.exception(...)`, но выполнение основного запроса пользователя продолжается без прерывания.
+
+> **SoTL:** `event_type`-литералы сверяются с centralized-реестром
+> `./backend/app/services/audit_events.py::KNOWN_EVENT_TYPES` (frozenset строк;
+> хелперы `is_known_event_type` / `iter_event_types`) — AST-тест
+> `./backend/tests/unit/test_audit_events.py` гарантирует, что каждый literal
+> в `app/` зарегистрирован (защита от опечаток вида `links.vistied`).
+> Call-sites используют только строковые литералы (`"auth.login"` и т.п.);
+> ранее существовавший StrEnum `EventType` удалён — ни один call-site его
+> не использовал.
+
+### Шаг 2: Обработка воркером (`flush_audit_queue`)
+Воркер ARQ (`./backend/app/worker/tasks/audit.py`) периодически запускает задачу `flush_audit_queue` для сброса накопленного буфера в БД:
+1. Захватывает атомарную блокировку в Redis с ключом `audit:flush:lock` на 30 секунд. Если блокировку захватить не удалось (её удерживает другой воркер), выполнение завершается.
+2. Перемещает элементы из основной очереди `audit_queue` в резервный рабочий список `audit_processing` с помощью команды **`LMOVE`** (LEFT в `audit_queue` -> RIGHT в `audit_processing`) порциями по `BATCH_SIZE = 500` записей. Использование `LMOVE` гарантирует, что если воркер упадет в процессе записи в БД, данные не потеряются из Redis и будут обработаны повторно при следующем запуске.
+3. Парсит перенесенные записи и выполняет батч-вставку в БД за один запрос `executemany` в PostgreSQL.
+4. После успешного коммита в PostgreSQL очищает список `audit_processing` с помощью `DEL`.
+5. Снимает блокировку `audit:flush:lock` через выполнение Lua-скрипта (для безопасного удаления ключа только его создателем).
+
+> **Single-path:** запись в `audit_log` идёт **только** через Redis-очередь и
+> ARQ-воркер. Прямого synchronous-INSERT в API-коде нет — это намеренно:
+> fire-and-forget semantics, ошибка Redis не рвёт бизнес-транзакцию (warning +
+> `logger.exception`), а батч-вставка снижает накладные расходы. Прежде была функция
+> `log()` как deprecated fallback, удалена за отсутствием callers.
+
+---
+
+## 7. Frontend
+
+Интерфейс просмотра логов аудита доступен в панели администратора на вкладке «Аудит» (`./frontend/src/pages/admin/tabs/AuditTab.vue`).
+
+### Функциональные возможности вкладки:
+- **Фильтрация событий**: по типу события (выпадающий список, формируемый из `/audit/event-types`), UUID пользователя, IP-адресу и текстовому поиску по полям email, названию ресурса и метаданным.
+- **Валидация**: UUID пользователя проверяется на клиенте с помощью регулярного выражения. При некорректном вводе поле подсвечивается ошибкой, а нажатие «Применить» показывает сообщение об ошибке и прерывает применение фильтров.
+- **Индикация глубины очереди**: выводится блок статуса очереди Redis (кол-во ожидающих в `pending` и обрабатываемых в `processing` сообщений), опрашиваемый через `/audit/queue/depth`.
+- **Интерактивная таблица**: адаптивная пагинация (`25 / 50 / 100 / 200` строк) с удаленным (remote) получением данных, поддержкой `striped`-режима и сокращением длинных строк метаданных до 200 символов с троеточием.
+- **Экспорт в CSV**: кнопка экспорта инициирует асинхронный запрос скачивания файла через `ofetch` с передачей активных фильтров.
+
+---
+
+## 8. Ротация и партиционирование
+
+- Создание партиций реализовано на нативных механизмах PostgreSQL без сторонних расширений (вроде `pg_partman`).
+- **Скрипт ручного создания**: `./backend/scripts/create_audit_partitions.py` запускается во время деплоя приложения. Поддерживает аргументы для создания партиций на несколько месяцев вперед и очистки устаревших таблиц.
+- **Автоматизация через воркер** (`./backend/app/worker/main.py`):
+  - `flush_audit_queue`: каждые 5 секунд (`second=set(range(0,60,5))`) + при старте — сброс буфера `audit_queue` → `audit_processing` → батч-вставка в БД.
+  - `create_next_audit_partition`: 1-го числа каждого месяца в 02:00 (+ при старте) — создаёт пустые партиции на следующие 3 месяца вперёд (`months_ahead=3`). Имя таблицы: `audit_log_YYYY_MM`.
+  - `drop_old_audit_partitions`: 1-го числа каждого месяца в 03:00 — удаляет партиции старше 12 месяцев через `DROP TABLE`.
+  - `cleanup_idempotency_keys`: ежедневно в 03:30 — уборка просроченных записей таблицы `idempotency_keys` (соседний модуль, живёт в том же `worker/tasks/audit.py`).
+
+---
+
+## 9. Ограничения CSV-экспорта
+
+- Метод `/audit/export.csv` оптимизирован под потоковую отдачу данных (`StreamingResponse`) с использованием `io.StringIO` и асинхронного курсора SQLAlchemy (`db.stream`). Это минимизирует расход оперативной памяти API-процесса.
+- Наложен жесткий лимит на количество выгружаемых строк — `_EXPORT_HARD_LIMIT = 100_000` записей, чтобы избежать перегрузки СУБД.
+- В CSV-файле длинное поле `user_agent` обрезается до 500 символов, а `metadata` сериализуется в JSON-строку с отключенным экранированием не-ASCII символов (`ensure_ascii=False`).
+
+---
+
+## Безопасность
+
+- Доступ к просмотру и скачиванию логов аудита ограничен только для пользователей с ролью глобального администратора посредством FastAPI зависимости `AdminDep`.
+- Исключения при записи логов через `push_audit_event(...)` перехватываются и логируются как предупреждения (`logger.exception(...)`), но никогда не прерывают выполнение основного HTTP-запроса или транзакции пользователя.
+- Захват блокировки в Redis с использованием токена безопасности (`lock_token`) и удаление ее через Lua-скрипт предотвращает некорректное снятие блокировки другими воркерами.
+- Персональные и чувствительные данные пользователей (такие как пароли или токены доступа) не логируются; при необходимости ручного логирования метаданных разработчики должны гарантировать отсутствие конфиденциальной информации.
+
+---
+
+## События аудита
+
+Модуль аудита предоставляет инфраструктурные инструменты для логирования действий, происходящих в других частях системы:
+- **`push_audit_event(redis, ...)`**: асинхронная отправка события в очередь Redis (`audit_queue`).
+- **`make_audit_emitter(resource_type)`**: хелпер для привязки типа ресурса (например, `link`, `user`), облегчающий логирование однотипных действий без дублирования кода.
+- Собственные действия в рамках модуля аудита (поиск по логам, выгрузка CSV) не порождают новых событий аудита во избежание бесконечной рекурсии.
+
+Категория событий `learning.*` (модуль обучения, с 2026-08): учётки (`account_created`, `accounts_imported`, `login`, `password_reset`, `account_blocked`, `account_unblocked`) и курсы (`course_created/updated/published/deleted`, `item_created/updated/deleted`, `items_reordered`, `material_uploaded`, `participant_enrolled/removed`). Событие массового импорта содержит только агрегированные счётчики без ФИО, email и временных паролей. Полный реестр типов — `app/services/audit_events.py` (`KNOWN_EVENT_TYPES`, защищён AST-тестом).
+
+---
+
+## Тесты
+
+| Тип | Путь | Покрывает |
+|---|---|---|
+| Unit | `./backend/tests/unit/test_audit.py` | Unit-тестирование функций `push_audit_event`, `make_audit_emitter` и обработки ошибок. |
+| Unit | `./backend/tests/unit/test_audit_partitions.py` | Тестирование сервисных методов создания партиций `ensure_partitions` и их удаления `drop_old_partitions`. |
+| Unit | `./backend/tests/unit/test_audit_routes.py` | Проверка API-эндпойнтов просмотра логов аудита, типов событий и глубины очереди Redis. |
+| Integration | `./backend/tests/integration/test_audit_partitions_real.py` | Тестирование создания и удаления партиций в реальной базе данных PostgreSQL. |
+
+---
+
+## Связанные документы
+
+- `./docs/db-schema.md` — Описание схемы базы данных портала.
+- `./docs/api-contracts.md` — Контракты и соглашения REST API.
+- `./docs/roles-matrix.md` — Матрица ролей и доступов к ресурсам.

@@ -1,0 +1,703 @@
+"""Локализация картинок входящего email-письма при IMAP-ingress.
+
+Проблема: картинки в письмах бывают трёх типов, и без локализации все ломаются:
+
+1. **Inline ``cid:``** (``multipart/related``, ``Content-ID``) — связь нужно
+   сохранить до финальной ``nh3``-санитизации и переписать на локальный URL.
+2. **Внешние ``http://``** — блокируются CSP ``img-src 'self' data: blob: https:``
+   (нет ``http:``).
+3. **Внешние ``https://``** — работают, но утекают адрес получателя на внешние
+   серверы (tracking-pixels), плюс mixed-content при https-портале.
+
+Решение (Zammad/Freshdesk-подход): при ingress **локализовать** все картинки —
+inline ``cid:`` и внешние ``http(s)://`` — сохранять в локальный FS как
+``HelpdeskAttachment`` (привязанные к message), и переписывать ``src`` в
+``body_html`` на относительный ``/api/v1/helpdesk/attachments/{id}``. Тогда:
+
+* все img-src становятся относительными → подпадают под CSP ``'self'`` (CSP
+  менять не нужно);
+* нет утечки адресов получателей (tracking-pixels не срабатывают);
+* нет mixed-content / plaintext-HTTP проблем;
+* картинки переживают удаление из почтового ящика.
+
+Чистые функции (extract, rewrite, SSRF-check) тестируются без БД;
+``localize_images`` — async с db/httpx (мокируется в тестах).
+"""
+
+from __future__ import annotations
+
+import ipaddress
+import re
+import uuid
+from email.message import Message
+from ipaddress import IPv4Address, IPv6Address
+from typing import TYPE_CHECKING, Protocol
+from urllib.parse import urlparse
+
+from app.core.logging import get_logger
+
+# audit [H1]: SSRF-валидация вынесена в app.core.net_guard (единый guard для
+# bookmarks/favicon, keycloak_admin [M9] и этого модуля). Re-export через `as`
+# сохраняет публичный API email_images для существующих потребителей (тестов,
+# `_assert_safe_to_fetch`) при `no_implicit_reexport = true` в mypy.
+from app.core.net_guard import is_public_ip as is_public_ip
+from app.core.net_guard import is_safe_remote_url as is_safe_remote_url
+from app.services.helpdesk.email_signature import is_known_signature_asset_name
+
+logger = get_logger(__name__)
+
+# Префикс rewritten-src: относительный путь к endpoint скачивания вложений.
+ATTACHMENT_URL_PREFIX = "/api/v1/helpdesk/attachments/"
+
+# Таймаут httpx-выкачки внешней картинки.
+_FETCH_TIMEOUT = 10.0
+# Лимит размера при стриминговой выкачке (защита от гигантских файлов —
+# ``HELPDESK_MAX_ATTACHMENT_MB`` checked again в ``save_image_bytes``).
+_FETCH_MAX_BYTES = 25 * 1024 * 1024
+
+# User-Agent для выкачки (некоторые сервера отклоняют без него).
+_UA = "Portal-Helpdesk-ImageProxy/1.0"
+
+# Максимальное число картинок/вложений в одном письме (H-2: защита от
+# pool-exhaustion — иначе письмо с сотней <img> держит соединение минутами).
+_MAX_IMAGES = 50
+
+
+class InlineImage:
+    """Inline-картинка из ``multipart/related`` (``Content-ID``)."""
+
+    __slots__ = ("content_location", "content_type", "data", "filename")
+
+    def __init__(
+        self,
+        *,
+        data: bytes,
+        content_type: str,
+        filename: str,
+        content_location: str = "",
+    ) -> None:
+        self.data = data
+        self.content_type = content_type
+        self.filename = filename
+        self.content_location = content_location
+
+
+# ── Extract inline parts (чистая функция) ────────────────────────────────────
+
+
+def extract_inline_parts(msg: Message) -> dict[str, InlineImage]:
+    """Собрать inline-картинки письма (``Content-ID`` → :class:`InlineImage`).
+
+    ``multipart/related`` несёт HTML-тело + inline-части (картинки), на которые
+    тело ссылается через ``<img src="cid:...">``. Структурно обходим только
+    основное MIME-дерево: ``attachment`` и вложенные ``message/*`` не смешиваются
+    с телом. CID нормализуется по RFC 2392."""
+    result: dict[str, InlineImage] = {}
+
+    def visit(part: Message, *, root: bool = False) -> None:
+        disposition = (part.get_content_disposition() or "").lower()
+        if not root and (disposition == "attachment" or part.get_content_maintype() == "message"):
+            return
+        if part.is_multipart():
+            payload = part.get_payload()
+            if isinstance(payload, list):
+                for child in payload:
+                    if isinstance(child, Message):
+                        visit(child)
+            return
+
+        cid = part.get("Content-ID")
+        if not cid:
+            return
+        ctype = part.get_content_type()
+        if not ctype.startswith("image/"):
+            return
+        payload = part.get_payload(decode=True)
+        if not isinstance(payload, (bytes, bytearray)) or not payload:
+            return
+        key = _normalize_cid(cid)
+        if not key:
+            return
+        filename = part.get_filename() or f"inline-{key[:8] or uuid.uuid4().hex[:8]}"
+        result[key] = InlineImage(
+            data=bytes(payload),
+            content_type=ctype,
+            filename=filename,
+            content_location=part.get("Content-Location") or "",
+        )
+
+    visit(msg, root=True)
+    return result
+
+
+def _normalize_cid(cid: str) -> str:
+    """Убрать угловые скобки и привести к нижнему регистру (как ``<img src=cid:...>``
+    ссылается). Возвращает ``""`` для пустого."""
+    return cid.strip().strip("<>").strip().lower()
+
+
+# ── Rewrite <img src> (чистые функции) ───────────────────────────────────────
+
+# Находим все <img ... src="..." ...>. Атрибуты могут быть в любом порядке,
+# кавычки двойные/одиночные/без. Группы 2/3/4 — сам URL (по типу кавычки).
+_IMG_SRC_RE = re.compile(
+    r"""(<img\b[^>]*?\bsrc=)(?:"([^"]*)"|'([^']*)'|([^\s>]+))""",
+    re.IGNORECASE,
+)
+
+
+def find_img_sources(html: str) -> list[str]:
+    """Список всех URL из ``<img src="...">`` (в порядке появления). Для тестов."""
+    sources: list[str] = []
+    for m in _IMG_SRC_RE.finditer(html or ""):
+        url = m.group(2) or m.group(3) or m.group(4) or ""
+        sources.append(url)
+    return sources
+
+
+def replace_img_src(html: str, old_src: str, new_src: str) -> str:
+    """Заменить первое вхождение ``old_src`` в ``<img src>`` на ``new_src``."""
+    return (html or "").replace(old_src, new_src, 1)
+
+
+# ── SSRF guard ───────────────────────────────────────────────────────────────
+#
+# is_safe_remote_url / is_public_ip вынесены в app.core.net_guard (audit [H1]):
+# единая SSRF-валидация для bookmarks/favicon, keycloak_admin (план M9) и этого
+# модуля. Здесь оставлен тонкий alias `_is_public_ip` для совместимости со
+# старыми call-сайтами в _resolve_is_safe / _resolve_public_ips /
+# _resolve_stable_public_ip — после стабилизации net_guard их можно перевести
+# на is_public_ip напрямую.
+_is_public_ip = is_public_ip
+
+
+async def _resolve_is_safe(host: str) -> bool:
+    """Резолв домена и проверить, что ВСЕ A/AAAA-записи public (защита от
+    DNS-rebinding: домен резолвится в 127.0.0.1).
+
+    Использует ``asyncio.get_running_loop().getaddrinfo`` — не блокирует event
+    loop (раньше был синхронный ``socket.getaddrinfo``, который вешал воркер на
+    время DNS-запроса).
+    """
+    import asyncio
+
+    try:
+        loop = asyncio.get_running_loop()
+        infos = await loop.getaddrinfo(host, None)
+    except OSError:
+        return False
+    for info in infos:
+        addr = info[4][0]
+        try:
+            ip = ipaddress.ip_address(addr)
+        except ValueError:
+            return False
+        if not _is_public_ip(ip):
+            return False
+    return True
+
+
+# ── Localize (async: db + httpx) ─────────────────────────────────────────────
+
+
+async def localize_images(
+    db: AsyncSession,
+    *,
+    ticket: HelpdeskTicket,
+    message: HelpdeskMessage,
+    html: str,
+    inline_map: dict[str, InlineImage],
+    total_tracker: _TotalTrackerLike | None = None,
+    save: _SaveFn | None = None,
+    include_remote: bool = True,
+) -> str:
+    """Локализовать все ``<img>`` в ``html``: inline ``cid:`` и внешние ``http(s)://``.
+
+    Для каждого ``src``:
+      * ``cid:xxx`` → найти в ``inline_map``, сохранить как attachment (через
+        ``save``), переписать src на ``/api/v1/helpdesk/attachments/{id}``.
+      * ``http(s)://...`` → SSRF-проверка + httpx-выкачка, сохранение, переписать src.
+        Best-effort: при ошибке/недоступности — оставить исходный URL (CSP
+        пропустит https; http останется битым, но не уронит ingest).
+
+    При ``include_remote=False`` внешние ``http(s)://`` картинки **не**
+    локализуются (пропускаются) — используется в ingress, чтобы вынести
+    медленный remote-fetch из DB-транзакции (H-2): cid:+attachments локализуются
+    в транзакции, remote — post-commit отдельным вызовом ``localize_remote_images``.
+
+    Неиспользованные inline-части не вставляются в DOM по позиции: известные
+    signature-assets отбрасываются, остальные сохраняются обычными вложениями.
+    Возвращает обновлённый ``html``. Best-effort: ни одна картинка не роняет
+    обработку письма. ``save`` по умолчанию — ``attachments.save_image_bytes``.
+    """
+    if save is None:
+        from app.services.helpdesk.attachments import save_image_bytes
+
+        save = save_image_bytes
+
+    if not html:
+        await _preserve_unreferenced_inline(
+            db=db,
+            ticket=ticket,
+            message=message,
+            inline_map=inline_map,
+            used_cids=set(),
+            save=save,
+            total_tracker=total_tracker,
+        )
+        return html
+
+    updated = html
+    # Неиспользованные MIME-части нельзя вслепую сопоставлять с <img> без src:
+    # порядок частей MIME не обязан совпадать с DOM.
+    used_cids: set[str] = set()
+    # H-2: ограничение числа обрабатываемых картинок (защита от pool-exhaustion).
+    processed = 0
+    for src in find_img_sources(html):
+        if not src:
+            continue
+        if processed >= _MAX_IMAGES:
+            logger.warning(
+                "helpdesk.image.max_images_exceeded",
+                ticket_id=str(ticket.id),
+                limit=_MAX_IMAGES,
+            )
+            break
+        new_src = await _localize_one(
+            db,
+            src=src,
+            ticket=ticket,
+            message=message,
+            inline_map=inline_map,
+            save=save,
+            total_tracker=total_tracker,
+            used_cids=used_cids,
+            include_remote=include_remote,
+        )
+        processed += 1
+        if new_src and new_src != src:
+            updated = replace_img_src(updated, src, new_src)
+
+    await _preserve_unreferenced_inline(
+        db=db,
+        ticket=ticket,
+        message=message,
+        inline_map=inline_map,
+        used_cids=used_cids,
+        save=save,
+        total_tracker=total_tracker,
+    )
+    return updated
+
+
+async def _preserve_unreferenced_inline(
+    *,
+    db: AsyncSession,
+    ticket: HelpdeskTicket,
+    message: HelpdeskMessage,
+    inline_map: dict[str, InlineImage],
+    used_cids: set[str],
+    save: _SaveFn,
+    total_tracker: _TotalTrackerLike | None,
+) -> None:
+    """Preserve ambiguous inline content as files instead of guessing position.
+
+    Known corporate logo assets are signature noise. Every other unreferenced
+    inline part is saved as a normal attachment, so screenshots/files remain
+    available even when a mail client removed their HTML reference.
+    """
+
+    for cid, inline in inline_map.items():
+        if cid in used_cids:
+            continue
+        names = (inline.filename, inline.content_location)
+        if any(is_known_signature_asset_name(name) for name in names if name):
+            continue
+        await save(
+            db,
+            ticket=ticket,
+            message_id=message.id,
+            data=inline.data,
+            original_name=inline.filename,
+            total_tracker=total_tracker,
+            is_inline=False,
+            content_id=cid,
+        )
+
+
+async def _localize_one(
+    db: AsyncSession,
+    *,
+    src: str,
+    ticket: HelpdeskTicket,
+    message: HelpdeskMessage,
+    inline_map: dict[str, InlineImage],
+    save: _SaveFn,
+    total_tracker: _TotalTrackerLike | None,
+    used_cids: set[str] | None = None,
+    include_remote: bool = True,
+) -> str | None:
+    """Локализовать один ``src``. Возвращает новый URL или ``None`` (оставить как есть).
+
+    При ``include_remote=False`` внешние ``http(s)://`` пропускаются (H-2:
+    remote-fetch вынесен из транзакции в post-commit шаг)."""
+    src_lower = src.strip().lower()
+    if src_lower.startswith("cid:"):
+        new_src = await _localize_cid(
+            db,
+            cid=src_lower[4:],
+            inline_map=inline_map,
+            ticket=ticket,
+            message=message,
+            save=save,
+            total_tracker=total_tracker,
+        )
+        if new_src and used_cids is not None:
+            used_cids.add(src_lower[4:])
+        return new_src
+    if src_lower.startswith(("http://", "https://")):
+        if not include_remote:
+            return None
+        return await _localize_remote(
+            db,
+            url=src,
+            ticket=ticket,
+            message=message,
+            save=save,
+            total_tracker=total_tracker,
+        )
+    # Относительные/data: — оставляем как есть (data: дропнет nh3; относительные
+    # в письмах бессмысленны).
+    return None
+
+
+async def localize_remote_images(
+    db: AsyncSession,
+    *,
+    ticket: HelpdeskTicket,
+    message: HelpdeskMessage,
+    html: str,
+    total_tracker: _TotalTrackerLike | None = None,
+    save: _SaveFn | None = None,
+) -> str:
+    """Post-commit локализация только внешних ``http(s)://`` картинок (H-2).
+
+    Вызывается **после** коммита тикета/сообщения, чтобы медленный remote-fetch
+    (httpx + редиректы + таймауты) не держал DB-транзакцию открытой (иначе
+    письмо с множеством ``<img>`` → pool exhaustion). Inline ``cid:`` и обычные
+    вложения уже сохранены в транзакции; здесь дорабатываем только remote.
+
+    Возвращает обновлённый ``html`` (с переписанными src) или исходный, если
+    ничего не локализовано. Best-effort: ошибки отдельных картинок не роняют
+    шаг. Caller сохраняет результат в ``message.body_html`` отдельным коммитом.
+    """
+    if not html:
+        return html
+    if save is None:
+        from app.services.helpdesk.attachments import save_image_bytes
+
+        save = save_image_bytes
+
+    updated = html
+    processed = 0
+    for src in find_img_sources(html):
+        if not src:
+            continue
+        src_lower = src.strip().lower()
+        if not src_lower.startswith(("http://", "https://")):
+            continue
+        if processed >= _MAX_IMAGES:
+            logger.warning(
+                "helpdesk.image.max_remote_images_exceeded",
+                ticket_id=str(ticket.id),
+                limit=_MAX_IMAGES,
+            )
+            break
+        new_src = await _localize_remote(
+            db,
+            url=src,
+            ticket=ticket,
+            message=message,
+            save=save,
+            total_tracker=total_tracker,
+        )
+        processed += 1
+        if new_src and new_src != src:
+            updated = replace_img_src(updated, src, new_src)
+    return updated
+
+
+async def _localize_cid(
+    db: AsyncSession,
+    *,
+    cid: str,
+    inline_map: dict[str, InlineImage],
+    ticket: HelpdeskTicket,
+    message: HelpdeskMessage,
+    save: _SaveFn,
+    total_tracker: _TotalTrackerLike | None,
+) -> str | None:
+    inline = inline_map.get(cid)
+    if inline is None:
+        return None
+    att = await save(
+        db,
+        ticket=ticket,
+        message_id=message.id,
+        data=inline.data,
+        original_name=inline.filename,
+        total_tracker=total_tracker,
+        is_inline=True,
+        content_id=cid,
+    )
+    if att is None:
+        return None
+    return f"{ATTACHMENT_URL_PREFIX}{att.id}"
+
+
+async def _assert_safe_to_fetch(url: str) -> bool:
+    """Полная SSRF-проверка URL перед запросом: scheme + host.
+
+    Для host-как-IP — диапазон (через ``is_safe_remote_url``). Для домена —
+    резолв через ``_resolve_is_safe`` (DNS-rebinding guard). Используется на
+    каждом hop редиректа, а не только на исходном URL (иначе редирект на
+    internal/loopback/169.254.169.254 bypass'ил бы первичную валидацию).
+    """
+    if not is_safe_remote_url(url):
+        return False
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").lower()
+    try:
+        ipaddress.ip_address(host)
+        # IP уже проверен в is_safe_remote_url.
+        return True
+    except ValueError:
+        return await _resolve_is_safe(host)
+
+
+async def _localize_remote(
+    db: AsyncSession,
+    *,
+    url: str,
+    ticket: HelpdeskTicket,
+    message: HelpdeskMessage,
+    save: _SaveFn,
+    total_tracker: _TotalTrackerLike | None,
+) -> str | None:
+    if not await _assert_safe_to_fetch(url):
+        logger.warning("helpdesk.image.remote.unsafe_url", url=url)
+        return None
+
+    data = await _fetch_remote(url)
+    if data is None:
+        return None
+    att = await save(
+        db,
+        ticket=ticket,
+        message_id=message.id,
+        data=data,
+        original_name=_derive_remote_filename(url),
+        total_tracker=total_tracker,
+        # Внешние http(s)://-картинки — inline: они уже вставлены в ``body_html``
+        # как ``<img src="...">``, и в ленте должны рендериться в теле, а не как
+        # ссылка-вложение внизу. ``content_id`` нет (это не ``multipart/related``).
+        is_inline=True,
+    )
+    if att is None:
+        return None
+    return f"{ATTACHMENT_URL_PREFIX}{att.id}"
+
+
+# Максимальное число hops редиректов (защита от redirect-циклов). 5 — стандарт
+# браузеров/curl; покрывает CDN/short-link сценарии.
+_MAX_REDIRECTS = 5
+
+
+async def _resolve_public_ips(host: str) -> list[IPv4Address | IPv6Address]:
+    """Резолв домена, вернуть список **public** IP (защита от SSRF).
+
+    Возвращает пустой список, если host не резолвится или все адреса
+    private/loopback/link-local. Для IP-адреса (не домена) возвращает его
+    самого, если он public.
+    """
+    import asyncio
+
+    try:
+        ip = ipaddress.ip_address(host)
+        return [ip] if _is_public_ip(ip) else []
+    except ValueError:
+        pass  # Домен — резолвим ниже.
+
+    try:
+        loop = asyncio.get_running_loop()
+        infos = await loop.getaddrinfo(host, None)
+    except OSError:
+        return []
+
+    result: list[IPv4Address | IPv6Address] = []
+    for info in infos:
+        addr = info[4][0]
+        try:
+            ip = ipaddress.ip_address(addr)
+        except ValueError:
+            continue
+        if _is_public_ip(ip) and ip not in result:
+            result.append(ip)
+    return result
+
+
+async def _resolve_stable_public_ip(host: str) -> IPv4Address | IPv6Address | None:
+    """Двойной резолв с пиннингом IP (защита от DNS-rebinding, H-1).
+
+    ``_assert_safe_to_fetch`` резолвит host через ``_resolve_is_safe`` отдельно
+    от httpx-соединения → классический TOCTOU: атакующий DNS (low TTL) может
+    отдать public IP для проверки и ``127.0.0.1``/``169.254.169.254`` для
+    реального соединения. Здесь мы резолвим **дважды** и требуем, чтобы оба
+    резолва вернули одно и то же непустое множество public IP — это сужает окно
+    TOCTOU до минимума и блокирует базовый rebinding (где первый ответ public,
+    второй — private). Возвращает первый стабильный public IP или ``None``.
+
+    Ограничение: теоретически уязвима к атакующему, который полностью
+    контролирует DNS резолвер и может держать стабильный private-ответ после
+    первого public — полная защита требует пиннинга соединения на уровне
+    httpcore transport. Для корпоративного интранет-портала (IMAP-polling,
+    best-effort локализация картинок) текущая защита достаточна.
+    """
+    # IP-адрес — уже проверен в is_safe_remote_url, стабилен по определению.
+    try:
+        ip = ipaddress.ip_address(host)
+        return ip if _is_public_ip(ip) else None
+    except ValueError:
+        pass
+
+    first = await _resolve_public_ips(host)
+    if not first:
+        return None
+    second = await _resolve_public_ips(host)
+    if not second:
+        return None
+    first_set = {str(ip) for ip in first}
+    second_set = {str(ip) for ip in second}
+    if first_set != second_set:
+        logger.warning(
+            "helpdesk.image.remote.dns_rebinding",
+            host=host,
+            first=sorted(first_set),
+            second=sorted(second_set),
+        )
+        return None
+    return first[0]
+
+
+async def _fetch_remote(url: str) -> bytes | None:
+    """Выкачать внешнюю картинку (httpx), с таймаутом и лимитом размера.
+
+    Защиты:
+      * **SSRF (H-1):** ``follow_redirects=False`` + ручная обработка редиректов
+        с ре-валидацией каждого hop через ``_assert_safe_to_fetch`` + двойной
+        резолв с пиннингом IP (``_resolve_stable_public_ip``) против
+        DNS-rebinding.
+      * **OOM (H-3):** стриминг тела (``client.stream``) + раняя проверка
+        ``Content-Length`` + бегущий счётчик байт с abort при превышении лимита —
+        ответ не буферизуется целиком в память.
+
+    Возвращает ``None`` при ошибке/недоступности/небезопасном редиректе/
+    превышении размера/числа hops (best-effort — картинка остаётся как есть)."""
+    import httpx
+
+    try:
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(_FETCH_TIMEOUT),
+            follow_redirects=False,
+            headers={"User-Agent": _UA},
+        ) as client:
+            current = url
+            for _ in range(_MAX_REDIRECTS + 1):
+                # Ре-валидация на каждом hop (включая исходный URL — единый путь).
+                if not await _assert_safe_to_fetch(current):
+                    logger.warning("helpdesk.image.remote.unsafe_redirect", url=current)
+                    return None
+                # H-1: двойной резолв против DNS-rebinding (TOCTOU между
+                # _assert_safe_to_fetch и httpx-соединением).
+                parsed = urlparse(current)
+                host = (parsed.hostname or "").lower()
+                if not host or await _resolve_stable_public_ip(host) is None:
+                    logger.warning("helpdesk.image.remote.dns_rebinding_blocked", url=current)
+                    return None
+                # H-3: стриминг — не аллоцируем тело целиком до проверки размера.
+                async with client.stream("GET", current) as resp:
+                    if resp.status_code in (301, 302, 303, 307, 308):
+                        location = resp.headers.get("location")
+                        if not location:
+                            return None
+                        # Относительный Location — разрешить против базового URL.
+                        current = str(httpx.URL(current).join(location))
+                        continue
+                    if resp.status_code != 200:
+                        logger.warning(
+                            "helpdesk.image.remote.bad_status",
+                            url=current,
+                            status=resp.status_code,
+                        )
+                        return None
+                    ctype = (resp.headers.get("content-type") or "").split(";")[0].strip().lower()
+                    if ctype and not ctype.startswith("image/"):
+                        logger.warning(
+                            "helpdesk.image.remote.not_image", url=current, content_type=ctype
+                        )
+                        return None
+                    # Ранняя проверка Content-Length (если указан) — экономит
+                    # стриминг заведомо больших ответов.
+                    cl_raw = resp.headers.get("content-length")
+                    if cl_raw and cl_raw.isdigit() and int(cl_raw) > _FETCH_MAX_BYTES:
+                        logger.warning("helpdesk.image.remote.too_large_cl", url=current)
+                        return None
+                    # Бегущий счётчик байт с abort при превышении (защита от
+                    # ложного/отсутствующего Content-Length).
+                    buf = bytearray()
+                    overflow = False
+                    async for chunk in resp.aiter_raw():
+                        buf.extend(chunk)
+                        if len(buf) > _FETCH_MAX_BYTES:
+                            overflow = True
+                            break
+                    if overflow:
+                        logger.warning("helpdesk.image.remote.too_large", url=current)
+                        return None
+                    return bytes(buf)
+            logger.warning("helpdesk.image.remote.too_many_redirects", url=url)
+            return None
+    except (httpx.HTTPError, OSError) as exc:
+        logger.warning("helpdesk.image.remote.fetch_failed", url=url, error=str(exc))
+        return None
+
+
+def _derive_remote_filename(url: str) -> str:
+    """Имя файла из URL (последний сегмент пути) или fallback ``image``."""
+    parsed = urlparse(url)
+    path = parsed.path.rstrip("/")
+    name = path.rsplit("/", 1)[-1] if path else ""
+    return name or "image"
+
+
+# ── Типы для DI (тесты подставляют моки) ─────────────────────────────────────
+
+if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
+
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    from app.models.helpdesk import HelpdeskAttachment, HelpdeskMessage, HelpdeskTicket
+
+    _SaveFn = Callable[..., Awaitable[HelpdeskAttachment | None]]
+    # kwargs, которые передаёт :func:`_localize_cid`/:func:`_localize_remote`:
+    # db, ticket, message_id, data, original_name, total_tracker, is_inline,
+    # content_id. Тесты подставляют мок с совместимой сигнатурой (см.
+    # ``test_helpdesk_email_images::_save_mock``).
+
+
+class _TotalTrackerLike(Protocol):
+    """Счётчик суммарного размера вложений (``attachments._TotalTracker``
+    удовлетворяет)."""
+
+    total: int

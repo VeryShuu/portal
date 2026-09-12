@@ -1,0 +1,32 @@
+# Path-scoped, reviewed Trivy exceptions. Keep every exception narrow and
+# documented here; do not suppress a check repository-wide.
+vulnerabilities:
+  # review-2 (P1.4) / review-3 (P1): Go stdlib v1.24.6 внутри Go-бинарника
+  # gosu базового образа postgres:16 (Target: usr/local/bin/gosu). Исключение
+  # сужено точным пакетом+путём (действует ТОЛЬКО на этот бинарник — прочие
+  # образы и fs-scan не затронуты) и датой истечения: убрать при первом
+  # обновлении базового postgres:16 до toolchain go >= 1.24.13 (проверка —
+  # прогон publish-джобы: без этого exclude CRITICAL-гейт снова увидит CVE).
+  - id: CVE-2025-68121
+    package: stdlib
+    paths:
+      - "usr/local/bin/gosu"
+    expired_at: 2026-10-23
+    statement: >-
+      Go stdlib CVE in the gosu binary of the stock postgres:16 base image
+      (go1.24.6; fixed upstream in go1.24.13, the official image does not
+      ship the patched toolchain yet). Scoped to this exact package+path and
+      expires 2026-10-23 — re-evaluate at the next base-image bump.
+misconfigurations:
+  - id: DS-0002
+    paths:
+      - "postgres/Dockerfile"
+      - "monitoring/node-exporter-textfile/Dockerfile"
+    statement: >-
+      PostgreSQL needs the official image entrypoint's root initialization path
+      to repair ownership of a new or restored PGDATA bind mount before it
+      drops to the image's postgres user (UID 999). The storage collector needs
+      root to write the shared textfile bind mount and read Docker host
+      logs/volumes through the read-only rootfs mount. Both exceptions are
+      limited to startup/collection mechanics; the services use
+      no-new-privileges and are covered by a separate non-root redesign task.

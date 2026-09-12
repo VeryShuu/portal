@@ -1,0 +1,229 @@
+name: security
+# Переведено с GitHub Actions → Forgejo Actions. actions/* берутся из
+# https://code.forgejo.org/actions/* (SHA-pins сохранены). См. docs/forgejo-runner-setup.md.
+# Образы инструментов (gitleaks/trivy/zaproxy) и базовый act-образ — зеркала в
+# собственном registry forgejo.mage.ru/mage/*: ghcr.io с раннера недостижим
+# (DNS SERVFAIL + evicted после prune, инцидент 2026-08-24 — прогоны #829-831).
+# Обслуживание зеркал — docs/forgejo-runner-setup.md §«Зеркало ghcr-образов».
+
+
+on:
+  push:
+    branches: [main]
+    # Review-2 (P2): релизный тег публиковал образы, но security-workflow на
+    # нём не запускался вовсе. Forgejo Actions не умеет needs между workflow —
+    # publish-images не может ждать security-джоб; защита сейчас ЧЕРЕЗ МЁРДЖ:
+    # security-контексты обязательны в branch protection, до тега коммит
+    # проходит те же проверки в PR. Запуск на теге — независимая сверка
+    # артефакта, публикующегося в registry.
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "0 4 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: true
+
+# Наименьшие привилегии по умолчанию; отдельные job'ы расширяют точечно.
+
+jobs:
+  # --- Утечки секретов (блокирующий гейт) -----------------------------------
+  # Любой найденный секрет (токен, пароль, App Password, ключ) роняет проверку.
+  # Запускаем через официальный docker-образ — без лицензии и без сторонних
+  # GitHub-экшенов в supply-chain. Работает в приватном репо без GHAS.
+  secrets-scan:
+    name: secrets / gitleaks (weekly)
+    # PR/push запускаются в основном CI: только там результат может блокировать
+    # publish-images. Здесь сохраняем независимый weekly/manual full-history scan.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: [ubuntu-latest, ci-general]
+    timeout-minutes: 15
+    steps:
+      - uses: https://code.forgejo.org/actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: gitleaks detect (full history)
+        # Pinned by semver (audit [M21]): floating :latest даёт невоспроизводимые
+        # сканирования — новые правила gitleaks могут пропустить секрет, который
+        # ловила предыдущая. Dependabot (docker ecosystem) обновит тег.
+        # v8.30.1 — последний стабильный на 2026-07-26.
+        #
+        # forgejo-runner — docker-in-docker через сокет хоста: `${{ github.workspace }}`
+        # это путь ВНУТРИ job-контейнера, host-демон его не видит, поэтому прежний
+        # `docker run -v $workspace:/repo` монтировал пустоту → gitleaks сканировал
+        # 0 коммитов (ложный green, дыра в блокирующем security-гейте). Фикс: docker
+        # create + docker cp (CLI читает свой FS и стримит через сокет — host-путь не
+        # нужен) + docker start -a (пробрасывает exit code сканера: секрет найден →
+        # rc=1 → шаг падает, гейт работает). Образ — зеркало forgejo.mage.ru
+        # (ghcr.io с раннера недостижим, инцидент 2026-08-24).
+        # Валидировано локально: Stripe-ключ → leaks found, exit 1.
+        # @sha256 — иммутабельный пин зеркала (аудит-3): перезапись мутабельного
+        # тега не может тихо подменить сканер.
+        run: |
+          set -euo pipefail
+          img=forgejo.mage.ru/mage/gitleaks:v8.30.1@sha256:b109bc5f8f76a38196a3e413704fc5b9e3c32360bce4e4b603bd6f45b3721dbb
+          cid=$(docker create "$img" detect --source=/repo --redact -v)
+          trap 'docker rm -f "$cid" >/dev/null 2>&1 || true' EXIT
+          docker cp "${{ github.workspace }}/." "$cid:/repo/"
+          docker start -a "$cid"
+
+  # --- Уязвимости в зависимостях (blocking: HIGH/CRITICAL) ------------------
+  dependency-audit:
+    name: deps / pip-audit + npm audit
+    runs-on: [ubuntu-latest, ci-general]
+    timeout-minutes: 20
+    steps:
+      - uses: https://code.forgejo.org/actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: https://code.forgejo.org/actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/pyproject.toml
+      - uses: https://code.forgejo.org/actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: pip-audit (backend)
+        working-directory: backend
+        run: |
+          set -o pipefail
+          pip install -e ".[dev]"
+          pip install pip-audit
+          {
+            echo "## pip-audit (backend)"
+            echo
+            echo '```'
+            pip-audit --desc 2>&1
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: npm audit (frontend, high+)
+        working-directory: frontend
+        run: |
+          set -o pipefail
+          npm ci
+          # npm закрывает старый /quick audit endpoint: клиент из node 20 бьёт в
+          # него и ловит intermittent «400 Invalid package tree» (run 1250,
+          # 2026-09-02). Свежий клиент ходит в bulk-endpoint. Гейт не ослаблен:
+          # HIGH/CRITICAL по-прежнему блокируют мёрж; при недоступности npm@11
+          # остаётся прежний клиент (рентрай пустым коммитом как раньше).
+          npm install -g npm@11 >/dev/null 2>&1 || true
+          # bulk-endpoint registry.npmjs.org с раннера периодически висит
+          # (read ETIMEDOUT за 17 минут, run 1258) — до 3 попыток. Реальные
+          # HIGH/CRITICAL не совпадают с паттерном сети и падают сразу.
+          for attempt in 1 2 3; do
+            set +e
+            npm audit --audit-level=high --fetch-timeout=120000 --fetch-retries=2 > /tmp/audit.out 2>&1
+            audit_rc=$?
+            set -e
+            {
+              echo "## npm audit (frontend, high+) — попытка $attempt"
+              echo
+              echo '```'
+              cat /tmp/audit.out
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            if [ "$audit_rc" -eq 0 ]; then
+              exit 0
+            fi
+            if ! grep -qE "ETIMEDOUT|ECONNRESET|EAI_AGAIN|audit endpoint returned an error|Invalid package tree|Bad Request" /tmp/audit.out; then
+              exit 1
+            fi
+            echo "npm audit: сетевой сбой реестра (попытка $attempt) — повтор через 15с"
+            sleep 15
+          done
+          exit 1
+
+  # --- Trivy: уязвимости зависимостей + мисконфиги (blocking HIGH/CRITICAL) --
+  # Отчёт идёт в Summary job'а + артефакт. SARIF в Security tab НЕ грузим:
+  # это требует GitHub Advanced Security, недоступного для приватного
+  # личного репозитория. HIGH/CRITICAL findings и ошибка сканера блокируют CI.
+  trivy-fs:
+    name: trivy / filesystem scan
+    runs-on: [ubuntu-latest, ci-general]
+    timeout-minutes: 20
+    steps:
+      - uses: https://code.forgejo.org/actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Trivy filesystem scan (table)
+        # Pinned by semver (audit [M21]): floating :latest даёт невоспроизводимые
+        # сканирования. Dependabot (docker ecosystem) обновит тег.
+        # v0.72.0 — последний стабильный на 2026-07-26.
+        #
+        # forgejo-runner docker-in-docker: прежний `docker run -v $workspace:/workspace`
+        # монтировал пустоту (workspace — путь ВНУТРИ job-контейнера, host-демон его
+        # не видит) → trivy не находил файлов → WARN "Supported files not found" →
+        # отчёт не писался → `cat trivy-report.txt` ронял шаг (красный informational).
+        # Фикс: docker create + docker cp репозитория в контейнер сканера + docker
+        # start -a, отчёт забираем обратно docker cp. Образ — зеркало
+        # forgejo.mage.ru/mage/trivy. Vuln-DB trivy качает сам в рантайме
+        # (ghcr.io/mirror.gcr.io — нужен рабочий DNS раннера); при недостижимости
+        # job падает красным = fail-closed. НЕ зеркалировать DB статикой:
+        # устаревшая база = ложный green security-гейта.
+        run: |
+          set -euo pipefail
+          # @sha256 — иммутабельный пин зеркала (аудит-3, P2)
+          img=forgejo.mage.ru/mage/trivy:0.72.0@sha256:c6e969c5662a546ad5de4a73c2a6b7a7c627f86d916903e175aa623af5b97ada
+          cid=$(docker create -w /repo "$img" \
+            fs --scanners vuln,misconfig --severity HIGH,CRITICAL --exit-code 1 \
+               --ignorefile /repo/.trivyignore.yaml \
+               --format table --output /repo/trivy-report.txt .)
+          trap 'docker rm -f "$cid" >/dev/null 2>&1 || true' EXIT
+          docker cp "${{ github.workspace }}/." "$cid:/repo/"
+          set +e
+          docker start -a "$cid"
+          scan_rc=$?
+          set -e
+          docker cp "$cid:/repo/trivy-report.txt" "${{ github.workspace }}/trivy-report.txt"
+          {
+            echo "## Trivy filesystem scan (HIGH/CRITICAL)"
+            echo
+            echo '```'
+            if [ -s "${{ github.workspace }}/trivy-report.txt" ]; then
+              cat "${{ github.workspace }}/trivy-report.txt"
+            else
+              echo "(отчёт не сформирован — нет находок HIGH,CRITICAL или сбой скана)"
+            fi
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+          exit "$scan_rc"
+      - name: Upload Trivy report
+        if: always()
+        uses: https://code.forgejo.org/actions/upload-artifact@ff15f0306b3f739f7b6fd43fb5d26cd321bd4de5 # v3.2.1: Forgejo-compatible SHA pin
+        with:
+          name: trivy-report
+          path: trivy-report.txt
+          retention-days: 14
+          if-no-files-found: warn
+
+  # --- SAST: CodeQL (требует GitHub Advanced Security) -----------------------
+  # СПЯЩИЙ job: запускается только если в репозитории задана переменная
+  # ENABLE_CODE_SCANNING=true (Settings → Secrets and variables → Actions →
+  # Variables). Сейчас, на приватном личном репо без GHAS, CodeQL недоступен,
+  # поэтому job по умолчанию пропускается и НЕ роняет CI. Когда репозиторий
+  # переедет в организацию с лицензией Code Security (или станет публичным) —
+  # достаточно завести переменную, ничего в коде менять не нужно.
+  codeql:
+    name: codeql / ${{ matrix.language }}
+    if: vars.ENABLE_CODE_SCANNING == 'true'
+    runs-on: [ubuntu-latest, ci-general]
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [python, javascript-typescript]
+    steps:
+      - uses: https://code.forgejo.org/actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@5595ccaf912efad79be6eef63a5619ff05969be3 # v4
+        with:
+          languages: ${{ matrix.language }}
+          queries: security-and-quality
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@5595ccaf912efad79be6eef63a5619ff05969be3 # v4
+        with:
+          category: "/language:${{ matrix.language }}"

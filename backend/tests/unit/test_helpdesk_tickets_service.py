@@ -1,0 +1,983 @@
+"""Unit-тесты сервисного слоя заявок (``services/helpdesk/tickets.py``).
+
+Покрывает:
+- ``_agent_filter_conditions`` — все 5 фильтров (чистая, parametrize)
+- ``resolve_requester_user`` — 3 ветки (requester_user_id / empty email / fallback)
+- ``reopen_ticket`` — IllegalTransitionError + happy path
+- ``change_status`` — commit + closed_at/closed_by
+- ``assign_ticket`` — new→open vs non-new (дополнение к messages_tx)
+- ``count_my_tickets`` / ``list_my_tickets`` / ``fetch_ticket_for_user``
+- ``count_agent_tickets`` / ``list_agent_tickets`` / ``fetch_ticket_for_agent``
+- ``create_ticket`` — инвариант первого сообщения + commit + fetch
+- ``link_guest_tickets`` — гостевое линкование, идемпотентность
+
+Стиль моков — по образцу ``test_helpdesk_messages_tx.py``: ``MagicMock()`` +
+явные ``AsyncMock`` на async-методах, ``SimpleNamespace`` для тикетов.
+"""
+
+from __future__ import annotations
+
+import uuid
+from datetime import datetime
+from types import SimpleNamespace
+from typing import cast
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+from sqlalchemy import select
+
+from app.models.helpdesk import HelpdeskTicket
+from app.services.helpdesk import tickets as svc
+from app.services.helpdesk.lifecycle import IllegalTransitionError
+
+
+def _ticket(
+    *,
+    status: str = "new",
+    requester_user_id: uuid.UUID | None = None,
+    requester_email: str | None = "guest@example.com",
+    requester_user=None,
+    number: int = 5,
+    assignee_user_id: uuid.UUID | None = None,
+) -> SimpleNamespace:
+    return SimpleNamespace(
+        id=uuid.uuid4(),
+        number=number,
+        status=status,
+        subject="Тема",
+        description="Описание",
+        source="web",
+        requester_user_id=requester_user_id,
+        requester_email=requester_email,
+        requester_name="Гость",
+        requester_user=requester_user,
+        assignee_user_id=assignee_user_id,
+        assigned_at=None,
+        closed_at=None,
+        closed_by_user_id=None,
+        last_activity_at=datetime(2026, 7, 1),
+    )
+
+
+def _user(*, uid: uuid.UUID | None = None) -> SimpleNamespace:
+    return SimpleNamespace(
+        id=uid or uuid.uuid4(),
+        email="user@portal.local",
+        full_name="Иван Иванов",
+        role="reader",
+    )
+
+
+def _make_db() -> MagicMock:
+    db = MagicMock()
+    db.add = MagicMock()
+    db.flush = AsyncMock()
+    db.commit = AsyncMock()
+    db.refresh = AsyncMock()
+    return db
+
+
+# ── _agent_filter_conditions (чистая функция, 5 фильтров) ───────────────────
+
+
+class TestAgentFilterConditions:
+    def test_no_filters_empty(self):
+        assert (
+            svc._agent_filter_conditions(
+                status_filter=None,
+                assignee_id=None,
+                unassigned=False,
+                source=None,
+                query=None,
+            )
+            == []
+        )
+
+    def test_status_filter_appended(self):
+        conds = svc._agent_filter_conditions(
+            status_filter="open", assignee_id=None, unassigned=False, source=None, query=None
+        )
+        assert len(conds) == 1
+
+    def test_assignee_id_appended(self):
+        aid = uuid.uuid4()
+        conds = svc._agent_filter_conditions(
+            status_filter=None, assignee_id=aid, unassigned=False, source=None, query=None
+        )
+        assert len(conds) == 1
+
+    def test_unassigned_appended(self):
+        conds = svc._agent_filter_conditions(
+            status_filter=None, assignee_id=None, unassigned=True, source=None, query=None
+        )
+        assert len(conds) == 1
+
+    def test_source_appended(self):
+        conds = svc._agent_filter_conditions(
+            status_filter=None, assignee_id=None, unassigned=False, source="email", query=None
+        )
+        assert len(conds) == 1
+
+    def test_query_appends_or_condition(self):
+        conds = svc._agent_filter_conditions(
+            status_filter=None, assignee_id=None, unassigned=False, source=None, query="vpn"
+        )
+        assert len(conds) == 1  # один or_ на 3 поля
+
+    def test_active_only_appends_status_in_condition(self):
+        """active_only=True → status IN ('new','open','pending'). Нужно для
+        двухблочного инбокса: нижний блок «В работе» скрывает resolved/closed
+        (они в архиве), не задавая конкретный status_filter."""
+        conds = svc._agent_filter_conditions(
+            status_filter=None,
+            assignee_id=None,
+            unassigned=False,
+            source=None,
+            query=None,
+            active_only=True,
+        )
+        assert len(conds) == 1
+
+    def test_active_only_ignored_when_status_filter_set(self):
+        """Конкретный status_filter точнее active_only — последний не добавляется
+        (elif), чтобы не было взаимоисключающих условий."""
+        conds = svc._agent_filter_conditions(
+            status_filter="closed",
+            assignee_id=None,
+            unassigned=False,
+            source=None,
+            query=None,
+            active_only=True,
+        )
+        assert len(conds) == 1  # только status == 'closed', без IN
+
+    def test_active_only_default_false_backward_compatible(self):
+        """Новый параметр обратно-совместим: без него поведение не меняется."""
+        conds = svc._agent_filter_conditions(
+            status_filter=None,
+            assignee_id=None,
+            unassigned=False,
+            source=None,
+            query=None,
+        )
+        assert conds == []
+
+    def test_assigned_appends_is_not_null(self):
+        """assigned=True → assignee IS NOT NULL. Режим «Все назначенные» в инбоксе:
+        показать тикеты, назначенные на любого агента, БЕЗ неназначенных
+        (которые в верхнем блоке «Новые заявки»)."""
+        conds = svc._agent_filter_conditions(
+            status_filter=None,
+            assignee_id=None,
+            unassigned=False,
+            source=None,
+            query=None,
+            assigned=True,
+        )
+        assert len(conds) == 1
+
+    def test_assigned_ignored_when_unassigned_set(self):
+        """unassigned и assigned взаимоисключающие — unassigned优先 (elif),
+        assigned не добавляется."""
+        conds = svc._agent_filter_conditions(
+            status_filter=None,
+            assignee_id=None,
+            unassigned=True,
+            source=None,
+            query=None,
+            assigned=True,
+        )
+        assert len(conds) == 1  # только IS NULL, без IS NOT NULL
+
+    def test_all_filters_combined(self):
+        """status + assignee_id + unassigned + source + query = 5 условий.
+
+        Внимание: ``assignee_id`` и ``unassigned`` — взаимоисключающие в UI, но
+        функция добавляет оба без проверки; здесь тестируем именно полноту."""
+        conds = svc._agent_filter_conditions(
+            status_filter="open",
+            assignee_id=uuid.uuid4(),
+            unassigned=True,
+            source="web",
+            query="x",
+        )
+        assert len(conds) == 5
+
+
+# ── resolve_requester_user — 3 ветки ────────────────────────────────────────
+
+
+class TestResolveRequesterUser:
+    @pytest.mark.asyncio
+    async def test_returns_requester_user_when_id_present(self):
+        """Есть requester_user_id → возвращаем eager-loaded requester_user."""
+        ru = _user()
+        ticket = _ticket(requester_user_id=ru.id, requester_user=ru)
+
+        got = await svc.resolve_requester_user(MagicMock(), ticket=ticket)
+
+        assert got is ru  # без доп. запроса к БД
+
+    @pytest.mark.asyncio
+    async def test_empty_email_returns_none(self):
+        """Гостевая заявка без email → None (профиль не отрисовывается)."""
+        ticket = _ticket(requester_user_id=None, requester_email=None)
+
+        got = await svc.resolve_requester_user(MagicMock(), ticket=ticket)
+
+        assert got is None
+
+    @pytest.mark.asyncio
+    async def test_guest_email_fallback_search(self):
+        """Нет requester_user_id, но есть email → поиск сотрудника по LOWER(email)."""
+        ticket = _ticket(requester_user_id=None, requester_email="Guest@Example.com")
+        found = _user()
+        db = MagicMock()
+        result = MagicMock()
+        result.scalars.return_value.one_or_none.return_value = found
+        db.execute = AsyncMock(return_value=result)
+
+        got = await svc.resolve_requester_user(db, ticket=ticket)
+
+        assert got is found
+        db.execute.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_guest_email_not_found_returns_none(self):
+        ticket = _ticket(requester_user_id=None, requester_email="nobody@example.com")
+        db = MagicMock()
+        result = MagicMock()
+        result.scalars.return_value.one_or_none.return_value = None
+        db.execute = AsyncMock(return_value=result)
+
+        got = await svc.resolve_requester_user(db, ticket=ticket)
+
+        assert got is None
+
+
+# ── reopen_ticket — IllegalTransitionError + happy path ─────────────────────
+
+
+class TestReopenTicket:
+    @pytest.mark.asyncio
+    async def test_raises_on_non_closed(self):
+        """Reopen только из closed; из других статусов → IllegalTransitionError."""
+        db = _make_db()
+        for bad_status in ("new", "open", "pending", "resolved"):
+            ticket = _ticket(status=bad_status)
+            with pytest.raises(IllegalTransitionError):
+                await svc.reopen_ticket(db, ticket=ticket)
+
+    @pytest.mark.asyncio
+    async def test_closed_reopens_to_open_and_clears_closed_fields(self):
+        db = _make_db()
+        actor_id = uuid.uuid4()
+        ticket = _ticket(status="closed")
+        ticket.closed_at = datetime(2026, 7, 1)
+        ticket.closed_by_user_id = actor_id
+
+        result = await svc.reopen_ticket(db, ticket=ticket)
+
+        assert result.status == "open"
+        assert result.closed_at is None
+        assert result.closed_by_user_id is None
+        db.commit.assert_awaited_once()
+        db.refresh.assert_awaited_once()
+
+
+# ── change_status — commit + closed_at/closed_by ────────────────────────────
+
+
+class TestChangeStatus:
+    @pytest.mark.asyncio
+    async def test_close_sets_closed_fields(self):
+        db = _make_db()
+        actor = _user()
+        ticket = _ticket(status="open")
+
+        result = await svc.change_status(db, ticket=ticket, target="closed", actor=actor)
+
+        assert result.status == "closed"
+        assert result.closed_at is not None
+        assert result.closed_by_user_id == actor.id
+        db.commit.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_non_close_transition_no_closed_fields(self):
+        db = _make_db()
+        actor = _user()
+        ticket = _ticket(status="new")
+
+        result = await svc.change_status(db, ticket=ticket, target="open", actor=actor)
+
+        assert result.status == "open"
+        assert result.closed_at is None
+        assert result.closed_by_user_id is None
+
+    @pytest.mark.asyncio
+    async def test_illegal_transition_propagates(self):
+        """Невалидный target → IllegalTransitionError (роутер транслирует в 409).
+
+        Замечание: ``new → closed`` разрешён (админ может сразу закрыть спам),
+        поэтому для ошибки берём несуществующий статус."""
+        db = _make_db()
+        actor = _user()
+        ticket = _ticket(status="new")
+
+        with pytest.raises(IllegalTransitionError):
+            await svc.change_status(db, ticket=ticket, target="foo", actor=actor)
+
+
+# ── assign_ticket — new→open vs non-new ─────────────────────────────────────
+
+
+class TestAssignTicket:
+    @pytest.mark.asyncio
+    async def test_new_becomes_open(self):
+        db = _make_db()
+        ticket = _ticket(status="new")
+        assignee_id = uuid.uuid4()
+
+        result = await svc.assign_ticket(db, ticket=ticket, assignee_id=assignee_id)
+
+        assert result is ticket
+        assert ticket.assignee_user_id == assignee_id
+        assert ticket.status == "open"
+        assert ticket.assigned_at is not None
+        db.commit.assert_not_awaited()  # outbox-инвариант: без commit
+
+    @pytest.mark.asyncio
+    async def test_non_open_status_unchanged_on_reassign(self):
+        """Реассайн тикета не из new — статус не меняется (только assignee)."""
+        db = _make_db()
+        ticket = _ticket(status="pending")
+        assignee_id = uuid.uuid4()
+
+        await svc.assign_ticket(db, ticket=ticket, assignee_id=assignee_id)
+
+        assert ticket.status == "pending"
+        assert ticket.assignee_user_id == assignee_id
+
+    @pytest.mark.asyncio
+    async def test_reassign_replaces_previous_assignee_and_updates_timestamp(self):
+        """Реассайн: предыдущий assignee заменяется, ``assigned_at`` обновляется.
+
+        Ключевой кейс для UI смены ответственного: тикет уже на агенте A, агент
+        B (или сам A) передаёт заявку агенту C — сервис должен заменить assignee
+        и поставить свежий ``assigned_at`` (для корректной сортировки/отчётов
+        «дней в работе»). Без commit (outbox-инвариант)."""
+        from datetime import UTC
+
+        db = _make_db()
+        old_assignee = uuid.uuid4()
+        old_assigned_at = datetime(2026, 6, 1, tzinfo=UTC)
+        new_assignee = uuid.uuid4()
+        ticket = _ticket(
+            status="open",
+            assignee_user_id=old_assignee,
+        )
+        ticket.assigned_at = old_assigned_at
+
+        await svc.assign_ticket(db, ticket=ticket, assignee_id=new_assignee)
+
+        assert ticket.assignee_user_id == new_assignee
+        assert ticket.assigned_at is not None
+        assert ticket.assigned_at > old_assigned_at  # обновился
+        assert ticket.status == "open"  # не из new → статус не трогаем
+        db.commit.assert_not_awaited()  # outbox-инвариант
+
+
+# ── is_active_helpdesk_agent / list_assignable_agents ───────────────────────
+
+
+class TestActiveAgentLookup:
+    """Валидация таргета при смене ответственного и список агентов для dropdown.
+
+    ``is_active_helpdesk_agent`` — gate в ``POST /tickets/{id}/assign``: только
+    действующий helpdesk-агент может быть назначен (требование пользователя).
+    ``list_assignable_agents`` — источник данных для dropdown смены.
+    """
+
+    @pytest.mark.asyncio
+    async def test_is_active_returns_true_when_row_found(self):
+        """Агент с живым аккаунтом → True (можно назначать)."""
+        db = MagicMock()
+        result = MagicMock()
+        result.first.return_value = (uuid.uuid4(),)
+        db.execute = AsyncMock(return_value=result)
+
+        got = await svc.is_active_helpdesk_agent(db, user_id=uuid.uuid4())
+
+        assert got is True
+
+    @pytest.mark.asyncio
+    async def test_is_active_returns_false_when_not_agent(self):
+        """Не-агент → False (роутер транслирует в 404, чтобы не раскрывать
+        детали членства — единый ответ «not found» для пользовательского id)."""
+        db = MagicMock()
+        result = MagicMock()
+        result.first.return_value = None
+        db.execute = AsyncMock(return_value=result)
+
+        got = await svc.is_active_helpdesk_agent(db, user_id=uuid.uuid4())
+
+        assert got is False
+
+    @pytest.mark.asyncio
+    async def test_list_assignable_returns_tuples(self):
+        """Возвращает ``[(user_id, full_name, email), ...]`` для dropdown.
+
+        Без флагов уведомлений (PII-минимизация) и отсортированный по ФИО —
+        формат, который роутер маппит в ``AgentOptionOut``."""
+        uid1, uid2 = uuid.uuid4(), uuid.uuid4()
+        db = MagicMock()
+        result = MagicMock()
+        result.all.return_value = [
+            (uid1, "Анна Иванова", "anna@portal.local"),
+            (uid2, "Борис Петров", "boris@portal.local"),
+        ]
+        db.execute = AsyncMock(return_value=result)
+
+        rows = await svc.list_assignable_agents(db)
+
+        assert rows == [
+            (uid1, "Анна Иванова", "anna@portal.local"),
+            (uid2, "Борис Петров", "boris@portal.local"),
+        ]
+
+    @pytest.mark.asyncio
+    async def test_list_assignable_empty_when_no_agents(self):
+        """Нет активных агентов → пустой список (dropdown покажет плейсхолдер)."""
+        db = MagicMock()
+        result = MagicMock()
+        result.all.return_value = []
+        db.execute = AsyncMock(return_value=result)
+
+        rows = await svc.list_assignable_agents(db)
+
+        assert rows == []
+
+
+# ── count_my_tickets / list_my_tickets / fetch_ticket_for_user ──────────────
+
+
+def _db_returning_scalar(value) -> MagicMock:
+    db = MagicMock()
+    result = MagicMock()
+    result.scalar_one = MagicMock(return_value=value)
+    db.execute = AsyncMock(return_value=result)
+    return db
+
+
+def _db_returning_scalars_all(items: list) -> MagicMock:
+    """Для list-функций: ``res.scalars().unique().all()`` (с unique — как в
+    list_my_tickets/list_agent_tickets с selectinload)."""
+    db = MagicMock()
+    result = MagicMock()
+    result.scalars.return_value.unique.return_value.all.return_value = items
+    db.execute = AsyncMock(return_value=result)
+    return db
+
+
+def _db_returning_scalars_all_plain(items: list) -> MagicMock:
+    """Для функций без ``.unique()`` (link_guest_tickets: ``res.scalars().all()``)."""
+    db = MagicMock()
+    result = MagicMock()
+    result.scalars.return_value.all.return_value = items
+    db.execute = AsyncMock(return_value=result)
+    return db
+
+
+def _db_returning_one_or_none(value) -> MagicMock:
+    db = MagicMock()
+    result = MagicMock()
+    result.scalars.return_value.unique.return_value.one_or_none.return_value = value
+    db.execute = AsyncMock(return_value=result)
+    return db
+
+
+class TestMyTickets:
+    @pytest.mark.asyncio
+    async def test_count_returns_int(self):
+        db = _db_returning_scalar(7)
+        n = await svc.count_my_tickets(db, user_id=uuid.uuid4(), status_filter=None)
+        assert n == 7
+
+    @pytest.mark.asyncio
+    async def test_count_with_status_filter(self):
+        db = _db_returning_scalar(3)
+        n = await svc.count_my_tickets(db, user_id=uuid.uuid4(), status_filter="open")
+        assert n == 3
+        db.execute.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_list_returns_sequence(self):
+        t1, t2 = _ticket(), _ticket()
+        db = _db_returning_scalars_all([t1, t2])
+        out = await svc.list_my_tickets(
+            db, user_id=uuid.uuid4(), status_filter=None, limit=20, offset=0
+        )
+        assert list(out) == [t1, t2]
+
+    @pytest.mark.asyncio
+    async def test_count_with_unassigned_filter(self):
+        """``unassigned=True`` — только тикеты без агента (для блока «ожидают принятия»)."""
+        db = _db_returning_scalar(2)
+        n = await svc.count_my_tickets(
+            db, user_id=uuid.uuid4(), status_filter=None, unassigned=True
+        )
+        assert n == 2
+
+    @pytest.mark.asyncio
+    async def test_count_with_assigned_filter(self):
+        """``assigned=True`` — только тикеты с назначенным специалистом."""
+        db = _db_returning_scalar(5)
+        n = await svc.count_my_tickets(db, user_id=uuid.uuid4(), status_filter=None, assigned=True)
+        assert n == 5
+
+    @pytest.mark.asyncio
+    async def test_list_with_unassigned_filter(self):
+        """``unassigned=True`` передаётся в list_my_tickets — фильтр срабатывает."""
+        t1 = _ticket()
+        db = _db_returning_scalars_all([t1])
+        out = await svc.list_my_tickets(
+            db,
+            user_id=uuid.uuid4(),
+            status_filter=None,
+            limit=20,
+            offset=0,
+            unassigned=True,
+        )
+        assert list(out) == [t1]
+
+    @pytest.mark.asyncio
+    async def test_list_with_assigned_filter(self):
+        """``assigned=True`` — список назначенных тикетов (блок «в работе у специалиста»)."""
+        t1, t2 = _ticket(), _ticket()
+        db = _db_returning_scalars_all([t1, t2])
+        out = await svc.list_my_tickets(
+            db,
+            user_id=uuid.uuid4(),
+            status_filter=None,
+            limit=20,
+            offset=0,
+            assigned=True,
+        )
+        assert list(out) == [t1, t2]
+
+    @pytest.mark.asyncio
+    async def test_list_filters_default_no_assignee_filter(self):
+        """Без unassigned/assigned — фильтр по assignee не накладывается (все тикеты)."""
+        t1 = _ticket()
+        db = _db_returning_scalars_all([t1])
+        await svc.list_my_tickets(db, user_id=uuid.uuid4(), status_filter=None, limit=20, offset=0)
+        # Запрос выполнен (функция вызвана без исключения) — структурная проверка.
+        db.execute.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_count_with_active_only(self):
+        """``active_only=True`` → ``status IN ('new','open','pending')``, closed
+        исключён. Нужно для двухблочного my-tickets: закрытые заявки не должны
+        оставаться в блоках «ожидают принятия» / «в работе» — они в архиве."""
+        db = _db_returning_scalar(3)
+        n = await svc.count_my_tickets(
+            db, user_id=uuid.uuid4(), status_filter=None, active_only=True
+        )
+        assert n == 3
+        db.execute.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_list_with_active_only(self):
+        """``active_only=True`` в list_my_tickets — возвращает только активные
+        (new/open/pending), закрытые отсекаются."""
+        t1, t2 = _ticket(), _ticket()
+        db = _db_returning_scalars_all([t1, t2])
+        out = await svc.list_my_tickets(
+            db,
+            user_id=uuid.uuid4(),
+            status_filter=None,
+            limit=20,
+            offset=0,
+            active_only=True,
+        )
+        assert list(out) == [t1, t2]
+
+    @pytest.mark.asyncio
+    async def test_active_only_ignored_when_status_filter_set(self):
+        """Конкретный ``status_filter`` точнее ``active_only`` — последний не
+        добавляется (elif). Нужно для архива заявителя: ``status=closed`` + не
+        должно превратиться в невыполнимое ``status IN (... active ...) AND
+        status='closed'``. Симметрично _agent_filter_conditions."""
+        db = _db_returning_scalar(4)
+        n = await svc.count_my_tickets(
+            db,
+            user_id=uuid.uuid4(),
+            status_filter="closed",
+            active_only=True,
+        )
+        assert n == 4
+        db.execute.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_active_only_default_false_backward_compatible(self):
+        """Без ``active_only`` поведение не меняется — backward compatible."""
+        db = _db_returning_scalar(2)
+        n = await svc.count_my_tickets(db, user_id=uuid.uuid4(), status_filter=None)
+        assert n == 2
+
+    @pytest.mark.asyncio
+    async def test_fetch_ticket_for_user_found(self):
+        ticket = _ticket()
+        db = _db_returning_one_or_none(ticket)
+        got = await svc.fetch_ticket_for_user(db, ticket_id=ticket.id, user_id=uuid.uuid4())
+        assert got is ticket
+
+    @pytest.mark.asyncio
+    async def test_fetch_ticket_for_user_not_found(self):
+        db = _db_returning_one_or_none(None)
+        got = await svc.fetch_ticket_for_user(db, ticket_id=uuid.uuid4(), user_id=uuid.uuid4())
+        assert got is None
+
+
+class TestMenuBadgeCounts:
+    """Счётчики для бейджей в меню (миграция функций count_*_active).
+
+    ``count_my_active_tickets`` — свои тикеты в new/open/pending (для пункта
+    «Поддержка» у заявителя). ``count_assigned_active_tickets`` — назначенные
+    агенту (для пункта «Инбокс поддержки»). Оба — один ``count(*)`` без join'ов.
+    """
+
+    @pytest.mark.asyncio
+    async def test_count_my_active_returns_int(self):
+        db = _db_returning_scalar(5)
+        n = await svc.count_my_active_tickets(db, user_id=uuid.uuid4())
+        assert n == 5
+        db.execute.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_count_my_active_zero(self):
+        """Нет открытых тикетов → 0 (бейдж скроется)."""
+        db = _db_returning_scalar(0)
+        n = await svc.count_my_active_tickets(db, user_id=uuid.uuid4())
+        assert n == 0
+
+    @pytest.mark.asyncio
+    async def test_count_assigned_active_returns_int(self):
+        db = _db_returning_scalar(3)
+        n = await svc.count_assigned_active_tickets(db, user_id=uuid.uuid4())
+        assert n == 3
+        db.execute.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_count_assigned_active_zero(self):
+        """Нет назначенных → 0 (бейдж скроется)."""
+        db = _db_returning_scalar(0)
+        n = await svc.count_assigned_active_tickets(db, user_id=uuid.uuid4())
+        assert n == 0
+
+
+# ── count_agent_tickets / list_agent_tickets / fetch_ticket_for_agent ───────
+
+
+class TestApplySort:
+    """``_apply_sort`` — серверная сортировка списка заявок (whitelist + direction).
+
+    Чистая функция: строит SQLAlchemy-stmt, не требует БД. Проверяем структуру
+    ORDER BY через компиляцию в SQL-строку (детерминированно, без подключения).
+    """
+
+    def _stmt_sql(self, sort: str | None, order: str) -> str:
+        stmt = select(HelpdeskTicket)
+        result, _ = svc._apply_sort(stmt, sort=sort, order=order)
+        return str(result.compile(compile_kwargs={"literal_binds": True}))
+
+    def test_sort_none_returns_applied_false(self):
+        stmt = select(HelpdeskTicket)
+        result, applied = svc._apply_sort(stmt, sort=None, order="desc")
+        assert applied is False
+        # stmt без order_by
+        assert "ORDER BY" not in str(result.compile())
+
+    def test_unknown_field_returns_applied_false(self):
+        stmt = select(HelpdeskTicket)
+        _, applied = svc._apply_sort(stmt, sort="evil_column", order="asc")
+        assert applied is False
+
+    def test_native_column_desc(self):
+        sql = self._stmt_sql("number", "desc")
+        assert "ORDER BY" in sql
+        assert "helpdesk_tickets.number DESC" in sql
+
+    def test_native_column_asc(self):
+        sql = self._stmt_sql("created_at", "asc")
+        assert "helpdesk_tickets.created_at ASC" in sql
+
+    def test_status_sortable(self):
+        sql = self._stmt_sql("status", "asc")
+        assert "helpdesk_tickets.status ASC" in sql
+
+    def test_requester_join_to_users_full_name(self):
+        sql = self._stmt_sql("requester", "asc")
+        # LEFT JOIN к users + ORDER BY full_name
+        assert "JOIN" in sql
+        assert "full_name ASC" in sql
+
+    def test_assignee_join_to_users_full_name(self):
+        sql = self._stmt_sql("assignee", "desc")
+        assert "JOIN" in sql
+        assert "full_name DESC" in sql
+
+    def test_order_case_insensitive(self):
+        # "ASC" uppercase тоже работает
+        sql = self._stmt_sql("number", "ASC")
+        assert "number ASC" in sql
+
+    @pytest.mark.parametrize("bad_order", ["", "random", "ASCENDING"])
+    def test_invalid_order_defaults_to_desc(self, bad_order: str):
+        sql = self._stmt_sql("number", bad_order)
+        assert "number DESC" in sql
+
+
+class TestAgentTickets:
+    @pytest.mark.asyncio
+    async def test_count_agent(self):
+        db = _db_returning_scalar(12)
+        n = await svc.count_agent_tickets(db, status_filter="open", unassigned=True)
+        assert n == 12
+
+    @pytest.mark.asyncio
+    async def test_list_agent_returns_sequence(self):
+        t1 = _ticket()
+        db = _db_returning_scalars_all([t1])
+        out = await svc.list_agent_tickets(db, status_filter=None, query="vpn", limit=10, offset=0)
+        assert list(out) == [t1]
+
+    @pytest.mark.asyncio
+    async def test_fetch_ticket_for_agent_found(self):
+        ticket = _ticket()
+        db = _db_returning_one_or_none(ticket)
+        got = await svc.fetch_ticket_for_agent(db, ticket_id=ticket.id)
+        assert got is ticket
+
+    @pytest.mark.asyncio
+    async def test_fetch_ticket_for_agent_not_found(self):
+        db = _db_returning_one_or_none(None)
+        got = await svc.fetch_ticket_for_agent(db, ticket_id=uuid.uuid4())
+        assert got is None
+
+    @pytest.mark.asyncio
+    async def test_fetch_ticket_for_agent_for_update_locks_ticket_row(self):
+        ticket = _ticket()
+        db = _db_returning_one_or_none(ticket)
+
+        got = await svc.fetch_ticket_for_agent(db, ticket_id=ticket.id, for_update=True)
+
+        assert got is ticket
+        stmt = db.execute.await_args.args[0]
+        assert "FOR UPDATE" in str(stmt.compile(compile_kwargs={"literal_binds": True}))
+
+
+class TestDeleteTicket:
+    @pytest.mark.asyncio
+    async def test_commits_database_delete_before_best_effort_file_cleanup(
+        self, monkeypatch
+    ) -> None:
+        """Failed DB commit must not erase bytes belonging to a live ticket."""
+        events: list[str] = []
+        db = MagicMock()
+
+        async def record_delete(_: object) -> None:
+            events.append("db_delete")
+
+        async def record_commit() -> None:
+            events.append("db_commit")
+
+        db.delete = AsyncMock(side_effect=record_delete)
+        db.commit = AsyncMock(side_effect=record_commit)
+        from app.services.helpdesk import attachments as attachments_service
+
+        monkeypatch.setattr(
+            attachments_service,
+            "delete_ticket_dir",
+            lambda _: events.append("file_cleanup"),
+        )
+
+        await svc.delete_ticket(db, ticket=cast(HelpdeskTicket, SimpleNamespace(number=71)))
+
+        assert events == ["db_delete", "db_commit", "file_cleanup"]
+
+    @pytest.mark.asyncio
+    async def test_preserves_files_when_database_commit_fails(self, monkeypatch) -> None:
+        file_cleanup = MagicMock()
+        db = MagicMock()
+        db.delete = AsyncMock()
+        db.commit = AsyncMock(side_effect=RuntimeError("database unavailable"))
+        from app.services.helpdesk import attachments as attachments_service
+
+        monkeypatch.setattr(attachments_service, "delete_ticket_dir", file_cleanup)
+
+        with pytest.raises(RuntimeError, match="database unavailable"):
+            await svc.delete_ticket(db, ticket=cast(HelpdeskTicket, SimpleNamespace(number=71)))
+
+        file_cleanup.assert_not_called()
+
+
+# ── link_guest_tickets — гостевое линкование ────────────────────────────────
+
+
+class TestLinkGuestTickets:
+    @pytest.mark.asyncio
+    async def test_links_matching_guest_tickets(self):
+        t1 = _ticket(requester_user_id=None, requester_email="guest@example.com")
+        t2 = _ticket(requester_user_id=None, requester_email="guest@example.com")
+        db = _db_returning_scalars_all_plain([t1, t2])
+        user_id = uuid.uuid4()
+
+        count = await svc.link_guest_tickets(db, user_id=user_id, email="guest@example.com")
+
+        assert count == 2
+        assert t1.requester_user_id == user_id
+        assert t2.requester_user_id == user_id
+
+    @pytest.mark.asyncio
+    async def test_no_matches_returns_zero(self):
+        db = _db_returning_scalars_all_plain([])
+        count = await svc.link_guest_tickets(db, user_id=uuid.uuid4(), email="nobody@example.com")
+        assert count == 0
+
+    @pytest.mark.asyncio
+    async def test_email_case_insensitive_match(self):
+        """Матчинг по LOWER(email) — 'GUEST@x.com' ловит 'guest@x.com'."""
+        t1 = _ticket(requester_user_id=None, requester_email="guest@example.com")
+        db = _db_returning_scalars_all_plain([t1])
+
+        await svc.link_guest_tickets(db, user_id=uuid.uuid4(), email="Guest@Example.com")
+
+        assert t1.requester_user_id is not None
+
+    @pytest.mark.asyncio
+    async def test_backfills_empty_requester_name_from_full_name(self):
+        """Пустой снимок requester_name дозаполняется из full_name — чтобы
+        search_tsvector (миграция 094) индексировал ФИО гостевой email-заявки
+        без display-name в From (edge case, иначе не находится по имени)."""
+        t1 = _ticket(requester_user_id=None, requester_email="guest@example.com")
+        t1.requester_name = None  # email-заявка без display-name
+        t2 = _ticket(requester_user_id=None, requester_email="guest@example.com")
+        t2.requester_name = ""  # edge case: пустая строка
+        db = _db_returning_scalars_all_plain([t1, t2])
+
+        await svc.link_guest_tickets(
+            db, user_id=uuid.uuid4(), email="guest@example.com", full_name="Иван Борисов"
+        )
+
+        assert t1.requester_name == "Иван Борисов"
+        assert t2.requester_name == "Иван Борисов"
+
+    @pytest.mark.asyncio
+    async def test_does_not_overwrite_existing_requester_name(self):
+        """Существующий снимок requester_name не перезаписывается — сохраняем
+        оригинальный display-name (snapshot-at-write + live-fallback-at-read)."""
+        t = _ticket(requester_user_id=None, requester_email="guest@example.com")
+        t.requester_name = "Борис Андреев"  # display-name из From
+        db = _db_returning_scalars_all_plain([t])
+
+        await svc.link_guest_tickets(
+            db, user_id=uuid.uuid4(), email="guest@example.com", full_name="Борис Борисович Андреев"
+        )
+
+        assert t.requester_name == "Борис Андреев"  # не перезаписан
+
+    @pytest.mark.asyncio
+    async def test_no_full_name_keeps_requester_name_as_is(self):
+        """full_name=None (обратная совместимость) — снимок не меняется."""
+        t = _ticket(requester_user_id=None, requester_email="guest@example.com")
+        t.requester_name = None
+        db = _db_returning_scalars_all_plain([t])
+
+        await svc.link_guest_tickets(
+            db, user_id=uuid.uuid4(), email="guest@example.com", full_name=None
+        )
+
+        assert t.requester_name is None  # без full_name — без дозаполнения
+
+
+# ── create_ticket — инвариант первого сообщения + commit ────────────────────
+
+
+class TestCreateTicket:
+    @pytest.mark.asyncio
+    async def test_creates_ticket_and_first_message_then_commits(self):
+        """Инвариант ТЗ §4.3.1: тикет + первое inbound/public сообщение в одной
+        транзакции. ``ticket.id``/``number`` заполняются при flush."""
+        from app.schemas.helpdesk import TicketCreateIn
+
+        db = _make_db()
+        user = _user()
+        # flush мутирует ticket.id/number (эмуляция БД-генерации)
+        assigned_id = uuid.uuid4()
+
+        def _flush_side_effect(*_args, **_kwargs):
+            # Первый flush — для ticket (назначаем id/number), второй — для message
+            # Упрощённо: если у ticket уже есть id, ничего не делаем.
+            ticket_obj = None
+            for call in db.add.call_args_list:
+                if (
+                    hasattr(call.args[0], "status")
+                    and getattr(call.args[0], "number", None) is None
+                ):
+                    ticket_obj = call.args[0]
+                    break
+            if ticket_obj is not None and ticket_obj.id is None:
+                ticket_obj.id = assigned_id
+                ticket_obj.number = 99
+
+        db.flush.side_effect = _flush_side_effect
+        # fetch_ticket_for_user замокан на уровне модуля
+        fetched = _ticket(requester_user_id=user.id)
+        with patch.object(svc, "fetch_ticket_for_user", new=AsyncMock(return_value=fetched)):
+            result = await svc.create_ticket(
+                db,
+                user=user,
+                payload=TicketCreateIn(subject="Тема", description="Тело"),
+                files=None,
+            )
+
+        assert result is fetched
+        # Два add: ticket + first_message.
+        assert db.add.call_count == 2
+        db.commit.assert_awaited_once()
+        db.refresh.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_uploads_attachments_when_files_provided(self):
+        from app.schemas.helpdesk import TicketCreateIn
+
+        db = _make_db()
+        user = _user()
+
+        def _flush_side_effect(*_args, **_kwargs):
+            for call in db.add.call_args_list:
+                obj = call.args[0]
+                if hasattr(obj, "subject") and getattr(obj, "id", None) is None:
+                    obj.id = uuid.uuid4()
+                    obj.number = 1
+                elif hasattr(obj, "body_text") and getattr(obj, "id", None) is None:
+                    obj.id = uuid.uuid4()
+
+        db.flush.side_effect = _flush_side_effect
+        fetched = _ticket()
+        with (
+            patch.object(svc, "fetch_ticket_for_user", new=AsyncMock(return_value=fetched)),
+            patch(
+                "app.services.helpdesk.attachments.upload_attachments",
+                new=AsyncMock(),
+            ) as uploaded,
+        ):
+            await svc.create_ticket(
+                db,
+                user=user,
+                payload=TicketCreateIn(subject="Тема", description="Тело"),
+                files=[SimpleNamespace(filename="x.png")],
+            )
+
+        uploaded.assert_awaited_once()

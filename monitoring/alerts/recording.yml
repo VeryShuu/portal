@@ -1,0 +1,77 @@
+# Recording rules — предагрегация дорогих выражений.
+#
+# Дашборды (RED-панели, SLO) читают эти серии вместо сырых rate()/
+# histogram_quantile(): один расчёт раз в 30с вместо пересчёта на каждый
+# refresh каждого открытого браузера. Алерты остаются на сырых метриках —
+# у них своя семантика (service-группировка, пороги с and-условиями).
+#
+# Конвенция имён: portal:<metric>_<window>. Счётчики — http_requests_total
+# {handler,status,method} (status сгруппирован: 2xx/4xx/5xx), гистограмма —
+# http_request_duration_seconds{handler,method} (бакеты см. backend
+# middleware/metrics.py).
+
+groups:
+  - name: portal-recording
+    interval: 30s
+    rules:
+      # R (rate): запросы/с per handler
+      - record: portal:http_request_rate5m
+        expr: sum by (handler) (rate(http_requests_total{job="portal"}[5m]))
+
+      # E (errors): доля 5xx per handler (0..1). Если трафик есть, но
+      # 5xx-серия ещё не создана, числитель дополняется нулём с теми же labels.
+      # При нулевом трафике или отсутствии scrape результат отсутствует: это
+      # неизвестность, а не здоровый 0%.
+      - record: portal:http_error_ratio5m
+        expr: |
+          (
+            sum by (handler) (rate(http_requests_total{job="portal", status=~"5.."}[5m]))
+            or
+            0 * sum by (handler) (rate(http_requests_total{job="portal"}[5m]))
+          )
+          / sum by (handler) (rate(http_requests_total{job="portal"}[5m]))
+          and
+          sum by (handler) (rate(http_requests_total{job="portal"}[5m])) > 0
+
+      # Техническая HTTP-success ratio (только ответы приложения, не полный
+      # пользовательский SLO). Ноль ошибок при существующем трафике = 1;
+      # нулевой трафик и отсутствие scrape оставляют ряд отсутствующим.
+      - record: portal:slo_availability_5m
+        expr: |
+          (
+            1 - (
+              (sum(rate(http_requests_total{job="portal", status=~"5.."}[5m])) or vector(0))
+              / sum(rate(http_requests_total{job="portal"}[5m]))
+            )
+          )
+          and
+          sum(rate(http_requests_total{job="portal"}[5m])) > 0
+
+      # Redis keyspace hit ratio при существующих операциях. Малый rate
+      # сохраняется без clamp к 1 op/s; нулевые операции/no scrape = no data.
+      - record: portal:redis_keyspace_hit_ratio5m
+        expr: |
+          (
+            sum(rate(redis_keyspace_hits_total[5m]))
+            / (
+              sum(rate(redis_keyspace_hits_total[5m]))
+              + sum(rate(redis_keyspace_misses_total[5m]))
+            )
+          )
+          and
+          (
+            sum(rate(redis_keyspace_hits_total[5m]))
+            + sum(rate(redis_keyspace_misses_total[5m]))
+          ) > 0
+
+      # D (duration): latency-перцентили per handler, сек.
+      # NB: пока latency-гистограмма low-res (этап 7 backend-задачи меняет
+      # бакеты), p50/p95 грубые — после этапа 7 точность вырастет без правок тут.
+      - record: portal:http_latency_p50_5m
+        expr: histogram_quantile(0.50, sum by (handler, le) (rate(http_request_duration_seconds_bucket{job="portal"}[5m])))
+
+      - record: portal:http_latency_p95_5m
+        expr: histogram_quantile(0.95, sum by (handler, le) (rate(http_request_duration_seconds_bucket{job="portal"}[5m])))
+
+      - record: portal:http_latency_p99_5m
+        expr: histogram_quantile(0.99, sum by (handler, le) (rate(http_request_duration_seconds_bucket{job="portal"}[5m])))

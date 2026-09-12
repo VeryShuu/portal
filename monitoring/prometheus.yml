@@ -1,0 +1,216 @@
+# Reference Prometheus configuration for the portal.
+#
+# Scrape targets:
+#   - portal-backend (`/metrics` на порту 8000 внутри сети portal_internal)
+#   - prometheus (self-scrape для health)
+#
+# Token protection: backend сверяет токен с system.json::metrics_token либо
+# через Authorization: Bearer (этот путь — canonical Prometheus transport),
+# либо через заголовок X-Metrics-Token (см. middleware/metrics.py,
+# docs/monitoring.md §3). Здесь используем Bearer — так настраивает Prometheus.
+# Если токен пуст — /metrics открыт (допустимо в закрытом периметре/VPN).
+#
+# Запуск:
+#   PORTAL_METRICS_TOKEN="$(jq -r .metrics_token // empty system_data/settings/system.json)" \
+#     docker compose -f docker-compose.yml -f monitoring/docker-compose.monitoring.yml \
+#       up -d prometheus alertmanager grafana
+
+global:
+  scrape_interval: 30s       # 30s — достаточно для RED; кастомные гейджи обновляются раз в 30с
+  evaluation_interval: 30s   # частота проверки alerting rules
+  external_labels:
+    cluster: portal
+    environment: prod        # поменять на staging/dev для overlay-окружений
+
+rule_files:
+  - /etc/prometheus/rules/*.yml
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
+      # Если alertmanager требует basic-auth или TLS — настроить здесь.
+      # http://localhost:9093 внутри сети — открытый.
+
+scrape_configs:
+  # -------------------------------------------------------------------
+  # Portal backend — RED-метрики + кастомные гейджи (audit queue, etc.)
+  # -------------------------------------------------------------------
+  - job_name: "portal"
+    scheme: http
+    metrics_path: /metrics
+    scrape_interval: 30s
+    scrape_timeout: 10s
+    # Токен из env (пустая строка → блок вырезан целиком, /metrics открыт).
+    # ${VAR} раскрывает render-prometheus.sh при старте контейнера —
+    # Prometheus не умеет env в конфиге (см. monitoring/prometheus/).
+    #@auth-begin
+    authorization:
+      type: Bearer
+      credentials: ${PORTAL_METRICS_TOKEN}
+    #@auth-end
+    static_configs:
+      - targets: ["backend:8000"]
+        labels:
+          service: portal-backend
+    # Cross-process snapshot: гейджи гидрируются из Redis при каждом scrape,
+    # поэтому если backend жив, но Redis/воркер лежат — гейджи застывают.
+    # Алерт PortalWorkerDown поймает это по отсутствию heartbeat.
+
+  # -------------------------------------------------------------------
+  # Screenshot-service owns synthetic probe state and results.
+  # The endpoint is private to the Docker network and exposes no credentials.
+  # -------------------------------------------------------------------
+  - job_name: "screenshot-service"
+    scheme: http
+    metrics_path: /metrics
+    scrape_interval: 30s
+    scrape_timeout: 10s
+    static_configs:
+      - targets: ["screenshot-service:9000"]
+        labels:
+          service: screenshot-service
+
+  # -------------------------------------------------------------------
+  # Prometheus self-monitoring
+  # -------------------------------------------------------------------
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # -------------------------------------------------------------------
+  # Alertmanager self-monitoring (опционально — для метрик о fired/resolved)
+  # -------------------------------------------------------------------
+  - job_name: "alertmanager"
+    static_configs:
+      - targets: ["alertmanager:9093"]
+
+  # -------------------------------------------------------------------
+  # Loki self-monitoring — объём принятых байт, chunks на диске, ingestion
+  # rate. Нужен для дашборда «Portal — Storage» (объём логов на диске).
+  # Без этого job'а метрики loki_* в Prometheus отсутствуют.
+  # -------------------------------------------------------------------
+  - job_name: "loki"
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["loki:3100"]
+        labels:
+          service: loki
+
+  # -------------------------------------------------------------------
+  # Grafana self-monitoring — health + active sessions/alerts. Нужен для
+  # мета-алерта GrafanaDown (без него UI-сбой невидим — весь observability
+  # UI лежит, но никто не узнает, т.к. сам портал и алерты работают).
+  # -------------------------------------------------------------------
+  - job_name: "grafana"
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["grafana:3000"]
+        labels:
+          service: grafana
+
+  # -------------------------------------------------------------------
+  # Alloy self-monitoring — pipeline health (loki_write requests, drops,
+  # tailer errors). Нужен для мета-алерта AlloyDown: если сборщик логов
+  # умер, centralized-логи перестают поступать тихо.
+  # -------------------------------------------------------------------
+  - job_name: "alloy"
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["alloy:12345"]
+        labels:
+          service: alloy
+
+  # -------------------------------------------------------------------
+  # PostgreSQL exporter — пул соединений, cache hit ratio, XID wraparound,
+  # размер БД, долгие транзакции, дедлоки. Данные влияют на RED backend'а.
+  # -------------------------------------------------------------------
+  - job_name: "postgres"
+    scrape_interval: 30s
+    scrape_timeout: 10s
+    static_configs:
+      - targets: ["postgres-exporter:9187"]
+        labels:
+          service: postgres
+
+  # -------------------------------------------------------------------
+  # Redis exporter — память/evictions, клиенты, keyspace hit rate.
+  # Redis критичен: сессии, SSE, audit-очередь, rate-limit, idempotency.
+  # -------------------------------------------------------------------
+  - job_name: "redis"
+    scrape_interval: 30s
+    scrape_timeout: 10s
+    static_configs:
+      - targets: ["redis-exporter:9121"]
+        labels:
+          service: redis
+
+  # -------------------------------------------------------------------
+  # node_exporter — метрики хоста: диск (критично — /data/photos), CPU, RAM.
+  # -------------------------------------------------------------------
+  - job_name: "node"
+    scrape_interval: 30s
+    scrape_timeout: 10s
+    static_configs:
+      - targets: ["node-exporter:9100"]
+        labels:
+          service: host
+
+  # -------------------------------------------------------------------
+  # Nginx exporter — active connections, request rate (stub_status).
+  # request_time-перцентили остаются в Loki (JSON access-log).
+  # -------------------------------------------------------------------
+  - job_name: "nginx"
+    scrape_interval: 30s
+    scrape_timeout: 10s
+    static_configs:
+      - targets: ["nginx-exporter:9113"]
+        labels:
+          service: nginx
+
+  # -------------------------------------------------------------------
+  # cAdvisor — per-container CPU/RAM/IO + container_start_time (рестарты).
+  # Шумные container_label_* вырезаются labeldrop'ом (в TSDB остаются
+  # compose_service/compose_project) — иначе каждая метрика тащит ~20 лейблов.
+  # -------------------------------------------------------------------
+  - job_name: "cadvisor"
+    scrape_interval: 30s
+    scrape_timeout: 10s
+    metric_relabel_configs:
+      - regex: 'container_label_com_docker_compose_(config_hash|container_number|depends_on|image|oneoff|project_config_files|project_working_dir|replace|version)'
+        action: labeldrop
+      - regex: 'container_label_(maintainer|org_opencontainers_image_[a-z_]+)'
+        action: labeldrop
+    static_configs:
+      - targets: ["cadvisor:8080"]
+        labels:
+          service: cadvisor
+
+  # -------------------------------------------------------------------
+  # Blackbox — внешние HTTP(S)-пробы + срок TLS-сертификатов. Цели — из
+  # env BLACKBOX_TARGETS / BLACKBOX_TARGETS_INSECURE (.env); render-
+  # prometheus.sh генерирует /tmp/blackbox-targets.json (file_sd, перечитыва-
+  # ется на лету). probe_ssl_earliest_cert_expiry → PortalCertExpiry*.
+  # Внешняя (в отличие от synthetic-пробы) — проверяет полный путь
+  # DNS→TLS→nginx и валидность сертификата.
+  # -------------------------------------------------------------------
+  - job_name: "blackbox"
+    scrape_interval: 60s
+    scrape_timeout: 15s
+    metrics_path: /probe
+    params:
+      module: [http_2xx]   # fallback, если у группы нет лейбла module
+    file_sd_configs:
+      - files:
+          - /tmp/blackbox-targets.json
+        refresh_interval: 1m
+    relabel_configs:
+      # module per-target: http_2xx | http_2xx_insecure (из file_sd labels)
+      - source_labels: [module]
+        target_label: __param_module
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115

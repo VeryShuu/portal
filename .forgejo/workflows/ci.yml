@@ -1,0 +1,2142 @@
+name: CI
+# =============================================================================
+# Переведено с GitHub Actions → Forgejo Actions (миграция VeryShuu/portal → mage/portal).
+# Ключевые изменения vs .github/workflows/ci.yml:
+#   • actions/* → https://code.forgejo.org/actions/* (SHA-pins сохранены — git-mirror
+#     сохраняет коммиты; если SHA 404 на зеркале — заменить на tag @vX).
+#   • docker/setup-buildx|login|build-push-action → нативный docker buildx CLI
+#     (убирает зависимость от github-hosted actions и несуществующий type=gha cache).
+#   • ghcr.io/veryshuu/* → forgejo.mage.ru/mage/* (Forgejo Container Registry).
+#   • ghcr-образы инструментов (gitleaks/trivy) и базовый act-образ → зеркала
+#     forgejo.mage.ru/mage/*: ghcr.io с раннера недостижим (DNS SERVFAIL,
+#     инцидент 2026-08-24, прогоны #829-831; образы evicted после docker prune).
+#     Обслуживание зеркал — docs/forgejo-runner-setup.md §«Зеркало ghcr-образов».
+#   • deploy-bundle: softprops/action-gh-release → нативный Forgejo Release API.
+#   • coverage-comment: отключён (irongut/marocchino — github-only; не обязателен).
+#   • codeql: dormant (gated vars.ENABLE_CODE_SCANNING, GitHub-only — не трогаем).
+# Триггеры/concurrency/permissions/secrets.GITHUB_TOKEN — совместимы с Forgejo 1:1.
+# Валидация — первый реальный прогон после поднятия forgejo-runner (см.
+# docs/forgejo-runner-setup.md).
+# =============================================================================
+
+
+on:
+  push:
+    branches: [main]
+    # Semver-теги (v1.2.3) триггерят релизные сборки с доп. тегами :v1.2.3/:v1.2/:v1.
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Наименьшие привилегии для GITHUB_TOKEN. contents:read — checkout для всех
+# job'ов; packages:write — publish-images пушит образы в Forgejo Container
+# Registry (без этого push падал с 401 — авто-GITHUB_TOKEN не имел скоупа
+# write:package для org-пакетов mage/*). Отдельные job'ы могут расширять права
+# точечно через собственный блок permissions:.
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  # Security-проверка находится в основном workflow, чтобы publish-images мог
+  # зависеть от неё. Forgejo Actions не поддерживает needs между workflow.
+  # Полный history scan сохраняется также в nightly security workflow.
+  secrets-scan:
+    name: secrets / gitleaks
+    runs-on: [ubuntu-latest, ci-general]
+    timeout-minutes: 15
+    steps:
+      - uses: https://code.forgejo.org/actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: gitleaks detect (incremental on PR/push, full-history fallback)
+        # Полный history-скан (~4 мин) гоняется по расписанию в
+        # nightly-security.yml; здесь достаточно коммитов, которых ещё нет в
+        # базе: PR — origin/<base>, push — HEAD~1. Экономит ~4 мин очереди
+        # раннера на каждый прогон. База недоступна или диапазон пуст →
+        # полный скан (fail-safe: сканируем БОЛЬШЕ, а не меньше).
+        run: |
+          set -euo pipefail
+          # @sha256 — иммутабельный пин зеркала: тег в своём registry мутабелен,
+          # его перезапись тихо подменила бы сканер (аудит-3, P2). Обновление —
+          # docs/forgejo-runner-setup.md §«Обновление зеркал».
+          img=forgejo.mage.ru/mage/gitleaks:v8.30.1@sha256:b109bc5f8f76a38196a3e413704fc5b9e3c32360bce4e4b603bd6f45b3721dbb
+          # fetch-depth: 0 выше тянет все ветки → origin/<base> существует на PR.
+          case "${{ github.event_name }}" in
+            pull_request) base="origin/${{ github.base_ref }}" ;;
+            push)         base="HEAD~1" ;;
+          esac
+          log_opts=()
+          if [ -n "${base:-}" ] \
+             && git rev-parse --verify --quiet "$base" >/dev/null 2>&1 \
+             && [ -n "$(git rev-list -1 "$base..HEAD")" ]; then
+            log_opts=(--log-opts="$base..HEAD")
+            echo "Incremental scan: $base..HEAD"
+          else
+            echo "Base ref unavailable or no commits in range — full history scan."
+          fi
+          # Runner обращается к host Docker daemon через socket, поэтому путь
+          # workspace внутри job-контейнера нельзя передать docker bind-mount'ом.
+          # docker cp сохраняет корректный source tree и exit code gitleaks.
+          cid=$(docker create "$img" detect --source=/repo --redact -v ${log_opts[@]+"${log_opts[@]}"})
+          trap 'docker rm -f "$cid" >/dev/null 2>&1 || true' EXIT
+          docker cp "${{ github.workspace }}/." "$cid:/repo/"
+          docker start -a "$cid"
+
+  screenshot-unit:
+    name: screenshot-service / pytest unit
+    runs-on: [ubuntu-latest, ci-general]
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: screenshot-service
+    steps:
+      - uses: https://code.forgejo.org/actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: https://code.forgejo.org/actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: screenshot-service/requirements-dev.txt
+      - name: Isolate Python packages from shared toolcache
+        # act-runner mounts /opt/hostedtoolcache into concurrent job containers.
+        # Installing editable packages there races on *.dist-info metadata.
+        run: |
+          python -m venv .venv-actions
+          echo "$PWD/.venv-actions/bin" >> "$GITHUB_PATH"
+      - name: Install dev deps
+        # Аудит 2026-08-23 (P1.4): раньше ставился только pytest и покрывался
+        # один cookie_utils.py при «обязательном» статусе job'а. Теперь
+        # requirements-dev включает aiohttp/playwright (импорти main.py) —
+        # Chromium по-прежнему не нужен: браузер подменяется стабом.
+        run: pip install -r requirements-dev.txt
+      - name: pytest
+        run: python -m pytest
+
+  backend-lint:
+    name: backend / ruff + mypy
+    runs-on: [ubuntu-latest, ci-general]
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: https://code.forgejo.org/actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: https://code.forgejo.org/actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/pyproject.toml
+      - name: Isolate Python packages from shared toolcache
+        # act-runner mounts /opt/hostedtoolcache into concurrent job containers.
+        # Installing editable packages there races on *.dist-info metadata.
+        run: |
+          python -m venv .venv-actions
+          echo "$PWD/.venv-actions/bin" >> "$GITHUB_PATH"
+      - name: Install backend (dev)
+        run: pip install -e ".[dev]"
+      - name: ruff check
+        run: ruff check .
+      - name: ruff format --check
+        run: ruff format --check .
+      - name: mypy
+        run: mypy .
+
+  backend-unit:
+    name: backend / pytest unit + security
+    runs-on: [ubuntu-latest, ci-general]
+    timeout-minutes: 30
+    env:
+      # Единый COVERAGE_FILE для шагов pytest + coverage combine + staging.
+      # xdist пишет параллельные фрагменты .coverage.unit.<node>; pytest-cov в
+      # актуальных версиях авто-комбинирует их, но на forgejo-раннере это ненадёжно
+      # → шаг staging ниже делает явный `coverage combine`. Имя .unit (не .coverage)
+      # изолирует юнит-прогон от integration-прогона при merge-coverage.
+      COVERAGE_FILE: .coverage.unit
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: https://code.forgejo.org/actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: https://code.forgejo.org/actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/pyproject.toml
+      - name: Isolate Python packages from shared toolcache
+        # act-runner mounts /opt/hostedtoolcache into concurrent job containers.
+        # Installing editable packages there races on *.dist-info metadata.
+        run: |
+          python -m venv .venv-actions
+          echo "$PWD/.venv-actions/bin" >> "$GITHUB_PATH"
+      - name: Install backend (dev)
+        run: pip install -e ".[dev]"
+      - name: pytest unit + security (parallel via xdist, collect coverage)
+        # pytest-xdist (-n auto) распараллеливает ~4400 юнит/секьюрити-тестов по N
+        # воркерам (17мин → ~4мин на self-hosted раннере). validate локально:
+        #   COVERAGE_FILE=.coverage.unit pytest tests/unit tests/security \
+        #     --cov=app --cov-report= --cov-fail-under=0 -n auto
+        # затем `coverage combine` сливает фрагменты (см. следующий шаг).
+        run: pytest tests/unit tests/security --cov=app --cov-report= --cov-fail-under=0 -n auto
+      - name: Stage coverage (merge xdist fragments → dotfile → visible name)
+        # Две проблемы, решаемые здесь:
+        #  1. upload-artifact@v3 на forgejo-раннере ИГНОРИРУЕТ dotfiles (.coverage.unit)
+        #     даже по явному path → копируем в видимое имя coverage-unit.data.
+        #  2. pytest-xdist может оставить параллельные фрагменты .coverage.unit.<node>
+        #     (зависит от версии pytest-cov/раннера); coverage combine сливает их в
+        #     единый .coverage.unit. Если pytest-cov уже объединил сам — combine
+        #     рапортует «No data to combine» (rc=1) и НЕ трогает base-файл → `|| true`.
+        if: always()
+        working-directory: backend
+        run: |
+          coverage combine || true
+          if [ -f .coverage.unit ]; then
+            cp .coverage.unit coverage-unit.data && echo "staged coverage-unit.data"
+          else
+            echo "NO .coverage.unit after combine"; ls -la .coverage.unit* 2>/dev/null || true
+            exit 1
+          fi
+      - name: Upload unit coverage data
+        if: always()
+        uses: https://code.forgejo.org/actions/upload-artifact@ff15f0306b3f739f7b6fd43fb5d26cd321bd4de5 # v3.2.1: Forgejo-compatible SHA pin
+        with:
+          name: coverage-data-unit
+          path: backend/coverage-unit.data
+          retention-days: 1
+          if-no-files-found: error
+
+  frontend-lint:
+    name: frontend / eslint + tsc + i18n + build
+    runs-on: [ubuntu-latest, ci-general]
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: https://code.forgejo.org/actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: https://code.forgejo.org/actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: npm ci
+        run: npm ci
+      - name: eslint
+        run: npm run lint:check
+      - name: typecheck e2e (playwright specs + config)
+        # Аудит 2026-08-21 (P0.6): E2E-код был исключён из tsconfig — Playwright
+        # транспилирует TS без строгой проверки типов. Отдельный строгий
+        # tsconfig.e2e.json закрывает дыру.
+        run: npm run typecheck:e2e
+      - name: typecheck unit-тестов (строгий гейт)
+        # Аудит-3 (P2): tests/unit не входили ни в один tsconfig — 283 ошибки
+        # типов были невидимы, expectTypeOf-тесты (api-types.spec.ts) — no-op.
+        # Ratchet (baseline 283→130→0, PR #128/#130) сожжён полностью:
+        # с PR #130 гейт строгий — любая ошибка типов в тестах роняет CI.
+        run: npm run typecheck:tests
+      - name: i18n keys
+        run: npm run i18n:check
+      - name: typecheck + build (single gen:types via prebuild)
+        # `npm run build` выполняет prebuild=gen:types, затем vue-tsc и Vite.
+        # Отдельные gen:types/typecheck здесь дублировали эти же проверки.
+        run: npm run build
+      - name: learn-сборка + проверка статики (ADR-051)
+        # Критерий приёмки ТЗ §9: в статике публичного контура нет чанков
+        # портальных страниц. Гоняется здесь И при сборке образа (Dockerfile).
+        run: |
+          npm run build:learn
+          npm run check:learn-static
+
+  frontend-unit:
+    name: frontend / vitest
+    runs-on: [ubuntu-latest, ci-general]
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: https://code.forgejo.org/actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: https://code.forgejo.org/actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: npm ci
+        run: npm ci
+      - name: vitest (with coverage gate + Vue-warnings ratchet)
+        # Аудит тестирования 2026-08-21, этап 6: обёртка считает [Vue warn]
+        # в выводе прогона и проваливает шаг при превышении baseline (0).
+        # Один прогон vitest даёт и coverage-артефакт, и warnings-гейт.
+        run: bash scripts/check-vue-warnings.sh --coverage
+      - name: Upload frontend coverage report
+        if: always()
+        uses: https://code.forgejo.org/actions/upload-artifact@ff15f0306b3f739f7b6fd43fb5d26cd321bd4de5 # v3.2.1: Forgejo-compatible SHA pin
+        with:
+          name: frontend-coverage
+          path: frontend/coverage
+          retention-days: 14
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # build-postgres — единая сборка portal-postgres:16 для всех job'ов,
+  # которым нужен кастомный образ (hunspell_ru FTS + запечённый init.sql).
+  #
+  # Раньше `docker build -t portal-postgres:16 -f postgres/Dockerfile .`
+  # дублировался в 2 job'ах (backend-integration, frontend-e2e). Теперь образ
+  # собирается один раз и передаётся зависимым через `docker save`/`load` в
+  # artifact. compose-smoke НЕ затронут — он собирает postgres через
+  # `docker compose up --build` (build: в docker-compose.yml:10) и не примет
+  # artifact без переделки сервисной декларации. nightly-{flakes,security}
+  # тоже оставлены как есть (отдельные workflow, гоняют уже опубликованный
+  # main — вынос в отдельный follow-up PR).
+  #
+  # build-postgres выполняется первым на последовательном service-runner, чтобы
+  # сразу запустить длинную цепочку integration → E2E → compose-smoke. General
+  # quality jobs идут независимо и по-прежнему блокируют merge/publish.
+  #
+  # Tier 2a: образ доступен в Forgejo Container Registry (публикуется
+  # publish-images на push:main). На большинстве прогонов (postgres-входы не
+  # менялись) — PULL из registry вместо rebuild (~30с вместо ~2-3мин). Только
+  # при изменении postgres/** или backend/migrations/init.sql (всё, что COPY'ит
+  # postgres/Dockerfile) — BUILD (актуальная версия). Pull-фолбэк → build (нет
+  # образа / нет секрета). Job-id (build-postgres) сохранён — потребители (needs:)
+  # и артефакт portal-postgres-image не меняются.
+  # ────────────────────────────────────────────────────────────────────────────
+  build-postgres:
+    name: postgres / portal-postgres:16 (registry pull or build)
+    runs-on: [ubuntu-latest, ci-services]
+    timeout-minutes: 5
+    env:
+      # /root/.docker/config.json в job-контейнере — bind-mount с хоста раннера
+      # (креды зеркал для docker pull). docker login сохраняет креды
+      # atomic-rename поверх config.json → EBUSY «device or resource busy»
+      # (упавшие publish'и после мёрджа #128, run #879). DOCKER_CONFIG переводит
+      # docker CLI на job-локальный каталог: сид-копия host-конфига + fresh login.
+      # То же самое — в publish-images ниже.
+      DOCKER_CONFIG: /tmp/ci-docker-config
+    steps:
+      - uses: https://code.forgejo.org/actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # depth=2: на push нужен родитель (HEAD~1) для diff «что поменялось».
+          # На PR base-ветку подтягиваем отдельным git fetch ниже.
+          fetch-depth: 2
+      - name: Prepare isolated portal-postgres image (pull from registry or build)
+        env:
+          REGISTRY_TOKEN: ${{ secrets.REGISTRY_TOKEN }}
+        run: |
+          set -uo pipefail
+          image_tag="ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          # База для diff: PR → origin/<base>, push → родитель HEAD~1.
+          if [ -n "${GITHUB_BASE_REF:-}" ]; then
+            git fetch origin "${GITHUB_BASE_REF}" --depth=1 >/dev/null 2>&1 || true
+            BASE="origin/${GITHUB_BASE_REF}"
+          else
+            BASE="HEAD~1"
+          fi
+          # Пути, влияющие на образ (всё, что COPY'ит postgres/Dockerfile).
+          PATHS="postgres backend/migrations/init.sql"
+          NEED_BUILD=1
+          if CHANGED=$(git diff --name-only "${BASE}" HEAD -- ${PATHS} 2>/dev/null) && [ -z "${CHANGED}" ]; then
+            # Freshness by construction (аудит-4, P2 аудита-3): тянем НЕ мутабельный
+            # :16 (он = последний успешный publish и может отставать, если публикация
+            # падала — PR'ы молча тестировались на устаревшей схеме БД), а
+            # неизменяемый sha-тег именно base-коммита. Нет тега — publish для base
+            # не состоялся — собираем сами (fail-closed).
+            BASE_SHA=$(git rev-parse "${BASE}")
+            SHA_TAG="forgejo.mage.ru/mage/portal-postgres:sha-${BASE_SHA::7}"
+            echo "Postgres inputs unchanged vs ${BASE} — pulling ${SHA_TAG}."
+            # Сид job-локального DOCKER_CONFIG из host-конфига (см. env.DOCKER_CONFIG):
+            # без этого docker login не может сохранить креды (EBUSY на bind-mount).
+            # Ошибки login/pull НЕ глушим (2>/dev/null убран, аудит-4: fail-closed
+            # freshness — тихий fallback на local build маскировал поломку registry).
+            mkdir -p "${DOCKER_CONFIG}"
+            [ -f /root/.docker/config.json ] && cp /root/.docker/config.json "${DOCKER_CONFIG}/config.json" || true
+            if [ -n "${REGISTRY_TOKEN:-}" ] && echo "${REGISTRY_TOKEN}" | docker login forgejo.mage.ru -u "${GITHUB_ACTOR}" --password-stdin && docker pull "${SHA_TAG}"; then
+              docker tag "${SHA_TAG}" "portal-postgres:${image_tag}"
+              echo "✓ Pulled ${SHA_TAG} (publish собирает sha-тег с ${BASE} — свежесть гарантирована)."
+              NEED_BUILD=0
+            else
+              echo "Pull unavailable/failed (нет sha-тега для ${BASE} или registry недоступен) — building fresh."
+            fi
+          else
+            echo "Postgres inputs changed vs ${BASE} (or diff N/A) — building:"
+            printf '  %s\n' ${CHANGED:-}
+          fi
+          if [ "${NEED_BUILD}" -eq 1 ]; then
+            docker build -t "portal-postgres:${image_tag}" -f postgres/Dockerfile .
+            echo "✓ Built portal-postgres:16."
+          fi
+          docker image ls "portal-postgres:${image_tag}"
+      - name: docker save (for downstream jobs)
+        # artifact ~150 МБ (образ postgres:16 + hunspell, gzip). retention 1 день —
+        # CI-internal, как .coverage.*-артефакты выше.
+        run: docker save "portal-postgres:ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" | gzip > portal-postgres-16.tar.gz
+      - name: Upload portal-postgres image artifact
+        uses: https://code.forgejo.org/actions/upload-artifact@ff15f0306b3f739f7b6fd43fb5d26cd321bd4de5 # v3.2.1: Forgejo-compatible SHA pin
+        with:
+          name: portal-postgres-image
+          path: portal-postgres-16.tar.gz
+          retention-days: 1
+          if-no-files-found: error
+
+  backend-integration:
+    name: backend / pytest integration (postgres + redis)
+    runs-on: [ubuntu-latest, ci-services]
+    timeout-minutes: 30
+    # Lint/unit остаются обязательными независимыми gates и перечислены в
+    # publish-images.needs; integration функционально зависит только от образа БД.
+    needs: [build-postgres]
+    steps:
+      - uses: https://code.forgejo.org/actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: https://code.forgejo.org/actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/pyproject.toml
+
+      - name: Isolate Python packages from shared toolcache
+        # act-runner mounts /opt/hostedtoolcache into concurrent job containers.
+        # Installing editable packages there races on *.dist-info metadata.
+        run: |
+          python -m venv .venv-actions
+          echo "$PWD/.venv-actions/bin" >> "$GITHUB_PATH"
+      - name: Install backend (dev)
+        working-directory: backend
+        run: pip install -e ".[dev]"
+
+      # portal-postgres:16 собран в build-postgres, передан через artifact
+      # (см. коммент к build-postgres выше). Грузим тег → docker run ниже
+      # подхватывает его без изменений.
+      - name: Download portal-postgres image
+        uses: https://code.forgejo.org/actions/download-artifact@9bc31d5ccc31df68ecc42ccf4149144866c47d8a # v3.0.2: Forgejo-compatible SHA pin
+        with:
+          name: portal-postgres-image
+      - name: docker load portal-postgres:16
+        run: gunzip -c portal-postgres-16.tar.gz | docker load
+
+      - name: Set isolated service scope
+        run: |
+          scope="portal-ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-integration"
+          printf '%s\n' \
+            "CI_SCOPE=${scope}" \
+            "PG_CONTAINER=${scope}-pg" \
+            "REDIS_CONTAINER=${scope}-redis" \
+            "POSTGRES_IMAGE=portal-postgres:ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            "PORTAL_POSTGRES_IMAGE=portal-postgres:ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            >> "$GITHUB_ENV"
+
+      - name: Start postgres (with hunspell + init.sql)
+        run: |
+          docker run -d --name "$PG_CONTAINER" \
+            --label portal.ci.managed=true --label "portal.ci.scope=$CI_SCOPE" \
+            -e POSTGRES_USER=portal \
+            -e POSTGRES_PASSWORD=portal \
+            -e POSTGRES_DB=portal \
+            -p 127.0.0.1::5432 \
+            "$POSTGRES_IMAGE"
+          pg_port=$(docker port "$PG_CONTAINER" 5432/tcp | sed -E 's/.*:([0-9]+)$/\1/')
+          echo "DATABASE_URL=postgresql+asyncpg://portal:portal@127.0.0.1:${pg_port}/portal" >> "$GITHUB_ENV"
+          for i in $(seq 1 60); do
+            if docker exec "$PG_CONTAINER" pg_isready -h 127.0.0.1 -p 5432 -U portal -d portal >/dev/null 2>&1; then
+              echo "postgres is ready"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "postgres did not become ready in time" >&2
+          docker logs "$PG_CONTAINER" || true
+          exit 1
+
+      - name: Start redis
+        run: |
+          docker run -d --name "$REDIS_CONTAINER" \
+            --label portal.ci.managed=true --label "portal.ci.scope=$CI_SCOPE" \
+            -p 127.0.0.1::6379 redis:7
+          redis_port=$(docker port "$REDIS_CONTAINER" 6379/tcp | sed -E 's/.*:([0-9]+)$/\1/')
+          echo "REDIS_URL=redis://127.0.0.1:${redis_port}/0" >> "$GITHUB_ENV"
+          redis_ready=0
+          for i in $(seq 1 30); do
+            if docker exec "$REDIS_CONTAINER" redis-cli ping | grep -q PONG; then
+              redis_ready=1
+              echo "redis is ready"
+              break
+            fi
+            sleep 1
+          done
+          # Fail-closed readiness (audit-review 2026-08-22, P2): раньше цикл
+          # молча исчерпывался и шаг оставался «зелёным».
+          if [ "$redis_ready" != "1" ]; then
+            echo "::error::redis did not become ready in 30s"
+            docker logs "$REDIS_CONTAINER" || true
+            exit 1
+          fi
+          docker exec "$REDIS_CONTAINER" redis-cli ping
+
+      - name: Alembic upgrade head
+        working-directory: backend
+        env:
+          SECRET_KEY: ci-secret-key-for-tests-only-not-used-anywhere-else-32+chars
+          ENVIRONMENT: test
+        run: alembic upgrade head
+
+      - name: Debug DATABASE_URL (env vs settings — diagnostic for 5432:portal flake)
+        # Ловит реальное значение DATABASE_URL, которое видит процесс, и как его
+        # парсит SQLAlchemy. Если env покажет '...:5432:portal' — баг источника
+        # (YAML/act коверканье). Если env верный '...:5432/portal', но parse падает
+        # — баг парсера. Никаких side-effects (config.py не импортит database.py).
+        working-directory: backend
+        env:
+          INTEGRATION_DB: "true"
+          INTEGRATION_REDIS: "true"
+          SECRET_KEY: ci-secret-key-for-tests-only-not-used-anywhere-else-32+chars
+          ENVIRONMENT: test
+        run: |
+          python3 - <<'PY'
+          import os
+          from app.core.config import get_settings
+          from sqlalchemy.engine.url import make_url
+          env = os.environ.get("DATABASE_URL")
+          sett = get_settings().database_url
+          print(">>> ENV      DATABASE_URL:", repr(env))
+          print(">>> SETTINGS database_url:", repr(sett))
+          print(">>> ENV == SETTINGS      :", env == sett)
+          for label, val in (("ENV", env), ("SETTINGS", sett)):
+              try:
+                  u = make_url(val)
+                  print(f">>> make_url({label}).port =", repr(u.port), " database =", repr(u.database))
+              except Exception as e:
+                  print(f">>> make_url({label}) FAILED:", type(e).__name__, str(e)[:120])
+          PY
+      - name: pytest integration (-rs reports skipped, coverage collected)
+        working-directory: backend
+        env:
+          INTEGRATION_DB: "true"
+          INTEGRATION_REDIS: "true"
+          SECRET_KEY: ci-secret-key-for-tests-only-not-used-anywhere-else-32+chars
+          ENVIRONMENT: test
+          ADMIN_EMAIL: admin@example.com
+          ADMIN_PASSWORD: admin12345
+          COVERAGE_FILE: .coverage.integration
+        run: |
+          pytest tests/integration -rs \
+            --cov=app --cov-report= --cov-fail-under=0 \
+            --reruns 2 --reruns-delay 1 \
+            --only-rerun "OperationalError|ConnectionRefusedError|ConnectionResetError|TimeoutError|asyncpg\\..*Error|redis\\.exceptions\\.ConnectionError"
+
+      - name: Stage integration coverage (merge fragments → dotfile → visible name)
+        # см. backend-unit: две те же проблемы.
+        #  1. upload-artifact@v3 игнорирует dotfiles → видимое имя coverage-integration.data.
+        #  2. pytest-cov авто-комбинирование parallel-фрагментов
+        #     (.coverage.integration.<host>.<pid>) на forgejo-раннере ненадёжно:
+        #     в артефакт уезжал ЧАСТИЧНЫЙ фрагмент (часть integration-тестов без
+        #     покрытия — learning-фичи этапа 2, PR #159), diff-coverage падал на
+        #     ровном месте. Явный combine сливает фрагменты; если pytest-cov
+        #     объединил сам — «No data to combine» (rc=1), || true не мешает.
+        if: always()
+        working-directory: backend
+        env:
+          # COVERAGE_FILE объявлен ТОЛЬКО на шаге pytest — без него `coverage
+          # combine` возьмёт дефолтный .coverage, проглотит фрагмент
+          # .coverage.integration.<host>.<pid> и запишет результат в .coverage
+          # (потерян вместе с workspace — NO .coverage.integration после combine).
+          COVERAGE_FILE: .coverage.integration
+        run: |
+          coverage combine || true
+          if [ -f .coverage.integration ]; then
+            cp .coverage.integration coverage-integration.data && echo "staged coverage-integration.data"
+          else
+            echo "NO .coverage.integration after combine"; ls -la .coverage.integration* 2>/dev/null || true
+            exit 1
+          fi
+      - name: Upload integration coverage data
+        if: always()
+        uses: https://code.forgejo.org/actions/upload-artifact@ff15f0306b3f739f7b6fd43fb5d26cd321bd4de5 # v3.2.1: Forgejo-compatible SHA pin
+        with:
+          name: coverage-data-integration
+          path: backend/coverage-integration.data
+          retention-days: 1
+          if-no-files-found: warn
+
+      - name: Dump postgres logs on failure
+        if: failure()
+        run: docker logs "$PG_CONTAINER" | tail -200
+
+      - name: Stop containers
+        if: always()
+        run: |
+          docker rm -f "$PG_CONTAINER" "$REDIS_CONTAINER" || true
+
+  backend-coverage:
+    name: backend / merged coverage (unit + security + integration)
+    runs-on: [ubuntu-latest, ci-general]
+    timeout-minutes: 15
+    needs: [backend-unit, backend-integration]
+    if: always() && needs.backend-unit.result == 'success'
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: https://code.forgejo.org/actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: https://code.forgejo.org/actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Isolate Python packages from shared toolcache
+        # act-runner mounts /opt/hostedtoolcache into concurrent job containers.
+        # Installing editable packages there races on *.dist-info metadata.
+        run: |
+          python -m venv .venv-actions
+          echo "$PWD/.venv-actions/bin" >> "$GITHUB_PATH"
+      - name: Install backend (dev)
+        run: pip install -e ".[dev]"
+      - name: Download unit coverage data
+        uses: https://code.forgejo.org/actions/download-artifact@9bc31d5ccc31df68ecc42ccf4149144866c47d8a # v3.0.2: Forgejo-compatible SHA pin
+        with:
+          name: coverage-data-unit
+          path: backend/
+      - name: Download integration coverage data
+        uses: https://code.forgejo.org/actions/download-artifact@9bc31d5ccc31df68ecc42ccf4149144866c47d8a # v3.0.2: Forgejo-compatible SHA pin
+        with:
+          name: coverage-data-integration
+          path: backend/
+        continue-on-error: true
+      - name: Combine coverage
+        run: |
+          # артефакты несут видимые имена (upload-artifact@v3 игнорирует dotfiles) —
+          # возвращаем .coverage.* для coverage combine.
+          [ -f coverage-unit.data ] && mv coverage-unit.data .coverage.unit
+          [ -f coverage-integration.data ] && mv coverage-integration.data .coverage.integration
+          # Fail-closed (audit-review 2026-08-22, P2): merged coverage обязан
+          # включать integration-данные — иначе отчёт молча становится unit-only.
+          if [ ! -f .coverage.integration ]; then
+            echo "::error::integration coverage data отсутствует — merged coverage не может быть unit-only"
+            exit 1
+          fi
+          ls -la .coverage.* || true
+          coverage combine
+          coverage report --skip-covered --show-missing
+          coverage xml -o coverage.xml
+          coverage html -d htmlcov
+      - name: Enforce coverage gate (>=75%)
+        run: coverage report --fail-under=75
+      - name: Upload merged backend coverage report
+        if: always()
+        uses: https://code.forgejo.org/actions/upload-artifact@ff15f0306b3f739f7b6fd43fb5d26cd321bd4de5 # v3.2.1: Forgejo-compatible SHA pin
+        with:
+          name: backend-coverage
+          path: |
+            backend/htmlcov
+            backend/coverage.xml
+          retention-days: 14
+
+  # Diff-coverage гейт: новый/изменённый код в PR обязан быть покрыт ≥80%.
+  # В отличие от абсолютного покрытия (backend-coverage/frontend-unit меряют всю
+  # базу целиком), этот job смотрит только на строки из git diff относительно
+  # main — останавливает регресс: нельзя добавить непокрытый код, если общий %
+  # всё равно проходит порог. Локально: ./scripts/diff-cover.sh backend|frontend.
+  # Branch protection: добавить `diff-coverage` в required status checks.
+  diff-coverage:
+    name: coverage / diff-coverage gate (≥80% new code)
+    runs-on: [ubuntu-latest, ci-general]
+    timeout-minutes: 5
+    needs: [backend-coverage, frontend-unit]
+    # Только на PR: на push в main нет базы для сравнения.
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: https://code.forgejo.org/actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Нужна история origin/main для git diff. fetch-depth: 0 тянет всё,
+          # но diff-cover использует только origin/main → достаточно fetch-depth: 2
+          # + явный fetch base. Используем 0 для надёжности (репо небольшой).
+          fetch-depth: 0
+      - uses: https://code.forgejo.org/actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Isolate Python packages from shared toolcache
+        # act-runner mounts /opt/hostedtoolcache into concurrent job containers.
+        # Installing editable packages there races on *.dist-info metadata.
+        run: |
+          python -m venv .venv-actions
+          echo "$PWD/.venv-actions/bin" >> "$GITHUB_PATH"
+      - name: Install diff-cover
+        run: pip install "diff-cover>=9.2.0,<10"
+      - name: Ensure origin/main ref exists
+        # На PR checkout создаёт refs/remotes/origin/<pr-branch>, но не всегда
+        # origin/main. fetch-depth: 0 уже тянет все ветки, но явный fetch
+        # гарантирует наличие origin/main для --compare-branch.
+        run: git fetch origin main:refs/remotes/origin/main
+      - name: Download backend coverage
+        uses: https://code.forgejo.org/actions/download-artifact@9bc31d5ccc31df68ecc42ccf4149144866c47d8a # v3.0.2: Forgejo-compatible SHA pin
+        with:
+          name: backend-coverage
+          path: cov-backend
+      - name: Download frontend coverage
+        uses: https://code.forgejo.org/actions/download-artifact@9bc31d5ccc31df68ecc42ccf4149144866c47d8a # v3.0.2: Forgejo-compatible SHA pin
+        with:
+          name: frontend-coverage
+          path: cov-frontend
+      # Backend: coverage.py Cobertura-XML. Артефакт содержит backend/coverage.xml.
+      # Запуск из backend/ — критично для путь-мэтчинга (см. scripts/diff-cover.sh).
+      - name: diff-cover backend
+        working-directory: backend
+        run: |
+          diff-cover ../cov-backend/coverage.xml \
+            --compare-branch origin/main \
+            --fail-under 80 \
+            --show-uncovered
+      # Frontend: vitest LCOV. Артефакт frontend-coverage загружен с
+      # path: frontend/coverage → после download в cov-frontend/ файлы лежат
+      # в корне (lcov.info, cobertura-coverage.xml, lcov-report/...).
+      # SF:-фикс: vitest пишет пути относительно frontend/ ('src/...'), а
+      # diff-cover конвертирует их в '../src/...' и они не совпадают с git-diff
+      # → гейт молча проходил впустую. Переписываем SF: на 'frontend/src/...'
+      # (зеркально scripts/diff-cover.sh).
+      - name: diff-cover frontend
+        working-directory: frontend
+        run: |
+          sed "s|^SF:src/|SF:frontend/src/|" ../cov-frontend/lcov.info \
+            > ../cov-frontend/lcov.diff-cover.info
+          diff-cover ../cov-frontend/lcov.diff-cover.info \
+            --compare-branch origin/main \
+            --fail-under 80 \
+            --show-uncovered
+
+  coverage-comment:
+    name: coverage / PR summary comment
+    runs-on: [ubuntu-latest, ci-general]
+    timeout-minutes: 10
+    needs: [backend-coverage, frontend-unit]
+    # Только PR из того же репо (не из fork) — защита от fork-based
+    # exfiltration coverage-данных через PR-comment. У fork-PR
+    # github.event.pull_request.head.repo.full_name != github.repository.
+    # ОТКЛЮЧЕНО на Forgejo: irongut/CodeCoverageSummary + marocchino/sticky-pull-request-comment
+    # — github-only actions (их нет в зеркале code.forgejo.org/actions). job НЕ входит
+    # в обязательные чеки (обязателен только coverage/diff-coverage gate). TODO:
+    # переименплементить summary + постинг комментария через Forgejo API.
+    if: false
+    steps:
+      - uses: https://code.forgejo.org/actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Download backend coverage artifact
+        uses: https://code.forgejo.org/actions/download-artifact@9bc31d5ccc31df68ecc42ccf4149144866c47d8a # v3.0.2: Forgejo-compatible SHA pin
+        with:
+          name: backend-coverage
+          path: cov/backend
+      - name: Download frontend coverage artifact
+        uses: https://code.forgejo.org/actions/download-artifact@9bc31d5ccc31df68ecc42ccf4149144866c47d8a # v3.0.2: Forgejo-compatible SHA pin
+        with:
+          name: frontend-coverage
+          path: cov/frontend
+        continue-on-error: true
+      - name: Generate coverage summary
+        # Pinned by SHA (supply-chain hardening): floating tag @v1.3.0 можно
+        # перезаписать компрометацией репо action'а. dependabot обновит SHA.
+        # v1.3.0 — коммит 51cc3a756ddcd398d447c044c02cb6aa83fdae95
+        uses: irongut/CodeCoverageSummary@51cc3a756ddcd398d447c044c02cb6aa83fdae95
+        with:
+          filename: cov/**/cobertura-coverage.xml,cov/**/coverage.xml
+          badge: true
+          fail_below_min: false
+          format: markdown
+          hide_branch_rate: false
+          hide_complexity: true
+          indicators: true
+          output: both
+          thresholds: "60 80"
+      - name: Post coverage summary as PR comment
+        # Pinned by SHA (supply-chain hardening): floating tag @v2 можно
+        # перезаписать компрометацией репо action'а, а job имеет
+        # pull-requests: write. dependabot обновит SHA.
+        # v2.9.4 — коммит 773744901bac0e8cbb5a0dc842800d45e9b2b405
+        uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88
+        with:
+          recreate: true
+          path: code-coverage-results.md
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # drift-checks — три бывших отдельных job'а (openapi-drift-check,
+  # frontend-types-drift, db-schema-drift) слиты в один: каждый платил
+  # ~60-90с за чекаут + установку зависимостей ради 20-секундной регенерации,
+  # слитый платит это один раз. Порядок шагов важен: types.gen.d.ts
+  # генерируется ИЗ openapi.json → регенерация openapi идёт первой.
+  # Обязательный чек ветки: `CI / drift / openapi + types.gen + db-schema (pull_request)`
+  # (при мёрже обновить branch protection: убрать два старых контекста).
+  # ────────────────────────────────────────────────────────────────────────────
+  drift-checks:
+    name: drift / openapi + types.gen + db-schema
+    runs-on: [ubuntu-latest, ci-general]
+    timeout-minutes: 25
+    steps:
+      - uses: https://code.forgejo.org/actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: https://code.forgejo.org/actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/pyproject.toml
+      - name: Isolate Python packages from shared toolcache
+        # act-runner mounts /opt/hostedtoolcache into concurrent job containers.
+        # Installing editable packages there races on *.dist-info metadata.
+        run: |
+          python -m venv .venv-actions
+          echo "$PWD/.venv-actions/bin" >> "$GITHUB_PATH"
+      - uses: https://code.forgejo.org/actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install backend (dev)
+        working-directory: backend
+        run: pip install -e ".[dev]"
+      - name: npm ci
+        working-directory: frontend
+        run: npm ci
+      - name: Regenerate openapi.json
+        working-directory: backend
+        env:
+          DATABASE_URL: "postgresql+asyncpg://user:pass@localhost:5432/portal"
+          REDIS_URL: redis://localhost:6379/0
+          SECRET_KEY: ci-secret-key-for-openapi-export-only-not-used-anywhere-else-32+chars
+          ENVIRONMENT: test
+        run: python scripts/export_openapi.py --output ../openapi.json
+      - name: Regenerate types.gen.d.ts (from fresh openapi.json)
+        working-directory: frontend
+        run: npm run gen:types
+      - name: Regenerate docs/db-schema.generated.md
+        working-directory: backend
+        run: python -m scripts.generate_db_schema_doc --output ../docs/db-schema.generated.md
+      - name: Fail if any generated file differs from committed
+        run: |
+          files="openapi.json frontend/src/api/types.gen.d.ts docs/db-schema.generated.md"
+          if ! git diff --quiet -- $files; then
+            echo "::error::Generated files are out of date. Regenerate and commit:"
+            git --no-pager diff --stat -- $files
+            echo
+            git diff --name-only -- $files | while read -r f; do
+              case "$f" in
+                openapi.json)
+                  echo "  $f → (cd backend && python scripts/export_openapi.py)" ;;
+                frontend/src/api/types.gen.d.ts)
+                  echo "  $f → (cd frontend && npm run gen:types)" ;;
+                docs/db-schema.generated.md)
+                  echo "  $f → PA-007: (cd backend && python -m scripts.generate_db_schema_doc --output ../docs/db-schema.generated.md)" ;;
+              esac
+            done
+            echo
+            git --no-pager diff -- $files | head -200
+            exit 1
+          fi
+          echo "openapi.json, types.gen.d.ts and db-schema.generated.md are in sync."
+
+  fake-db-allowlist:
+    name: backend / authed_client_factory allowlist (fake_db)
+    runs-on: [ubuntu-latest, ci-general]
+    timeout-minutes: 10
+    steps:
+      - uses: https://code.forgejo.org/actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Verify no new tests outside allowlist use authed_client_factory
+        working-directory: backend
+        run: |
+          # Список тестов, которым разрешено использовать authed_client_factory
+          # (и тем самым no-op _fake_db). См. tests/conftest.py:authed_client_factory.
+          # tests/integration включён с аудита-3 (P2): «пустые данные» фикстуры
+          # в интеграционном контуре маскировались бы под реальные.
+          mapfile -t allow < <(grep -v '^\s*\(#\|$\)' tests/fake_db_allowlist.txt)
+          # Аудит-4 (P3): без каталогов grep -rl выходит rc=2, mapfile съедает
+          # пустоту и гейт молча зеленеет (fail-open). Каталоги обязаны существовать.
+          for d in tests/unit tests/security tests/integration; do
+            [ -d "$d" ] || { echo "::error::$d отсутствует — гейт не может проверить allowlist"; exit 1; }
+          done
+          mapfile -t found < <(
+            grep -rl "authed_client_factory" tests/unit tests/security tests/integration \
+              | sed -e 's|^backend/||' -e 's|^\./||' \
+              | sort -u
+          )
+          # Файлы, найденные грепом, но отсутствующие в allowlist.
+          unexpected=()
+          for f in "${found[@]}"; do
+            allowed=0
+            for a in "${allow[@]}"; do
+              if [ "$f" = "$a" ]; then allowed=1; break; fi
+            done
+            if [ "$allowed" -eq 0 ]; then unexpected+=("$f"); fi
+          done
+          # Файлы, перечисленные в allowlist, но больше не использующие фикстуру —
+          # допустимо, выводим как информацию (не фейлим), чтобы allowlist можно
+          # было постепенно сокращать.
+          stale=()
+          for a in "${allow[@]}"; do
+            present=0
+            for f in "${found[@]}"; do
+              if [ "$f" = "$a" ]; then present=1; break; fi
+            done
+            if [ "$present" -eq 0 ]; then stale+=("$a"); fi
+          done
+          if [ ${#stale[@]} -gt 0 ]; then
+            echo "::notice::tests/fake_db_allowlist.txt has stale entries (can be removed):"
+            printf '  %s\n' "${stale[@]}"
+          fi
+          if [ ${#unexpected[@]} -gt 0 ]; then
+            echo "::error::New tests use authed_client_factory (no-op _fake_db) but are not in tests/fake_db_allowlist.txt:"
+            printf '  %s\n' "${unexpected[@]}"
+            echo
+            echo "Используйте integration-фикстуру real_db_session вместо authed_client_factory"
+            echo "для бизнес-сценариев. Если это security-тест — оставьте в tests/security/."
+            exit 1
+          fi
+          echo "OK: authed_client_factory usage matches allowlist."
+
+  shellcheck:
+    name: shellcheck / *.sh
+    runs-on: [ubuntu-latest, ci-general]
+    timeout-minutes: 10
+    steps:
+      - uses: https://code.forgejo.org/actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install shellcheck
+        # apt-get update обязателен: catthehacker/ubuntu:act-22.04 может иметь stale
+        # кэш → «Unable to locate package shellcheck» (на GitHub ubuntu-latest кэш свежий).
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+      - name: shellcheck all tracked *.sh
+        run: |
+          mapfile -t files < <(git ls-files '*.sh')
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "No *.sh files tracked."
+            exit 0
+          fi
+          printf 'Checking:\n'; printf '  %s\n' "${files[@]}"
+          shellcheck --severity=warning "${files[@]}"
+      - name: Verify publish gate inventory
+        run: bash scripts/check-publish-gates.sh
+
+  monitoring-config:
+    # Статическая валидация конфигов observability-стека: alerting-rules
+    # (promtool), alertmanager (amtool на отрендеренном конфиге — шаблон с
+    # ${VAR}-плейсхолдерами сам по себе не проходит URL-валидацию), Loki
+    # (-verify-config) и Alloy (fmt --test). Образы — те же теги, что в
+    # monitoring/docker-compose.monitoring.yml: валидируем ровно то, что
+    # поедет на прод. Нужен Docker → ci-services.
+    name: monitoring / config validation
+    runs-on: [ubuntu-latest, ci-services]
+    timeout-minutes: 15
+    steps:
+      - uses: https://code.forgejo.org/actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # NB: bind-mount'ы рабочего пространства НЕ работают на act-runner'е
+      # (вложенный docker: -v "$PWD/..." резолвится на хосте раннера, где пути
+      # нет → docker молча создаёт пустой каталог, promtool не находит файлы).
+      # Поэтому create + docker cp + start -a (exit-код контейнера = шага).
+      - name: promtool check rules
+        run: |
+          cid=$(docker create --entrypoint promtool \
+            prom/prometheus:v3.13.2 check rules /portal.yml /recording.yml)
+          docker cp monitoring/alerts/portal.yml  "$cid":/portal.yml
+          docker cp monitoring/alerts/recording.yml "$cid":/recording.yml
+          docker start -a "$cid"
+          rc=$?
+          docker rm -f "$cid" >/dev/null 2>&1 || true
+          exit $rc
+
+      - name: promtool test rules (ratio/no-data semantics)
+        run: |
+          cid=$(docker create --entrypoint promtool \
+            prom/prometheus:v3.13.2 test rules /monitoring-ratios.test.yml)
+          docker cp monitoring/alerts/portal.yml "$cid":/portal.yml
+          docker cp monitoring/alerts/recording.yml "$cid":/recording.yml
+          docker cp monitoring/alerts/tests/monitoring-ratios.test.yml "$cid":/monitoring-ratios.test.yml
+          docker start -a "$cid"
+          rc=$?
+          docker rm -f "$cid" >/dev/null 2>&1 || true
+          exit $rc
+
+      - name: grafana dashboards validation (JSON + PromQL syntax)
+        run: |
+          # Этап E / MON-15: JSON-валидность, уникальные panel id, границы сетки
+          # 24 колонки, известные datasource UID; затем синтаксис каждого expr
+          # всех дашбордов через promtool (дашборды эмитятся как rules-файл).
+          python3 scripts/validate-grafana.py --emit-rules /tmp/grafana-expr-rules.yml
+          cid=$(docker create --entrypoint promtool \
+            prom/prometheus:v3.13.2 check rules /rules.yml)
+          docker cp /tmp/grafana-expr-rules.yml "$cid":/rules.yml
+          docker start -a "$cid"
+          rc=$?
+          docker rm -f "$cid" >/dev/null 2>&1 || true
+          exit $rc
+
+      - name: amtool check-config (rendered template)
+        run: |
+          # Рендерим шаблон с dummy-env (RENDER_ONLY=1 — не запускать binary),
+          # затем валидируем результат amtool'ом. Два прогона: (1) все
+          # опциональные webhook-блоки ЗАДАНЫ (matrix + dead-man MON-13),
+          # (2) dead-man URL пуст — дефолтный режим: блок вырезан, приёмник
+          # no-op. Валидируем обе ветки рендера.
+          cid=$(docker create --entrypoint sh prom/alertmanager:v0.33.1 -c '
+            ALERT_SMTP_HOST=smtp-ci.example ALERT_SMTP_PORT=25 \
+            ALERT_SMTP_FROM=ci@ci.example ALERT_ADMINS_EMAIL=admin@ci.example \
+            ALERT_MATRIX_WEBHOOK_URL=http://127.0.0.1:1/hook \
+            ALERT_DEADMAN_WEBHOOK_URL=http://127.0.0.1:1/deadman \
+            RENDER_ONLY=1 \
+            ALERTMANAGER_TMPL=/etc/alertmanager/alertmanager.yml ALERTMANAGER_OUT=/tmp/am.yml \
+            sh /tmp/render-alertmanager.sh && \
+            amtool check-config /tmp/am.yml && \
+            ALERT_SMTP_HOST=smtp-ci.example ALERT_SMTP_PORT=25 \
+            ALERT_SMTP_FROM=ci@ci.example ALERT_ADMINS_EMAIL=admin@ci.example \
+            ALERT_MATRIX_WEBHOOK_URL=http://127.0.0.1:1/hook \
+            RENDER_ONLY=1 \
+            ALERTMANAGER_TMPL=/etc/alertmanager/alertmanager.yml ALERTMANAGER_OUT=/tmp/am-empty.yml \
+            sh /tmp/render-alertmanager.sh && \
+            amtool check-config /tmp/am-empty.yml')
+          docker cp monitoring/alerts/alertmanager.yml "$cid":/etc/alertmanager/alertmanager.yml
+          docker cp monitoring/alerts/render-alertmanager.sh "$cid":/tmp/render-alertmanager.sh
+          docker start -a "$cid"
+          rc=$?
+          docker rm -f "$cid" >/dev/null 2>&1 || true
+          exit $rc
+
+      - name: loki -verify-config
+        run: |
+          cid=$(docker create grafana/loki:3.7.6 \
+            -verify-config -config.file=/etc/loki/config.yml)
+          docker cp monitoring/loki/config.yml "$cid":/etc/loki/config.yml
+          docker start -a "$cid"
+          rc=$?
+          docker rm -f "$cid" >/dev/null 2>&1 || true
+          exit $rc
+
+      - name: alloy fmt --test
+        run: |
+          cid=$(docker create grafana/alloy:v1.18.1 fmt --test /tmp/config.alloy)
+          docker cp monitoring/alloy/config.alloy "$cid":/tmp/config.alloy
+          docker start -a "$cid"
+          rc=$?
+          docker rm -f "$cid" >/dev/null 2>&1 || true
+          exit $rc
+
+  bats:
+    # bats unit-тесты для setup.sh (авто-обновление deploy-bundle, ADR-046).
+    # setup.sh теперь source'ится через BASH_SOURCE-guard → функции проверяем
+    # напрямую, мокая curl stub'ом в tmp-PATH.
+    name: bats / tests/setup
+    runs-on: [ubuntu-latest, ci-general]
+    timeout-minutes: 10
+    steps:
+      - uses: https://code.forgejo.org/actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install bats
+        run: |
+          # Ставим bats-core через штатный ./install.sh (НЕ копированием bin/bats —
+          # тот резолвит libexec/lib через пути относительно себя, single-file-copy
+          # ломает их → exit 127 "command not found" внутри bats).
+          # Вендорено в репо (tests/setup/vendor/bats-core, v1.14.0, MIT): clone
+          # с github.com с раннера нестабилен (2026-09-02, 4 прогона подряд
+          # «could not read Username» — required check зависеть от внешней
+          # сети не должен; апгрейд вендора = осознанная замена каталога).
+          sudo tests/setup/vendor/bats-core/install.sh /usr/local
+      - name: bats tests/setup
+        run: bats tests/setup/
+
+  quality-gates:
+    name: quality / complexity + duplication + dead-code
+    runs-on: [ubuntu-latest, ci-general]
+    timeout-minutes: 25
+    steps:
+      - uses: https://code.forgejo.org/actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: https://code.forgejo.org/actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/pyproject.toml
+      - name: Isolate Python packages from shared toolcache
+        # act-runner mounts /opt/hostedtoolcache into concurrent job containers.
+        # Installing editable packages there races on *.dist-info metadata.
+        run: |
+          python -m venv .venv-actions
+          echo "$PWD/.venv-actions/bin" >> "$GITHUB_PATH"
+      - uses: https://code.forgejo.org/actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install backend (dev)
+        working-directory: backend
+        run: pip install -e ".[dev]"
+
+      # Complexity gate: блокирует любой rank-D/E/F (CC>10). После декомпозиции
+      # трёх D-функций (audit 2026-07-20) в репозитории не осталось функций
+      # хуже C — этот gate фиксирует планку и не даёт регрессии вернуться.
+      # Уборка существующего долга делается через декомпозицию (не через
+      # повышение порога гейта).
+      - name: Complexity gate — no rank-D+ (CC>10) functions (backend)
+        working-directory: backend
+        run: |
+          out="$(radon cc app -n D -s)"
+          if [ -n "$out" ]; then
+            echo "::error::Rank-D+ (CC>10) function(s) detected — refactor before merge:"
+            echo "$out"
+            exit 1
+          fi
+          echo "OK: no rank-D+ functions (all functions are C or better)."
+
+      - name: npm ci (frontend)
+        working-directory: frontend
+        run: npm ci
+
+      # Гейт дублей: текущая база ~2.72% дублированных строк; порог 4%
+      # (см. frontend/.jscpd.json). Падает при росте дублирования сверх порога.
+      - name: Duplication gate (jscpd, fail >4%)
+        working-directory: frontend
+        run: npx --yes jscpd@4.2.4
+
+      # Findings пока informational, но конфигурация и запуск анализатора должны
+      # быть исправны. knip.json задаёт portal/learn/E2E entrypoints и отключает
+      # автозагрузку Playwright config: тот требует реальные CI credentials,
+      # которые отсутствуют у quality job по принципу least privilege.
+      # --no-exit-code сохраняет отчёт при findings; ошибки конфигурации/запуска
+      # всё равно дают ненулевой exit code и валят required quality job.
+      - name: Dead-code report (knip findings informational; execution required)
+        working-directory: frontend
+        run: npx --no-install knip --no-config-hints --no-exit-code
+
+  frontend-e2e:
+    name: frontend / playwright e2e (chromium)
+    runs-on: [ubuntu-latest, ci-services]
+    # Backend и Vite используют run-scoped динамические порты (аудит 2026-08-21,
+    # P0.4): параллельные CI-run'ы больше не пересекаются на 8000/5173. Цепочка
+    # needs сохранена для staging нагрузки на runner; lint jobs выполняются
+    # независимо и остаются обязательными gates для merge/publish.
+    needs: [backend-integration]
+    timeout-minutes: 30
+    steps:
+      - uses: https://code.forgejo.org/actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: https://code.forgejo.org/actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/pyproject.toml
+      - name: Isolate Python packages from shared toolcache
+        # act-runner mounts /opt/hostedtoolcache into concurrent job containers.
+        # Installing editable packages there races on *.dist-info metadata.
+        run: |
+          python -m venv .venv-actions
+          echo "$PWD/.venv-actions/bin" >> "$GITHUB_PATH"
+      - uses: https://code.forgejo.org/actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install backend (dev)
+        working-directory: backend
+        run: pip install -e ".[dev]"
+
+      # portal-postgres:16 собран в build-postgres, передан через artifact
+      # (см. коммент к build-postgres выше). Грузим тег → docker run ниже
+      # подхватывает его без изменений.
+      - name: Download portal-postgres image
+        uses: https://code.forgejo.org/actions/download-artifact@9bc31d5ccc31df68ecc42ccf4149144866c47d8a # v3.0.2: Forgejo-compatible SHA pin
+        with:
+          name: portal-postgres-image
+      - name: docker load portal-postgres:16
+        run: gunzip -c portal-postgres-16.tar.gz | docker load
+
+      - name: Set isolated service scope
+        run: |
+          scope="portal-ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-e2e"
+          printf '%s\n' \
+            "CI_SCOPE=${scope}" \
+            "PG_CONTAINER=${scope}-pg" \
+            "REDIS_CONTAINER=${scope}-redis" \
+            "POSTGRES_IMAGE=portal-postgres:ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            >> "$GITHUB_ENV"
+
+      - name: Start postgres
+        run: |
+          docker run -d --name "$PG_CONTAINER" \
+            --label portal.ci.managed=true --label "portal.ci.scope=$CI_SCOPE" \
+            -e POSTGRES_USER=portal \
+            -e POSTGRES_PASSWORD=portal \
+            -e POSTGRES_DB=portal \
+            -p 127.0.0.1::5432 \
+            "$POSTGRES_IMAGE"
+          pg_port=$(docker port "$PG_CONTAINER" 5432/tcp | sed -E 's/.*:([0-9]+)$/\1/')
+          echo "DATABASE_URL=postgresql+asyncpg://portal:portal@127.0.0.1:${pg_port}/portal" >> "$GITHUB_ENV"
+          for i in $(seq 1 60); do
+            if docker exec "$PG_CONTAINER" pg_isready -h 127.0.0.1 -p 5432 -U portal -d portal >/dev/null 2>&1; then
+              echo "postgres is ready"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "postgres did not become ready in time" >&2
+          docker logs "$PG_CONTAINER" || true
+          exit 1
+
+      - name: Start redis
+        run: |
+          docker run -d --name "$REDIS_CONTAINER" \
+            --label portal.ci.managed=true --label "portal.ci.scope=$CI_SCOPE" \
+            -p 127.0.0.1::6379 redis:7
+          redis_port=$(docker port "$REDIS_CONTAINER" 6379/tcp | sed -E 's/.*:([0-9]+)$/\1/')
+          echo "REDIS_URL=redis://127.0.0.1:${redis_port}/0" >> "$GITHUB_ENV"
+          redis_ready=0
+          for i in $(seq 1 30); do
+            if docker exec "$REDIS_CONTAINER" redis-cli ping | grep -q PONG; then
+              redis_ready=1
+              echo "redis is ready"
+              break
+            fi
+            sleep 1
+          done
+          # Fail-closed readiness (audit-review 2026-08-22, P2): раньше цикл
+          # молча исчерпывался и шаг оставался «зелёным».
+          if [ "$redis_ready" != "1" ]; then
+            echo "::error::redis did not become ready in 30s"
+            docker logs "$REDIS_CONTAINER" || true
+            exit 1
+          fi
+
+      - name: Alembic upgrade head
+        working-directory: backend
+        env:
+          SECRET_KEY: ci-secret-key-for-tests-only-not-used-anywhere-else-32+chars
+          ENVIRONMENT: test
+        run: alembic upgrade head
+
+      # files-bulk e2e требует включённый модуль nextcloud: ModuleCheck на роутах
+      # /files отдаёт 503 ДО Pydantic-валидации, если модуль выключен. Сам NC-сервер
+      # не нужен — все проверки спеки срабатывают до обращения к Nextcloud.
+      - name: Seed module settings (enable nextcloud + learning for API tests)
+        run: |
+          sudo mkdir -p /data/settings
+          printf '{"nextcloud": {"enabled": true}, "learning": {"enabled": true}}' | sudo tee /data/settings/modules.json >/dev/null
+
+      - name: Pick run-scoped free ports (backend + vite)
+        # Динамические порты вместо фиксированных 8000/5173: единственный способ
+        # гарантированно исключить подключение E2E к процессу параллельного
+        # CI-run'а (аудит 2026-08-21, P0.4 — «address already in use» и чужие 429).
+        run: |
+          BACKEND_PORT=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1]); s.close()')
+          VITE_PORT=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1]); s.close()')
+          LEARN_PORT=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1]); s.close()')
+          echo "BACKEND_PORT=${BACKEND_PORT}" >> "$GITHUB_ENV"
+          echo "VITE_PORT=${VITE_PORT}" >> "$GITHUB_ENV"
+          echo "LEARN_PORT=${LEARN_PORT}" >> "$GITHUB_ENV"
+
+      - name: Start backend (uvicorn) in background
+        working-directory: backend
+        env:
+          SECRET_KEY: ci-secret-key-for-tests-only-not-used-anywhere-else-32+chars
+          ENVIRONMENT: test
+          ADMIN_EMAIL: admin@example.com
+          ADMIN_PASSWORD: admin12345
+          # Vite serves the browser on :$VITE_PORT while proxying /api to the
+          # backend. Seed the runtime setting used by the CSRF Origin check with
+          # the browser-facing origin; the production default would reject login.
+          PORTAL_BASE_URL: http://localhost:${{ env.VITE_PORT }}
+          # Публичный контур обучения (ADR-051): CSRF two-origin + learn-preview.
+          LEARNING_BASE_URL: http://localhost:${{ env.LEARN_PORT }}
+        run: |
+          nohup uvicorn app.main:app --host 0.0.0.0 --port "$BACKEND_PORT" > backend.log 2>&1 &
+          echo $! > backend.pid
+          ready=0
+          for i in $(seq 1 60); do
+            if curl -sf "http://127.0.0.1:${BACKEND_PORT}/api/v1/health" >/dev/null 2>&1 \
+               || curl -sf "http://127.0.0.1:${BACKEND_PORT}/health" >/dev/null 2>&1; then
+              ready=1
+              echo "backend up on :${BACKEND_PORT}"
+              break
+            fi
+            sleep 1
+          done
+          # Fail-closed readiness (аудит 2026-08-21, P0.4): раньше цикл молча
+          # прокручивался и шаг «пройден» даже без backend — Playwright бил в
+          # пустой порт или в чужой процесс.
+          if [ "$ready" != "1" ]; then
+            echo "::error::backend did not become ready on port ${BACKEND_PORT}"
+            tail -100 backend.log || true
+            exit 1
+          fi
+          # Ownership: стартованный нами процесс жив, и на нашем порту отвечает
+          # backend, знающий СЕССИОННЫЙ вход с нашими тестовыми кредами —
+          # т.е. подключённый к нашей БД, а не к БД параллельного run'а.
+          kill -0 "$(cat backend.pid)" || { echo "::error::backend pid is dead"; exit 1; }
+          login_code=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
+            -H 'Content-Type: application/json' \
+            -H "Origin: http://localhost:${VITE_PORT}" \
+            -d '{"email":"admin@example.com","password":"admin12345"}' \
+            "http://127.0.0.1:${BACKEND_PORT}/api/v1/auth/local/login")
+          if [ "$login_code" != "200" ]; then
+            echo "::error::backend ownership check failed (local login → HTTP ${login_code})"
+            exit 1
+          fi
+
+      - name: npm ci
+        working-directory: frontend
+        run: npm ci
+
+      - name: Remove broken third-party apt repos (invalid GPG in catthehacker image)
+        # catthehacker/ubuntu:act-22.04 несёт сторонние репо с невалидными
+        # GPG-подписями → playwright install --with-deps делает apt-get update,
+        # который падает («is not signed») → browsers не ставятся. Затрагивало
+        # packagecloud/git-lfs (2026-08-21) и launchpad git-core/ppa (2026-08-22,
+        # run #761). Удаляем все известные подозрительные источники до apt.
+        run: >
+          sudo rm -f /etc/apt/sources.list.d/*git-lfs*
+          /etc/apt/sources.list.d/*packagecloud*
+          /etc/apt/sources.list.d/*git-core* || true
+      - name: Cache Playwright browsers
+        # Скачивание Chrome+headless-shell+FFmpeg (~170 МБ) на каждый E2E-прогон;
+        # key по package-lock — версия Playwright определяет ревизию браузеров.
+        uses: https://code.forgejo.org/actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ runner.os }}-${{ hashFiles('frontend/package-lock.json') }}
+          restore-keys: playwright-chromium-${{ runner.os }}-
+      - name: Install Playwright (chromium only)
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: Run Playwright (chromium)
+        working-directory: frontend
+        env:
+          CI: "true"
+          # E2E_MODE не задаём: playwright.config.ts по умолчанию берёт 'preview'
+          # при CI (сборка + vite preview). Аудит 2026-08-23 (P1.7): явный
+          # E2E_MODE=dev открывал dev-сервер — ошибки, проявляющиеся только в
+          # production-сборке (import.meta.env.PROD, оптимизации, base URL),
+          # проходили required E2E. Production build job'ом сборку не проверяет.
+          E2E_PORT: ${{ env.VITE_PORT }}
+          E2E_BASE_URL: http://localhost:${{ env.VITE_PORT }}
+          VITE_API_TARGET: http://127.0.0.1:${{ env.BACKEND_PORT }}
+          # The CI browser reaches backend through the local Vite proxy, so all
+          # workers otherwise share 127.0.0.1 and exhaust the login IP limit.
+          # Simulate the trusted docker-internal proxy address used in runtime;
+          # the independent per-email limiter remains active.
+          E2E_REAL_IP: 172.16.0.2
+          # Must match the test-only bootstrap credentials used by the backend
+          # step above. playwright.config.ts fails CI when either value is absent
+          # so authenticated suites cannot silently turn into skipped tests.
+          E2E_ADMIN_EMAIL: admin@example.com
+          E2E_ADMIN_PASSWORD: admin12345
+          # Learn-контур (ADR-051): второй web-server (сборка learn) + проект.
+          E2E_LEARN: "1"
+          LEARN_PORT: ${{ env.LEARN_PORT }}
+          # DATABASE_URL уже в env (postgres выше) — learn-e2e читает email_outbox.
+        run: npx playwright test --project=chromium --project=learn
+
+      - name: E2E flaky budget (retried/flaky > 2 = провал)
+        # audit-review follow-up, P1: прежний inline-парсер считал дубликаты
+        # testcase — таких в реальном junit-формате нет (гейт был
+        # ложнозелёным). Парсер вынесен в scripts/parse-e2e-flaky.mjs,
+        # структурно разбирает XML и понимает оба реальных flaky-тега
+        # (<flakyError>/<flakyFailure>); CLI exit-коды покрыты unit-тестами.
+        if: always()
+        working-directory: frontend
+        run: node scripts/parse-e2e-flaky.mjs playwright-report/results.xml --budget 2
+
+      - name: E2E skip gate (любой skipped = провал)
+        # Аудит тестирования 2026-08-23 (P2): отключённый (test.skip) сценарий
+        # оставался зелёным — required E2E мог молча терять покрытие. Любой
+        # <skipped> в junit роняет шаг. Условные skip'ы вида
+        # test.skip(!photoId, 'previous test failed') безопасны: они срабатывают
+        # только когда предыдущий тест уже упал и прогон красный.
+        if: always()
+        working-directory: frontend
+        run: |
+          set -euo pipefail
+          xml="playwright-report/results.xml"
+          if [ ! -s "$xml" ]; then
+            echo "::error::junit-отчёт Playwright отсутствует — skip-гейт не может работать"
+            exit 1
+          fi
+          count=$(grep -c "<skipped" "$xml" || true)
+          if [ "$count" -gt 0 ]; then
+            echo "::error::E2E-прогон содержит ${count} skipped-тест(ов) — required-контур не должен скипаться"
+            grep -B1 "<skipped" "$xml" | head -20 || true
+            exit 1
+          fi
+          echo "skip-гейт: 0 skipped"
+
+      - name: Upload Playwright report
+        if: always()
+        uses: https://code.forgejo.org/actions/upload-artifact@ff15f0306b3f739f7b6fd43fb5d26cd321bd4de5 # v3.2.1: Forgejo-compatible SHA pin
+        with:
+          name: playwright-report
+          path: frontend/playwright-report
+          retention-days: 14
+
+      - name: Dump backend log on failure
+        if: failure()
+        run: tail -200 backend/backend.log || true
+
+      - name: Stop containers
+        if: always()
+        run: |
+          [ -f backend/backend.pid ] && kill "$(cat backend/backend.pid)" || true
+          docker rm -f "$PG_CONTAINER" "$REDIS_CONTAINER" || true
+
+  compose-smoke:
+    name: compose / up + healthcheck smoke
+    runs-on: [ubuntu-latest, ci-services]
+    # frontend-e2e сериализует service-job'ы (см. комментарий выше); lint jobs
+    # выполняются независимо и остаются обязательными merge/publish gates.
+    needs: [frontend-e2e]
+    timeout-minutes: 25
+    steps:
+      - uses: https://code.forgejo.org/actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set isolated compose project
+        # Docker daemon общий для jobs. Уникальный project name гарантирует,
+        # что down/logs затрагивают только ресурсы текущего запуска.
+        run: |
+          project="portal-ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-smoke"
+          echo "COMPOSE_PROJECT_NAME=${project}" >> "$GITHUB_ENV"
+
+      - name: Prepare data directories
+        run: |
+          mkdir -p base_data/postgres base_data/redis
+          mkdir -p upload_data/avatars upload_data/news_media upload_data/branding \
+                   upload_data/link_icons upload_data/kb \
+                   upload_data/photos/originals upload_data/photos/thumbs upload_data/photos/zips
+          mkdir -p system_data/settings system_data/secrets system_data/nginx_conf \
+                   system_data/nginx_reload system_data/certs
+
+      - name: Generate minimal .env
+        run: |
+          cat >.env <<'EOF'
+          POSTGRES_DB=portal
+          POSTGRES_USER=portal
+          POSTGRES_PASSWORD=portal_ci_smoke_pw
+          REDIS_PASSWORD=redis_ci_smoke_pw
+          REDIS_MAXMEMORY=128mb
+          SECRET_KEY=compose-smoke-secret-key-not-used-anywhere-else-32+chars
+          ENVIRONMENT=test
+          ADMIN_EMAIL=admin@example.com
+          ADMIN_PASSWORD=admin12345
+          SCREENSHOT_SERVICE_SECRET=ci-screenshot-secret
+          SCREENSHOT_ALLOWED_ORIGINS=http://localhost
+          IMAGE_TAG=ci
+          HTTP_PORT=8081
+          HTTPS_PORT=8443
+          EOF
+
+      - name: Generate dev compose override
+        run: echo "using committed docker-compose.ci.yml (no gen-dev-files — ci-override без bind-mounts)"
+
+      - name: docker compose up (postgres + redis + migrations + backend)
+        run: |
+          # Retry the build/up: pulling the Playwright base image for
+          # screenshot-service (a transitive depends_on of backend) from MCR
+          # intermittently returns "403 Forbidden" on shared CI runner IPs.
+          # The tag is not removed — it's a transient registry error — so a
+          # short retry loop reliably recovers without changing the topology.
+          # Удаляем только ресурсы этого project (они могли остаться после retry
+          # текущего job), а не чужой portal stack на shared Docker daemon.
+          docker compose -f docker-compose.yml -f docker-compose.ci.yml down -v --remove-orphans 2>/dev/null || true
+          for attempt in 1 2 3; do
+            if docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d --build \
+                 postgres redis migrations backend; then
+              break
+            fi
+            if [ "$attempt" = "3" ]; then
+              echo "::error::docker compose up failed after 3 attempts"
+              exit 1
+            fi
+            echo "compose up failed (attempt ${attempt}/3), retrying in 15s..."
+            sleep 15
+          done
+          docker compose -f docker-compose.yml -f docker-compose.ci.yml ps
+          backend_port=$(docker compose -f docker-compose.yml -f docker-compose.ci.yml port backend 8000 | sed -E 's/.*:([0-9]+)$/\1/')
+          case "$backend_port" in
+            ''|*[!0-9]*) echo "::error::could not determine backend host port"; exit 1 ;;
+          esac
+          echo "BACKEND_URL=http://127.0.0.1:${backend_port}" >> "$GITHUB_ENV"
+
+      - name: Wait for backend to become healthy
+        # 240с (было 90): на self-hosted runner'е migrations (94 ревизии!) идут ~90с
+        # ПЛЮС backend healthcheck start_period=60с → /docs появляется ~на 150-й секунде.
+        # 90с мало — wait истекал раньше, smoke падал (хотя миграции и backend в итоге ОК).
+        run: |
+          for i in $(seq 1 240); do
+            if curl -sf "$BACKEND_URL/docs" >/dev/null 2>&1; then
+              echo "backend up after ${i}s"
+              break
+            fi
+            sleep 1
+          done
+          curl -sf "$BACKEND_URL/docs" >/dev/null
+
+      - name: Smoke — backend /docs returns 200
+        run: |
+          code=$(curl -s -o /dev/null -w "%{http_code}" "$BACKEND_URL/docs")
+          [ "$code" = "200" ] || { echo "::error::/docs returned $code"; exit 1; }
+
+      - name: Smoke — openapi.json reachable
+        run: |
+          code=$(curl -s -o /dev/null -w "%{http_code}" "$BACKEND_URL/openapi.json")
+          [ "$code" = "200" ] || { echo "::error::/openapi.json returned $code"; exit 1; }
+
+      - name: Smoke — unauthenticated API request returns 401/403
+        run: |
+          code=$(curl -s -o /dev/null -w "%{http_code}" "$BACKEND_URL/api/v1/users/me")
+          case "$code" in
+            401|403) echo "OK: protected endpoint returned $code" ;;
+            *) echo "::error::expected 401/403 for /api/v1/users/me, got $code"; exit 1 ;;
+          esac
+
+      - name: Dump compose logs on failure
+        if: failure()
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.ci.yml logs --no-color --tail=300 || true
+
+      - name: Tear down compose
+        if: always()
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.ci.yml down -v --remove-orphans || true
+
+  tests-generated-drift:
+    name: docs / tests.generated.md drift check
+    runs-on: [ubuntu-latest, ci-general]
+    # pip install backend + npm ci + vitest list (PA-006): 15 мин упирается
+    # в runner deadline (урок #188).
+    timeout-minutes: 25
+    steps:
+      - uses: https://code.forgejo.org/actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: https://code.forgejo.org/actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/pyproject.toml
+      - name: Isolate Python packages from shared toolcache
+        # act-runner mounts /opt/hostedtoolcache into concurrent job containers.
+        # Installing editable packages there races on *.dist-info metadata.
+        run: |
+          python -m venv .venv-actions
+          echo "$PWD/.venv-actions/bin" >> "$GITHUB_PATH"
+      - name: Install backend (dev)
+        working-directory: backend
+        run: pip install -e ".[dev]"
+      - uses: https://code.forgejo.org/actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: npm ci (для vitest list — PA-006)
+        working-directory: frontend
+        run: npm ci
+      - name: Regenerate docs/tests.generated.md
+        env:
+          DATABASE_URL: "postgresql+asyncpg://user:pass@localhost:5432/portal"
+          REDIS_URL: redis://localhost:6379/0
+          SECRET_KEY: ci-secret-key-for-tests-only-not-used-anywhere-else-32+chars
+          ENVIRONMENT: test
+        run: bash scripts/list_tests.sh
+      - name: Fail if docs/tests.generated.md differs from committed
+        run: |
+          if ! git diff --quiet -- docs/tests.generated.md; then
+            echo "::error::docs/tests.generated.md is out of date."
+            echo "Run: bash scripts/list_tests.sh and commit the result."
+            git --no-pager diff --stat -- docs/tests.generated.md
+            git --no-pager diff -- docs/tests.generated.md | head -200
+            exit 1
+          fi
+          echo "docs/tests.generated.md is in sync with tests."
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # playwright-sync-check — защита от рассинхрона Playwright base image и pip-dep.
+  #
+  # Dependabot обновляет `playwright==X.Y.Z` в screenshot-service/requirements.txt,
+  # но НЕ трогает MCR base image в Dockerfile (mcr.microsoft.com/playwright/python —
+  # Dependabot docker-updater не умеет MCR-теги с суффиксом -jammy). В итоге базовый
+  # образ (с запечёнными браузерами) и Python-dep расходятся по версиям →
+  # "BrowserType.launch: Executable doesn't exist at /ms-playwright/…".
+  # Regression поймана в #29 → починена в 11d4ba9 → этот чек не даст повториться.
+  #
+  # Лёгкий bash-парсинг (без Python/Docker-сборки, ~2с): вытаскивает X.Y.Z из
+  # requirements.txt и vX.Y.Z из тега Dockerfile, падает при несовпадении.
+  # ────────────────────────────────────────────────────────────────────────────
+  playwright-sync-check:
+    name: screenshot-service / playwright base image sync
+    runs-on: [ubuntu-latest, ci-general]
+    timeout-minutes: 2
+    steps:
+      - uses: https://code.forgejo.org/actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Verify playwright version matches between requirements.txt and Dockerfile
+        run: |
+          set -euo pipefail
+          # pip-dep: playwright==1.61.0 → 1.61.0
+          pip_ver=$(grep -E '^playwright==' screenshot-service/requirements.txt \
+                    | head -1 | sed -E 's/^playwright==([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
+          # Docker base: mcr.microsoft.com/playwright/python:v1.61.0-jammy → 1.61.0
+          docker_ver=$(grep -E '^FROM mcr\.microsoft\.com/playwright/python:v' \
+                       screenshot-service/Dockerfile \
+                     | head -1 | sed -E 's/.*:v([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
+
+          if [ -z "$pip_ver" ]; then
+            echo "::error::playwright not found in screenshot-service/requirements.txt"
+            exit 1
+          fi
+          if [ -z "$docker_ver" ]; then
+            echo "::error::mcr.microsoft.com/playwright/python not found in screenshot-service/Dockerfile"
+            exit 1
+          fi
+
+          echo "requirements.txt: playwright==$pip_ver"
+          echo "Dockerfile base:  playwright v$docker_ver-jammy"
+
+          if [ "$pip_ver" != "$docker_ver" ]; then
+            echo "::error::Playwright version mismatch."
+            echo "::error::  requirements.txt: playwright==$pip_ver"
+            echo "::error::  Dockerfile base:  v$docker_ver-jammy"
+            echo "::error::Dependabot обновил pip-dep, но не трогает MCR base image."
+            echo "::error::Fix: обнови тег в screenshot-service/Dockerfile до v${pip_ver}-jammy"
+            echo "::error::    и запинь новый SHA: docker buildx imagetools inspect \\"
+            echo "::error::      mcr.microsoft.com/playwright/python:v${pip_ver}-jammy"
+            exit 1
+          fi
+          echo "Playwright pip-dep and Docker base image are in sync ($pip_ver)."
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # publish-images: сборка и пуш Docker-образов в Forgejo Container Registry (forgejo.mage.ru/mage/*).
+  # Запускается ТОЛЬКО на push в main или semver-tag (v*), НЕ на pull_request —
+  # чтобы не пушить с PR-раннеров. Все образы билдятся параллельно через matrix.
+  # Тегирование: всегда sha-<7симв> + latest; при push tag v1.2.3 → +v1.2.3/v1.2/v1.
+  # См. ADR-045 (CI-built images in Forgejo Container Registry + pull-based deploy).
+  # ───────────────────────────────────────────────────────────────────────────
+  # ────────────────────────────────────────────────────────────────────────────
+  # validate-release-tag — gate перед publish на тегах v* (ADR-047).
+  #
+  # Semver-lock прода: прод обязан пиниться к релизному тегу v1.2.3. Чтобы
+  # оператор не мог протолкнуть в registry образ с некорректным тегом (v1.5,
+  # v1.2.3-rc без номера, release-1 и т.п.), валидируем формат И привязку
+  # тега к main ДО того, как publish-images запушит образы.
+  #
+  # Семантика needs: ⚠️ Forgejo (act-раннер), в отличие от GitHub, АВТО-skip'ает
+  # job, если любая его needs skipped — даже при always()/!failure() в if. Поэтому
+  # validate-release-tag НЕ должен быть skipped на push:main, иначе publish-images
+  # (чей needs включает этот job) никогда не запустится. Фикс PR #4 (success()→
+  # !failure()) оказался недостаточен — авто-skip срабатывает ДО вычисления if.
+  # Решение: job выполняется на всех push-событиях (publish тоже только push);
+  # на не-тегах первый шаг — no-op exit 0 (success), тег-специфичные шаги
+  # (checkout, semver, reachability) погейтены step-level if=только v*. На теге v*
+  # проходит полная проверка; при провале → publish блокируется (!failure в if
+  # publish ловит failure). На PR job skipped по event — но publish там тоже skip.
+  # ────────────────────────────────────────────────────────────────────────────
+  validate-release-tag:
+    name: validate / release tag (ADR-047)
+    runs-on: [ubuntu-latest, ci-general]
+    if: github.event_name == 'push'   # publish-images тоже только push; на PR skip OK
+    timeout-minutes: 3
+    steps:
+      - name: No-op on non-tag pushes (exit 0 → job НЕ skipped на push:main)
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        run: echo "Not a v* tag (GITHUB_REF=${GITHUB_REF}) — release-tag validation no-op (success); publish-images may proceed."
+      - uses: https://code.forgejo.org/actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: startsWith(github.ref, 'refs/tags/v')
+        with:
+          # Нужна история main, чтобы проверить, что тег на коммите из main.
+          fetch-depth: 0
+
+      - name: Validate semver format
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          set -euo pipefail
+          ref_name="${GITHUB_REF_NAME:-}"
+          # Допустимо: v1.2.3 или v1.2.3-rc1 (release candidate с номером).
+          # Формат: v + X.Y.Z + опц. -rcN (N — номер). Согласовано с
+          # scripts/release.sh (defense-in-depth).
+          if [[ ! "$ref_name" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-rc[0-9]+)?$ ]]; then
+            echo "::error::Некорректный формат релизного тега: '${ref_name}'"
+            echo "::error::Допустимо: v1.2.3 или v1.2.3-rc1 (semver X.Y.Z с опц. -rcN)"
+            echo "::error::Используйте ./scripts/release.sh <version> — он валидирует до git tag."
+            exit 1
+          fi
+          echo "✓ Semver format OK: ${ref_name}"
+
+      - name: Verify tag is on a commit reachable from main
+        if: startsWith(github.ref, 'refs/tags/v')
+        # Защита от тегирования случайной feature-ветки. Тег обязан указывать
+        # на коммит, который входит в историю main (включая сам HEAD main).
+        run: |
+          set -euo pipefail
+          sha="${GITHUB_SHA}"
+          # git branch --contains показывает ветки, в истории которых есть коммит.
+          # На CI пуш тега origin/main уже обновлён, поэтому проверка корректна.
+          # grep без -q: с -q git может получить SIGPIPE → pipefail ложно роняет шаг.
+          if ! git branch -r --contains "$sha" | grep -E 'origin/main$' > /dev/null; then
+            echo "::error::Тег ${GITHUB_REF_NAME} указывает на коммит ${sha:0:7},"
+            echo "::error::который НЕ входит в историю origin/main. Релизить можно"
+            echo "::error::только коммиты из main (см. scripts/release.sh)."
+            exit 1
+          fi
+          echo "✓ Tag ${GITHUB_REF_NAME} → commit ${sha:0:7} (on main)"
+
+  publish-images:
+    name: publish / Forgejo Registry images
+    runs-on: [ubuntu-latest, ci-general]
+    timeout-minutes: 30
+    env:
+      # /root/.docker/config.json в job-контейнере — bind-mount с хоста раннера:
+      # docker login сохраняет креды atomic-rename поверх config.json → EBUSY
+      # «device or resource busy» (publish ×6 упали на run #879 после мёрджа
+      # #128 — при этом сам #128 ci.yml не менял, это изменение окружения
+      # раннера). DOCKER_CONFIG — job-локальный каталог для ВСЕХ docker-команд
+      # job'а (login/build/scan/push): сид-копируется из host-конфига (креды
+      # зеркал base-образов сохраняются), login дописывает свежий токен уже в
+      # обычный файл. Job-уровень обязателен: step-уровень оставил бы build/push
+      # без login-кредов.
+      DOCKER_CONFIG: /tmp/ci-docker-config
+    # Публикуем только если ни один gate не упал. always() — чтобы job
+    # вычислился даже при skipped-нуждах (иначе авто-skip); !failure() —
+    # блокирует publish при реальном падении любого gate'а; !cancelled() —
+    # не публиковать при отмене прогона.
+    # В набор входят ВСЕ blocking-проверки этого workflow. Публикация образов —
+    # delivery boundary: нельзя выпускать артефакт, если не прошли контрактные
+    # проверки, проверка generated-файлов, shell/quality-проверки или sync
+    # Playwright image. Для каждого перечисленного job должен выполняться и на
+    # push; job, зависящий только от PR (diff-coverage), намеренно сюда не входит.
+    # validate-release-tag добавлен для тегов v* (ADR-047): на main-push он
+    # skipped (if=только тег v*) — !failure() терпит skipped; на теге v* при
+    # провале validate publish блокируется. ⚠️ Раньше тут был success() — но
+    # skipped-нужда НЕ считается success на Forgejo → publish молча пропускался
+    # на каждом push:main (образы не публиковались, прод-deploy без свежих образов).
+    needs:
+      - backend-lint
+      - backend-unit
+      - backend-integration
+      - frontend-lint
+      - frontend-unit
+      - frontend-e2e
+      - compose-smoke
+      - screenshot-unit
+      - secrets-scan
+      - backend-coverage
+      # drift-checks: контракты (openapi), types.gen и schema documentation —
+      # delivery gate: публикация образа из коммита с протухшими generated-файлами
+      # разошлась бы с проверенным исходником (release bundle ≠ source).
+      - drift-checks
+      - fake-db-allowlist
+      - shellcheck
+      - bats
+      - quality-gates
+      - tests-generated-drift
+      - playwright-sync-check
+      - monitoring-config
+      - validate-release-tag
+    # Не на PR: билдим и пушим только main-коммиты и релизные теги.
+    if: github.event_name == 'push' && always() && !cancelled() && !failure()
+    strategy:
+      fail-fast: false
+      matrix:
+        # 6 уникальных образов. backend собирается один раз (target: production),
+        # используется 3 сервисами (backend/worker/migrations) по одному имени.
+        # context/file соответствуют docker-compose.yml: context — каталог сборки,
+        # file — путь к Dockerfile от корня репозитория (НЕ относительно context,
+        # таково API build-push-action).
+        include:
+          - image: portal-backend
+            context: ./backend
+            file: ./backend/Dockerfile
+            target: production
+          - image: portal-frontend
+            context: .
+            file: ./frontend/Dockerfile
+            target: ""
+          - image: portal-nginx
+            context: ./nginx
+            file: ./nginx/Dockerfile
+            target: ""
+          - image: portal-nginx-config
+            context: ./nginx
+            file: ./nginx/Dockerfile.config
+            target: ""
+          - image: portal-screenshot
+            context: ./screenshot-service
+            file: ./screenshot-service/Dockerfile
+            target: ""
+          - image: portal-postgres
+            context: .
+            file: ./postgres/Dockerfile
+            target: ""
+          # MON-19: storage-collector публикуется в registry — прод-контур
+          # (ADR-045/046: никаких локальных сборок) поднимает monitoring-
+          # overlay только из готовых образов. Тегируется как остальные
+          # (sha-<sha> + latest + semver на релизных тегах).
+          - image: portal-storage-collector
+            context: ./monitoring/node-exporter-textfile
+            file: ./monitoring/node-exporter-textfile/Dockerfile
+            target: ""
+    steps:
+      - uses: https://code.forgejo.org/actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Compute image tags
+        id: meta
+        run: |
+          # Полное имя образа в Forgejo Container Registry: forgejo.mage.ru/mage/<image>.
+          # Версия образа = major-версия PG для postgres, иначе IMAGE_TAG.
+          registry="forgejo.mage.ru/mage"
+          short_sha="${GITHUB_SHA::7}"
+
+          if [[ "${{ matrix.image }}" == "portal-postgres" ]]; then
+            # postgres тегируется по major-версии (PG 16) — как в docker-compose.yml.
+            full="${registry}/portal-postgres:16"
+            # sha-тег — точная привязка к коммиту (для отката и freshness-чека
+            # build-postgres в PR'ах: PR тянет sha-тег base-коммита, отсутствие
+            # тега = publish не публиковал = сборка локально; аудит-4).
+            sha_tag="${registry}/portal-postgres:sha-${short_sha}"
+            tags="${full}"$'\n'"${sha_tag}"
+            scan_target="${full}"
+          else
+            # sha-тег — точная привязка к коммиту (для отката).
+            sha_tag="${registry}/${{ matrix.image }}:sha-${short_sha}"
+            # latest — указатель на HEAD main (continuous deploy).
+            latest_tag="${registry}/${{ matrix.image }}:latest"
+            tags="${sha_tag}"$'\n'"${latest_tag}"
+            scan_target="${sha_tag}"
+
+            # При push semver-tag (v1.2.3) — добавляем :v1.2.3, :v1.2, :v1.
+            ref="${GITHUB_REF#refs/tags/}"
+            if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+              ver="${ref#v}"
+              tags="${tags}"$'\n'"${registry}/${{ matrix.image }}:v${ver}"
+              if [[ "${ver}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+                minor="${ver%.*}"
+                major="${minor%.*}"
+                tags="${tags}"$'\n'"${registry}/${{ matrix.image }}:v${minor}"
+                tags="${tags}"$'\n'"${registry}/${{ matrix.image }}:v${major}"
+              fi
+            fi
+          fi
+
+          # tags_args: "-t img1 -t img2 ..." — для нативного docker buildx build
+          # (в тегах нет пробелов → безопасный word-split без кавычек).
+          tags_args="$(printf '%s\n' "$tags" | sed 's/^/-t /' | tr '\n' ' ')"
+          {
+            echo "tags<<EOF"
+            printf '%s\n' "$tags"
+            echo "EOF"
+            echo "tags_args=${tags_args}"
+            echo "scan_target=${scan_target}"
+          } >> "$GITHUB_OUTPUT"
+          echo "Computed tags for ${{ matrix.image }}:"
+          printf '  %s\n' "$tags"
+
+      - name: Log in to Forgejo Container Registry
+        # Forgejo: авто-GITHUB_TOKEN НЕ умеет push в Container Registry (даже с
+        # permissions:packages:write — run #99 подтвердил 401 на push). Нужен PAT
+        # со скоупом write:package. Заведите secret REGISTRY_TOKEN (PAT владельца
+        # org — github.actor на push:main = тот, кто мёрджит; PAT должен принадлежать
+        # ему). Создаётся в Settings → Settings → Applications → Generate New Token
+        # (scope: write:package), значение — в repo/org secret REGISTRY_TOKEN.
+        # Без секрета login упадёт с пустым паролем — это намеренно (пуш невозможен).
+        run: |
+          # Сид job-локального DOCKER_CONFIG (см. env.DOCKER_CONFIG выше):
+          # без копии host-конфига docker login падает EBUSY на bind-mounted
+          # /root/.docker/config.json, а build теряет креды зеркал base-образов.
+          mkdir -p "${DOCKER_CONFIG}"
+          [ -f /root/.docker/config.json ] && cp /root/.docker/config.json "${DOCKER_CONFIG}/config.json" || true
+          echo "${{ secrets.REGISTRY_TOKEN }}" | docker login forgejo.mage.ru \
+            -u "${{ github.actor }}" --password-stdin
+
+      - name: Build ${{ matrix.image }}
+        # Нативный docker build (вместо docker/build-push-action — github-only).
+        # Без buildx/docker-container-driver и type=gha cache (его в Forgejo нет) —
+        # проще и надёжнее на self-hosted runner'е: build идёт через демон хоста
+        # (сокет примонтирован). Layer-cache отсутствует (сборка дольше) —
+        # оптимизация через registry-cache отдельным PR.
+        # Пуш тегов — ОТДЕЛЬНЫМ шагом после Trivy image scan: аудит 2026-08-23 (P2)
+        # нашёл, что теги (включая перетирающий latest/:16) уезжали в registry ещё
+        # до сканирования — при техническом провале скана registry оставался
+        # частично изменённым. Теперь порядок: build → scan → push.
+        run: |
+          set -euo pipefail
+          target_arg=""
+          [ -n "${{ matrix.target }}" ] && target_arg="--target ${{ matrix.target }}"
+          # shellcheck disable=SC2086  # tags_args/target_arg намеренно word-split
+          docker build $target_arg \
+            --file "${{ matrix.file }}" \
+            ${{ steps.meta.outputs.tags_args }} \
+            "${{ matrix.context }}"
+
+      # ────────────────────────────────────────────────────────────────────────
+      # Trivy image scan — сканирует СОБРАННЫЙ ЛОКАЛЬНО образ (docker save → tar)
+      # ДО пуша тегов. Ловит уязвимости в base images (node/python/postgres/nginx),
+      # которых не видит fs-scan в security.yml (он гоняет по исходникам репо,
+      # а не по собранным слоям).
+      #
+      # Review-2 (P1.4): исправимые (fixed доступен) CRITICAL БЛОКИРУЮТ публикацию
+      # (jq-гейт по JSON ниже; осознанные исключения — .trivyignore.yaml с
+      # обоснованием). HIGH остаются informational — чтобы обновление trivy-db
+      # само по себе не парализовало delivery; перевод HIGH на блокировку —
+      # отдельным решением после ревизи текущих 38 HIGH в backend-образе.
+      # Техническая ошибка сканирования (битый/пустой JSON, недоступный образ)
+      # обязана провалить job ДО пуша тегов: зелёный релиз без состоявшегося
+      # scan ложнозелён.
+      #
+      # Версия 0.72.0 идентична security.yml::trivy-fs для консистентности.
+      # ⚠️ Dependabot НЕ покрывает `docker run` внутри run: | (только Dockerfiles/
+      # compose + actions/*). Обновление тега — ручной bump. Раз в месяц — по
+      # календарю.
+      # ────────────────────────────────────────────────────────────────────────
+      - name: Trivy image scan (fixable CRITICAL блокирует; HIGH informational)
+        run: |
+          target="${{ steps.meta.outputs.scan_target }}"
+          mkdir -p trivy-out
+          echo "Scanning $target (local image tar, pre-push)"
+          scan_container=""
+          convert_container=""
+          cleanup_trivy_containers() {
+            if [ -n "$scan_container" ]; then
+              docker rm -f "$scan_container" >/dev/null 2>&1 || true
+            fi
+            if [ -n "$convert_container" ]; then
+              docker rm -f "$convert_container" >/dev/null 2>&1 || true
+            fi
+            rm -f /tmp/scan-image.tar
+          }
+          trap cleanup_trivy_containers EXIT
+
+          # docker save стримит образ через Docker API в tar job-контейнера;
+          # trivy image --input читает его без обращения к registry (образ ещё
+          # не опубликован — приватные креды не нужны).
+          docker save "$target" -o /tmp/scan-image.tar
+
+          # JSON — для артефакта (машинно-читаемый, подходит для последующего
+          # ужесточения/интеграции). Table — для Summary (читаемый человеком).
+          # Forgejo запускает job внутри контейнера, а docker CLI обращается к
+          # host daemon. Поэтому bind-mount $GITHUB_WORKSPACE указывает для
+          # daemon на несуществующий/чужой host path. create/start/cp передаёт
+          # tar и отчёты через Docker API и одновременно сохраняет exit code Trivy.
+          # .trivyignore.yaml (корень репо) — тот же файл, что у fs-scan: единый
+          # реестр осознанных исключений.
+          scan_container="$(docker create \
+            forgejo.mage.ru/mage/trivy:0.72.0@sha256:c6e969c5662a546ad5de4a73c2a6b7a7c627f86d916903e175aa623af5b97ada \
+            image --scanners vuln --exit-code 0 --severity HIGH,CRITICAL --ignore-unfixed \
+              --ignorefile /tmp/trivy-ignore.yaml \
+              --format json -o /tmp/trivy-report.json \
+              --input /tmp/scan-image.tar)"
+          if [ -f .trivyignore.yaml ]; then
+            docker cp .trivyignore.yaml "$scan_container:/tmp/trivy-ignore.yaml"
+          fi
+          docker cp /tmp/scan-image.tar "$scan_container:/tmp/scan-image.tar"
+          docker start --attach "$scan_container"
+
+          report="trivy-out/trivy-${{ matrix.image }}.json"
+          docker cp "$scan_container:/tmp/trivy-report.json" "$report"
+          docker rm "$scan_container" >/dev/null
+          scan_container=""
+          if [ ! -s "$report" ]; then
+            echo "::error::Trivy не создал непустой JSON report для $target"
+            exit 1
+          fi
+          if ! jq -e '(.SchemaVersion | type == "number") and (.Results | type == "array")' \
+            "$report" >/dev/null; then
+            echo "::error::Trivy report для $target имеет неожиданный schema"
+            exit 1
+          fi
+
+          # ── CRITICAL-гейт (review-2, P1.4) ────────────────────────────────
+          # Исправимые (FixedVersion непустой) CRITICAL блокируют публикацию.
+          # Работает по уже скачанному JSON (без повторного скана): trivy
+          # сам вычел .trivyignore.yaml, поэтому каждое попадание здесь — НЕ
+          # осознанное исключение, а новая уязвимость. HIGH — informational.
+          critical_count="$(jq '[.Results[]?.Vulnerabilities[]?
+            | select(.Severity == "CRITICAL" and (.FixedVersion // "") != "")] | length' "$report")"
+          if [ "$critical_count" -gt 0 ]; then
+            echo "::error::Trivy: ${critical_count} исправимых(й) CRITICAL в $target — публикация заблокирована:"
+            jq -r '.Results[]?.Vulnerabilities[]?
+              | select(.Severity == "CRITICAL" and (.FixedVersion // "") != "")
+              | "  \(.VulnerabilityID) \(.PkgName) \(.InstalledVersion) → fixed \(.FixedVersion)"' "$report"
+            exit 1
+          fi
+
+          # Один scan → два представления. Повторный `trivy image --format table`
+          # снова ходил бы в registry и мог дать другой результат/ошибку.
+          convert_container="$(docker create \
+            forgejo.mage.ru/mage/trivy:0.72.0@sha256:c6e969c5662a546ad5de4a73c2a6b7a7c627f86d916903e175aa623af5b97ada \
+            convert --scanners vuln --format table --severity HIGH,CRITICAL \
+              -o /tmp/trivy-report.txt \
+              /tmp/trivy-report.json)"
+          docker cp "$report" "$convert_container:/tmp/trivy-report.json"
+          docker start --attach "$convert_container"
+          table_report="trivy-out/trivy-${{ matrix.image }}.txt"
+          docker cp "$convert_container:/tmp/trivy-report.txt" "$table_report"
+          docker rm "$convert_container" >/dev/null
+          convert_container=""
+          {
+            echo "## Trivy image scan — ${{ matrix.image }}"
+            echo
+            echo "Target: \`$target\` (fixable CRITICAL — гейт; HIGH — informational, pre-push)"
+            echo
+            echo '```'
+            cat "$table_report"
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Push tags
+        # Пушим каждый тег отдельно (plain docker, без buildx --push) — только
+        # после успешного Trivy scan: непросканированный образ не публикуется.
+        run: |
+          set -euo pipefail
+          printf '%s\n' "${{ steps.meta.outputs.tags }}" | while IFS= read -r t; do
+            [ -n "$t" ] && docker push "$t"
+          done
+
+      - name: Upload Trivy report (${{ matrix.image }})
+        if: always()
+        uses: https://code.forgejo.org/actions/upload-artifact@ff15f0306b3f739f7b6fd43fb5d26cd321bd4de5 # v3.2.1: Forgejo-compatible SHA pin
+        with:
+          name: trivy-image-${{ matrix.image }}
+          path: trivy-out/
+          retention-days: 14
+          if-no-files-found: warn
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # deploy-bundle — артефакт для prod-сервера без клона репозитория (ADR-046).
+  #
+  # На проде НЕ нужен полный git-клон: образы едут из Forgejo Container Registry (ADR-045/049), а всё
+  # остальное (docker-compose.yml, .env.example, monitoring-overlay, setup.sh,
+  # system_data/nginx/) упаковывается в один tarball и аттачится к релизу. Флоу на проде:
+  #     curl -fL -H "Authorization: token $FORGEJO_TOKEN" -o portal-deploy-bundle-v1.2.3.tar.gz \
+  #       https://forgejo.mage.ru/mage/portal/releases/download/v1.2.3/portal-deploy-bundle-v1.2.3.tar.gz
+  #     tar xzf portal-deploy-bundle-*.tar.gz -C /opt/portal
+  #     cd /opt/portal && ./setup.sh
+  #
+  # Запускается ТОЛЬКО на релизном теге v* (как и публикация semver-тегов образов).
+  # ────────────────────────────────────────────────────────────────────────────
+  deploy-bundle:
+    name: deploy-bundle / tarball для prod (ADR-046)
+    runs-on: [ubuntu-latest, ci-general]
+    # Workflow-level permissions = {contents: read, packages: write} — но для создания
+    # Forgejo Release и аттача asset'а нужно contents: write. Переопределяем точечно
+    # на job (не поднимая права всего workflow). Без этого шаг "Create/attach Forgejo
+    # Release" падает 403 на POST /releases.
+    permissions:
+      contents: write
+    needs: [publish-images]
+    if: startsWith(github.ref, 'refs/tags/v') && always() && needs.publish-images.result == 'success'
+    steps:
+      - uses: https://code.forgejo.org/actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Assemble deploy-bundle tarball
+        run: |
+          set -euo pipefail
+          # Состав bundle: только то, что нужно для prod-деплоя (ADR-046).
+          # Исходников backend/frontend/nginx/postgres/screenshot-service тут нет —
+          # они едут внутри образов из Forgejo Container Registry.
+          bundle_dir="$(mktemp -d)/portal-deploy"
+          mkdir -p "$bundle_dir"
+
+          # Каркас запуска.
+          cp docker-compose.yml "$bundle_dir/"
+          cp .env.example       "$bundle_dir/"
+          cp setup.sh           "$bundle_dir/"
+          chmod +x "$bundle_dir/setup.sh"
+
+          # Статичные nginx-конфиги: bind-mount'ятся в контейнер с ХОСТА, а не из
+          # образа (amendment-2 к ADR-046). Грабли v1.8.3: nonroot-образ + старый
+          # nginx.conf на проде → crash-loop (mkdir /var/cache/nginx Permission
+          # denied). Едет только system_data/nginx/; runtime-каталоги (settings/
+          # secrets/certs/nginx_conf/nginx_reload) в bundle НЕ входят.
+          mkdir -p "$bundle_dir/system_data/nginx"
+          cp system_data/nginx/nginx.conf system_data/nginx/entrypoint.sh "$bundle_dir/system_data/nginx/"
+
+          # Observability-overlay целиком (config-файлы + node-exporter-textfile/
+          # для локальной сборки portal-storage-collector — он не в registry).
+          cp -r monitoring "$bundle_dir/"
+
+          # Чистим runtime-мусор, который мог попасть в checkout.
+          #   grafana/data, loki/data   — runtime volumes (если кто-то гонял overlay локально)
+          #   textfile/storage.prom     — runtime-данные с машины сборки (генерируется
+          #                              storage-collector'ом на месте; .gitkeep оставляем)
+          # NB: monitoring/loki/rules/fake/ НЕ трогаем — несмотря на имя «fake»,
+          # это ЕДИНСТВЕННЫЕ production Loki-rules: при auth_enabled: false
+          # tenant-id = fake, и ruler требует rules/fake/<file>.yaml (см.
+          # docs/monitoring.md §«Конвенция путей»). Ниже — assert на их наличие.
+          rm -rf \
+            "$bundle_dir/monitoring/grafana/data" \
+            "$bundle_dir/monitoring/loki/data" \
+            "$bundle_dir/monitoring/textfile/storage.prom" \
+            "$bundle_dir/.git"
+
+          # Краткий README внутри bundle — чтобы на проде было понятно, что делать.
+          cat > "$bundle_dir/DEPLOY-BUNDLE-README.md" << 'READMEEOF'
+          # Portal — deploy-bundle (ADR-046)
+
+          Минимальный набор файлов для prod-деплоя без git-клона репозитория.
+          Образы тянутся из Forgejo Container Registry (ADR-045/049).
+
+          ## Первый запуск
+
+          ```bash
+          cd /opt/portal  # куда распакован bundle
+          ./setup.sh      # → пункт 5 (выбрать профиль "prod") → пункт 1 (запуск)
+          ```
+
+          ## Обновление
+
+          Начиная с июля 2026 setup.sh п.6 сам скачивает и применяет свежий bundle
+          из Forgejo Release (по IMAGE_TAG из .env). Ручная распаковка не нужна.
+
+          ```bash
+          cd /opt/portal
+          # 1. Выставить релизный тег в .env:
+          #    IMAGE_TAG=v1.2.3   (доступные: https://forgejo.mage.ru/mage/portal/releases)
+          # 2. setup.sh п.6 сделает всё сам: preflight → скачать bundle → распаковать
+          #    → pg_dump (опц.) → compose pull → up -d → check_services.
+          ./setup.sh   # → пункт 6 (Обновить Production)
+          ```
+
+          ## Что в bundle, чего в нём НЕТ
+
+          - ЕСТЬ: docker-compose.yml, .env.example, setup.sh, monitoring-overlay,
+                 system_data/nginx/ (nginx.conf + entrypoint.sh — статичный конфиг
+                 nginx, bind-mount в контейнер; amendment-2 к ADR-046)
+          - НЕТ: исходники backend/frontend/nginx/postgres/screenshot-service,
+                 тесты, документация, .git — всё это не нужно на проде.
+          - НЕТ (runtime, НЕ перетираются при обновлении): .env, system_data/settings,
+                 system_data/secrets, system_data/certs, system_data/nginx_conf,
+                 system_data/nginx_reload, base_data, upload_data
+          READMEEOF
+
+          tar -czf "portal-deploy-bundle-${GITHUB_REF_NAME}.tar.gz" -C "$(dirname "$bundle_dir")" portal-deploy
+          ls -lh "portal-deploy-bundle-${GITHUB_REF_NAME}.tar.gz"
+
+          # Sanity-assert: bundle обязан нести production Loki-rules — без них
+          # ruler на проде молча стартует с нулём правил (PostgresFatal /
+          # RedisPersistenceFailure / NginxRateLimit429 исчезают; до 2026-08
+          # rm-rf выше вычищал rules/fake как «тестовые данные»).
+          # grep без -q: с -q он закрывает stdin после совпадения → tar получает
+          # SIGPIPE(141), а set -o pipefail ложно роняет шаг (грабли релиза v1.11.0).
+          if ! tar -tzf "portal-deploy-bundle-${GITHUB_REF_NAME}.tar.gz" \
+              | grep '^portal-deploy/monitoring/loki/rules/fake/portal-loki-rules\.yaml$' > /dev/null; then
+            echo "ERROR: deploy-bundle не содержит monitoring/loki/rules/fake/portal-loki-rules.yaml" >&2
+            exit 1
+          fi
+          echo "OK: bundle содержит Loki ruler rules (portal-loki-rules.yaml)"
+
+      - name: Create/attach Forgejo Release
+        # Нативный вызов Forgejo API (вместо softprops/action-gh-release — github-only).
+        # contents: write (permissions) + встроенный GITHUB_TOKEN → создание release
+        # и аплоад asset'а. Тег уже существует (его push триггерит этот workflow).
+        env:
+          FORGEJO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FORGEJO_API: https://forgejo.mage.ru/api/v1
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          # Создаём release (если уже есть — берём существующий по тегу).
+          rel_id=$(curl -fsSL -X POST \
+            -H "Authorization: token ${FORGEJO_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d "{\"tag_name\":\"${tag}\",\"name\":\"${tag}\",\"target_commitish\":\"main\",\"body\":\"Release ${tag}\"}" \
+            "${FORGEJO_API}/repos/mage/portal/releases" 2>/dev/null | jq -r .id)
+          if [ -z "${rel_id}" ] || [ "${rel_id}" = "null" ]; then
+            rel_id=$(curl -fsSL -H "Authorization: token ${FORGEJO_TOKEN}" \
+              "${FORGEJO_API}/repos/mage/portal/releases/tags/${tag}" | jq -r .id)
+          fi
+          echo "Release id: ${rel_id}"
+          curl -fsSL -X POST \
+            -H "Authorization: token ${FORGEJO_TOKEN}" \
+            -F "attachment=@portal-deploy-bundle-${tag}.tar.gz" \
+            "${FORGEJO_API}/repos/mage/portal/releases/${rel_id}/assets"
+          echo "Bundle attached to release ${tag}."

@@ -1,0 +1,164 @@
+import DOMPurify from 'dompurify'
+import { parseVideoEmbed, DEFAULT_VIDEO_IFRAME_ORIGINS } from './videoEmbed'
+
+const FORBID_TAGS = ['style', 'svg', 'script', 'iframe', 'object', 'embed', 'form', 'meta', 'link']
+const FORBID_ATTR = [
+  'onerror', 'onload', 'onclick', 'onmouseover', 'onfocus', 'onblur',
+  'onchange', 'onsubmit', 'srcset', 'formaction',
+]
+
+const TEXT_ALIGN_RE = /^\s*text-align\s*:\s*(left|center|right|justify)\s*;?\s*$/i
+
+function sanitizeStyleAttr(value: string): string {
+  const declarations = value.split(';').map((d) => d.trim()).filter(Boolean)
+  const kept: string[] = []
+  for (const decl of declarations) {
+    if (TEXT_ALIGN_RE.test(decl + ';')) {
+      kept.push(decl)
+    }
+  }
+  return kept.join('; ')
+}
+
+const _purify = DOMPurify(window)
+
+_purify.addHook('uponSanitizeAttribute', (_node, data) => {
+  if (data.attrName !== 'style') return
+  const cleaned = sanitizeStyleAttr(data.attrValue)
+  if (cleaned) {
+    data.attrValue = cleaned
+    data.keepAttr = true
+  } else {
+    data.keepAttr = false
+  }
+})
+
+function createIframePurifier(allowedOrigins: string[]) {
+  const purifier = DOMPurify(window)
+
+  purifier.addHook('uponSanitizeAttribute', (_node, data) => {
+    if (data.attrName !== 'style') return
+    const cleaned = sanitizeStyleAttr(data.attrValue)
+    if (cleaned) {
+      data.attrValue = cleaned
+      data.keepAttr = true
+    } else {
+      data.keepAttr = false
+    }
+  })
+
+  purifier.addHook('uponSanitizeElement', (node, data) => {
+    if (data.tagName !== 'iframe') return
+    const el = node as Element
+    const src = el.getAttribute('src') ?? ''
+    // Гейт и самолечение — через общий парсер портала: ссылка из разрешённого
+    // origin'а остаётся (watch-форматы конвертируются в embed — лечит статьи,
+    // сохранённые до конвертации в редакторе), всё прочее удаляется.
+    const info = src ? parseVideoEmbed(src, allowedOrigins) : null
+    if (!info) {
+      el.remove()
+      return
+    }
+    if (info.embedUrl !== src) {
+      el.setAttribute('src', info.embedUrl)
+    }
+  })
+
+  return purifier
+}
+
+export function sanitizeHtml(html: string): string {
+  if (!html) return ''
+  return _purify.sanitize(html, {
+    USE_PROFILES: { html: true },
+    FORBID_TAGS,
+    FORBID_ATTR,
+    ALLOW_DATA_ATTR: false,
+    ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|tel):|[^a-z]|[a-z+.-]+(?:[^a-z+.\-:]|$))/i,
+  })
+}
+
+/**
+ * Профиль санитизации для rich-сообщений helpdesk (ответы через TipTap).
+ *
+ * Отличается от базового ``sanitizeHtml`` тем, что разрешает ``figure``/
+ * ``figcaption`` — TipTap ``FigureImage`` с подписью рендерится в
+ * ``<figure data-type="figure-image"><img .../><figcaption>...</figcaption></figure>``.
+ * Базовый html-профиль DOMPurify их не пропускает (не входит в дефолтный набор).
+ *
+ * ``img`` уже разрешён базовым профилем; относительные URL
+ * (``/api/v1/helpdesk/.../inline-media/...``) проходят через ALLOWED_URI_REGEXP.
+ * Без ``iframe`` (helpdesk — не kb/news, видео в ответах поддержки не нужно).
+ */
+export function sanitizeHelpdeskHtml(html: string): string {
+  if (!html) return ''
+  return _purify.sanitize(html, {
+    USE_PROFILES: { html: true },
+    FORBID_TAGS,
+    FORBID_ATTR,
+    ALLOW_DATA_ATTR: false,
+    ADD_TAGS: ['figure', 'figcaption'],
+    ADD_ATTR: ['data-type'],
+    ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|tel):|[^a-z]|[a-z+.-]+(?:[^a-z+.\-:]|$))/i,
+  })
+}
+
+export function sanitizeHtmlAllowIframe(html: string, allowedOrigins: string[]): string {
+  if (!html) return ''
+  const purifier = createIframePurifier(allowedOrigins)
+  return purifier.sanitize(html, {
+    USE_PROFILES: { html: true },
+    FORBID_TAGS: FORBID_TAGS.filter((t) => t !== 'iframe'),
+    FORBID_ATTR,
+    ALLOW_DATA_ATTR: false,
+    ADD_TAGS: ['iframe'],
+    ADD_ATTR: ['allowfullscreen', 'sandbox', 'loading'],
+    ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|tel):|[^a-z]|[a-z+.-]+(?:[^a-z+.:-]|$))/i,
+  })
+}
+
+function createKbPurifier(allowedOrigins: string[]) {
+  const purifier = DOMPurify(window)
+
+  purifier.addHook('uponSanitizeAttribute', (_node, data) => {
+    if (data.attrName !== 'style') return
+    const cleaned = sanitizeStyleAttr(data.attrValue)
+    if (cleaned) {
+      data.attrValue = cleaned
+      data.keepAttr = true
+    } else {
+      data.keepAttr = false
+    }
+  })
+
+  purifier.addHook('uponSanitizeElement', (node, data) => {
+    if (data.tagName !== 'iframe') return
+    const el = node as Element
+    const src = el.getAttribute('src') ?? ''
+    // Тот же гейт/самолечение, что у новостей (createIframePurifier).
+    const info = src ? parseVideoEmbed(src, allowedOrigins) : null
+    if (!info) {
+      el.remove()
+      return
+    }
+    if (info.embedUrl !== src) {
+      el.setAttribute('src', info.embedUrl)
+    }
+  })
+
+  return purifier
+}
+
+export function sanitizeKbHtml(html: string, allowedOrigins: string[] = DEFAULT_VIDEO_IFRAME_ORIGINS): string {
+  if (!html) return ''
+  const purifier = createKbPurifier(allowedOrigins)
+  return purifier.sanitize(html, {
+    USE_PROFILES: { html: true },
+    FORBID_TAGS: FORBID_TAGS.filter((t) => t !== 'iframe'),
+    FORBID_ATTR,
+    ALLOW_DATA_ATTR: false,
+    ADD_TAGS: ['iframe', 'details', 'summary', 'figure', 'figcaption'],
+    ADD_ATTR: ['allowfullscreen', 'sandbox', 'loading', 'data-type'],
+    ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|tel):|[^a-z]|[a-z+.-]+(?:[^a-z+.:-]|$))/i,
+  })
+}

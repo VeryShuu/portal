@@ -1,0 +1,193 @@
+"""
+ARQ-задачи для audit_log:
+  - flush_audit_queue: batch INSERT из Redis list → PostgreSQL
+  - create_next_audit_partition: создать партицию на следующий месяц
+  - drop_old_audit_partitions: удалить партиции старше 12 месяцев
+"""
+
+import json
+import secrets
+from datetime import UTC, datetime
+
+import asyncpg
+
+from app.core.config import get_settings
+from app.core.logging import get_logger
+from app.services.audit import AUDIT_QUEUE_KEY
+
+logger = get_logger(__name__)
+settings = get_settings()
+
+PROCESSING_KEY = "audit_processing"
+BATCH_SIZE = 500
+FLUSH_LOCK_KEY = "audit:flush:lock"
+FLUSH_LOCK_TTL = 30
+# audit [PA-018]: невалидные записи изолируются в quarantine (bounded), чтобы
+# одна poison-запись не блокировала доставку всех последующих событий.
+QUARANTINE_KEY = "audit_quarantine"
+QUARANTINE_MAX = 1000
+_FLUSH_LOCK_RELEASE_LUA = (
+    "if redis.call('get', KEYS[1]) == ARGV[1] "
+    "then return redis.call('del', KEYS[1]) "
+    "else return 0 end"
+)
+
+
+def _sync_pg_url() -> str:
+    """Вернуть synchronous postgres URL для asyncpg.
+
+    SQLAlchemy-драйвер использует схему ``postgresql+asyncpg://``, asyncpg —
+    ``postgresql://``. Эту подстановку раньше повторяли в каждой cron-задаче
+    вручную (3×), вынесли сюда для DRY.
+    """
+    return settings.database_url.replace("postgresql+asyncpg://", "postgresql://")
+
+
+def _parse_dt(value: str | None) -> datetime:
+    if value is None:
+        return datetime.now(tz=UTC)
+    if isinstance(value, datetime):
+        return value
+    return datetime.fromisoformat(value)
+
+
+async def flush_audit_queue(ctx: dict) -> int:
+    redis = ctx["redis"]
+    pool = ctx["pg_pool"]
+    inserted = 0
+
+    lock_token = secrets.token_hex(16)
+    acquired = await redis.set(FLUSH_LOCK_KEY, lock_token, nx=True, ex=FLUSH_LOCK_TTL)
+    if not acquired:
+        logger.debug("audit.flush.skipped", reason="locked_by_another_worker")
+        return 0
+
+    try:
+        while True:
+            items = await redis.lrange(PROCESSING_KEY, 0, -1)
+            if not items:
+                for _ in range(BATCH_SIZE):
+                    item = await redis.lmove(AUDIT_QUEUE_KEY, PROCESSING_KEY, "LEFT", "RIGHT")
+                    if item is None:
+                        break
+                items = await redis.lrange(PROCESSING_KEY, 0, -1)
+
+            if not items:
+                break
+
+            # audit [PA-018]: декодируем ПОЗАПИСНО. Раньше один list
+            # comprehension падал на первой malformed-записи — исключение до
+            # удаления processing-list ломало каждый следующий flush, и все
+            # валидные события за ней навсегда не доходили до PostgreSQL.
+            records: list[dict] = []
+            poison: list[str] = []
+            for item in items:
+                try:
+                    rec = json.loads(item)
+                except (ValueError, TypeError):
+                    poison.append(item)
+                    continue
+                if not isinstance(rec, dict):
+                    poison.append(item)
+                    continue
+                records.append(rec)
+
+            if poison:
+                # Quarantine (bounded): запись убирается из processing-list
+                # точным lrem (одна операция на одно вхождение) и сохраняется
+                # для диагностики; flush валидных записей продолжается.
+                for raw in poison:
+                    await redis.lrem(PROCESSING_KEY, 1, raw)
+                    await redis.lpush(QUARANTINE_KEY, raw)
+                await redis.ltrim(QUARANTINE_KEY, 0, QUARANTINE_MAX - 1)
+                logger.error(
+                    "audit.flush_poison_quarantined",
+                    count=len(poison),
+                    quarantine_key=QUARANTINE_KEY,
+                    sample=str(poison[0])[:500],
+                )
+
+            if not records:
+                await redis.delete(PROCESSING_KEY)
+                break
+
+            async with pool.acquire() as conn:
+                await conn.executemany(
+                    """
+                    INSERT INTO audit_log
+                        (event_type, user_id, user_email, resource_type, resource_id,
+                         resource_title, ip_address, user_agent, metadata, created_at)
+                    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+                    """,
+                    [
+                        (
+                            r.get("event_type"),
+                            r.get("user_id"),
+                            r.get("user_email"),
+                            r.get("resource_type"),
+                            r.get("resource_id"),
+                            r.get("resource_title"),
+                            r.get("ip_address"),
+                            r.get("user_agent"),
+                            json.dumps(r.get("metadata", {})),
+                            _parse_dt(r.get("created_at")),
+                        )
+                        for r in records
+                    ],
+                )
+            inserted += len(records)
+            await redis.delete(PROCESSING_KEY)
+    except Exception as exc:
+        logger.exception("audit.flush_failed", error=str(exc), error_type=type(exc).__name__)
+        raise
+    finally:
+        try:
+            await redis.eval(_FLUSH_LOCK_RELEASE_LUA, 1, FLUSH_LOCK_KEY, lock_token)
+        except Exception as exc:
+            logger.warning("audit.flush.lock_release_failed", error=str(exc))
+
+    if inserted:
+        logger.info("audit.flushed", count=inserted)
+    return inserted
+
+
+async def create_next_audit_partition(ctx: dict) -> str:
+    from app.services.audit_partitions import ensure_partitions
+
+    conn = await asyncpg.connect(_sync_pg_url(), statement_cache_size=0)
+    try:
+        created = await ensure_partitions(conn, months_ahead=3)
+        logger.info("audit.partitions_created", tables=created)
+        return str(created)
+    finally:
+        await conn.close()
+
+
+async def drop_old_audit_partitions(ctx: dict) -> str:
+    from app.services.audit_partitions import drop_old_partitions
+
+    conn = await asyncpg.connect(_sync_pg_url(), statement_cache_size=0)
+    try:
+        dropped = await drop_old_partitions(conn, retention_months=12)
+        logger.info("audit.partitions_dropped", tables=dropped)
+        return str(dropped)
+    finally:
+        await conn.close()
+
+
+async def cleanup_idempotency_keys(ctx: dict) -> str:
+    """Delete idempotency_keys older than 24 hours.
+
+    Idempotency keys are only needed for the dedup window (typically minutes).
+    Without a cleanup job they accumulate indefinitely.
+    """
+    conn = await asyncpg.connect(_sync_pg_url(), statement_cache_size=0)
+    try:
+        result = await conn.execute(
+            "DELETE FROM idempotency_keys WHERE created_at < NOW() - INTERVAL '24 hours'"
+        )
+        deleted = int(result.split()[-1]) if result else 0
+        logger.info("idempotency_keys.cleaned", deleted=deleted)
+        return str(deleted)
+    finally:
+        await conn.close()

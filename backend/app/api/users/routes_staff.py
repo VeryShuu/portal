@@ -1,0 +1,285 @@
+"""Users API: справочник сотрудников (публичный просмотр + админский порядок)."""
+
+from __future__ import annotations
+
+import csv
+import io
+import uuid
+from collections.abc import AsyncGenerator
+from datetime import date, timedelta
+from typing import cast
+
+from fastapi import HTTPException, Query, status
+from fastapi.responses import Response, StreamingResponse
+
+from app.api.deps import AdminDep, CurrentUser, DbDep, RedisDep
+from app.core.system_config import load_system_settings_shared
+from app.schemas.user import (
+    BirthdayList,
+    BirthdayOut,
+    DepartmentList,
+    ErpAbsenceList,
+    ErpAbsenceOut,
+    OfficeList,
+    StaffOrderState,
+    StaffOrderUpdate,
+    UserList,
+    UserPublic,
+)
+from app.utils.phone import apply_phone_regex
+
+from . import router, staff_service, users_repo
+from .staff_xlsx import export_users_xlsx
+
+_CSV_INJECTION_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _csv_safe(value: str) -> str:
+    if value and value[0] in _CSV_INJECTION_PREFIXES:
+        return "'" + value
+    return value
+
+
+@router.get("", response_model=UserList, summary="Список сотрудников")
+async def list_users(
+    db: DbDep,
+    user: CurrentUser,
+    q: str | None = Query(default=None, max_length=100),
+    department: str | None = Query(default=None),
+    office: str | None = Query(default=None),
+    sort: str = Query(default="full_name", pattern="^(full_name|department|staff_custom)$"),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=50, ge=1, le=1000),
+    include_hidden: bool = Query(default=False),
+) -> UserList:
+    if include_hidden and user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only admins can request hidden users",
+        )
+    effective_include_hidden = include_hidden
+    if sort != "staff_custom":
+        effective_include_hidden = True
+
+    total = await users_repo.count_users(
+        db,
+        q=q,
+        department=department,
+        office=office,
+        include_hidden=effective_include_hidden,
+    )
+    items = await users_repo.list_users_page(
+        db,
+        q=q,
+        department=department,
+        office=office,
+        sort=sort,
+        page=page,
+        page_size=page_size,
+        include_hidden=effective_include_hidden,
+    )
+    return UserList(
+        items=[UserPublic.model_validate(u) for u in items],
+        total=total,
+    )
+
+
+@router.get(
+    "/birthdays", response_model=BirthdayList, summary="Именинники текущей и следующей недели"
+)
+async def list_birthdays_route(
+    db: DbDep,
+    _: CurrentUser,
+) -> BirthdayList:
+    """Дни рождения сотрудников на текущей и следующей неделе (Пн–Вс × 2).
+
+    Виджет на главной. Виден всем авторизованным (``birth_date`` — публичное поле
+    пользователя, как в справочнике ``/staff``). Без пагинации: именинников двух
+    недель физически мало. Сортировка — хронологически по дате рождения.
+    """
+    today = date.today()
+    week_start = today - timedelta(days=today.weekday())  # понедельник текущей (ISO: пн=0)
+    week_end = week_start + timedelta(days=13)  # воскресенье следующей недели
+    items = await users_repo.list_birthdays(db, week_start=week_start, week_end=week_end)
+    return BirthdayList(
+        items=[
+            BirthdayOut(
+                id=u.id,
+                full_name=u.full_name,
+                birth_date=u.birth_date,  # type: ignore[arg-type]
+                avatar_url=u.avatar_url,
+                avatar_focal_x=u.avatar_focal_x,
+                avatar_focal_y=u.avatar_focal_y,
+                avatar_focal_zoom=u.avatar_focal_zoom,
+                current_status=u.current_status,
+                current_status_until=u.current_status_until,
+            )
+            for u in items
+        ],
+        total=len(items),
+    )
+
+
+@router.get(
+    "/{user_id}/absences",
+    response_model=ErpAbsenceList,
+    summary="Отсутствия сотрудника (отпуска/отгулы/болезни/командировки)",
+)
+async def list_user_absences_route(
+    user_id: uuid.UUID,
+    db: DbDep,
+    _: CurrentUser,
+) -> ErpAbsenceList:
+    """Актуальные и будущие отсутствия сотрудника для профиля.
+
+    Источник — ERP-синхронизация (``erp_absences``). Виден всем авторизованным
+    (как и дни рождения): коллегам важно знать, кто в отпуске/на больничном.
+    Возвращаем только ``end_date >= today`` (прошлые отпуска неинформативны),
+    отсортированные по ``start_date`` ASC.
+
+    Данные есть только когда модуль ``erp_sync`` включён и импорты выполнялись;
+    иначе список пуст (404 не возвращаем — отсутствие данных это нормальное
+    состояние до первого импорта).
+    """
+    items = await users_repo.list_user_absences(db, user_id=user_id)
+    return ErpAbsenceList(
+        items=[
+            ErpAbsenceOut(
+                kind=a.kind,
+                position=a.position,
+                department=a.department,
+                start_date=a.start_date,
+                end_date=a.end_date,
+            )
+            for a in items
+        ],
+        total=len(items),
+    )
+
+
+@router.get("/departments", response_model=DepartmentList, summary="Список отделов")
+async def list_departments_route(
+    db: DbDep,
+    _: CurrentUser,
+    ordered: bool = Query(default=False),
+) -> DepartmentList:
+    items = await users_repo.list_departments(db, ordered=ordered)
+    return DepartmentList(items=items)
+
+
+@router.get("/offices", response_model=OfficeList, summary="Список офисов")
+async def list_offices_route(db: DbDep, _: CurrentUser) -> OfficeList:
+    items = await users_repo.list_offices(db)
+    return OfficeList(items=items)
+
+
+@router.get("/export", summary="Экспорт справочника в CSV / XLSX")
+async def export_users(
+    db: DbDep,
+    redis: RedisDep,
+    _: CurrentUser,
+    q: str | None = Query(default=None, max_length=100),
+    department: str | None = Query(default=None),
+    office: str | None = Query(default=None),
+    sort: str = Query(default="department", pattern="^(full_name|department|staff_custom)$"),
+    format: str = Query(default="csv", pattern="^(csv|xlsx)$"),
+) -> Response:
+    settings = await load_system_settings_shared(redis)
+    phone_regex = settings.phone_extract_regex
+
+    if format == "xlsx":
+        return await export_users_xlsx(
+            db,
+            q=q,
+            department=department,
+            office=office,
+            sort=sort,
+            phone_regex=phone_regex,
+        )
+
+    headers = [
+        "full_name",
+        "position",
+        "department",
+        "office",
+        "internal_phone",
+        "mobile_phone",
+        "email",
+    ]
+
+    async def generate() -> AsyncGenerator[str, None]:
+        buf = io.StringIO()
+        writer = csv.writer(buf, quoting=csv.QUOTE_MINIMAL)
+        writer.writerow(headers)
+        yield "\ufeff" + buf.getvalue()
+        buf.seek(0)
+        buf.truncate(0)
+        async for user in users_repo.stream_users(
+            db,
+            q=q,
+            department=department,
+            office=office,
+            sort=sort,
+            include_hidden=(sort != "staff_custom"),
+        ):
+            attrs = user.attributes or {}
+            writer.writerow(
+                [
+                    _csv_safe(user.full_name or ""),
+                    _csv_safe(user.position or ""),
+                    _csv_safe(user.department or ""),
+                    _csv_safe(attrs.get("city", "") or ""),
+                    _csv_safe(apply_phone_regex(user.phone or "", phone_regex)),
+                    _csv_safe(attrs.get("mobile", "") or ""),
+                    _csv_safe(user.email or ""),
+                ]
+            )
+            yield buf.getvalue()
+            buf.seek(0)
+            buf.truncate(0)
+
+    filename = f"staff-{date.today().isoformat()}.csv"
+    return StreamingResponse(
+        generate(),
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-store, max-age=0",
+        },
+    )
+
+
+@router.get(
+    "/admin/staff-order",
+    response_model=StaffOrderState,
+    summary="Текущий порядок отделов и список скрытых пользователей в /staff",
+)
+async def get_staff_order(db: DbDep, _: AdminDep) -> StaffOrderState:
+    departments = await users_repo.fetch_department_order(db)
+    hidden = await users_repo.fetch_hidden_user_ids(db)
+    return StaffOrderState(departments=departments, hidden_user_ids=hidden)
+
+
+@router.put(
+    "/admin/staff-order",
+    response_model=StaffOrderState,
+    summary="Сохранить порядок отделов / пользователей и список скрытых",
+)
+async def put_staff_order(
+    body: StaffOrderUpdate,
+    admin: AdminDep,
+    db: DbDep,
+) -> StaffOrderState:
+    return await staff_service.apply_staff_order(db, body)
+
+
+@router.get("/{user_id}", response_model=UserPublic, summary="Профиль сотрудника")
+async def get_user(
+    user_id: uuid.UUID,
+    db: DbDep,
+    _: CurrentUser,
+) -> UserPublic:
+    user = await users_repo.fetch_active_user(db, user_id)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    return cast(UserPublic, UserPublic.model_validate(user))

@@ -1,0 +1,142 @@
+/* Global resets and base styles */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--font-sans);
+  font-size: 0.875rem;
+  line-height: 1.6;
+  color: var(--color-text);
+  /* !important: Naive UI NGlobalStyle инжектит инлайн <style> с захардкоженным
+     bodyColor ПОСЛЕ этого файла и побеждает каскад. !important возвращает
+     контроль CSS-токену --color-bg, который корректно переключается в dark. */
+  background: var(--color-bg) !important;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+a {
+  color: var(--color-brand-sky);
+  text-decoration: none;
+  transition: color var(--t-fast);
+}
+a:hover {
+  color: var(--color-brand-navy-2);
+}
+
+img {
+  max-width: 100%;
+  display: block;
+}
+
+/* Scrollbar — subtle, brand-aligned */
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--color-border-strong);
+  border-radius: var(--radius-pill);
+  border: 2px solid var(--color-bg);
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-subtle);
+}
+
+/* Focus — accessible neutral outline (kept distinct from danger/error red) */
+:focus-visible {
+  outline: 2px solid var(--color-info);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* Selection */
+::selection {
+  background: var(--color-brand-red);
+  color: #fff;
+}
+
+/* Skip link for a11y */
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  padding: 8px 16px;
+  background: var(--color-brand-red);
+  color: #fff;
+  font-weight: 600;
+  z-index: 10000;
+  border-radius: 0 0 var(--radius-md) 0;
+}
+.skip-link:focus {
+  left: 0;
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+   Menu count-badge — серая компактная цифра справа от лейбла пункта
+   главного меню (sidebar + mobile drawer). Используется для счётчиков:
+   «открытые заявки» (заявитель) и «в работе» (агент) в helpdesk. Скрытие
+   при count=0 — на уровне render-функции (useAppMenu.renderNavLabelWithCount).
+   Единый визуальный язык с StaffTableView/DepartmentColleagues pill'ами.
+   ───────────────────────────────────────────────────────────────────── */
+.menu-count-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  padding: 0 6px;
+  margin-left: 2px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 16px;
+  color: var(--color-text-muted);
+  background: rgba(0, 0, 0, 0.06);
+  border-radius: var(--radius-pill, 999px);
+  flex-shrink: 0;
+}
+[data-theme='dark'] .menu-count-badge {
+  background: rgba(255, 255, 255, 0.1);
+}
+/* Непрочитанные ответы заявителей (``unread > 0`` из /helpdesk/tickets/counts):
+   цифра становится красной — сигнал заметнее tooltip'а, не требует чтения.
+   Светлый текст на сплошном danger-фон читается одинаково в обеих темах. */
+.menu-count-badge--unread {
+  color: var(--color-danger-soft);
+  background: var(--color-danger);
+}
+/* В свёрнутом сайдбаре бейдж не помещается — скрываем, иконка остаётся. */
+.app-sider--collapsed .menu-count-badge {
+  display: none;
+}
